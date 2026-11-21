@@ -270,10 +270,7 @@ func joinSideBySide(aStr, bStr, sep string) string {
 }
 
 func viewString(view tea.View) string {
-	if view.Content == nil {
-		return ""
-	}
-	return fmt.Sprint(view.Content)
+	return view.Content
 }
 
 func main() {

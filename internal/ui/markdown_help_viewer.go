@@ -6,8 +6,9 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/glamour"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -73,7 +74,7 @@ func (v *MarkdownHelpViewer) render() {
 	}
 	// Leave a small gutter inside the modal border.
 	wrap = max(20, wrap-2)
-	style := glamour.LightStyleConfig
+	style := styles.LightStyleConfig
 	bg := uistyles.ColorModalBg
 	fg := uistyles.ColorModalFg
 	style.Document.StylePrimitive.BackgroundColor = stringPtr(bg)

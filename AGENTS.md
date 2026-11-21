@@ -10,7 +10,7 @@
 
 ## Architecture & Project Structure
 
-The application is a **Kubernetes TUI** built with **Go 1.24** and **Bubble Tea v2**, structured around a hierarchical navigation model where resources are treated as "folders" and "files".
+The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea v2**, structured around a hierarchical navigation model where resources are treated as "folders" and "files".
 
 ### Core Components
 

@@ -1,8 +1,6 @@
 package overlay
 
 import (
-	"fmt"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -61,8 +59,5 @@ func (m *Model) View() tea.View {
 }
 
 func viewString(view tea.View) string {
-	if view.Content == nil {
-		return ""
-	}
-	return fmt.Sprint(view.Content)
+	return view.Content
 }

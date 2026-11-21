@@ -218,11 +218,8 @@ func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) tea.
 
 	if w.terminal != nil {
 		view := w.terminal.View()
-		if view.Content != nil {
-			content := fmt.Sprint(view.Content)
-			if content != "" {
-				w.lastFrame = content
-			}
+		if content := view.Content; content != "" {
+			w.lastFrame = content
 			return w.renderWithBackground(content)
 		}
 		if w.lastFrame != "" {

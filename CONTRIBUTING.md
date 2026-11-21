@@ -4,7 +4,7 @@ First things first: kc is intentionally 100 % vibe coded. Every line so far ca
 
 ## Dev Environment
 
-- Go 1.24+ (module toolchain is pinned in `go.mod`).
+- Go 1.27+ (module toolchain is pinned in `go.mod`).
 - A working Kubernetes control-plane for envtests (`kubebuilder` assets in `/usr/local/kubebuilder`), or skip those suites if you cannot run envtest locally.
 
 Handy commands:
