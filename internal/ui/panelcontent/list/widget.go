@@ -1169,3 +1169,40 @@ func min(a, b int) int {
 func viewString(view tea.View) string {
 	return view.Content
 }
+
+// QuickSearch selects the first row whose name starts with prefix, ignoring
+// case, like mc's quick search. It looks from the selection on (after it,
+// when next) and wraps around. It reports whether a row matched.
+func (w *Widget) QuickSearch(ctx context.Context, prefix string, next bool) bool {
+	if prefix == "" || !w.useFolder || w.folder == nil {
+		return false
+	}
+	w.syncFromFolder(ctx)
+	n := len(w.items)
+	if n == 0 {
+		return false
+	}
+	start := max(0, w.selected)
+	if next {
+		start++
+	}
+	q := strings.ToLower(prefix)
+	for k := 0; k < n; k++ {
+		it := w.items[(start+k)%n]
+		if it.Item == nil {
+			continue
+		}
+		if back, ok := it.Item.(models.Back); ok && back.IsBack() {
+			continue
+		}
+		name := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(it.Name), "/"))
+		if !strings.HasPrefix(name, q) {
+			continue
+		}
+		id, _, _, _ := it.Item.Columns()
+		w.SelectByRowID(ctx, id)
+		w.saveCurrentPosition()
+		return true
+	}
+	return false
+}

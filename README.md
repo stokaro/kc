@@ -76,6 +76,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F10`      | Quit (`Esc+0` alternative; `Ctrl+Q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
 | `Ctrl+O`   | Toggle the integrated terminal.                                                 |
+| `Ctrl+S`   | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `Ctrl+S` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `Alt+S` and `Esc s` do the same. |
 | `Alt+A`    | In viewers: copy the whole content.                                             |
 | `Alt+C`    | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not send Alt. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `Ctrl+C`   | Quit.                                                                           |
