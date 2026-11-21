@@ -654,6 +654,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Escape sequence timed out
 		a.escPressed = false
 		return a, nil
+	case readErrorMsg:
+		var toast tea.Cmd
+		if a.toastLogger != nil {
+			toast = a.toastLogger.Errorf("%s", readErrorText(msg.err))
+		}
+		return a, tea.Batch(toast, a.waitReadErrors())
 	case FolderDirtyMsg:
 		panel := a.panelByIndex(msg.PanelIdx)
 		if panel == nil {

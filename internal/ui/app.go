@@ -259,6 +259,7 @@ type App struct {
 	helpViewer             *MarkdownHelpViewer
 	podfsFactory           podfs.Factory
 	folderDirtyCh          chan FolderDirtyMsg
+	readErrCh              chan error // read failures from models, shown as red toasts
 	panelNamespace         [2]string
 	namespaceCommandTarget [2]string
 }
@@ -293,6 +294,7 @@ func NewApp() *App {
 		leftPanelWidthPercent:  50,
 		rightPanelWidthPercent: 50,
 		folderDirtyCh:          make(chan FolderDirtyMsg, 64),
+		readErrCh:              make(chan error, 16),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.leftPanel = NewPanel("", app.cfg)
@@ -351,7 +353,49 @@ func (a *App) Init() tea.Cmd {
 			return nil
 		},
 		a.waitFolderDirtyEvents(),
+		a.waitReadErrors(),
 	)
+}
+
+// readErrorMsg carries a read failure reported by a folder or item.
+type readErrorMsg struct{ err error }
+
+// reportReadError is Deps.ReportError: models call it from any goroutine.
+// It never blocks; when the channel is full the error is dropped, since a
+// red message is already on its way.
+func (a *App) reportReadError(err error) {
+	if a == nil || a.readErrCh == nil || err == nil {
+		return
+	}
+	select {
+	case a.readErrCh <- err:
+	default:
+	}
+}
+
+func (a *App) waitReadErrors() tea.Cmd {
+	if a == nil || a.readErrCh == nil {
+		return nil
+	}
+	ctx := a.ctx
+	ch := a.readErrCh
+	return func() tea.Msg {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-ch:
+			return readErrorMsg{err: err}
+		}
+	}
+}
+
+// readErrorText turns a read failure into a short message for the status line.
+func readErrorText(err error) string {
+	text := err.Error()
+	if errors.Is(err, context.DeadlineExceeded) {
+		text = strings.Replace(text, context.DeadlineExceeded.Error(), "timed out", 1)
+	}
+	return strings.ToUpper(text[:1]) + text[1:] + ". Try again."
 }
 
 func (a *App) waitFolderDirtyEvents() tea.Cmd {
@@ -846,6 +890,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		ClusterKey:       key,
 		NamespaceFactory: a.namespaceClusterFactory(),
 		PodFSFactory:     a.podfsFactory,
+		ReportError:      a.reportReadError,
 	}
 }
 

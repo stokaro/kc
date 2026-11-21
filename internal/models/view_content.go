@@ -1,8 +1,11 @@
 package models
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -11,9 +14,24 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// viewReadTimeout bounds a read for the viewer. The read runs on the UI
+// thread and goes through the cache, which waits for the informer to sync;
+// without a bound an informer that cannot sync would hang kc.
+const viewReadTimeout = 5 * time.Second
+
+func getForView(deps Deps, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
+	ctx, cancel := context.WithTimeout(deps.Ctx, viewReadTimeout)
+	defer cancel()
+	obj, err := deps.Cl.GetByGVR(ctx, gvr, namespace, name)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("reading %s %s timed out, try again", gvr.Resource, name)
+	}
+	return obj, err
+}
+
 func objectViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name string) ViewContentFunc {
 	return func() (string, string, string, string, string, error) {
-		obj, err := deps.Cl.GetByGVR(deps.Ctx, gvr, namespace, name)
+		obj, err := getForView(deps, gvr, namespace, name)
 		if err != nil {
 			return "", "", "", "", "", err
 		}
@@ -38,7 +56,7 @@ func objectViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, na
 
 func keyViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name, key string, secret bool) ViewContentFunc {
 	return func() (string, string, string, string, string, error) {
-		obj, err := deps.Cl.GetByGVR(deps.Ctx, gvr, namespace, name)
+		obj, err := getForView(deps, gvr, namespace, name)
 		if err != nil {
 			return "", "", "", "", "", err
 		}
@@ -81,7 +99,7 @@ func keyViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name,
 func containerViewContent(deps Deps, namespace, pod, container string) ViewContentFunc {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	return func() (string, string, string, string, string, error) {
-		obj, err := deps.Cl.GetByGVR(deps.Ctx, gvr, namespace, pod)
+		obj, err := getForView(deps, gvr, namespace, pod)
 		if err != nil {
 			return "", "", "", "", "", err
 		}
