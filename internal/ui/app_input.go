@@ -201,6 +201,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 				return a, cmd
 			}
 			return a, nil
+		case "c":
+			// Esc c is the meta-key fallback for Alt+C (macOS Option does not
+			// send Alt by default).
+			a.escPressed = false
+			return a, a.copyPanelCommand()
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
@@ -252,6 +257,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 				cmds = append(cmds, cmd)
 			}
 			return a, tea.Batch(cmds...)
+		}
+		if msg.String() == copyCommandKey {
+			return a, a.copyPanelCommand()
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys

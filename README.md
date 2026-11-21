@@ -15,7 +15,7 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices) via per-object child folders so related resources stay discoverable in the tree.
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
-- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, search (`F7`), and next-match (`F3`). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
+- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
 - **Container internals:** each pod container exposes `/logs` plus a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
 - **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker.
 - **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
@@ -67,18 +67,19 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 |------------|---------------------------------------------------------------------------------|
 | `F1`       | Help – opens the README.md markdown viewer (windowed modal).                    |
 | `F2`       | Options – context-aware panel options or viewer theme dialog.                   |
-| `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, etc.          |
+| `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, etc. Closes the viewer again. |
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
-| `F7`       | Create namespace (panels) / Search (viewers/logs).                              |
+| `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
 | `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
 | `F9`       | Menu – Open custom commands menu.                                               |
 | `F10`      | Quit (`Esc+0` alternative; `Ctrl+Q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
 | `Ctrl+O`   | Toggle the integrated terminal.                                                 |
+| `Alt+C`    | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not send Alt. |
 | `Ctrl+C`   | Quit.                                                                           |
 
-Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
+Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
 
 ## Custom Commands
 

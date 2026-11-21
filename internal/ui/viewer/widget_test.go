@@ -6,8 +6,7 @@ func TestWidgetSearchMatches(t *testing.T) {
 	w := New("")
 	w.SetContent("foo\nbar\nFoo baz\nnoop", Metadata{})
 
-	w.searchQuery = "foo"
-	w.updateSearchMatches()
+	setSearch(t, w, "foo", SearchOptions{})
 
 	if !w.HasSearchMatches() {
 		t.Fatalf("expected search matches")
@@ -30,32 +29,12 @@ func TestWidgetSearchMatches(t *testing.T) {
 	}
 }
 
-func TestWidgetFooterCursor(t *testing.T) {
+func TestWidgetFooterCursorNil(t *testing.T) {
 	w := New("")
 	w.SetContent("foo\nbar", Metadata{})
-	if cur := w.FooterCursor(10); cur != nil {
-		t.Fatalf("expected nil cursor when not in search mode")
-	}
-
-	if cmd := w.beginSearch(); cmd != nil {
-		_ = cmd()
-	}
-	w.searchField.SetValue("abc")
-	cur := w.FooterCursor(20)
-	if cur == nil {
-		t.Fatalf("expected cursor when search active")
-	}
-	if cur.X == 0 {
-		t.Fatalf("expected cursor X > 0 after input, got %d", cur.X)
-	}
-	if cur.Y != 0 {
-		t.Fatalf("expected cursor Y == 0, got %d", cur.Y)
-	}
-
-	// Ensure updates do not mutate the original cursor reference.
-	cur2 := w.FooterCursor(20)
-	if cur2 == cur {
-		t.Fatalf("expected FooterCursor to return a clone")
+	_ = w.beginSearch()
+	if cur := w.FooterCursor(20); cur != nil {
+		t.Fatalf("the search dialog draws its own cursor; footer cursor must be nil")
 	}
 }
 
@@ -63,8 +42,7 @@ func TestWidgetAppendLinesExtendsMatches(t *testing.T) {
 	w := New("")
 	w.SetPlainMode(true)
 	w.SetContent("alpha", Metadata{})
-	w.searchQuery = "beta"
-	w.updateSearchMatches()
+	setSearch(t, w, "beta", SearchOptions{})
 	if w.HasSearchMatches() {
 		t.Fatalf("did not expect initial matches")
 	}

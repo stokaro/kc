@@ -602,11 +602,11 @@ func (a *App) inlineTerminalHeight() int {
 	if a.showTerminal {
 		return 0
 	}
-	return 2
+	return inlineTerminalLines
 }
 
 func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int, headerOffset int) {
-	reserved := 1 + a.inlineTerminalHeight()
+	reserved := 1 + a.inlineTerminalHeight() + a.commandLineHeight()
 	if a.toastActive {
 		reserved++
 	}
@@ -1987,6 +1987,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	modal.SetMode(ModalModeFullscreen)
 	modal.SetDimensions(a.width, a.height)
 	modal.SetCloseOnSingleEsc(false)
+	modal.SetCloseOnEscTimeout(true)
 	a.modalManager.Register("yaml_viewer", modal)
 	a.showModal("yaml_viewer")
 	return nil
@@ -2042,6 +2043,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	modal.SetMode(ModalModeFullscreen)
 	modal.SetDimensions(a.width, a.height)
 	modal.SetCloseOnSingleEsc(false)
+	modal.SetCloseOnEscTimeout(true)
 	modal.SetOnClose(func() tea.Cmd {
 		logsViewer.Close()
 		return nil

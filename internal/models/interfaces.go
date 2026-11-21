@@ -94,7 +94,8 @@ type DirtyObservable interface {
 	RegisterDirtyListener(func()) func()
 }
 
-// BackItem renders the synthetic ".." row.
+// BackItem renders the synthetic ".." row. It is shown as "/.." like the
+// parent directory entry in Midnight Commander.
 type BackItem struct{}
 
 var _ Item = BackItem{}
@@ -102,7 +103,7 @@ var _ Back = BackItem{}
 
 func (BackItem) Columns() (string, []string, []*lipgloss.Style, bool) {
 	style := GreenStyle()
-	return "__back__", []string{".."}, []*lipgloss.Style{style}, true
+	return "__back__", []string{"/.."}, []*lipgloss.Style{style}, true
 }
 
 func (BackItem) Details() string { return "Back" }

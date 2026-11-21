@@ -9,6 +9,7 @@
 *.dylib
 storeprovider
 /kc
+/cmd/kc/kc
 
 # Test binary, built with `go test -c`
 *.test

@@ -2,15 +2,16 @@ package viewer
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
-	textinput "charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	chroma "github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/sttts/kc/internal/overlay"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -60,9 +61,11 @@ type Widget struct {
 	onOptions func() tea.Cmd
 	onClose   func() tea.Cmd
 
-	searchField      textinput.Model
-	searchMode       bool
+	searchDialog     *searchDialog
 	searchQuery      string
+	searchOpts       SearchOptions
+	searchRe         *regexp.Regexp
+	searchErr        string
 	searchMatches    []matchLocation
 	searchMatchIndex map[int][]int
 	activeMatch      int
@@ -85,20 +88,8 @@ func New(theme string) *Widget {
 	if theme == "" {
 		theme = "dracula"
 	}
-	ti := textinput.New()
-	ti.Prompt = ""
-	styles := textinput.DefaultLightStyles()
-	styles.Focused.Text = searchInputStyle
-	styles.Focused.Prompt = searchInputStyle
-	styles.Focused.Placeholder = searchInputStyle.Copy().Foreground(lipgloss.Color("#808080"))
-	styles.Blurred = styles.Focused
-	styles.Cursor.Color = lipgloss.Color("#ff8c00")
-	ti.SetStyles(styles)
-	ti.SetVirtualCursor(false)
-	ti.Blur()
 	return &Widget{
 		theme:            theme,
-		searchField:      ti,
 		searchMatchIndex: make(map[int][]int),
 		activeMatch:      -1,
 	}
@@ -207,10 +198,8 @@ func (w *Widget) Update(msg tea.Msg) (tea.Cmd, bool) {
 		w.Resize(max(1, m.Width), max(1, m.Height))
 		return nil, true
 	case tea.KeyMsg:
-		if w.searchMode {
-			if cmd, handled := w.handleSearchInput(m); handled {
-				return cmd, true
-			}
+		if w.searchDialog != nil {
+			return w.handleSearchDialog(m), true
 		}
 		if cmd, handled := w.handleKey(m.String()); handled {
 			return cmd, true
@@ -247,6 +236,11 @@ func (w *Widget) View(frame Frame) string {
 		style = style.Bold(true)
 	}
 	rendered := style.Render(body)
+	if w.searchDialog != nil {
+		dialog := w.searchDialog.view(contentW)
+		dw, dh := lipgloss.Size(dialog)
+		rendered = overlay.Composite(dialog, rendered, overlay.Left, overlay.Top, max(0, (contentW-dw)/2), max(0, (contentH-dh)/2))
+	}
 	if !w.wrapMode {
 		rendered = ansiDisableWrap + rendered + ansiEnableWrap
 	}
@@ -322,14 +316,14 @@ func (w *Widget) ScrollIndicators() (bool, bool) {
 	return w.offset > 0, w.offset+w.page() < len(w.lines)
 }
 
-// SearchMode reports whether the viewer is currently editing a search query.
+// SearchMode reports whether the search dialog is open.
 func (w *Widget) SearchMode() bool {
-	return w.searchMode
+	return w.searchDialog != nil
 }
 
 // HandleEscape consumes Escape presses for active inline modes (search).
 func (w *Widget) HandleEscape() (tea.Cmd, bool) {
-	if w.searchMode {
+	if w.searchDialog != nil {
 		w.cancelSearch()
 		return nil, true
 	}
@@ -341,10 +335,8 @@ func (w *Widget) FooterStatusText(width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if w.searchMode {
-		w.searchField.SetWidth(width)
-		view := w.searchField.View()
-		return searchInputStyle.Copy().Width(width).Render(view)
+	if w.searchDialog != nil {
+		return ""
 	}
 	summary := w.searchSummary()
 	if summary == "" {
@@ -354,21 +346,10 @@ func (w *Widget) FooterStatusText(width int) string {
 	return searchInputStyle.Copy().Width(width).Render(trimmed)
 }
 
-// FooterCursor returns a real cursor relative to the footer status line.
+// FooterCursor returns nil: the search string is edited in the search dialog,
+// which draws its own cursor.
 func (w *Widget) FooterCursor(width int) *tea.Cursor {
-	if !w.searchMode {
-		return nil
-	}
-	w.searchField.SetWidth(width)
-	cur := w.searchField.Cursor()
-	if cur == nil {
-		return nil
-	}
-	clone := tea.NewCursor(cur.X, cur.Y)
-	clone.Blink = cur.Blink
-	clone.Color = cur.Color
-	clone.Shape = cur.Shape
-	return clone
+	return nil
 }
 
 func (w *Widget) searchSummary() string {
@@ -476,16 +457,17 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 		}
 		return nil, false
 	case "f3":
-		if w.advanceMatch() {
-			return nil, true
+		// F3 toggles the viewer like in Midnight Commander: it closes it.
+		if w.onClose != nil {
+			return w.onClose(), true
 		}
 		return nil, false
-	case "n":
-		if w.advanceMatch() {
+	case "shift+f7", "n":
+		if w.nextMatch() {
 			return nil, true
 		}
 	case "N":
-		if w.previousMatch() {
+		if w.prevMatch() {
 			return nil, true
 		}
 	case "f4":
@@ -504,19 +486,15 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 	return nil, true
 }
 
-func (w *Widget) handleSearchInput(key tea.KeyMsg) (tea.Cmd, bool) {
-	switch key.String() {
-	case "enter":
+func (w *Widget) handleSearchDialog(key tea.KeyMsg) tea.Cmd {
+	result, cmd := w.searchDialog.update(key)
+	switch result {
+	case searchDialogAccepted:
 		w.commitSearch()
-		return nil, true
-	case "esc", "ctrl+c":
+	case searchDialogCanceled:
 		w.cancelSearch()
-		return nil, true
-	default:
-		var cmd tea.Cmd
-		w.searchField, cmd = w.searchField.Update(key)
-		return cmd, true
 	}
+	return cmd
 }
 
 func (w *Widget) scrollBy(delta int) {
@@ -531,29 +509,51 @@ func (w *Widget) scrollBy(delta int) {
 }
 
 func (w *Widget) beginSearch() tea.Cmd {
-	w.searchMode = true
-	w.searchField.SetValue(w.searchQuery)
-	w.searchField.CursorEnd()
-	return tea.Batch(w.searchField.Focus(), textinput.Blink)
+	w.searchDialog = newSearchDialog(w.searchQuery, w.searchOpts)
+	return w.searchDialog.focusCmd()
 }
 
+// commitSearch applies the dialog's query and options. An invalid regular
+// expression keeps the dialog open and shows the error in it.
 func (w *Widget) commitSearch() {
-	query := strings.TrimSpace(w.searchField.Value())
-	w.searchMode = false
-	w.searchField.Blur()
+	d := w.searchDialog
+	query := d.query()
+	re, err := compileSearch(query, d.opts)
+	if err != nil {
+		d.err = err.Error()
+		return
+	}
+	w.searchDialog = nil
 	w.searchQuery = query
+	w.searchOpts = d.opts
+	w.searchRe = re
 	w.updateSearchMatches()
 }
 
 func (w *Widget) cancelSearch() {
-	w.searchMode = false
-	w.searchField.Blur()
+	w.searchDialog = nil
+}
+
+// nextMatch moves to the next match in the search direction.
+func (w *Widget) nextMatch() bool {
+	if w.searchOpts.Backwards {
+		return w.previousMatch()
+	}
+	return w.advanceMatch()
+}
+
+// prevMatch moves to the next match against the search direction.
+func (w *Widget) prevMatch() bool {
+	if w.searchOpts.Backwards {
+		return w.advanceMatch()
+	}
+	return w.previousMatch()
 }
 
 func (w *Widget) clearSearchState() {
-	w.searchMode = false
-	w.searchField.SetValue("")
+	w.searchDialog = nil
 	w.searchQuery = ""
+	w.searchRe = nil
 	w.searchMatches = nil
 	w.activeMatch = -1
 	if w.searchMatchIndex == nil {
@@ -565,7 +565,7 @@ func (w *Widget) clearSearchState() {
 }
 
 func (w *Widget) hasSearchQuery() bool {
-	return strings.TrimSpace(w.searchQuery) != ""
+	return w.searchRe != nil
 }
 
 func (w *Widget) alignToEnd() {
@@ -644,62 +644,66 @@ func (w *Widget) updateSearchMatches() {
 	w.searchMatchIndex = make(map[int][]int)
 	w.searchMatches = w.searchMatches[:0]
 	w.activeMatch = -1
-	query := strings.TrimSpace(w.searchQuery)
-	if query == "" {
+	if w.searchRe == nil {
 		return
 	}
-	lower := strings.ToLower(query)
 	for idx, line := range w.rawLines {
-		w.appendMatchesForLine(idx, line, lower)
+		w.appendMatchesForLine(idx, line, w.searchRe)
 	}
 	if len(w.searchMatches) > 0 {
-		w.activeMatch = 0
-		w.scrollToMatch(0)
+		w.activeMatch = w.firstMatchFromView()
+		w.scrollToMatch(w.activeMatch)
 	}
 }
 
+// firstMatchFromView picks the match to start at, like mc: searching forward
+// starts at the top of the view, searching backwards at its bottom; both wrap.
+func (w *Widget) firstMatchFromView() int {
+	if w.searchOpts.Backwards {
+		bottom := w.offset + w.page() - 1
+		for i := len(w.searchMatches) - 1; i >= 0; i-- {
+			if w.searchMatches[i].line <= bottom {
+				return i
+			}
+		}
+		return len(w.searchMatches) - 1
+	}
+	for i, m := range w.searchMatches {
+		if m.line >= w.offset {
+			return i
+		}
+	}
+	return 0
+}
+
 func (w *Widget) extendSearchMatches(startLine int, lines []string) {
-	query := strings.TrimSpace(w.searchQuery)
-	if query == "" || len(lines) == 0 {
+	if w.searchRe == nil || len(lines) == 0 {
 		return
 	}
 	if w.searchMatchIndex == nil {
 		w.searchMatchIndex = make(map[int][]int)
 	}
-	lower := strings.ToLower(query)
 	for i, line := range lines {
-		w.appendMatchesForLine(startLine+i, line, lower)
+		w.appendMatchesForLine(startLine+i, line, w.searchRe)
 	}
 }
 
-func (w *Widget) appendMatchesForLine(lineIdx int, line string, lowerQuery string) {
-	if lowerQuery == "" {
+func (w *Widget) appendMatchesForLine(lineIdx int, line string, re *regexp.Regexp) {
+	if re == nil {
 		return
 	}
-	lowerLine := strings.ToLower(line)
-	searchLen := len(lowerQuery)
-	offset := 0
-	for {
-		pos := strings.Index(lowerLine[offset:], lowerQuery)
-		if pos == -1 {
-			break
+	for _, m := range re.FindAllStringIndex(line, -1) {
+		if m[1] <= m[0] {
+			continue // ignore empty matches (e.g. "a*")
 		}
-		startByte := offset + pos
-		endByte := startByte + searchLen
-		startWidth := lipgloss.Width(line[:startByte])
-		matchWidth := lipgloss.Width(line[startByte:endByte])
+		startWidth := lipgloss.Width(line[:m[0]])
 		loc := matchLocation{
 			line:  lineIdx,
 			start: startWidth,
-			end:   startWidth + matchWidth,
+			end:   startWidth + lipgloss.Width(line[m[0]:m[1]]),
 		}
 		w.searchMatches = append(w.searchMatches, loc)
-		idx := len(w.searchMatches) - 1
-		w.searchMatchIndex[lineIdx] = append(w.searchMatchIndex[lineIdx], idx)
-		offset = endByte
-		if offset >= len(lowerLine) {
-			break
-		}
+		w.searchMatchIndex[lineIdx] = append(w.searchMatchIndex[lineIdx], len(w.searchMatches)-1)
 	}
 }
 

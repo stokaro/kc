@@ -846,6 +846,9 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	contentView := p.renderContentFocused(ctx, focused)
 	frame := p.renderFrame(viewString(contentView), info, title, width, frameHeight, focused, footerFrame != "")
 	if footerFrame != "" {
+		footerFrame = p.attachFooterStatus(footerFrame, info, width)
+	}
+	if footerFrame != "" {
 		p.renderCache = lipgloss.JoinVertical(lipgloss.Top, frame, footerFrame)
 	} else {
 		p.renderCache = frame
@@ -1033,6 +1036,19 @@ func (p *Panel) renderFramedFooter(content string, width int) (string, int) {
 	return frame, lipgloss.Height(frame)
 }
 
+// attachFooterStatus writes the status and view mode into the bottom border of
+// the footer, where Midnight Commander shows its free-space summary.
+func (p *Panel) attachFooterStatus(footer string, info panelcontent.FrameInfo, width int) string {
+	lines := strings.Split(footer, "\n")
+	borderStyle := lipgloss.NewStyle().
+		BorderForeground(lipgloss.White).
+		BorderBackground(lipgloss.Blue)
+	statusInfo := info
+	statusInfo.BottomIndicator = ""
+	lines[len(lines)-1] = p.composeBottomBorder(lipgloss.NormalBorder(), borderStyle, statusInfo, width, modeLabel(p.mode))
+	return strings.Join(lines, "\n")
+}
+
 // FrameContentSize computes the content rectangle and footer height for the given frame.
 func (p *Panel) FrameContentSize(ctx context.Context, frameWidth, frameHeight int) (panelcontent.Size, int) {
 	if frameWidth <= 0 {
@@ -1154,8 +1170,10 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 	title = p.ellipsizeBreadcrumbTitle(labelStyle, title, availableForLabel)
 	renderedLabel := labelStyle.Render(title)
 	labelWidth := lipgloss.Width(renderedLabel)
+	// Like Midnight Commander, the path sits at the left edge of the top
+	// border, one line glyph away from the corner.
 	gapWidth := max(0, availableForLabel-labelWidth)
-	leftGapWidth := gapWidth / 2
+	leftGapWidth := min(1, gapWidth)
 	rightGapWidth := gapWidth - leftGapWidth
 	leftGap := topBorderStyler(strings.Repeat(border.Top, leftGapWidth))
 	rightGap := topBorderStyler(strings.Repeat(border.Top, rightGapWidth))
@@ -1178,7 +1196,14 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 		border.BottomRight = "┤"
 	}
 
-	lines[len(lines)-1] = p.composeBottomBorder(border, boxStyle, info, width, modeLabel(p.mode))
+	// With a footer the status moves to the footer's bottom border (see
+	// attachFooterStatus), so the separator above the footer stays a plain line.
+	bottomInfo, mode := info, modeLabel(p.mode)
+	if hasFooter {
+		bottomInfo.FooterStatus = ""
+		mode = ""
+	}
+	lines[len(lines)-1] = p.composeBottomBorder(border, boxStyle, bottomInfo, width, mode)
 
 	frame := top + "\n" + strings.Join(lines, "\n")
 
@@ -1213,7 +1238,7 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	}
 	text := strings.Join(parts, " • ")
 	if text != "" {
-		text = truncateStringToWidth(text, contentWidth)
+		text = truncateStringToWidth(" "+text+" ", contentWidth)
 	}
 	renderedText := ""
 	textWidth := 0

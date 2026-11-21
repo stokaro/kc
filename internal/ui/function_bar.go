@@ -54,67 +54,135 @@ func (f *functionBar) Render(state functionBarState) string {
 		return view
 	}
 
-	var keys []string
-	if state.ShowTerminal {
-		keys = []string{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels")}
-	} else if state.PanelHasCommandFocus {
-		keys = []string{
-			uistyles.FunctionKeyStyle.Render("Esc Esc") + uistyles.FunctionKeyDescriptionStyle.Render("Drop focus"),
-			uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
-			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
-		}
-	} else {
-		caps := state.Capabilities
-		renderKey := func(key, label string, enabled bool) string {
-			desc := uistyles.FunctionKeyDescriptionStyle
-			if !enabled {
-				desc = uistyles.FunctionKeyDisabledStyle
-			}
-			trimmed := strings.TrimSpace(label)
-			if trimmed == "" {
-				placeholder := desc.Copy().Padding(0, 0, 0, 0)
-				return uistyles.FunctionKeyStyle.Render(key) + placeholder.Render(" - ")
-			}
-			return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
-		}
-
-		keys = append(keys,
-			renderKey("F1", "Help", caps.HasHelp),
-			renderKey("F2", "Options", caps.HasOptions),
-			renderKey("F3", "View", caps.CanView),
-			renderKey("F4", "Edit", caps.CanEdit),
-			renderKey("F5", "Copy", caps.CanCopy),
-			renderKey("F6", "", false),
-			renderKey("F7", "Namespace", caps.CanCreateNS),
-			renderKey("F8", "Delete", caps.CanDelete),
-			renderKey("F9", "Commands", caps.HasContextMenu),
-			uistyles.FunctionKeyStyle.Render("F10")+uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
-		)
-		if state.PanelMode == PanelModeCommand && state.PanelInteractive {
-			enterEnabled := !state.TerminalHasInput
-			keys = append(keys,
-				renderKey("Enter", "Focus", enterEnabled),
-			)
-		}
-		keys = append(keys,
-			uistyles.FunctionKeyStyle.Render("Ctrl+O")+uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
-		)
+	if !state.ShowTerminal && !state.PanelHasCommandFocus {
+		f.key = sig
+		f.cache.set(renderFunctionKeySlots(panelFunctionKeys(state), state.Width), nil)
+		view, _, _ := f.cache.get()
+		return view
 	}
-
-	joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
-	title := " Kubernetes Commander "
-	fullWidthStyle := uistyles.FunctionKeyBarStyle.Width(state.Width).Align(lipgloss.Left)
-	available := state.Width - lipgloss.Width(joined) - 1
-	if available < lipgloss.Width(title) {
-		title = " kc "
-	}
-	titleStyle := uistyles.FunctionKeyTitleStyle.Align(lipgloss.Center).Width(max(0, available))
-	titleRendered := titleStyle.Render(title)
 
 	f.key = sig
-	f.cache.set(fullWidthStyle.Render(joined+" "+titleRendered), nil)
+	f.cache.set(renderFunctionKeySlots(compactFunctionKeys(state), state.Width), nil)
 	view, _, _ := f.cache.get()
 	return view
+}
+
+// compactFunctionKeys lists the keys shown while the terminal is fullscreen or
+// a panel command has keyboard focus.
+func compactFunctionKeys(state functionBarState) []functionKey {
+	if state.ShowTerminal {
+		return []functionKey{{Key: " Ctrl+O", Label: "Return to panels", Enabled: true}}
+	}
+	return []functionKey{
+		{Key: " Esc Esc", Label: "Drop focus", Enabled: true},
+		{Key: "10", Label: "Quit", Enabled: true},
+		{Key: " Ctrl+O", Label: "Fullscreen", Enabled: true},
+	}
+}
+
+// functionKeyID identifies a slot of the panel function key bar so the click
+// handler can map a slot back to its action.
+type functionKeyID int
+
+const (
+	functionKeyHelp functionKeyID = iota
+	functionKeyOptions
+	functionKeyView
+	functionKeyEdit
+	functionKeyCopy
+	functionKeyRenameMove
+	functionKeyNamespace
+	functionKeyDelete
+	functionKeyCommands
+	functionKeyQuit
+	functionKeyFocus
+)
+
+type functionKey struct {
+	ID      functionKeyID
+	Key     string
+	Label   string
+	Enabled bool
+}
+
+// panelFunctionKeys lists the keys shown in the panel function bar, in order.
+// Like Midnight Commander, F-keys are shown by their number only, right-aligned
+// in two columns (" 1" .. "10").
+func panelFunctionKeys(state functionBarState) []functionKey {
+	caps := state.Capabilities
+	keys := []functionKey{
+		{functionKeyHelp, " 1", "Help", caps.HasHelp},
+		{functionKeyOptions, " 2", "Options", caps.HasOptions},
+		{functionKeyView, " 3", "View", caps.CanView},
+		{functionKeyEdit, " 4", "Edit", caps.CanEdit},
+		{functionKeyCopy, " 5", "Copy", caps.CanCopy},
+		{functionKeyRenameMove, " 6", "", false},
+		{functionKeyNamespace, " 7", "Namespace", caps.CanCreateNS},
+		{functionKeyDelete, " 8", "Delete", caps.CanDelete},
+		{functionKeyCommands, " 9", "Commands", caps.HasContextMenu},
+		{functionKeyQuit, "10", "Quit", true},
+	}
+	if state.PanelMode == PanelModeCommand && state.PanelInteractive {
+		keys = append(keys, functionKey{functionKeyFocus, "Enter", "Focus", !state.TerminalHasInput})
+	}
+	return keys
+}
+
+// functionKeySlotStarts splits width into n slots of (almost) equal size, the
+// way Midnight Commander spreads its button bar across the screen. The result
+// holds n+1 offsets; slot i covers [starts[i], starts[i+1]).
+func functionKeySlotStarts(n, width int) []int {
+	starts := make([]int, n+1)
+	if n == 0 {
+		return starts
+	}
+	for i := 0; i <= n; i++ {
+		starts[i] = width * i / n
+	}
+	return starts
+}
+
+// functionKeyAt returns the index of the slot under column x, or -1.
+func functionKeyAt(n, width, x int) int {
+	starts := functionKeySlotStarts(n, width)
+	for i := 0; i < n; i++ {
+		if x >= starts[i] && x < starts[i+1] {
+			return i
+		}
+	}
+	return -1
+}
+
+func renderFunctionKeySlots(keys []functionKey, width int) string {
+	if width <= 0 || len(keys) == 0 {
+		return ""
+	}
+	return renderFunctionKeySlotsAt(keys, functionKeySlotStarts(len(keys), width))
+}
+
+// renderFunctionKeySlotsAt renders keys into the slots given by starts (n+1
+// offsets): the key on black, the label filling the rest of the slot.
+func renderFunctionKeySlotsAt(keys []functionKey, starts []int) string {
+	var b strings.Builder
+	for i, k := range keys {
+		if i+1 >= len(starts) {
+			break
+		}
+		slot := starts[i+1] - starts[i]
+		key := truncateStringToWidth(k.Key, slot)
+		b.WriteString(uistyles.FunctionBarKeyStyle.Render(key))
+		labelWidth := slot - lipgloss.Width(key)
+		if labelWidth <= 0 {
+			continue
+		}
+		desc := uistyles.FunctionBarLabelStyle
+		if !k.Enabled && strings.TrimSpace(k.Label) != "" {
+			desc = uistyles.FunctionBarDisabledStyle
+		}
+		label := truncateStringToWidth(k.Label, labelWidth)
+		b.WriteString(desc.Width(labelWidth).Render(label))
+	}
+	return b.String()
 }
 
 func (f *functionBar) signature(state functionBarState) string {
