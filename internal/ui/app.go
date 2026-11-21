@@ -1012,34 +1012,6 @@ func (a *App) syncTerminalNamespaceForNavigator(nav *navui.Navigator) {
 	a.updateTermContextNamespace(ns)
 }
 
-func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string) (models.Folder, error) {
-	return func(name string, basePath []string) (models.Folder, error) {
-		if a.kubeMgr == nil {
-			return nil, fmt.Errorf("no kubeconfig manager available")
-		}
-		target := a.kubeMgr.GetContextByName(name)
-		if target == nil {
-			return nil, fmt.Errorf("context %q not found", name)
-		}
-		if target.Kubeconfig == nil {
-			return nil, fmt.Errorf("context %q has no kubeconfig", name)
-		}
-		key := kccluster.Key{
-			KubeconfigPath:       target.Kubeconfig.Path,
-			ContextName:          target.Name,
-			ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
-			ImpersonateUID:       strings.TrimSpace(a.impersonateUID),
-			ImpersonateGroupsKey: a.impersonationGroupsKey(),
-		}
-		cl, err := a.clPool.Get(a.ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		deps := a.makeDeps(cl, cfg, key)
-		return models.NewContextRootFolder(deps, basePath), nil
-	}
-}
-
 // setupModals sets up the modal dialogs
 
 func (a *App) setupModals() {

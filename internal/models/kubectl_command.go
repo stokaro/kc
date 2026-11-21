@@ -56,10 +56,6 @@ func namespaceArgs(namespace string, namespaced bool) []string {
 	}
 }
 
-func (f *ContextsFolder) KubectlCommand() string {
-	return kubectlCommand(f.Deps, "config", "get-contexts")
-}
-
 // KubectlCommand lists the types the root shows: namespaced and
 // cluster-scoped ones alike.
 func (f *RootFolder) KubectlCommand() string {
