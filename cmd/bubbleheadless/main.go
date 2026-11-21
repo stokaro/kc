@@ -17,6 +17,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/taigrr/bubbleterm/emulator"
@@ -236,8 +237,10 @@ func parseKeyToken(token string) (string, error) {
 		return v, nil
 	}
 	if strings.HasPrefix(token, "0x") {
-		parsed, err := strconv.ParseUint(token[2:], 16, 64)
-		if err != nil {
+		// Parse as 32 bits so the conversion to rune cannot overflow, then
+		// reject values that are not Unicode code points.
+		parsed, err := strconv.ParseUint(token[2:], 16, 32)
+		if err != nil || !utf8.ValidRune(rune(parsed)) {
 			return "", fmt.Errorf("invalid hex token %q", token)
 		}
 		return string(rune(parsed)), nil
