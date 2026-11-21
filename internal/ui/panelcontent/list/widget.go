@@ -386,13 +386,13 @@ func (w *Widget) RefreshFolder(ctx context.Context) {
 		}
 	}
 	if !same {
-		bt := table.NewBigTable(newCols, w.folder, max(1, w.width), max(1, w.height))
+		bt := table.NewBigTable(newCols, newDisplayList(w.folder), max(1, w.width), max(1, w.height))
 		bt.SetMode(ctx, w.tableMode)
 		w.lastColTitles = titles
 		w.decorateBigTable(ctx, &bt)
 		w.bt = &bt
 	} else {
-		w.bt.SetList(ctx, w.folder)
+		w.bt.SetList(ctx, newDisplayList(w.folder))
 		w.bt.Refresh(ctx)
 	}
 	w.syncFromFolder(ctx)
@@ -1092,7 +1092,7 @@ func (w *Widget) ensureBigTable(ctx context.Context) {
 	_ = w.folderLen(ctx)
 	cols := w.folder.Columns()
 	w.lastColTitles = columnsToTitles(cols)
-	bt := table.NewBigTable(cols, w.folder, max(1, w.width), max(1, w.height))
+	bt := table.NewBigTable(cols, newDisplayList(w.folder), max(1, w.width), max(1, w.height))
 	bt.SetMode(ctx, w.tableMode)
 	w.decorateBigTable(ctx, &bt)
 	w.bt = &bt
