@@ -97,6 +97,14 @@ type PodContainerFSFolder struct {
 
 	refreshMu    sync.Mutex
 	refreshTimer *time.Timer
+
+	// Background loading. Listing a directory can take several round trips
+	// (exec, then the debug helper, then ls), far longer than the UI may
+	// block, so populate never touches the network itself.
+	loadMu  sync.Mutex
+	loading bool
+	fresh   bool        // rows holds a load result not yet shown
+	rows    []table.Row // last load result
 }
 
 func NewPodContainerFSFolder(deps Deps, path []string, dir string, session *containerSessionHandle, ephemeral bool) *PodContainerFSFolder {
@@ -119,7 +127,52 @@ func NewPodContainerFSFolder(deps Deps, path []string, dir string, session *cont
 	return folder
 }
 
-func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, error) {
+// fsLoadTimeout bounds one background load: session setup plus listing.
+const fsLoadTimeout = fsSessionTimeout + fsDefaultTimeout
+
+// buildRows serves the last load result and starts a new load in the
+// background. A finished load marks the folder dirty, and the next call
+// returns its rows. Retries scheduled by a load go through the same path.
+func (f *PodContainerFSFolder) buildRows(context.Context) ([]table.Row, error) {
+	f.loadMu.Lock()
+	defer f.loadMu.Unlock()
+	if f.fresh {
+		f.fresh = false
+		return f.rows, nil
+	}
+	if !f.loading {
+		f.loading = true
+		go f.load()
+	}
+	if f.rows != nil {
+		return f.rows, nil
+	}
+	return f.loadingRows(), nil
+}
+
+func (f *PodContainerFSFolder) load() {
+	ctx, cancel := context.WithTimeout(f.Deps.Ctx, fsLoadTimeout)
+	defer cancel()
+	rows, err := f.loadRows(ctx)
+	if err != nil {
+		item := NewSimpleItem("root_error", []string{"error"}, f.Path(), DimStyle())
+		detail := describeFSError("List directory", err)
+		item.RowItem.details = detail
+		rows = []table.Row{item}
+	}
+	f.loadMu.Lock()
+	f.rows, f.fresh, f.loading = rows, true, false
+	f.loadMu.Unlock()
+	f.markDirty()
+}
+
+func (f *PodContainerFSFolder) loadingRows() []table.Row {
+	item := NewSimpleItem(f.helperPendingRowID(), []string{"loading...", "", "", ""}, f.Path(), DimStyle())
+	item.RowItem.details = "Reading " + f.dir
+	return []table.Row{item}
+}
+
+func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error) {
 	if f.session == nil {
 		item := NewSimpleItem("root_unavailable", []string{"unavailable"}, f.Path(), DimStyle())
 		item.RowItem.details = fsUnavailableMessage
