@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestReadErrorText(t *testing.T) {
@@ -19,5 +21,16 @@ func TestReportReadErrorNeverBlocks(t *testing.T) {
 	app.reportReadError(fmt.Errorf("b")) // channel full: dropped, not blocked
 	if len(app.readErrCh) != 1 {
 		t.Fatalf("expected one queued error")
+	}
+}
+
+func TestWaitLoopMessagesPassModals(t *testing.T) {
+	for _, msg := range []tea.Msg{readErrorMsg{}, FolderDirtyMsg{}, DiscoveryRefreshedMsg{}} {
+		if !passesModal(msg) {
+			t.Errorf("%T must reach the app with a modal open, or its wait loop stops", msg)
+		}
+	}
+	if passesModal(tea.KeyPressMsg{Code: 'a'}) {
+		t.Errorf("keys belong to the modal")
 	}
 }
