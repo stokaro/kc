@@ -26,6 +26,15 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		return a, tea.Batch(cmds...)
 	}
+	// Quick search takes every key while it runs; a key it does not use ends
+	// it and is handled as usual.
+	if p := a.activePanelRef(); p != nil && !a.showTerminal && p.QuickSearchActive() {
+		handled := p.QuickSearchKey(press)
+		a.invalidateView("quick search")
+		if handled {
+			return a, nil
+		}
+	}
 	// Prefer modifier-aware matching to cover both KeyMsg and KeyPressMsg forms.
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
 		switch key.Code {
@@ -75,6 +84,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	case "ctrl+u":
 		a.swapPanels()
 		return a, nil
+
+	case "ctrl+s", "alt+s":
+		if a.startQuickSearch() {
+			return a, nil
+		}
 
 	case "tab":
 		if a.interactiveCommandActive() {
@@ -206,6 +220,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// send Alt by default).
 			a.escPressed = false
 			return a, a.copyPanelCommand()
+		case "s":
+			// Esc s is the fallback for Alt+S, as in mc.
+			a.escPressed = false
+			a.startQuickSearch()
+			return a, nil
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {

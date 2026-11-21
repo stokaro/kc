@@ -24,6 +24,7 @@ type Panel struct {
 	// bottom border; scopeHits are the clickable columns of the last render.
 	scope                panelScopeLabel
 	scopeHits            scopeHits
+	search               quickSearch
 	title                string
 	frameWidth           int
 	frameHeight          int
@@ -734,6 +735,9 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := p.applyFrameSize(ctx, ws.Width, ws.Height)
 		return p, cmd
 	}
+	if _, ok := msg.(tea.MouseMsg); ok {
+		p.StopQuickSearch()
+	}
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if cmd, handled := widget.Update(ctx, msg); handled {
 			p.invalidateRenderCache()
@@ -1232,7 +1236,12 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	}
 	// The scope goes on the outermost bottom border only: the one that also
 	// carries the mode label.
-	if strings.TrimSpace(mode) != "" {
+	if strings.TrimSpace(mode) != "" && p.search.active {
+		label := renderQuickSearch(p.search.text, borderStyle.Render(border.Bottom), contentWidth/2)
+		p.scopeHits = scopeHits{}
+		left += label
+		contentWidth -= lipgloss.Width(label)
+	} else if strings.TrimSpace(mode) != "" {
 		scope, hits := renderScopeLabel(p.scope, borderStyle.Render(border.Bottom), leftWidth, contentWidth/2)
 		p.scopeHits = hits
 		left += scope
