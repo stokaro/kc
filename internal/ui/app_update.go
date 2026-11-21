@@ -743,9 +743,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(cmds...)
 			}
 			m := mm.Mouse()
-			if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
-				if cmd, hit := a.handleScopeClick(m); hit {
-					return a, cmd
+			if m.Button == tea.MouseLeft {
+				// Take both halves of a click on a scope label: a press
+				// that reached the panel without its release would leave
+				// the panel tracking a click and swallowing the next one.
+				switch mm.(type) {
+				case tea.MouseClickMsg:
+					if a.scopeLabelAt(m) {
+						return a, nil
+					}
+				case tea.MouseReleaseMsg:
+					if cmd, hit := a.handleScopeClick(m); hit {
+						return a, cmd
+					}
 				}
 			}
 			if m.Y == a.commandLineY() {
