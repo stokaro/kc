@@ -23,10 +23,10 @@ func shellQuote(s string) string {
 }
 
 // kubectlCommand joins kubectl arguments, quoting where needed, and adds
-// --context when the folder's context is not the kubeconfig's current one.
+// --context when the folder's context is not the one plain kubectl uses.
 func kubectlCommand(deps Deps, args ...string) string {
 	parts := []string{"kubectl"}
-	if deps.CtxName != "" && deps.CtxName != deps.KubeConfig.CurrentContext {
+	if deps.CtxName != "" && deps.CtxName != deps.KubectlContext {
 		parts = append(parts, "--context", shellQuote(deps.CtxName))
 	}
 	for _, a := range args {

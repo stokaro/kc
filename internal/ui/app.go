@@ -190,6 +190,7 @@ type App struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	currentCtx        *kubeconfig.Context
+	kubectlCtx        string // context plain kubectl uses; see Deps.KubectlContext
 	impersonateUser   string
 	impersonateUID    string
 	impersonateGroups []string
@@ -841,6 +842,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		Cl:               cl,
 		Ctx:              a.ctx,
 		CtxName:          key.ContextName,
+		KubectlContext:   a.kubectlCtx,
 		KubeConfig:       a.aggregatedKubeConfig(key.ContextName),
 		AppConfig:        cfg,
 		ClusterKey:       key,
@@ -3043,6 +3045,9 @@ func (a *App) initData(ctx context.Context) error {
 		return fmt.Errorf("discover kubeconfigs: %w", err)
 	}
 	log.Info("kubeconfigs discovered", "count", len(a.kubeMgr.GetKubeconfigs()), "contexts", len(a.kubeMgr.GetContexts()))
+	if raw, err := clientcmd.NewDefaultClientConfigLoadingRules().Load(); err == nil {
+		a.kubectlCtx = raw.CurrentContext
+	}
 	// Select current context (prefer env KUBECONFIG first path)
 	a.currentCtx = a.selectCurrentContext()
 	if a.currentCtx == nil {

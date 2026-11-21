@@ -26,9 +26,13 @@ type NamespaceClusterFactory func(ctx context.Context, key kccluster.Key, select
 //
 // Callers must uphold these invariants; downstream code does not nil-check these fields.
 type Deps struct {
-	Cl               *kccluster.Cluster
-	Ctx              context.Context
-	CtxName          string
+	Cl      *kccluster.Cluster
+	Ctx     context.Context
+	CtxName string
+	// KubectlContext is the context a plain kubectl call uses (the current
+	// context of the default kubeconfig). Commands shown to the user add
+	// --context when CtxName differs from it.
+	KubectlContext   string
 	KubeConfig       clientcmdapi.Config
 	AppConfig        *appconfig.Config
 	ClusterKey       kccluster.Key
