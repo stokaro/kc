@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	lgtable "charm.land/lipgloss/v2/table"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // GridMode controls how the table renders horizontally.
@@ -425,16 +426,27 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 	if m.mode == ModeScroll {
 		// Character-based horizontal panning over ASCII cell data.
 		idx, cuts, widths := m.slicePlanForScroll(m.xOff, m.w)
+		base := m.computeScrollBaseWidths()
+		// When the columns are narrower than the viewport, give the spare
+		// room to the first column, like the Name column of a file manager.
+		// Otherwise lipgloss.table spreads it evenly over all columns.
+		if slack := m.w - scrollPlanWidth(widths); slack > 0 && len(idx) > 0 && idx[0] == 0 && cuts[0] == 0 {
+			widths[0] += slack
+			base = append([]int(nil), base...)
+			base[0] += slack
+		}
+		headerAlign := m.styles.Header.GetAlignHorizontal()
 		headers := make([]string, len(idx))
 		for i, col := range idx {
-			h := asciiSlicePad(m.cols[col].Title, cuts[i], widths[i])
+			title := alignASCII(m.cols[col].Title, base[col], headerAlign)
+			h := asciiSlicePad(title, cuts[i], widths[i])
 			if !m.bColumn && i < len(idx)-1 {
 				h = ensureTrailingSpace(h)
 			}
 			headers[i] = h
 		}
 		t = t.Headers(headers...)
-		t = t.Rows(rowsToStringRowsSliced(m.window, idx, cuts, widths, !m.bColumn)...)
+		t = t.Rows(m.padRows(rowsToStringRowsSliced(m.window, idx, cuts, widths, !m.bColumn), len(idx), rowsVisible)...)
 		stylesPerRow := captureStylesSubset(m.window, idx)
 		selected := m.selected
 		t = t.StyleFunc(func(row, col int) lipgloss.Style {
@@ -442,7 +454,7 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 				return m.styles.Header
 			}
 			if row < 0 || row >= len(stylesPerRow) {
-				return lipgloss.NewStyle()
+				return m.styles.Cell
 			}
 			st := m.styles.Cell
 			if col < len(stylesPerRow[row]) && stylesPerRow[row][col] != nil {
@@ -471,7 +483,7 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 			headers[i] = h
 		}
 		t = t.Headers(headers...)
-		t = t.Rows(rowsToStringRowsSubsetSep(m.window, visIdx, !m.bColumn)...)
+		t = t.Rows(m.padRows(rowsToStringRowsSubsetSep(m.window, visIdx, !m.bColumn), len(visIdx), rowsVisible)...)
 		stylesPerRow := captureStylesSubset(m.window, visIdx)
 		selected := m.selected
 		t = t.StyleFunc(func(row, col int) lipgloss.Style {
@@ -479,7 +491,7 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 				return m.styles.Header
 			}
 			if row < 0 || row >= len(stylesPerRow) {
-				return lipgloss.NewStyle()
+				return m.styles.Cell
 			}
 			st := m.styles.Cell
 			if col < len(stylesPerRow[row]) && stylesPerRow[row][col] != nil {
@@ -497,7 +509,7 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 		})
 	}
 
-	m.bodyRow = strings.TrimRight(t.Render(), "\n")
+	m.bodyRow = m.highlightCursorLine(strings.TrimRight(t.Render(), "\n"))
 	// Track focused ID for stability across updates.
 	if row := m.list.Lines(ctx, m.cursor, 1); len(row) == 1 {
 		id, _, _, ok := row[0].Columns()
@@ -505,6 +517,45 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 			m.focusedID = id
 		}
 	}
+}
+
+// padRows appends empty rows up to the body height when column separators are
+// enabled, so the separators run down to the bottom of the viewport like in a
+// file manager panel instead of stopping after the last data row.
+func (m *BigTable) padRows(rows [][]string, cols, rowsVisible int) [][]string {
+	if !m.bColumn || cols == 0 {
+		return rows
+	}
+	for len(rows) < rowsVisible {
+		rows = append(rows, make([]string, cols))
+	}
+	return rows
+}
+
+// highlightCursorLine restyles the whole cursor line, column separators
+// included, with the selector style. lipgloss.table styles borders with a single
+// style for all rows, so without this the separators break the cursor bar.
+func (m *BigTable) highlightCursorLine(body string) string {
+	if !m.focused {
+		return body
+	}
+	row := m.cursor - m.top
+	if row < 0 || row >= len(m.window) {
+		return body
+	}
+	lines := strings.Split(body, "\n")
+	line := row + 1 // the header occupies the first line
+	if line >= len(lines) {
+		return body
+	}
+	st := m.styles.Selector
+	if id, _, _, _ := m.window[row].Columns(); id != "" {
+		if _, ok := m.selected[id]; ok {
+			st = m.styles.Marked.Inherit(st)
+		}
+	}
+	lines[line] = st.Render(ansi.Strip(lines[line]))
+	return strings.Join(lines, "\n")
 }
 
 func (m *BigTable) ensureWindow(ctx context.Context, rowsVisible int) {
@@ -820,6 +871,19 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
 	return idx, cuts, widths
 }
 
+// scrollPlanWidth returns the rendered width of a scroll plan: the visible
+// column widths plus one separator column between each pair.
+func scrollPlanWidth(widths []int) int {
+	total := 0
+	for i, w := range widths {
+		total += w
+		if i > 0 {
+			total++
+		}
+	}
+	return total
+}
+
 // computeScrollBaseWidths returns per-column widths based on current header
 // titles and the visible rows window (ASCII lengths). This adapts to the data
 // being shown in the viewport without scanning the entire dataset.
@@ -926,6 +990,23 @@ func rowsToStringRowsSubsetSep(rows []Row, idx []int, spaceSep bool) [][]string 
 		out[i] = row
 	}
 	return out
+}
+
+// alignASCII pads s to width according to the horizontal position (left,
+// center or right). Strings that are already wide enough are returned as-is.
+func alignASCII(s string, width int, pos lipgloss.Position) string {
+	gap := width - len(s)
+	if gap <= 0 {
+		return s
+	}
+	left := 0
+	switch pos {
+	case lipgloss.Center:
+		left = gap / 2
+	case lipgloss.Right:
+		left = gap
+	}
+	return strings.Repeat(" ", left) + s + strings.Repeat(" ", gap-left)
 }
 
 func ensureTrailingSpace(s string) string {
