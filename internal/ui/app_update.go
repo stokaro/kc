@@ -36,6 +36,8 @@ func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 
 // Update handles messages and updates the application state
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	a.syncActivity()
+	defer a.syncActivity()
 	if a.cfg != nil {
 		a.logMsg(msg)
 	}
@@ -90,9 +92,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commandWatchTickMsg:
 		model, cmd := a.handleCommandWatchTick(msg)
 		return model, cmd
-	case namespaceRetryMsg:
-		a.goToNamespaceWithRetry(msg.namespace, false)
-		return a, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		msg.Width = max(40, msg.Width)
 		msg.Height = max(5, msg.Height)
@@ -682,6 +681,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKeyMsg(msg, cmds)
+	case namespacesLoadedMsg:
+		return a, a.showNamespacePicker(msg)
 	case viewer.CopyRequestMsg:
 		return a, a.copyText(msg.Text, copyWhat(msg))
 	case copyResultMsg:
@@ -736,6 +737,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(cmds...)
 			}
 			m := mm.Mouse()
+			if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
+				if cmd, hit := a.handleScopeClick(m); hit {
+					return a, cmd
+				}
+			}
 			if m.Y == a.commandLineY() {
 				if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft && a.commandLineCopyHit(m.X) {
 					return a, a.copyPanelCommand()

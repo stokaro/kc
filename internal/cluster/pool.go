@@ -28,6 +28,7 @@ type entry struct {
 	cl       *Cluster
 	cancel   context.CancelFunc
 	lastUsed time.Time
+	pinned   bool // held by the app for the whole session; never evicted
 	ready    sync.Once
 	err      error
 }
@@ -62,7 +63,7 @@ func (p *Pool) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for k, e := range p.items {
-		e.cancel()
+		e.stop()
 		delete(p.items, k)
 	}
 }
@@ -129,6 +130,27 @@ func (p *Pool) get(ctx context.Context, k Key, selectors map[schema.GroupVersion
 	return cl, nil
 }
 
+// Pin keeps the entry for k until Unpin, whatever its idle time. The app
+// pins the cluster it holds: evicting it cancels its informers while the UI
+// still reads them, so counts and lists stop updating and new types never sync.
+func (p *Pool) Pin(k Key) {
+	p.mu.Lock()
+	if e, ok := p.items[k]; ok {
+		e.pinned = true
+	}
+	p.mu.Unlock()
+}
+
+// Unpin makes the entry for k evictable again.
+func (p *Pool) Unpin(k Key) {
+	p.mu.Lock()
+	if e, ok := p.items[k]; ok {
+		e.pinned = false
+		e.lastUsed = time.Now()
+	}
+	p.mu.Unlock()
+}
+
 func (p *Pool) Touch(k Key) {
 	p.mu.Lock()
 	if e, ok := p.items[k]; ok {
@@ -155,8 +177,8 @@ func (p *Pool) evictIdle() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for k, e := range p.items {
-		if e.lastUsed.Before(cutoff) {
-			e.cancel()
+		if !e.pinned && e.lastUsed.Before(cutoff) {
+			e.stop()
 			delete(p.items, k)
 		}
 	}
@@ -174,8 +196,16 @@ func (p *Pool) PruneNamespaces(namespace string) {
 			continue
 		}
 		if ns == "" || k.Namespace != ns {
-			e.cancel()
+			e.stop()
 			delete(p.items, k)
 		}
+	}
+}
+
+// stop cancels the entry's informers and its discovery refresh loop.
+func (e *entry) stop() {
+	e.cancel()
+	if e.cl != nil {
+		e.cl.Stop()
 	}
 }

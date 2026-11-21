@@ -6,6 +6,7 @@ import (
 	"time"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
+	models "github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -98,11 +99,17 @@ func TestGoToNamespaceExistingNavigatesPanels(t *testing.T) {
 
 	app.goToNamespace(nsName)
 
-	wantPath := "/namespaces/" + nsName
-	if got := app.leftPanel.GetCurrentPath(); got != wantPath {
-		t.Fatalf("left panel path = %q, want %q", got, wantPath)
+	// Panels stay at their root; the namespace is the panels' scope.
+	for idx, panel := range []*Panel{app.leftPanel, app.rightPanel} {
+		if got := panel.GetCurrentPath(); got != "/" {
+			t.Fatalf("panel %d path = %q, want /", idx, got)
+		}
+		if app.panelScope[idx] != nsName {
+			t.Fatalf("panel %d scope = %q, want %q", idx, app.panelScope[idx], nsName)
+		}
 	}
-	if got := app.rightPanel.GetCurrentPath(); got != wantPath {
-		t.Fatalf("right panel path = %q, want %q", got, wantPath)
+	root, ok := app.leftNav.Current().(*models.RootFolder)
+	if !ok || root.NamespaceScope() != nsName {
+		t.Fatalf("left root = %T, want a RootFolder scoped to %q", app.leftNav.Current(), nsName)
 	}
 }

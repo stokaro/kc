@@ -87,11 +87,15 @@ func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, b
 }
 
 func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, order string) []table.Row {
+	namespaced := o.namespace == "" && o.resourceNamespaced()
 	vis := visibleColumns(rl.Columns, columnsMode)
 	cols := make([]table.Column, len(vis))
 	for i := range vis {
 		c := rl.Columns[vis[i]]
 		cols[i] = table.Column{Title: c.Name}
+	}
+	if namespaced {
+		cols = withNamespaceColumn(cols, table.Column{Title: "Namespace"})
 	}
 	o.SetColumns(cols)
 	ageCols := ageColumnIndices(cols)
@@ -102,7 +106,6 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
 	ctor, hasChild := o.childConstructor()
-	namespaced := o.namespace == "" && o.resourceNamespaced()
 
 	for _, ii := range idxs {
 		rr := &rl.Items[ii]
@@ -112,6 +115,9 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		name := rowName(rr)
 		ns, id := o.objectNamespaceAndID(namespaced, rr.ObjectMeta.Namespace, name)
 		cells := buildCells(rr.Cells, vis, hasChild)
+		if namespaced {
+			cells = withNamespaceColumn(cells, ns)
+		}
 		basePath := append(append([]string{}, o.Path()...), name)
 		info := RowStyleInfo{
 			GVR:        o.gvr,
@@ -148,6 +154,9 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order string) []table.Row {
 	o.installAgeHooks(nil)
 	namespaced := o.namespace == "" && o.resourceNamespaced()
+	if namespaced {
+		o.SetColumns([]table.Column{{Title: " Name"}, {Title: "Namespace"}})
+	}
 	ids := make([]string, 0, len(list.Items))
 	byID := make(map[string]*unstructured.Unstructured, len(list.Items))
 	for i := range list.Items {
@@ -189,7 +198,11 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 			BaseStyle:    WhiteStyle(),
 		}
 		style := applyRowStylers(info)
-		obj := NewObjectRow(id, []string{title}, basePath, o.gvr, ns, name, style)
+		cells := []string{title}
+		if namespaced {
+			cells = append(cells, ns)
+		}
+		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
@@ -335,6 +348,18 @@ func normalizeObjectOrder(order string) string {
 // NormalizeObjectOrder exposes the canonical form of object ordering for other packages.
 func NormalizeObjectOrder(order string) string {
 	return normalizeObjectOrder(order)
+}
+
+// withNamespaceColumn inserts v after the first (Name) column. Lists across
+// all namespaces need it: the server table has no namespace column, and
+// kubectl adds one on the client side too.
+func withNamespaceColumn[T any](row []T, v T) []T {
+	if len(row) == 0 {
+		return []T{v}
+	}
+	out := make([]T, 0, len(row)+1)
+	out = append(out, row[0], v)
+	return append(out, row[1:]...)
 }
 
 func buildCells(cells []interface{}, vis []int, hasChild bool) []string {

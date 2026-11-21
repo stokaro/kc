@@ -8,19 +8,31 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// RootFolder represents the "/" entry point listing contexts, namespaces, and cluster resources.
+// AllNamespaces is the namespace scope that covers every namespace, like
+// kubectl -A.
+const AllNamespaces = ""
+
+// RootFolder is a panel's "/": the resource types visible in its namespace
+// scope, then namespaces and the cluster-scoped types. The scope is a
+// property of the panel (shown in its frame), not a level of the tree;
+// /namespaces/<name> stays available for explicit navigation.
 type RootFolder struct {
 	*ClusterResourcesFolder
 	enterContext func(name string, basePath []string) (Folder, error)
+	namespace    string
 }
 
-// NewRootFolder scaffolds a root folder with default columns.
-func NewRootFolder(deps Deps, enterContext func(name string, basePath []string) (Folder, error)) *RootFolder {
+// NewRootFolder scaffolds a root folder scoped to namespace; AllNamespaces
+// lists namespaced types across all namespaces.
+func NewRootFolder(deps Deps, enterContext func(name string, basePath []string) (Folder, error), namespace string) *RootFolder {
 	cluster := NewClusterResourcesFolder(deps, nil)
-	root := &RootFolder{ClusterResourcesFolder: cluster, enterContext: enterContext}
+	root := &RootFolder{ClusterResourcesFolder: cluster, enterContext: enterContext, namespace: namespace}
 	cluster.BaseFolder.SetPopulate(root.populate)
 	return root
 }
+
+// NamespaceScope returns the namespace the root lists, or AllNamespaces.
+func (f *RootFolder) NamespaceScope() string { return f.namespace }
 
 func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	cfg := f.Deps.AppConfig
@@ -58,7 +70,11 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 		},
 	}
 
-	groupItems := []resourceGroupSpec{namespacesSpec}
+	groupItems, err := namespacedResourceSpecs(f.ResourcesFolder, f.namespace, f.Path(), true)
+	if err != nil {
+		return nil, err
+	}
+	groupItems = append(groupItems, namespacesSpec)
 	clusterItems, err := f.ClusterResourcesFolder.resourceGroupSpecs()
 	if err != nil {
 		return nil, err

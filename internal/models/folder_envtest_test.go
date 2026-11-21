@@ -65,12 +65,29 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 		AppConfig:  panelCfg,
 	}
 
-	root := NewRootFolder(deps, nil)
+	root := NewRootFolder(deps, nil, "default")
 	waitFolder(t, root)
 	assertRows(t, "root", root, map[string][]string{
 		"namespaces": {"/namespaces", "v1"},
 		"/v1/nodes":  {"/nodes", "v1"},
 	})
+
+	// All namespaces: configmaps across namespaces, with a Namespace column.
+	allPath := []string{"all-namespaces"}
+	all := NewNamespacedResourcesFolder(deps, "", allPath)
+	waitFolder(t, all)
+	assertRows(t, "all-namespaces-groups", all, map[string][]string{
+		"//v1/configmaps": {"/configmaps", "v1"},
+	})
+	gvrCMAll := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+	allCM := NewNamespacedObjectsFolder(deps, gvrCMAll, "", append(allPath, "configmaps"), nil)
+	waitFolder(t, allCM)
+	assertRows(t, "all-namespaces-configmaps", allCM, map[string][]string{
+		"testns/cm1": {"/cm1", "testns"},
+	})
+	if cols := allCM.Columns(); len(cols) < 2 || cols[1].Title != "Namespace" {
+		t.Fatalf("all-namespaces columns = %+v, want Namespace second", cols)
+	}
 
 	groupsPath := []string{"namespaces", "testns"}
 	groups := NewNamespacedResourcesFolder(deps, "testns", groupsPath)

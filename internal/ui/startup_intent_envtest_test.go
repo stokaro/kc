@@ -118,7 +118,7 @@ func TestStartupIntentGetMultiSelectEnvtest(t *testing.T) {
 		cmd()
 	}
 
-	wantPath := fmt.Sprintf("/namespaces/%s/pods", ns)
+	wantPath := "/pods"
 	if got := app.leftPanel.GetCurrentPath(); got != wantPath {
 		t.Fatalf("left panel path = %q, want %q", got, wantPath)
 	}
@@ -158,7 +158,7 @@ func TestStartupIntentGetOutputYAMLEnvtest(t *testing.T) {
 		cmd()
 	}
 
-	wantPath := fmt.Sprintf("/namespaces/%s/pods", ns)
+	wantPath := "/pods"
 	if got := app.leftPanel.GetCurrentPath(); got != wantPath {
 		t.Fatalf("left panel path = %q, want %q", got, wantPath)
 	}
@@ -172,7 +172,7 @@ func TestStartupIntentGetOutputYAMLEnvtest(t *testing.T) {
 	defer cancel()
 	if item, ok := app.rightPanel.SelectedNavItem(ctx); !ok || item == nil {
 		t.Fatalf("expected right panel selection")
-	} else if path := "/" + strings.Join(item.Path(), "/"); path != fmt.Sprintf("/namespaces/%s/pods/%s", ns, podName) {
+	} else if path := "/" + strings.Join(item.Path(), "/"); path != "/pods/"+podName {
 		t.Fatalf("right panel selection path = %q, want namespace pod path", path)
 	}
 }
@@ -203,7 +203,7 @@ func TestStartupIntentLogsEnvtest(t *testing.T) {
 		cmd()
 	}
 
-	wantPath := fmt.Sprintf("/namespaces/%s/pods/%s/containers/%s", ns, podName, container)
+	wantPath := fmt.Sprintf("/pods/%s/containers/%s", podName, container)
 	if got := app.leftPanel.GetCurrentPath(); got != wantPath {
 		t.Fatalf("left panel path = %q, want %q", got, wantPath)
 	}

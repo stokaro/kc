@@ -104,6 +104,7 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 
 	if len(specs) == 0 {
 		changed := len(f.items) > 0 || len(f.lastSpecs) > 0
+		f.Close()
 		f.items = make(map[string]*ResourceGroupItem)
 		f.lastSpecs = make(map[string]resourceGroupSignature)
 		if changed {
@@ -134,7 +135,8 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		empty := item.EmptyCached()
 		if item.Forbidden() {
 			visible = false
-		} else if showNonEmpty && empty {
+		} else if showNonEmpty && !spec.uncounted && empty {
+			// Uncounted types (all namespaces) have no emptiness to filter on.
 			visible = false
 		}
 		sig := makeResourceGroupSignature(spec, visible, idx)
@@ -158,6 +160,7 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 	}
 
 	if len(rows) == 0 {
+		f.closeDropped(seen)
 		f.items = seen
 		f.lastSpecs = sigs
 		if changed {
@@ -176,6 +179,7 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		}
 	}
 
+	f.closeDropped(seen)
 	f.items = seen
 	f.lastSpecs = sigs
 	if changed {
@@ -183,6 +187,23 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		log.Info("resources updated", "count", len(rows))
 	}
 	return rows
+}
+
+// closeDropped closes items that are no longer part of the folder.
+func (f *ResourcesFolder) closeDropped(keep map[string]*ResourceGroupItem) {
+	for id, item := range f.items {
+		if keep[id] != item {
+			item.Close()
+		}
+	}
+}
+
+// Close stops background work of all items; call it when the folder leaves
+// navigation for good.
+func (f *ResourcesFolder) Close() {
+	for _, item := range f.items {
+		item.Close()
+	}
 }
 
 func groupVersionString(group, version string) string {
@@ -315,6 +336,9 @@ type resourceGroupSpec struct {
 	gvk       schema.GroupVersionKind
 	namespace string
 	watchable bool
+	// uncounted types are not watched for a count and are never hidden as
+	// empty: across all namespaces a count would watch the whole cluster.
+	uncounted bool
 	enter     func() (Folder, error)
 	verbs     []string
 }

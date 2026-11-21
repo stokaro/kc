@@ -42,6 +42,8 @@ type Deps struct {
 	// ReportError shows a read failure to the user (a red status message).
 	// It may be nil in tests and is safe to call from any goroutine.
 	ReportError func(error)
+	// Activity pauses background count refreshes; nil never pauses.
+	Activity *Activity
 }
 
 // reportReadError reports that reading what failed.

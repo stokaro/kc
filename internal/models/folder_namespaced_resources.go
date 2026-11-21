@@ -42,6 +42,13 @@ func (f *NamespacedResourcesFolder) populate(ctx context.Context) ([]table.Row, 
 }
 
 func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, error) {
+	return namespacedResourceSpecs(f.ResourcesFolder, f.namespace, f.Path(), true)
+}
+
+// namespacedResourceSpecs lists namespaced resource types under parent. An
+// empty namespace means all namespaces; then the types are not counted,
+// because counting would watch every object of every type in the cluster.
+func namespacedResourceSpecs(f *ResourcesFolder, namespace string, parent []string, count bool) ([]resourceGroupSpec, error) {
 	_, order, favorites := f.viewSettings()
 	favSet := favoritesMap(favorites)
 	infos, err := f.Deps.Cl.GetResourceInfos()
@@ -70,14 +77,14 @@ func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, e
 	highlightFavorites := order == appconfig.OrderFavorites && len(favSet) > 0
 	for _, entry := range entries {
 		verbsCopy := append([]string(nil), entry.info.Verbs...)
-		id := fmt.Sprintf("%s/%s/%s/%s", f.namespace, entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
+		id := fmt.Sprintf("%s/%s/%s/%s", namespace, entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
 		gvLabel := groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version)
 		cells := []string{"/" + entry.info.Resource, gvLabel, ""}
-		basePath := append(append([]string{}, f.Path()...), entry.info.Resource)
+		basePath := append(append([]string{}, parent...), entry.info.Resource)
 		cellsCopy := append([]string(nil), cells...)
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
-		ns := f.namespace
+		ns := namespace
 		detail := fmt.Sprintf("%s (%s)", entry.info.Resource, gvLabel)
 		style := nameStyle
 		if highlightFavorites && favSet[strings.ToLower(entry.info.Resource)] {
@@ -92,7 +99,8 @@ func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, e
 			gvr:       gvr,
 			gvk:       entry.info.GVK,
 			namespace: ns,
-			watchable: true,
+			watchable: count && ns != AllNamespaces,
+			uncounted: !count || ns == AllNamespaces,
 			enter: func() (Folder, error) {
 				return NewNamespacedObjectsFolder(f.Deps, gvr, ns, pathCopy, verbsCopy), nil
 			},

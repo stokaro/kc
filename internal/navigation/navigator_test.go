@@ -71,3 +71,29 @@ func equalPath(a, b []string) bool {
 	}
 	return true
 }
+
+// closingFolder counts Close calls.
+type closingFolder struct {
+	models.Folder
+	closed int
+}
+
+func (c *closingFolder) Close() { c.closed++ }
+
+func TestNavigatorClosesDiscardedFolders(t *testing.T) {
+	root := &closingFolder{Folder: mkFolder(nil, "a")}
+	child := &closingFolder{Folder: mkFolder([]string{"a"}, "b")}
+	grand := &closingFolder{Folder: mkFolder([]string{"a", "b"}, "c")}
+
+	nav := NewNavigator(root)
+	nav.Push(child)
+	nav.Push(grand)
+	nav.Back()
+	if grand.closed != 1 || child.closed != 0 || root.closed != 0 {
+		t.Fatalf("Back must close only the popped folder: root=%d child=%d grand=%d", root.closed, child.closed, grand.closed)
+	}
+	nav.Close()
+	if child.closed != 1 || root.closed != 1 || grand.closed != 1 {
+		t.Fatalf("Close must close the rest once: root=%d child=%d grand=%d", root.closed, child.closed, grand.closed)
+	}
+}
