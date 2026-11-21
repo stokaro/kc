@@ -648,10 +648,8 @@ func (a *App) inlineTerminalHeight() int {
 }
 
 func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int, headerOffset int) {
+	// A toast replaces the function key bar; it takes no row of its own.
 	reserved := 1 + a.inlineTerminalHeight() + a.commandLineHeight()
-	if a.toastActive {
-		reserved++
-	}
 	panelHeight = a.height - reserved
 	if panelHeight < 0 {
 		panelHeight = 0
