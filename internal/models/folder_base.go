@@ -13,6 +13,7 @@ import (
 type BaseFolder struct {
 	Deps Deps
 
+	colMu   sync.RWMutex // columns are set by background list loads
 	columns []table.Column
 	path    []string
 
@@ -37,7 +38,9 @@ func NewBaseFolder(deps Deps, cols []table.Column, path []string) *BaseFolder {
 
 // SetColumns replaces the column metadata.
 func (b *BaseFolder) SetColumns(cols []table.Column) {
+	b.colMu.Lock()
 	b.columns = append([]table.Column(nil), cols...)
+	b.colMu.Unlock()
 }
 
 // Refresh marks the folder dirty so the next access repaints rows.
@@ -51,7 +54,11 @@ func (b *BaseFolder) IsDirty() bool {
 }
 
 // Columns returns the configured columns.
-func (b *BaseFolder) Columns() []table.Column { return append([]table.Column(nil), b.columns...) }
+func (b *BaseFolder) Columns() []table.Column {
+	b.colMu.RLock()
+	defer b.colMu.RUnlock()
+	return append([]table.Column(nil), b.columns...)
+}
 
 // Path returns a copy of the breadcrumb path segments.
 func (b *BaseFolder) Path() []string { return append([]string(nil), b.path...) }
