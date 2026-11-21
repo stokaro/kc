@@ -1,0 +1,52 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommitsDisabled"
+  ],
+  "labels": ["dependencies"],
+  "schedule": ["before 6am on monday"],
+  "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
+  "packageRules": [
+    {
+      "description": "Kubernetes libraries and controller-runtime must move in lockstep.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": [
+        "k8s.io/**",
+        "sigs.k8s.io/controller-runtime"
+      ],
+      "groupName": "kubernetes"
+    },
+    {
+      "description": "Charm libraries (Bubble Tea v2 stack) are released together.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": [
+        "charm.land/**",
+        "github.com/charmbracelet/**"
+      ],
+      "groupName": "charm"
+    },
+    {
+      "description": "golang.org/x modules publish frequent pseudo-versions; batch them monthly.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["golang.org/x/**"],
+      "groupName": "golang.org/x",
+      "schedule": ["before 6am on the first day of the month"]
+    },
+    {
+      "description": "bubbleterm is replaced by a fork pinned to its kc branch; update it by hand.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": [
+        "github.com/taigrr/bubbleterm",
+        "github.com/sttts/bubbleterm"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Keep GitHub Actions updates in one PR.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    }
+  ]
+}
