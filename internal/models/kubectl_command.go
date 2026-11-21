@@ -127,7 +127,8 @@ func (f *PodContainerFSFolder) KubectlCommand() string {
 		return ""
 	}
 	spec := f.session.spec
-	return kubectlCommand(f.Deps, "exec", spec.Pod, "-n", spec.Namespace, "-c", spec.Container, "--", "ls", "-la", f.dir)
+	container, dir := f.session.execTarget(f.dir)
+	return kubectlCommand(f.Deps, "exec", spec.Pod, "-n", spec.Namespace, "-c", container, "--", "ls", "-la", dir)
 }
 
 func (f *ConfigMapKeysFolder) KubectlCommand() string {
