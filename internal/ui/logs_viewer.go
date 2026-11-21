@@ -31,7 +31,11 @@ type LogsViewer struct {
 	err        error
 	onOptions  func() tea.Cmd
 	onClose    func() tea.Cmd
+	bar        viewerCommandBar
 }
+
+// SetCommand sets the kubectl command shown under the log.
+func (v *LogsViewer) SetCommand(cmd string) { v.bar.command = cmd }
 
 func NewLogsViewer(title string, reader io.ReadCloser, cancel context.CancelFunc, theme string) *LogsViewer {
 	w := viewer.New(theme)
@@ -65,6 +69,9 @@ func (v *LogsViewer) SetDimensions(w, h int) {
 }
 
 func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, handled := v.bar.handle(msg, v.inner, v.width, v.height); handled {
+		return v, cmd
+	}
 	switch m := msg.(type) {
 	case logStreamMsg:
 		if len(m.lines) > 0 {
@@ -117,7 +124,7 @@ func (v *LogsViewer) View() tea.View {
 	if v.height <= 0 || v.width <= 0 {
 		return tea.NewView("")
 	}
-	return tea.NewView(v.inner.View(viewer.Frame{Width: v.width, Height: v.height, Focused: true}))
+	return tea.NewView(renderViewerWithBar(v.inner, &v.bar, v.width, v.height))
 }
 
 func (v *LogsViewer) FooterHints() []FooterHint {
@@ -129,14 +136,14 @@ func (v *LogsViewer) FooterHints() []FooterHint {
 			{Key: "Esc", Label: "Cancel", Enabled: true},
 		}
 	}
-	return []FooterHint{
+	return append([]FooterHint{
 		{Key: "F2", Label: "Options", Enabled: v.onOptions != nil},
 		{Key: "F3", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "F7", Label: "Search", Enabled: true},
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "n", Label: "Next", Enabled: v.inner.HasSearchMatches()},
 		{Key: "End", Label: "Follow", Enabled: !v.autoFollow},
-	}
+	}, viewerCopyHints(v.bar.command != "")...)
 }
 
 func (v *LogsViewer) FooterStatus(width int) string {
@@ -157,6 +164,10 @@ func (v *LogsViewer) HandleModalEscape(key tea.KeyMsg) (bool, tea.Cmd) {
 	}
 	if cmd, handled := v.inner.HandleEscape(); handled {
 		return true, cmd
+	}
+	if v.inner.HasSelection() {
+		v.inner.ClearSelection()
+		return true, nil
 	}
 	return false, nil
 }

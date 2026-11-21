@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -451,6 +452,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case showToastMsg:
 		a.toastActive = true
 		a.toastText = msg.text
+		a.toastInfo = msg.info
 		a.toastUntil = time.Now().Add(msg.ttl)
 		a.invalidateView("toast show")
 		a.invalidateFunctionBar("toast show")
@@ -680,6 +682,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKeyMsg(msg, cmds)
+	case viewer.CopyRequestMsg:
+		return a, a.copyText(msg.Text, copyWhat(msg))
+	case copyResultMsg:
+		if msg.error {
+			return a, a.ShowToast(msg.text, 3*time.Second)
+		}
+		return a, a.ShowInfo(msg.text, 2*time.Second)
 	case tea.PasteMsg:
 		// Paste goes where typing goes: the focused command widget, or the shell.
 		if a.interactiveCommandActive() {
@@ -902,6 +911,9 @@ func (a *App) handleCommandWatchTick(msg commandWatchTickMsg) (tea.Model, tea.Cm
 func passesModal(msg tea.Msg) bool {
 	switch msg.(type) {
 	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg:
+		return true
+	case viewer.CopyRequestMsg:
+		// The app owns the clipboard; the viewer only asks.
 		return true
 	case readErrorMsg, FolderDirtyMsg, DiscoveryRefreshedMsg:
 		return true

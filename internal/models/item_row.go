@@ -12,7 +12,15 @@ type RowItem struct {
 	path    []string
 	// cellsHook customizes cell values before returning them to the table.
 	cellsHook func([]string) []string
+	// viewCommand is the kubectl command that prints what the viewer shows.
+	viewCommand string
 }
+
+// ViewCommand returns the kubectl command matching the item's viewer content.
+func (r *RowItem) ViewCommand() string { return r.viewCommand }
+
+// SetViewCommand sets the kubectl command shown in the viewer.
+func (r *RowItem) SetViewCommand(cmd string) { r.viewCommand = cmd }
 
 func NewRowItem(id string, cells []string, path []string, style *lipgloss.Style) *RowItem {
 	if style == nil {

@@ -52,3 +52,18 @@ func TestShellQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestViewCommands(t *testing.T) {
+	deps := Deps{CtxName: "dev", KubectlContext: "dev"}
+	if got := keyViewCommand(deps, "secret", "web", "tls", "tls.crt", true); got != `kubectl get secret tls -n web -o 'jsonpath={.data.tls\.crt}' | base64 -d` {
+		t.Fatalf("secret key: %s", got)
+	}
+	spec := LogsSpec{Namespace: "web", Pod: "p", Container: "app", Follow: true, TailLines: 200}
+	if got := logsCommand(deps, spec); got != "kubectl logs p -n web -c app --tail=200 -f" {
+		t.Fatalf("logs: %s", got)
+	}
+	o := &ObjectsFolder{BaseFolder: &BaseFolder{Deps: deps}, gvr: podGVR}
+	if got := o.objectViewCommand("web", "p"); got != "kubectl get pods p -n web -o yaml" {
+		t.Fatalf("object: %s", got)
+	}
+}

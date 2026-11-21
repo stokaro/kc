@@ -124,6 +124,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
+		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
 		if len(ageCols) > 0 {
 			if hook := newAgeCellHook(ageCols, rr.ObjectMeta.CreationTimestamp.Time); hook != nil {
@@ -191,6 +192,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		obj := NewObjectRow(id, []string{title}, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
+		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
 		if hasChild && ctor != nil {
 			nm := name
@@ -936,4 +938,13 @@ func listErrorReporter(deps Deps, gvr schema.GroupVersionResource, namespace str
 		what += " in " + namespace
 	}
 	return func(err error) { deps.reportReadError(what, err) }
+}
+
+// objectViewCommand prints one object as YAML, like the viewer.
+func (o *ObjectsFolder) objectViewCommand(ns, name string) string {
+	args := []string{"get", kubectlResource(o.gvr), name}
+	if ns != "" {
+		args = append(args, "-n", ns)
+	}
+	return kubectlCommand(o.Deps, append(args, "-o", "yaml")...)
 }

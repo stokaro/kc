@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -137,4 +138,33 @@ func (f *ConfigMapKeysFolder) KubectlCommand() string {
 
 func (f *SecretKeysFolder) KubectlCommand() string {
 	return kubectlCommand(f.Deps, "get", "secret", f.Name, "-n", f.Namespace, "-o", "jsonpath={.data}")
+}
+
+// jsonpathKey escapes a map key for a kubectl jsonpath expression.
+func jsonpathKey(key string) string {
+	return strings.ReplaceAll(key, ".", `\.`)
+}
+
+// keyViewCommand prints one ConfigMap or Secret key; secrets are decoded.
+func keyViewCommand(deps Deps, kind, namespace, name, key string, secret bool) string {
+	cmd := kubectlCommand(deps, "get", kind, name, "-n", namespace, "-o", "jsonpath={.data."+jsonpathKey(key)+"}")
+	if secret {
+		cmd += " | base64 -d"
+	}
+	return cmd
+}
+
+// logsCommand matches the logs viewer: recent lines, then follow.
+func logsCommand(deps Deps, spec LogsSpec) string {
+	args := []string{"logs", spec.Pod, "-n", spec.Namespace}
+	if spec.Container != "" {
+		args = append(args, "-c", spec.Container)
+	}
+	if spec.TailLines > 0 {
+		args = append(args, fmt.Sprintf("--tail=%d", spec.TailLines))
+	}
+	if spec.Follow {
+		args = append(args, "-f")
+	}
+	return kubectlCommand(deps, args...)
 }
