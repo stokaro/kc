@@ -11,6 +11,9 @@ import (
 var (
 	// ErrShellMissing indicates the container image lacks a usable /bin/sh.
 	ErrShellMissing = errors.New("pod filesystem: shell missing")
+	// ErrHelperNeeded means the container can only be browsed through a
+	// debug helper, which needs the user's consent (SessionSpec.AllowHelper).
+	ErrHelperNeeded = errors.New("pod filesystem: debug helper needed")
 )
 
 // MissingCommandError reports that a required binary is absent in the container image.
@@ -51,6 +54,12 @@ type SessionSpec struct {
 	Namespace string
 	Pod       string
 	Container string
+	// AllowHelper permits adding a debug helper when the container has no
+	// shell. Adding one changes the pod for good, so the user must agree.
+	AllowHelper bool
+	// Heartbeat is a file each command touches; the helper exits when it
+	// has not been touched for helperIdleTimeout.
+	Heartbeat string
 }
 
 // ExecSession provides filesystem operations backed by a long-lived exec stream.

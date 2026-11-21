@@ -288,6 +288,9 @@ func (s *nativeSession) writeScript(script string) error {
 }
 
 func (s *nativeSession) writeCommand(cmd string) error {
+	if s.spec.Heartbeat != "" {
+		cmd = "touch " + quoteArg(s.spec.Heartbeat) + " 2>/dev/null; " + cmd
+	}
 	_, err := io.WriteString(s.stdin, cmd+"\n")
 	return err
 }

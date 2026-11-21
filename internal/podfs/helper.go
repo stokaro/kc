@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +36,7 @@ func newHelperManager(client kubernetes.Interface) *helperManager {
 	cfg := helperConfig{
 		enabled:          true,
 		image:            getenvDefault("KC_PODFS_HELPER_IMAGE", "docker.io/library/busybox:1.36.1"),
-		command:          []string{"/bin/sh", "-c", "trap : TERM INT; while true; do sleep 3600; done # " + helperSleepMarker},
+		command:          []string{"/bin/sh", "-c", helperScript},
 		namePrefix:       "kc-fs-helper",
 		ptracePrefix:     "kc-fs-ptrace",
 		readinessTimeout: 60 * time.Second,
@@ -66,12 +67,14 @@ func (m *helperManager) ensureHelper(ctx context.Context, spec SessionSpec) (Ses
 		if ptrace {
 			prefix = m.cfg.ptracePrefix
 		}
-		helperName := sanitizeHelperName(fmt.Sprintf("%s-%s-%d", prefix, spec.Container, attempt))
 		pod, err := pods.Get(ctx, spec.Pod, metav1.GetOptions{})
 		if err != nil {
 			return spec, err
 		}
-		if !helperExists(pod, helperName) {
+		// Reuse a helper that is still running; one that exited after
+		// going idle cannot restart, so the next one gets a new name.
+		helperName, running := pickHelper(pod, prefix, spec.Container)
+		if !running {
 			if err := m.createHelper(ctx, pods, pod, spec.Container, helperName, ptrace); err != nil {
 				lastErr = err
 				if ptrace && (apierrors.IsForbidden(err) || apierrors.IsInvalid(err)) {
@@ -131,13 +134,45 @@ func (m *helperManager) waitForHelper(ctx context.Context, namespace, podName, h
 	})
 }
 
-func helperExists(pod *corev1.Pod, name string) bool {
+// helperIdleTimeout is how long a helper waits for kc's next command
+// before it exits. Each command touches helperHeartbeat.
+const (
+	helperIdleTimeout = 60
+	helperHeartbeat   = "/tmp/.kc-fs-alive"
+)
+
+// helperScript keeps the helper alive while kc uses it and exits once it
+// has been idle for helperIdleTimeout seconds, so its extra rights do not
+// outlive the browsing. The marker comment lets a session recognize the
+// helper's own command line.
+var helperScript = fmt.Sprintf(`touch %[1]s; while [ $(( $(date +%%s) - $(stat -c %%Y %[1]s 2>/dev/null || echo 0) )) -lt %[2]d ]; do sleep 5; done # %[3]s`,
+	helperHeartbeat, helperIdleTimeout, helperSleepMarker)
+
+// pickHelper returns the helper to use for container: a running (or
+// starting) one with prefix, or the next unused name.
+func pickHelper(pod *corev1.Pod, prefix, container string) (string, bool) {
+	// The sanitizer trims a trailing hyphen, so add it after.
+	base := sanitizeHelperName(fmt.Sprintf("%s-%s", prefix, container)) + "-"
+	state := map[string]corev1.ContainerState{}
+	for _, st := range pod.Status.EphemeralContainerStatuses {
+		state[st.Name] = st.State
+	}
+	next := 0
 	for _, ec := range pod.Spec.EphemeralContainers {
-		if ec.Name == name {
-			return true
+		suffix, ok := strings.CutPrefix(ec.Name, base)
+		if !ok {
+			continue
+		}
+		n, err := strconv.Atoi(suffix)
+		if err != nil {
+			continue
+		}
+		next = max(next, n+1)
+		if st, seen := state[ec.Name]; !seen || st.Terminated == nil {
+			return ec.Name, true
 		}
 	}
-	return false
+	return base + strconv.Itoa(next), false
 }
 
 // helperSleepMarker tags the helper's own command line, so a session can

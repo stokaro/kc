@@ -14,6 +14,8 @@ const (
 	ColorOrange           = "208"
 	ColorModalBg          = ColorGrey // mc dialogs: black on light grey
 	ColorModalTitle       = ColorDarkerBlue
+	ColorDangerBg         = "1"  // red dialogs for changes to the cluster
+	ColorDangerFg         = "15" // bright white
 	ColorModalFg          = ColorBlack
 	ColorModalSelBg       = ColorCyan
 	ColorModalButtonBg    = ColorDarkGrey

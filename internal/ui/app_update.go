@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	models "github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -685,6 +686,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKeyMsg(msg, cmds)
+	case models.ConfirmRequest:
+		return a, a.showConfirm(msg.Action)
+	case confirmResultMsg:
+		return a, a.handleConfirmResult(msg)
 	case startupSelectMsg:
 		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
 	case contextSwitchedMsg:
@@ -944,6 +949,8 @@ func passesModal(msg tea.Msg) bool {
 	case showToastMsg, toastTickMsg:
 		// Toasts must keep their hide timer running behind a dialog, or
 		// one shown before the dialog opened never goes away.
+	case confirmResultMsg:
+		// The confirmation dialog answers itself.
 		return true
 	}
 	return false

@@ -53,10 +53,14 @@ func (f *nativeFactory) NewSession(ctx context.Context, spec SessionSpec) (ExecS
 	if !shouldFallback(err) || f.helper == nil || !f.helper.available() {
 		return nil, err
 	}
+	if !spec.AllowHelper {
+		return nil, fmt.Errorf("%w: %w", ErrHelperNeeded, err)
+	}
 	helperSpec, helperErr := f.helper.ensureHelper(ctx, spec)
 	if helperErr != nil {
 		return nil, helperErr
 	}
+	helperSpec.Heartbeat = helperHeartbeat
 	helperSession, err := newNativeSession(ctx, f.cfg, f.client, helperSpec)
 	if err != nil {
 		return nil, err
