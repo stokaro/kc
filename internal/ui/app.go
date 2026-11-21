@@ -2165,7 +2165,7 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 
 	resourceRef := kubectlResourceRef(obj.GVR(), obj.Name())
 
-	commandStr := strings.Join(append([]string{"kubectl", "edit", resourceRef, "--context", contextName, "--kubeconfig", kubeconfigPath}), " ")
+	commandStr := strings.Join([]string{"kubectl", "edit", resourceRef, "--context", contextName, "--kubeconfig", kubeconfigPath}, " ")
 	args := []string{"edit", resourceRef, "--context", contextName, "--kubeconfig", kubeconfigPath}
 	if namespace != "" {
 		args = append(args, "--namespace", namespace)
