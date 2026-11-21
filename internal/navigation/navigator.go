@@ -53,8 +53,28 @@ func (n *Navigator) Back() models.Folder {
 	if len(n.stack) == 1 {
 		return n.stack[0].f
 	}
+	closeFolder(n.stack[len(n.stack)-1].f)
 	n.stack = n.stack[:len(n.stack)-1]
 	return n.stack[len(n.stack)-1].f
+}
+
+// Close closes every folder on the stack. Call it when the navigator is
+// replaced; the folders must not be used afterwards.
+func (n *Navigator) Close() {
+	if n == nil {
+		return
+	}
+	for _, fr := range n.stack {
+		closeFolder(fr.f)
+	}
+	n.stack = nil
+}
+
+// closeFolder stops a folder's background work when it supports that.
+func closeFolder(f models.Folder) {
+	if c, ok := f.(interface{ Close() }); ok {
+		c.Close()
+	}
 }
 
 // HasBack reports whether a back action is possible.

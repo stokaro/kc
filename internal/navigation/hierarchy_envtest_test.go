@@ -98,7 +98,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	// 1) Root
-	root := models.NewRootFolder(deps, nil)
+	root := models.NewRootFolder(deps, nil, "default")
 	// Wait until namespaces are visible
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return root.Len(ctx) > 0 })
 	count := root.Len(ctx)
@@ -454,7 +454,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 	go cl.Start(ctx)
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
-	root := models.NewRootFolder(deps, nil)
+	root := models.NewRootFolder(deps, nil, "default")
 	nav := NewNavigator(root)
 	// Simulate app startup sequence
 	nav.SetSelectionID("namespaces")
@@ -510,7 +510,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	go cl.Start(ctx)
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
-	root := models.NewRootFolder(deps, nil)
+	root := models.NewRootFolder(deps, nil, "default")
 	nav := NewNavigator(root)
 	// Into namespaces -> testns -> groups
 	nav.SetSelectionID("namespaces")

@@ -34,6 +34,27 @@ func TestPoolEvictIdleRemovesExpiredEntries(t *testing.T) {
 	}
 }
 
+func TestPoolEvictIdleKeepsPinnedEntries(t *testing.T) {
+	t.Parallel()
+
+	p := NewPool(10*time.Millisecond, time.Minute)
+	key := Key{KubeconfigPath: "/tmp/kubeconfig", ContextName: "ctx"}
+	evicted := 0
+	p.items[key] = &entry{key: key, lastUsed: time.Now().Add(-time.Minute), cancel: func() { evicted++ }}
+
+	p.Pin(key)
+	p.evictIdle()
+	if _, ok := p.items[key]; !ok || evicted != 0 {
+		t.Fatalf("a pinned entry must stay")
+	}
+	p.Unpin(key)
+	p.items[key].lastUsed = time.Now().Add(-time.Minute)
+	p.evictIdle()
+	if _, ok := p.items[key]; ok || evicted != 1 {
+		t.Fatalf("an unpinned idle entry must be evicted")
+	}
+}
+
 func TestPoolEvictIdleKeepsRecentEntries(t *testing.T) {
 	t.Parallel()
 

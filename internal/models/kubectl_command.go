@@ -60,8 +60,10 @@ func (f *ContextsFolder) KubectlCommand() string {
 	return kubectlCommand(f.Deps, "config", "get-contexts")
 }
 
+// KubectlCommand lists the types the root shows: namespaced and
+// cluster-scoped ones alike.
 func (f *RootFolder) KubectlCommand() string {
-	return kubectlCommand(f.Deps, "api-resources", "--namespaced=false")
+	return kubectlCommand(f.Deps, "api-resources")
 }
 
 func (f *ContextRootFolder) KubectlCommand() string {

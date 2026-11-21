@@ -32,7 +32,6 @@ import (
 	describe "github.com/sttts/kc/pkg/describe"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -85,10 +84,6 @@ type kubectlEditFinishedMsg struct {
 type namespaceCreatedMsg struct {
 	name string
 	err  error
-}
-
-type namespaceRetryMsg struct {
-	namespace string
 }
 
 type commandWatchTickMsg struct {
@@ -252,8 +247,10 @@ type App struct {
 	activeCommandSelector *CommandSelectorModel
 	functionBar           *functionBar
 	// Namespace auto-navigation state
-	namespaceAutoTarget    string
-	namespaceAutoAttempts  int
+	// panelScope is each panel's namespace scope (models.AllNamespaces for
+	// all). It is kc state; kubeconfig is never changed.
+	panelScope             [2]string
+	activity               *models.Activity // pauses background refreshes while a dialog is open
 	namespaceOverride      string
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
@@ -267,11 +264,9 @@ type App struct {
 }
 
 const (
-	requestTimeout            = 10 * time.Second
-	namespaceRetryInterval    = 200 * time.Millisecond
-	namespaceRetryMaxAttempts = 50
-	copyRequestTimeout        = 30 * time.Second
-	msgLogLimit               = 512
+	requestTimeout     = 10 * time.Second
+	copyRequestTimeout = 30 * time.Second
+	msgLogLimit        = 512
 )
 
 var panelWidthPercentOptions = []int{25, 33, 50, 66, 75, 100}
@@ -299,6 +294,7 @@ func NewApp() *App {
 		readErrCh:              make(chan error, 16),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
+	app.activity = &models.Activity{}
 	app.leftPanel = NewPanel("", app.cfg)
 	app.rightPanel = NewPanel("", app.cfg)
 	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
@@ -894,6 +890,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		NamespaceFactory: a.namespaceClusterFactory(),
 		PodFSFactory:     a.podfsFactory,
 		ReportError:      a.reportReadError,
+		Activity:         a.activity,
 	}
 }
 
@@ -2470,22 +2467,22 @@ func (a *App) goToResourceFolder(res resolvedResource) error {
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 	defer cancel()
-	// Start from root to ensure cluster-scoped resources are reachable.
-	for a.leftNav.HasBack() {
-		a.leftNav.Back()
-	}
-	steps := []navui.GoToStep{}
+	// Namespaced types live in the root of the panel's namespace scope, so
+	// rescope the panel when the target is in another namespace.
 	if res.namespaced {
 		nsName := res.namespace
 		if nsName == "" {
 			nsName = corev1.NamespaceDefault
 		}
-		steps = append(steps,
-			navui.GoToStep{SelectionID: "namespaces", Enter: true},
-			navui.GoToStep{SelectionID: nsName, Enter: true},
-		)
+		if a.panelScope[0] != nsName {
+			a.panelScope[0] = nsName
+			a.replaceNavigator(0, a.newScopedNavigator(0))
+		}
 	}
-	steps = append(steps, navui.GoToStep{SelectionID: res.rowID, Enter: true})
+	for a.leftNav.HasBack() {
+		a.leftNav.Back()
+	}
+	steps := []navui.GoToStep{{SelectionID: res.rowID, Enter: true}}
 	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
 		return err
 	}
@@ -3137,6 +3134,7 @@ func (a *App) initData(ctx context.Context) error {
 		return fmt.Errorf("cluster pool get: %w", err)
 	}
 	a.cl = cl
+	a.clPool.Pin(k)
 	if factory, err := podfs.NewFactory(a.cl.GetConfig()); err != nil {
 		log.Error(err, "failed to initialize pod filesystem factory")
 		if a.toastLogger != nil {
@@ -3221,122 +3219,21 @@ func (a *App) initData(ctx context.Context) error {
 
 // Legacy builder helpers removed (replaced by self-sufficient folders).
 
-// goToNamespace programmatically navigates to /namespaces/<ns> and updates panels.
-// If ns is empty, the panels remain at cluster scope. If the namespace does not exist, it retries briefly before staying at cluster scope.
+// goToNamespace scopes both panels to ns and shows their roots. An empty ns
+// is models.AllNamespaces.
 func (a *App) goToNamespace(ns string) {
-	a.goToNamespaceWithRetry(ns, true)
-}
-
-func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace")
-	if reset {
-		a.namespaceAutoTarget = ns
-		a.namespaceAutoAttempts = 0
-		log.Info("namespace navigation requested", "namespace", ns)
-	} else if ns != a.namespaceAutoTarget {
-		log.Info("namespace navigation skipped; target changed", "namespace", ns, "autoTarget", a.namespaceAutoTarget)
-		return
-	}
-	leftCfg := a.ensurePanelConfig(a.leftPanel)
-	rightCfg := a.ensurePanelConfig(a.rightPanel)
-	a.syncPanelConfig(a.leftPanel)
-	a.syncPanelConfig(a.rightPanel)
-	key := a.currentClusterKey()
+	log.Info("scoping panels", "namespace", ns)
 	if a.clPool != nil {
 		// Keep at most the cluster-scoped cache plus the current namespace cache.
 		a.clPool.PruneNamespaces(ns)
 	}
-	depsLeft := a.makeDeps(a.cl, leftCfg, key)
-	depsRight := a.makeDeps(a.cl, rightCfg, key)
-	enterLeft := a.makeEnterContextFunc(leftCfg)
-	enterRight := a.makeEnterContextFunc(rightCfg)
-	rootLeft := models.NewRootFolder(depsLeft, enterLeft)
-	rootRight := models.NewRootFolder(depsRight, enterRight)
-	a.leftNav = navui.NewNavigator(rootLeft)
-	a.rightNav = navui.NewNavigator(rootRight)
-
-	logged := false
-	retryScheduled := false
-
-	if ns == "" {
-		log.Info("no namespace configured, staying at cluster scope")
-		a.namespaceAutoTarget = ""
-		a.namespaceAutoAttempts = 0
-		a.updateTermContextNamespace("")
-		logged = true
-	} else {
-		log.Info("checking namespace readiness", "namespace", ns, "attempt", a.namespaceAutoAttempts)
-		nsReady, terminal, readyErr := a.namespaceReady(ns)
-		if readyErr != nil {
-			log.Error(readyErr, "checking namespace readiness", "namespace", ns)
-		}
-		log.Info("namespace readiness evaluated", "namespace", ns, "ready", nsReady, "terminal", terminal)
-		switch {
-		case nsReady:
-			if !a.forceNamespaceNavigation(ns, depsLeft, depsRight) {
-				log.Error(fmt.Errorf("navigation failed"), "unable to navigate to namespace", "namespace", ns)
-				if ns == a.namespaceAutoTarget {
-					a.namespaceAutoTarget = ""
-				}
-				logged = true
-				break
-			}
-			log.Info("navigated to namespace", "namespace", ns)
-			a.updateTermContextNamespace(ns)
-			logged = true
-			if ns == a.namespaceAutoTarget {
-				a.namespaceAutoTarget = ""
-				a.namespaceAutoAttempts = 0
-			}
-		case terminal:
-			log.Info("namespace not found, staying at cluster scope", "namespace", ns)
-			if ns == a.namespaceAutoTarget {
-				a.namespaceAutoTarget = ""
-			}
-			logged = true
-		case a.ctx.Err() == nil && ns == a.namespaceAutoTarget && a.namespaceAutoAttempts < namespaceRetryMaxAttempts:
-			a.namespaceAutoAttempts++
-			log.Info("namespace not ready yet, retrying", "namespace", ns, "attempt", a.namespaceAutoAttempts)
-			a.enqueueCmd(a.namespaceRetryCmd(ns))
-			retryScheduled = true
-			logged = true
-		default:
-			log.Info("namespace not ready, staying at cluster scope", "namespace", ns)
-			if ns == a.namespaceAutoTarget {
-				a.namespaceAutoTarget = ""
-			}
-			logged = true
-		}
-	}
-
-	if !logged && !retryScheduled && ns != "" {
-		log.Info("namespace not found, staying at cluster scope", "namespace", ns)
-		if ns == a.namespaceAutoTarget {
-			a.namespaceAutoTarget = ""
-		}
-	}
-
-	curL := a.leftNav.Current()
-	hasBackL := a.leftNav.HasBack()
-	curR := a.rightNav.Current()
-	hasBackR := a.rightNav.HasBack()
-	ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.setPanelFolder(ctxLeft, 0, curL, hasBackL)
-	cancelLeft()
-	ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.setPanelFolder(ctxRight, 1, curR, hasBackR)
-	cancelRight()
-	// Use navigator paths for breadcrumbs
-	a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
-	a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
-	ctxUseLeft, cancelUseLeft := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.leftPanel.UseFolder(ctxUseLeft, true)
-	cancelUseLeft()
-	ctxUseRight, cancelUseRight := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.rightPanel.UseFolder(ctxUseRight, true)
-	cancelUseRight()
-	a.applyResourceOptions(a.leftPanel)
-	a.applyResourceOptions(a.rightPanel)
+	a.panelScope = [2]string{ns, ns}
+	a.replaceNavigator(0, a.newScopedNavigator(0))
+	a.replaceNavigator(1, a.newScopedNavigator(1))
+	a.updateTermContextNamespace(ns)
+	a.showNavigatorRoot(0)
+	a.showNavigatorRoot(1)
 	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		a.setActivePanel(0, "left panel folder nav focus")
 		a.handleFolderNav(back, selID, next)
@@ -3345,54 +3242,7 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 		a.setActivePanel(1, "right panel folder nav focus")
 		a.handleFolderNav(back, selID, next)
 	})
-	ctxResetL, cancelResetL := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.leftPanel.ResetSelectionTop(ctxResetL)
-	cancelResetL()
-	ctxResetR, cancelResetR := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.rightPanel.ResetSelectionTop(ctxResetR)
-	cancelResetR()
 	a.scheduleStartupIntent()
-}
-
-func (a *App) namespaceRetryCmd(ns string) tea.Cmd {
-	return func() tea.Msg {
-		timer := time.NewTimer(namespaceRetryInterval)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-			return namespaceRetryMsg{namespace: ns}
-		case <-a.ctx.Done():
-			return nil
-		}
-	}
-}
-
-func (a *App) forceNamespaceNavigation(ns string, depsLeft, depsRight models.Deps) bool {
-	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-	nsListPath := []string{"namespaces"}
-	nsPath := []string{"namespaces", ns}
-	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace").WithValues("namespace", ns)
-
-	leftList := models.NewClusterObjectsFolder(depsLeft, gvrNamespaces, nsListPath, models.NamespaceResourceVerbs())
-	rightList := models.NewClusterObjectsFolder(depsRight, gvrNamespaces, nsListPath, models.NamespaceResourceVerbs())
-	leftResources := models.NewNamespacedResourcesFolder(depsLeft, ns, nsPath)
-	rightResources := models.NewNamespacedResourcesFolder(depsRight, ns, nsPath)
-
-	log.Info("pushing namespace folders to navigators")
-
-	a.leftNav.SetSelectionID("namespaces")
-	a.leftNav.Push(leftList)
-	a.leftNav.SetSelectionID(ns)
-	a.leftNav.Push(leftResources)
-	log.Info("left navigator updated", "stackDepth", a.navigatorDepth(a.leftNav))
-
-	a.rightNav.SetSelectionID("namespaces")
-	a.rightNav.Push(rightList)
-	a.rightNav.SetSelectionID(ns)
-	a.rightNav.Push(rightResources)
-	log.Info("right navigator updated", "stackDepth", a.navigatorDepth(a.rightNav))
-
-	return true
 }
 
 func (a *App) scheduleStartupIntent() {
@@ -3465,12 +3315,8 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	var panelReset func(context.Context)
 	var panelRef *Panel
 	if a.activePanel == 0 {
-		cfg := a.ensurePanelConfig(a.leftPanel)
-		a.syncPanelConfig(a.leftPanel)
 		if a.leftNav == nil {
-			deps := a.makeDeps(a.cl, cfg, a.currentClusterKey())
-			enter := a.makeEnterContextFunc(cfg)
-			a.leftNav = navui.NewNavigator(models.NewRootFolder(deps, enter))
+			a.leftNav = a.newScopedNavigator(0)
 		}
 		nav = a.leftNav
 		panelSet = func(ctx context.Context, folder models.Folder, hasBack bool) {
@@ -3480,12 +3326,8 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		panelReset = func(ctx context.Context) { a.leftPanel.ResetSelectionTop(ctx) }
 		panelRef = a.leftPanel
 	} else {
-		cfg := a.ensurePanelConfig(a.rightPanel)
-		a.syncPanelConfig(a.rightPanel)
 		if a.rightNav == nil {
-			deps := a.makeDeps(a.cl, cfg, a.currentClusterKey())
-			enter := a.makeEnterContextFunc(cfg)
-			a.rightNav = navui.NewNavigator(models.NewRootFolder(deps, enter))
+			a.rightNav = a.newScopedNavigator(1)
 		}
 		nav = a.rightNav
 		panelSet = func(ctx context.Context, folder models.Folder, hasBack bool) {
@@ -3559,35 +3401,6 @@ func (a *App) namespaceExists(ns string) bool {
 		return false
 	}
 	return true
-}
-
-func (a *App) namespaceReady(ns string) (ready bool, terminal bool, err error) {
-	if ns == "" {
-		return false, true, nil
-	}
-	if a.cl == nil {
-		return false, true, fmt.Errorf("no cluster available")
-	}
-	dyn := a.cl.Dynamic()
-	if dyn == nil {
-		return false, false, fmt.Errorf("dynamic client unavailable")
-	}
-	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
-	defer cancel()
-	res := dyn.Resource(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"})
-	if _, err := res.Get(ctx, ns, metav1.GetOptions{}); err != nil {
-		switch {
-		case apierrors.IsNotFound(err):
-			return false, true, nil
-		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-			return false, false, nil
-		case ctx.Err() != nil:
-			return false, false, nil
-		default:
-			return false, false, err
-		}
-	}
-	return true, true, nil
 }
 
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.

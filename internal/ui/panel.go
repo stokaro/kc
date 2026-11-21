@@ -20,6 +20,10 @@ import (
 
 // Panel represents a file/resource panel
 type Panel struct {
+	// scope is the panel's context and namespace, drawn at the left of the
+	// bottom border; scopeHits are the clickable columns of the last render.
+	scope                panelScopeLabel
+	scopeHits            scopeHits
 	title                string
 	frameWidth           int
 	frameHeight          int
@@ -1225,6 +1229,14 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	contentWidth := width - leftWidth - rightWidth - indicatorWidth - connectorWidth
 	if contentWidth < 0 {
 		contentWidth = 0
+	}
+	// The scope goes on the outermost bottom border only: the one that also
+	// carries the mode label.
+	if strings.TrimSpace(mode) != "" {
+		scope, hits := renderScopeLabel(p.scope, borderStyle.Render(border.Bottom), leftWidth, contentWidth/2)
+		p.scopeHits = hits
+		left += scope
+		contentWidth -= lipgloss.Width(scope)
 	}
 
 	statusLabel := strings.TrimSpace(info.FooterStatus)

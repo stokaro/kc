@@ -52,6 +52,42 @@ type ResourceGroupItem struct {
 	peekForbiddenLogged bool
 	hasAny              func(context.Context, schema.GroupVersionResource, string) (bool, error)
 	peeking             bool // true while a background emptiness peek runs
+	// synced is true once the count comes from a synced informer. The
+	// informer then keeps count and emptiness current, so no remote peeks
+	// are needed.
+	synced bool
+
+	// Lifecycle: a closed item stops its informer handler and peek timers.
+	// Folders close their items when they leave navigation; without that,
+	// every discarded folder kept polling the apiserver for the session.
+	closed     bool
+	stop       chan struct{}
+	informer   crcache.Informer
+	handlerReg toolscache.ResourceEventHandlerRegistration
+}
+
+// Close stops background work for the item. It is safe to call twice.
+func (r *ResourceGroupItem) Close() {
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return
+	}
+	r.closed = true
+	close(r.stop)
+	informer, reg := r.informer, r.handlerReg
+	r.informer, r.handlerReg = nil, nil
+	r.mu.Unlock()
+	r.deps.Activity.forget(r)
+	if informer != nil && reg != nil {
+		_ = informer.RemoveEventHandler(reg)
+	}
+}
+
+func (r *ResourceGroupItem) isClosed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.closed
 }
 
 func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, gvk schema.GroupVersionKind, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
@@ -67,6 +103,7 @@ func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, gvk schema
 		gvkKnown:  gvkKnown,
 		namespace: namespace,
 		watchable: watchable,
+		stop:      make(chan struct{}),
 	}
 }
 
@@ -139,6 +176,8 @@ func (r *ResourceGroupItem) Count() int {
 		r.countKnown = true
 		r.empty = count == 0
 		r.emptyKnown = true
+		r.lastPeek = time.Now()
+		r.synced = status == informerSynced
 		return r.count
 	}
 	return 0
@@ -154,6 +193,11 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 		return true
 	}
 	r.mu.Lock()
+	if r.synced && r.emptyKnown {
+		val := r.empty
+		r.mu.Unlock()
+		return val
+	}
 	if r.emptyKnown && !r.lastPeek.IsZero() && time.Since(r.lastPeek) < interval {
 		val := r.empty
 		r.mu.Unlock()
@@ -404,11 +448,18 @@ func (r *ResourceGroupItem) EmptyCached() bool {
 	fresh := r.emptyKnown && !r.lastPeek.IsZero() && time.Since(r.lastPeek) < interval
 	backoff := time.Since(r.lastError) < interval
 	val := r.emptyKnown && r.empty
-	start := !fresh && !backoff && !r.peeking
+	start := !fresh && !backoff && !r.peeking && !r.closed && !r.synced
 	if start {
 		r.peeking = true
 	}
 	r.mu.Unlock()
+	if start && r.deps.Activity.Paused() {
+		// Peek once the dialog closes; the folder asks again on its next rebuild.
+		r.mu.Lock()
+		r.peeking = false
+		r.mu.Unlock()
+		start = false
+	}
 	if start {
 		go func() {
 			defer func() {
@@ -564,7 +615,7 @@ func (r *ResourceGroupItem) ensureInformerHandler(informer crcache.Informer) {
 	}
 	r.watchOnce.Do(func() {
 		crlog.FromContext(r.deps.Ctx).Info("resource group registering informer handler", "gvr", r.gvr.String(), "namespace", r.namespace)
-		_, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+		reg, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				r.onInformerEvent(obj)
 			},
@@ -577,24 +628,33 @@ func (r *ResourceGroupItem) ensureInformerHandler(informer crcache.Informer) {
 		})
 		if err != nil {
 			crlog.FromContext(r.deps.Ctx).Error(err, "register informer handler", "gvr", r.gvr.String(), "namespace", r.namespace)
+			return
+		}
+		r.mu.Lock()
+		closed := r.closed
+		if !closed {
+			r.informer, r.handlerReg = informer, reg
+		}
+		r.mu.Unlock()
+		if closed {
+			_ = informer.RemoveEventHandler(reg)
 		}
 	})
 }
 
 func (r *ResourceGroupItem) onInformerEvent(obj interface{}) {
 	if r.namespace != "" {
-		if acc, ok := accessorForEvent(obj); ok && acc != nil {
-			if acc.GetNamespace() != r.namespace {
-				log := crlog.FromContext(r.deps.Ctx)
-				log.Info("resource group event ignored due to namespace mismatch", "eventNamespace", acc.GetNamespace())
-				return
-			}
+		if acc, ok := accessorForEvent(obj); ok && acc != nil && acc.GetNamespace() != r.namespace {
+			return
 		}
 	}
 	r.scheduleRecount()
 }
 
 func (r *ResourceGroupItem) scheduleRecount() {
+	if r.isClosed() || r.deps.Activity.deferIfPaused(r) {
+		return
+	}
 	r.mu.Lock()
 	if r.recounting {
 		r.recountPending = true
@@ -623,36 +683,52 @@ func (r *ResourceGroupItem) scheduleRecount() {
 		}()
 		ctx := r.deps.Ctx
 		log := crlog.FromContext(ctx)
-		log.Info("resource group recount started", "gvr", r.gvr.String(), "namespace", r.namespace)
+		// Coalesce bursts of informer events (a rollout, a busy namespace)
+		// into one recount.
+		select {
+		case <-time.After(recountDelay):
+		case <-r.stop:
+			return
+		case <-ctx.Done():
+			return
+		}
+		log.V(1).Info("resource group recount started", "gvr", r.gvr.String(), "namespace", r.namespace)
 		_ = r.Count()
-		peekCtx, cancel := context.WithTimeout(ctx, r.peekTimeout())
-		hasAny, err := r.deps.Cl.HasAnyByGVR(peekCtx, r.gvr, r.namespace)
-		cancel()
-		if err != nil {
-			log.Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
+		r.mu.Lock()
+		synced := r.synced
+		r.mu.Unlock()
+		if !synced {
+			// Without a synced informer the store says nothing; ask the
+			// apiserver whether anything exists.
+			peekCtx, cancel := context.WithTimeout(ctx, r.peekTimeout())
+			crlog.FromContext(ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
+			hasAny, err := r.deps.Cl.HasAnyByGVR(peekCtx, r.gvr, r.namespace)
+			cancel()
+			r.mu.Lock()
+			if err == nil {
+				r.empty = !hasAny
+				r.emptyKnown = true
+				r.lastPeek = time.Now()
+			}
+			r.mu.Unlock()
+			if err != nil {
+				log.Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
+			}
 		}
 		r.mu.Lock()
-		if err == nil {
-			log.Info("hasAny peek", "gvr", r.gvr.String(), "namespace", r.namespace, "hasAny", hasAny)
-			r.empty = !hasAny
-			r.emptyKnown = true
-			r.lastPeek = time.Now()
-		}
 		count := r.count
 		countKnown := r.countKnown
-		onChange := r.onChange
 		r.mu.Unlock()
 		if countKnown {
 			r.setCountCell(fmt.Sprintf("%d", count))
 		}
+		// Rebuild the folder only when the visible count or emptiness changed.
 		r.notifyIfChanged(nil)
-		if onChange != nil {
-			log.Info("resource group recount triggering refresh", "gvr", r.gvr.String(), "namespace", r.namespace, "count", count)
-			onChange()
-		}
-		log.Info("resource group recount finished", "gvr", r.gvr.String(), "namespace", r.namespace, "count", count, "countKnown", countKnown)
 	}()
 }
+
+// recountDelay coalesces informer events into one recount.
+var recountDelay = 300 * time.Millisecond
 
 func (r *ResourceGroupItem) scheduleNextPeek() {
 	r.mu.Lock()
@@ -689,6 +765,7 @@ func (r *ResourceGroupItem) runPeekTimer(ctx context.Context, delay time.Duratio
 	case <-timer.C:
 		r.scheduleRecount()
 	case <-ctx.Done():
+	case <-r.stop:
 	}
 }
 
