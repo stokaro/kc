@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -17,19 +16,6 @@ import (
 type ShellExitedMsg struct {
 	ExitCode string
 }
-
-type terminalPollMsg struct {
-	token uint64
-}
-
-const (
-	terminalPollInterval = 100 * time.Millisecond
-	// After input, poll fast for a short while so the shell's echo shows up
-	// at once instead of on the next idle poll.
-	terminalBurstInterval = 10 * time.Millisecond
-	terminalBurstWindow   = 500 * time.Millisecond
-	terminalEchoDelay     = 3 * time.Millisecond
-)
 
 // Terminal represents the bottom terminal component
 type Terminal struct {
@@ -49,14 +35,9 @@ type Terminal struct {
 	ptyWantsMouse bool
 	log           logr.Logger
 	env           []string
-	lastPoll      time.Time
-	pollSeq       uint64
-	pollToken     uint64
-	pollScheduled bool
-	burstUntil    time.Time
-	// cursor is the emulator cursor captured together with the last frame.
-	// bubbleterm reads the cursor live but the text only on poll, so a live
-	// cursor runs ahead of the text while typing (a blank cell shows first).
+	// cursor is the emulator cursor captured when the last frame arrived.
+	// The emulator cursor is live while the text is the last frame, so a
+	// live cursor can run ahead of the text (a blank cell shows first).
 	cursor     *tea.Cursor
 	haveCursor bool
 }
@@ -105,7 +86,6 @@ func (t *Terminal) Init() tea.Cmd {
 	}
 
 	t.terminal = terminal
-	t.terminal.SetQuietExit(true)
 
 	// Set up exit callback to quit when shell exits
 	emulator := t.terminal.GetEmulator()
@@ -119,10 +99,10 @@ func (t *Terminal) Init() tea.Cmd {
 		// If cursor is not visible, it might be a focus or rendering issue
 	}
 
-	// Start the shell command
-	// Note: bubbleterm handles cursor automatically through PTY, no need for ShowCursor()
-	t.terminal.SetAutoPoll(false)
-	return tea.Batch(t.terminal.Init(), t.terminal.StartCommand(cmd), t.immediatePollCmd())
+	// bubbleterm polls by blocking until the emulator reports a change, so
+	// output (including the echo of typed keys) shows up without a timer.
+	t.terminal.SetAutoPoll(true)
+	return tea.Batch(t.terminal.Init(), t.terminal.StartCommand(cmd))
 }
 
 // SetEnv overrides the environment used when spawning the PTY shell.
@@ -141,15 +121,9 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if t.terminal != nil {
 			model, cmd := t.terminal.Update(msg)
 			t.terminal = model.(*bubbleterm.Model)
-			return t, tea.Batch(cmd, t.immediatePollCmd())
+			return t, cmd
 		}
 		return t, nil
-	case terminalPollMsg:
-		if msg.token != t.pollToken {
-			return t, nil
-		}
-		t.pollScheduled = false
-		return t, t.immediatePollCmd()
 	}
 
 	// Always update bubbleterm first to check process status
@@ -158,7 +132,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if t.showPanels {
 				t.hasTyped = true
 			}
-			return t, tea.Batch(t.terminal.SendInput(pasteInput(paste.Content)), t.inputPollCmd())
+			return t, writeNow(t.terminal.SendInput(pasteInput(paste.Content)))
 		}
 		// Swallow mouse events while panels are visible to avoid sending
 		// mouse escape sequences into the PTY (which shows up as garbage
@@ -176,7 +150,8 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd := t.terminal.Update(translateKeyForTerminal(msg))
 		t.terminal = model.(*bubbleterm.Model)
 		if _, isKey := msg.(tea.KeyMsg); isKey {
-			return t, tea.Batch(cmd, t.inputPollCmd(), t.trackTyped(msg))
+			t.trackTyped(msg)
+			return t, writeNow(cmd)
 		}
 		if _, isMouse := msg.(tea.MouseMsg); !isMouse {
 			// A poll result (or other emulator message): take the cursor
@@ -184,7 +159,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.snapshotCursor()
 		}
 
-		return t, tea.Batch(cmd, t.immediatePollCmd())
+		return t, cmd
 	}
 
 	return t, nil
@@ -241,7 +216,7 @@ func (t *Terminal) terminalView() (string, *tea.Cursor) {
 		if t.haveCursor {
 			return viewString(view), cloneCursor(t.cursor)
 		}
-		return viewString(view), view.Cursor
+		return viewString(view), emulatorCursor(t.terminal)
 	case interface{ View() (string, *tea.Cursor) }:
 		return term.View()
 	case interface{ View() string }:
@@ -293,8 +268,35 @@ func (t *Terminal) snapshotCursor() {
 	if t.terminal == nil {
 		return
 	}
-	t.cursor = t.terminal.View().Cursor
+	t.cursor = emulatorCursor(t.terminal)
 	t.haveCursor = true
+}
+
+// writeNow runs a bubbleterm input command at once. bubbleterm returns PTY
+// writes as tea.Cmds, and Bubble Tea runs commands concurrently, so fast
+// typing could reach the shell out of order ("echo" became "ehco"). The
+// write is a short PTY write; an error message is still delivered.
+func writeNow(cmd tea.Cmd) tea.Cmd {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if msg == nil {
+		return nil
+	}
+	return func() tea.Msg { return msg }
+}
+
+// emulatorCursor reads the cursor of a bubbleterm model, nil when hidden.
+func emulatorCursor(term *bubbleterm.Model) *tea.Cursor {
+	if term == nil || term.GetEmulator() == nil {
+		return nil
+	}
+	pos, show := term.GetEmulator().Cursor()
+	if !show {
+		return nil
+	}
+	return tea.NewCursor(pos.X, pos.Y)
 }
 
 func cloneCursor(c *tea.Cursor) *tea.Cursor {
@@ -306,32 +308,14 @@ func cloneCursor(c *tea.Cursor) *tea.Cursor {
 }
 
 // trackTyped records whether the user typed into the inline shell line.
-func (t *Terminal) trackTyped(msg tea.Msg) tea.Cmd {
+func (t *Terminal) trackTyped(msg tea.Msg) {
 	if !t.showPanels {
-		return nil
+		return
 	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		// Enter runs the command and gives the keys back to the panels.
 		t.hasTyped = key.String() != "enter"
 	}
-	return nil
-}
-
-// inputPollCmd starts fast polling after input and schedules the first poll
-// right after the shell had a moment to echo.
-func (t *Terminal) inputPollCmd() tea.Cmd {
-	if t == nil || t.terminal == nil {
-		return nil
-	}
-	t.burstUntil = time.Now().Add(terminalBurstWindow)
-	return t.schedulePoll(terminalEchoDelay)
-}
-
-func (t *Terminal) pollInterval() time.Duration {
-	if time.Now().Before(t.burstUntil) {
-		return terminalBurstInterval
-	}
-	return terminalPollInterval
 }
 
 // pasteInput prepares pasted text for the PTY. Multi-line text is wrapped in
@@ -345,51 +329,6 @@ func pasteInput(content string) string {
 	content = strings.ReplaceAll(content, "\r\n", "\r")
 	content = strings.ReplaceAll(content, "\n", "\r")
 	return "\x1b[200~" + content + "\x1b[201~"
-}
-
-func (t *Terminal) immediatePollCmd() tea.Cmd {
-	if t == nil || t.terminal == nil {
-		return nil
-	}
-	now := time.Now()
-	interval := t.pollInterval()
-	if !t.lastPoll.IsZero() {
-		elapsed := now.Sub(t.lastPoll)
-		if elapsed < interval {
-			if t.pollScheduled {
-				return nil
-			}
-			delay := interval - elapsed
-			return t.schedulePoll(delay)
-		}
-	}
-	t.lastPoll = now
-	t.pollScheduled = false
-	poll := t.terminal.UpdateTerminal()
-	timer := t.schedulePoll(interval)
-	if poll == nil {
-		return timer
-	}
-	if timer == nil {
-		return poll
-	}
-	return tea.Batch(poll, timer)
-}
-
-func (t *Terminal) schedulePoll(delay time.Duration) tea.Cmd {
-	if t == nil || t.terminal == nil {
-		return nil
-	}
-	if delay <= 0 {
-		delay = terminalPollInterval
-	}
-	t.pollSeq++
-	token := t.pollSeq
-	t.pollToken = token
-	t.pollScheduled = true
-	return tea.Tick(delay, func(time.Time) tea.Msg {
-		return terminalPollMsg{token: token}
-	})
 }
 
 type legacyKeyPressMsg struct {
