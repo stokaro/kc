@@ -10,7 +10,7 @@
 
 ## Architecture & Project Structure
 
-The application is a **Kubernetes TUI** built with **Go 1.24** and **Bubble Tea v2**, structured around a hierarchical navigation model where resources are treated as "folders" and "files".
+The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea v2**, structured around a hierarchical navigation model where resources are treated as "folders" and "files".
 
 ### Core Components
 
@@ -143,11 +143,6 @@ See `TODO.md` for the active development plan and current tasks. Keep every TODO
 - If a command fails due to permissions or sandboxing, immediately rerun it with `with_escalated_permissions: true` and a short justification (do not pause to ask first). Use escalation rather than changing cache locations.
 - Apply the same rule to git permission/lock errors (e.g., `index.lock`): rerun with escalation rather than waiting for additional approval.
 - Never use `git add -A`; stage only intended files.
-
-### AI Disclosure
-- Add an explicit co-author trailer to every commit as the last line, using the AI’s name and the maker’s noreply domain, e.g.:
-  `Co-Authored-By: Codex CLI Agent <noreply@openai.com>`
-- Use the exact format `Co-Authored-By: <name> <noreply@maker-domain>`.
 
 ## Security & Configuration Tips
 - Never commit kubeconfigs, cluster credentials, or secrets.

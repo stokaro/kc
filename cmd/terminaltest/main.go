@@ -126,8 +126,5 @@ func (m *model) terminalView() (string, *tea.Cursor) {
 }
 
 func viewString(view tea.View) string {
-	if view.Content == nil {
-		return ""
-	}
-	return fmt.Sprint(view.Content)
+	return view.Content
 }

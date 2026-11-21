@@ -23,10 +23,10 @@ jobs:
             goarch: arm64
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           check-latest: true
@@ -37,7 +37,7 @@ jobs:
       - name: Setup envtest
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         env:
-          ENVTEST_K8S_VERSION: "1.29.x"
+          ENVTEST_K8S_VERSION: "1.37.x"
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
           eval "$(setup-envtest use -p env ${ENVTEST_K8S_VERSION})"
@@ -57,7 +57,7 @@ jobs:
           go build -trimpath -o "dist/kc-${GOOS}-${GOARCH}" ./cmd/kc
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kc-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/kc-${{ matrix.goos }}-${{ matrix.goarch }}

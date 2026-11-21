@@ -1164,8 +1164,5 @@ func min(a, b int) int {
 }
 
 func viewString(view tea.View) string {
-	if view.Content == nil {
-		return ""
-	}
-	return fmt.Sprint(view.Content)
+	return view.Content
 }

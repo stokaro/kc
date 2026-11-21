@@ -29,7 +29,7 @@ func TestCacheReturnsRows(t *testing.T) {
 
 	go func() {
 		if err := rowCache.Start(ctx); err != nil {
-			t.Fatalf("start cache: %v", err)
+			t.Errorf("start cache: %v", err)
 		}
 	}()
 

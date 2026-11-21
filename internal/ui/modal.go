@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -521,10 +520,7 @@ func viewWithCursor(content string, cursor *tea.Cursor) tea.View {
 }
 
 func viewString(view tea.View) string {
-	if view.Content == nil {
-		return ""
-	}
-	return fmt.Sprint(view.Content)
+	return view.Content
 }
 
 func shiftMouseMsg(msg tea.MouseMsg, dx, dy int) tea.MouseMsg {

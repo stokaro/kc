@@ -4,7 +4,7 @@
 
 ![Kubernetes Commander TUI](docs/screenshot.png)
 
-An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired by Midnight Commander, powered by Go 1.24, Bubble Tea v2, and controller-runtime informers.
+An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired by Midnight Commander, powered by Go 1.27, Bubble Tea v2, and controller-runtime informers.
 
 > ⚠️ **Vibe-coded warning:** this project is 100 % AI-authored. No human has reviewed the code, so expect sharp edges, missing affordances, and sudden regressions. See `TODO.md` for the evolving plan.
 

@@ -1,7 +1,6 @@
 package table
 
 import (
-	"fmt"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -28,8 +27,5 @@ func TestRenderRowsSelectedOverlay(t *testing.T) {
 }
 
 func viewString(view tea.View) string {
-	if view.Content == nil {
-		return ""
-	}
-	return fmt.Sprint(view.Content)
+	return view.Content
 }
