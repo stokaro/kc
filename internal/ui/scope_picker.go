@@ -42,6 +42,20 @@ func NewScopePickerModel(choices []scopeChoice, current string, onSelect func(sc
 
 func (m *ScopePickerModel) Init() tea.Cmd { return nil }
 
+// HandleModalEscape makes one Esc clear the filter, or close the picker
+// when there is none, instead of the modal's Esc Esc sequence.
+func (m *ScopePickerModel) HandleModalEscape(tea.KeyMsg) (bool, tea.Cmd) {
+	if m.filter != "" {
+		m.filter = ""
+		m.refilter()
+		return true, nil
+	}
+	if m.onCancel != nil {
+		return true, m.onCancel()
+	}
+	return false, nil
+}
+
 func (m *ScopePickerModel) SetDimensions(w, h int) {
 	m.width, m.height = w, h
 	m.ensureVisible()
@@ -81,6 +95,18 @@ func (m *ScopePickerModel) move(d int) {
 }
 
 func (m *ScopePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch mm := msg.(type) {
+	case tea.MouseWheelMsg:
+		switch mm.Mouse().Button {
+		case tea.MouseWheelUp:
+			m.move(-1)
+		case tea.MouseWheelDown:
+			m.move(1)
+		}
+		return m, nil
+	case tea.MouseReleaseMsg:
+		return m, m.clickRow(mm.Mouse())
+	}
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
@@ -124,6 +150,22 @@ func (m *ScopePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// clickRow chooses the entry under a left click (content coordinates).
+func (m *ScopePickerModel) clickRow(mouse tea.Mouse) tea.Cmd {
+	if mouse.Button != tea.MouseLeft || mouse.Y < 0 || mouse.Y >= m.listRows() || mouse.X < 0 || mouse.X >= m.width {
+		return nil
+	}
+	i := m.scroll + mouse.Y
+	if i >= len(m.visible) {
+		return nil
+	}
+	m.selected = i
+	if m.onSelect == nil {
+		return nil
+	}
+	return m.onSelect(m.choices[m.visible[i]])
 }
 
 func (m *ScopePickerModel) View() tea.View {

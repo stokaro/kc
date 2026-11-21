@@ -55,3 +55,35 @@ func TestScopePickerFiltersAndSelects(t *testing.T) {
 		t.Fatalf("Esc should clear the filter, got %q with %d entries", m.filter, len(m.visible))
 	}
 }
+
+func TestScopePickerMouse(t *testing.T) {
+	var picked string
+	choices := namespaceChoices([]string{"a", "b", "c"}, "a")
+	m := NewScopePickerModel(choices, "a", func(c scopeChoice) tea.Cmd { picked = c.Value; return nil }, nil)
+	m.SetDimensions(20, 3) // two rows plus the filter line
+	m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	if m.selected != 3 || m.scroll != 2 {
+		t.Fatalf("wheel: selected=%d scroll=%d", m.selected, m.scroll)
+	}
+	m.Update(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 2, Y: 0})
+	if picked != "b" {
+		t.Fatalf("clicked %q, want b", picked)
+	}
+	picked = ""
+	m.Update(tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 2, Y: 2}) // the filter line
+	if picked != "" {
+		t.Fatalf("a click on the filter line chose %q", picked)
+	}
+}
+
+func TestModalManagerDropsSelfClosedDialogs(t *testing.T) {
+	mm := NewModalManager(nil)
+	modal := NewModal("x", NewScopePickerModel(nil, "", nil, nil))
+	mm.Register("x", modal)
+	mm.Show("x")
+	modal.Hide() // as the Esc timeout does
+	if mm.IsModalVisible() {
+		t.Fatalf("a dialog that hid itself still takes input")
+	}
+}

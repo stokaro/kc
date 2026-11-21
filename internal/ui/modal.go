@@ -1012,11 +1012,26 @@ func (mm *ModalManager) HideName(name string) {
 
 // IsModalVisible returns true if any modal is visible
 func (mm *ModalManager) IsModalVisible() bool {
+	mm.dropHidden()
 	return len(mm.stack) > 0
+}
+
+// dropHidden removes dialogs that closed themselves (Esc Esc, the Esc
+// timeout) from the top of the stack. Left there, they would keep taking
+// every key and click while nothing is shown.
+func (mm *ModalManager) dropHidden() {
+	for len(mm.stack) > 0 {
+		top, ok := mm.modals[mm.stack[len(mm.stack)-1]]
+		if ok && top.visible {
+			return
+		}
+		mm.stack = mm.stack[:len(mm.stack)-1]
+	}
 }
 
 // GetActiveModal returns the active modal
 func (mm *ModalManager) GetActiveModal() *Modal {
+	mm.dropHidden()
 	if len(mm.stack) > 0 {
 		name := mm.stack[len(mm.stack)-1]
 		return mm.modals[name]

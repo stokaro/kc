@@ -238,19 +238,8 @@ func (a *App) syncPanelScopeLabels() {
 // handleScopeClick opens a picker when a click lands on a panel's scope
 // label. It reports whether the click was on a label.
 func (a *App) handleScopeClick(m tea.Mouse) (tea.Cmd, bool) {
-	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
-	if m.Y != panelHeight-1 {
-		return nil, false
-	}
-	idx, x := 0, m.X
-	if leftWidth <= 0 || (rightWidth > 0 && m.X >= leftWidth) {
-		idx, x = 1, m.X-max(0, leftWidth)
-	}
-	panel := a.panelByIndex(idx)
-	if panel == nil {
-		return nil, false
-	}
-	switch panel.scopeHit(x) {
+	idx, hit := a.scopeHitAt(m)
+	switch hit {
 	case "namespace":
 		a.setActivePanel(idx, "scope click")
 		return a.loadNamespacesForPicker(idx), true
@@ -259,6 +248,30 @@ func (a *App) handleScopeClick(m tea.Mouse) (tea.Cmd, bool) {
 		return a.showContextPicker(), true
 	}
 	return nil, false
+}
+
+// scopeHitAt returns the panel and the scope label ("context",
+// "namespace" or "") under the mouse.
+func (a *App) scopeHitAt(m tea.Mouse) (int, string) {
+	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	if m.Y != panelHeight-1 {
+		return 0, ""
+	}
+	idx, x := 0, m.X
+	if leftWidth <= 0 || (rightWidth > 0 && m.X >= leftWidth) {
+		idx, x = 1, m.X-max(0, leftWidth)
+	}
+	panel := a.panelByIndex(idx)
+	if panel == nil {
+		return idx, ""
+	}
+	return idx, panel.scopeHit(x)
+}
+
+// scopeLabelAt reports whether the mouse is on a scope label.
+func (a *App) scopeLabelAt(m tea.Mouse) bool {
+	_, hit := a.scopeHitAt(m)
+	return hit != ""
 }
 
 // replaceNavigator installs nav for a panel and closes the old one, which
