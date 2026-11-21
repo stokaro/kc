@@ -250,7 +250,8 @@ type App struct {
 	// panelScope is each panel's namespace scope (models.AllNamespaces for
 	// all). It is kc state; kubeconfig is never changed.
 	panelScope             [2]string
-	activity               *models.Activity // pauses background refreshes while a dialog is open
+	activity               *models.Activity       // pauses background refreshes while a dialog is open
+	pendingConfirm         models.ConfirmedAction // waits for the red confirmation
 	namespaceOverride      string
 	startupIntent          StartupIntent
 	startupIntentScheduled bool

@@ -16,6 +16,25 @@ type Item interface {
 	Path() []string
 }
 
+// Confirmation describes a change to the cluster for the user to approve.
+type Confirmation struct {
+	Title   string
+	Details [][2]string // label and value: context, namespace, object
+	Notes   []string    // what the change does and what stays behind
+	Action  string      // label of the confirming button
+}
+
+// ConfirmedAction is a row whose Enter changes the cluster. The UI shows
+// its Confirmation and calls Confirm only after the user agrees.
+type ConfirmedAction interface {
+	Item
+	Confirmation() Confirmation
+	Confirm() error
+}
+
+// ConfirmRequest asks the UI to confirm and then run Action.
+type ConfirmRequest struct{ Action ConfirmedAction }
+
 // ObjectItem identifies items backed by Kubernetes objects.
 type ObjectItem interface {
 	Item
