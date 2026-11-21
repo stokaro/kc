@@ -2249,6 +2249,36 @@ func (a *App) applyStartupIntent() tea.Cmd {
 	}
 }
 
+// startupSelectMsg retries selecting the objects named on the command line.
+type startupSelectMsg struct {
+	ids     []string
+	path    string
+	attempt int
+}
+
+const (
+	startupSelectRetry    = 250 * time.Millisecond
+	startupSelectAttempts = 20
+)
+
+// selectStartupRows selects ids in the left panel. The list may still be
+// loading, so it retries until all ids are selected, the attempts run out,
+// or the user has left the folder.
+func (a *App) selectStartupRows(ids []string, path string, attempt int) tea.Cmd {
+	if a.leftPanel == nil || a.leftPanel.GetCurrentPath() != path {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.leftPanel.SelectRowIDs(ctx, ids)
+	cancel()
+	if len(a.leftPanel.GetSelectedItems()) >= len(ids) || attempt+1 >= startupSelectAttempts {
+		return nil
+	}
+	return tea.Tick(startupSelectRetry, func(time.Time) tea.Msg {
+		return startupSelectMsg{ids: ids, path: path, attempt: attempt + 1}
+	})
+}
+
 func (a *App) applyStartupIntentGet() tea.Cmd {
 	intent := a.startupIntent.Get
 	if intent == nil || a.leftNav == nil {
@@ -2291,9 +2321,9 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 				cmds = append(cmds, cmd)
 			}
 		default:
-			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-			a.leftPanel.SelectRowIDs(ctxSel, names)
-			cancelSel()
+			if cmd := a.selectStartupRows(names, a.leftPanel.GetCurrentPath(), 0); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 			if strings.EqualFold(intent.OutputFormat, "yaml") {
 				if cmd := a.ensureManifestPreview(res, ns, names[0]); cmd != nil {
 					cmds = append(cmds, cmd)
@@ -2308,9 +2338,9 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 			}
 		}
 		if len(idList) > 0 {
-			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-			a.leftPanel.SelectRowIDs(ctxSel, idList)
-			cancelSel()
+			if cmd := a.selectStartupRows(idList, a.leftPanel.GetCurrentPath(), 0); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
 	}
 	return tea.Batch(cmds...)

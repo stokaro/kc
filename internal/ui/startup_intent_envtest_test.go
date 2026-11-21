@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
@@ -114,9 +116,7 @@ func TestStartupIntentGetMultiSelectEnvtest(t *testing.T) {
 		},
 	}
 	app.startupIntentApplied = false
-	if cmd := app.applyStartupIntent(); cmd != nil {
-		cmd()
-	}
+	runStartupSelect(app, app.applyStartupIntent())
 
 	wantPath := "/pods"
 	if got := app.leftPanel.GetCurrentPath(); got != wantPath {
@@ -239,4 +239,21 @@ func equalStringSets(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// runStartupSelect runs cmd and delivers the selection retries it produces,
+// as the program loop would; other messages are dropped.
+func runStartupSelect(app *App, cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		for _, c := range msg {
+			runStartupSelect(app, c)
+		}
+	case startupSelectMsg:
+		_, next := app.Update(msg)
+		runStartupSelect(app, next)
+	}
 }

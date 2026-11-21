@@ -685,6 +685,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKeyMsg(msg, cmds)
+	case startupSelectMsg:
+		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
 	case contextSwitchedMsg:
 		return a, a.applyContextSwitch(msg)
 	case namespacesLoadedMsg:
