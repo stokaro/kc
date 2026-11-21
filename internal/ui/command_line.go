@@ -1,13 +1,14 @@
 package ui
 
 import (
-	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/sttts/kc/internal/models"
 )
 
@@ -55,7 +56,7 @@ func renderCommandLine(command string, width int) string {
 	label := " Command: "
 	hint := ""
 	if command != "" {
-		hint = commandLineStyle.Render("Copy ") + commandLineKey.Render("Alt+C") + commandLineStyle.Render(" ")
+		hint = renderCopyHint()
 	}
 	room := width - lipgloss.Width(label) - lipgloss.Width(hint) - 1
 	if room < 10 {
@@ -70,19 +71,97 @@ func renderCommandLine(command string, width int) string {
 	return body + commandLineStyle.Render(strings.Repeat(" ", gap)) + hint
 }
 
-// copyPanelCommand puts the active panel's command on the clipboard. It sends
-// OSC 52 (works over SSH in terminals that allow it) and also runs a local
-// clipboard tool when one exists, because Terminal.app ignores OSC 52.
+// copyHintIcon is the clickable copy button at the right of the line.
+const copyHintIcon = "📋"
+
+func renderCopyHint() string {
+	return commandLineStyle.Render(copyHintIcon+" Copy ") + commandLineKey.Render("Alt+C") + commandLineStyle.Render(" ")
+}
+
+// commandLineY is the screen row of the command line, or -1 when hidden.
+func (a *App) commandLineY() int {
+	if a.commandLineHeight() == 0 {
+		return -1
+	}
+	return a.height - 1 - a.inlineTerminalHeight() - a.commandLineHeight()
+}
+
+// commandLineCopyHit reports whether x falls on the copy button.
+func (a *App) commandLineCopyHit(x int) bool {
+	return a.panelCommand() != "" && x >= a.width-lipgloss.Width(renderCopyHint()) && x < a.width
+}
+
+// copyPanelCommand puts the active panel's command on the clipboard the way
+// Claude Code does it: a local clipboard tool (pbcopy, wl-copy, xclip,
+// xsel) when kc runs locally, OSC 52 over SSH or when no tool exists, and,
+// inside tmux, the tmux paste buffer as well. The toast says which path was
+// used; OSC 52 cannot confirm that the terminal accepted the text.
 func (a *App) copyPanelCommand() tea.Cmd {
 	command := a.panelCommand()
 	if command == "" {
 		return nil
 	}
-	local := func() tea.Msg {
-		_ = copyWithLocalTool(command)
-		return nil
+	plan := planCopy(os.Getenv, exec.LookPath)
+	var cmds []tea.Cmd
+	if plan.osc52 {
+		cmds = append(cmds, tea.Raw(osc52Sequence(command, os.Getenv)))
 	}
-	return tea.Batch(tea.SetClipboard(command), local, a.ShowToast("Copied: "+command, 2*time.Second))
+	cmds = append(cmds, func() tea.Msg {
+		if plan.tmux {
+			_ = runWithInput(command, "tmux", "load-buffer", "-")
+		}
+		via := "OSC 52 (the terminal must allow clipboard access)"
+		if plan.tool != nil {
+			if err := runWithInput(command, plan.tool...); err != nil {
+				return showToastMsg{text: "Copy failed: " + err.Error(), ttl: 3 * time.Second}
+			}
+			via = plan.tool[0]
+		}
+		if plan.tmux {
+			via += " and the tmux buffer"
+		}
+		return showToastMsg{text: "Copied via " + via + ": " + command, ttl: 2 * time.Second}
+	})
+	return tea.Batch(cmds...)
+}
+
+type copyPlan struct {
+	tool  []string // local clipboard tool, nil when not used
+	osc52 bool
+	tmux  bool
+}
+
+func planCopy(getenv func(string) string, lookPath func(string) (string, error)) copyPlan {
+	plan := copyPlan{tmux: getenv("TMUX") != ""}
+	if !isSSHSession(getenv) {
+		for _, tool := range clipboardTools {
+			if _, err := lookPath(tool[0]); err == nil {
+				plan.tool = tool
+				break
+			}
+		}
+	}
+	plan.osc52 = plan.tool == nil
+	return plan
+}
+
+// osc52Sequence builds the clipboard escape sequence. The plain sequence is
+// always sent (tmux with set-clipboard on forwards it itself); inside tmux
+// or screen a passthrough-wrapped copy follows for setups that rely on
+// allow-passthrough.
+func osc52Sequence(text string, getenv func(string) string) string {
+	seq := ansi.SetSystemClipboard(text)
+	switch {
+	case getenv("TMUX") != "":
+		return seq + ansi.TmuxPassthrough(seq)
+	case strings.HasPrefix(getenv("TERM"), "screen") && getenv("STY") != "":
+		return seq + ansi.ScreenPassthrough(seq, 0)
+	}
+	return seq
+}
+
+func isSSHSession(getenv func(string) string) bool {
+	return getenv("SSH_CONNECTION") != "" || getenv("SSH_TTY") != "" || getenv("SSH_CLIENT") != ""
 }
 
 // clipboardTools lists local clipboard writers in order of preference.
@@ -93,15 +172,8 @@ var clipboardTools = [][]string{
 	{"xsel", "--clipboard", "--input"},
 }
 
-func copyWithLocalTool(text string) error {
-	for _, tool := range clipboardTools {
-		path, err := exec.LookPath(tool[0])
-		if err != nil {
-			continue
-		}
-		cmd := exec.Command(path, tool[1:]...)
-		cmd.Stdin = strings.NewReader(text)
-		return cmd.Run()
-	}
-	return errors.New("no clipboard tool found")
+func runWithInput(text string, argv ...string) error {
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
 }

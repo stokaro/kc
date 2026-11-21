@@ -680,6 +680,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKeyMsg(msg, cmds)
+	case tea.PasteMsg:
+		// Paste goes where typing goes: the focused command widget, or the shell.
+		if a.interactiveCommandActive() {
+			panel := a.activePanelRef()
+			model, cmd := panel.Update(msg)
+			if idx, ok := a.panelIndexFor(panel); ok {
+				if idx == 0 {
+					a.leftPanel = model.(*Panel)
+				} else {
+					a.rightPanel = model.(*Panel)
+				}
+			}
+			return a, tea.Batch(append(cmds, cmd)...)
+		}
+		return a, tea.Batch(append(cmds, a.updateTerminal(msg, "paste"))...)
 	case commandExitMsg:
 		if msg.OnExit == appconfig.CommandExitRestore || msg.OnExit == appconfig.CommandExitClose {
 			if panel := a.panelByIndex(msg.PanelIdx); panel != nil {
@@ -712,6 +727,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(cmds...)
 			}
 			m := mm.Mouse()
+			if m.Y == a.commandLineY() {
+				if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft && a.commandLineCopyHit(m.X) {
+					return a, a.copyPanelCommand()
+				}
+				return a, nil
+			}
 			if m.Y == a.height-1 {
 				if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
 					if cmd := a.handleFunctionKeyClick(m.X); cmd != nil {

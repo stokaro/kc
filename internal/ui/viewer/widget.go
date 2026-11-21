@@ -197,6 +197,13 @@ func (w *Widget) Update(msg tea.Msg) (tea.Cmd, bool) {
 	case tea.WindowSizeMsg:
 		w.Resize(max(1, m.Width), max(1, m.Height))
 		return nil, true
+	case tea.PasteMsg:
+		if w.searchDialog != nil && w.searchDialog.focus == searchFocusInput {
+			var cmd tea.Cmd
+			w.searchDialog.input, cmd = w.searchDialog.input.Update(m)
+			return cmd, true
+		}
+		return nil, false
 	case tea.KeyMsg:
 		if w.searchDialog != nil {
 			return w.handleSearchDialog(m), true

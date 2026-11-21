@@ -244,8 +244,7 @@ func (w *CommandWidget) Cursor() *tea.Cursor {
 	if w.terminal == nil || !w.interactiveOn {
 		return nil
 	}
-	view := w.terminal.View()
-	return view.Cursor
+	return emulatorCursor(w.terminal)
 }
 
 func (w *CommandWidget) SetFocus(ctx context.Context, focused bool) {
@@ -342,8 +341,6 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 		return nil
 	}
 	term.SetAutoPoll(true)
-	term.SetPollInterval(100 * time.Millisecond)
-	term.SetQuietExit(true)
 	w.terminal = term
 
 	// Prepare command

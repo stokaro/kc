@@ -8,8 +8,10 @@ import (
 )
 
 func TestKubectlCommand(t *testing.T) {
-	current := Deps{CtxName: "dev", KubeConfig: clientcmdapi.Config{CurrentContext: "dev"}}
-	other := Deps{CtxName: "prod", KubeConfig: clientcmdapi.Config{CurrentContext: "dev"}}
+	// KubeConfig.CurrentContext is the panel's own context in kc; only
+	// KubectlContext decides whether --context is needed.
+	current := Deps{CtxName: "dev", KubectlContext: "dev", KubeConfig: clientcmdapi.Config{CurrentContext: "dev"}}
+	other := Deps{CtxName: "prod", KubectlContext: "dev", KubeConfig: clientcmdapi.Config{CurrentContext: "prod"}}
 	deploy := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 	objects := func(deps Deps, gvr schema.GroupVersionResource, ns string) *ObjectsFolder {
 		return &ObjectsFolder{BaseFolder: &BaseFolder{Deps: deps}, gvr: gvr, namespace: ns}
