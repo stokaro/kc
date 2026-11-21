@@ -61,8 +61,28 @@ func TestRenderFrameIndicatorsWithFooter(t *testing.T) {
 	if !strings.HasPrefix(bottom, "├") || !strings.HasSuffix(bottom, "▼┤") {
 		t.Fatalf("expected bottom line with adjusted corners and arrow when footer present, got %q", bottom)
 	}
-	if !strings.Contains(bottom, "6/10 • 60% • List") {
-		t.Fatalf("expected status and mode on bottom border even with footer, got %q", bottom)
+	if strings.Contains(bottom, "6/10") || strings.Contains(bottom, "List") {
+		t.Fatalf("expected a plain separator above the footer, got %q", bottom)
+	}
+
+	footer, _ := p.renderFramedFooter("info", 30)
+	footer = p.attachFooterStatus(footer, info, 30)
+	footerLines := strings.Split(ansi.Strip(footer), "\n")
+	last := footerLines[len(footerLines)-1]
+	if !strings.HasPrefix(last, "└") || !strings.HasSuffix(last, "─┘") {
+		t.Fatalf("expected footer bottom border with corners, got %q", last)
+	}
+	if !strings.Contains(last, " 6/10 • 60% • List ") {
+		t.Fatalf("expected status and mode on the footer bottom border, got %q", last)
+	}
+}
+
+func TestRenderFrameTitleLeftAligned(t *testing.T) {
+	p := NewPanel("test")
+	frame := p.renderFrame(strings.Repeat(" ", 10), panelcontent.FrameInfo{}, "/namespaces/default", 40, 6, true, false)
+	top := strings.Split(ansi.Strip(frame), "\n")[0]
+	if !strings.HasPrefix(top, "┌─ /namespaces/default ─") {
+		t.Fatalf("expected title at the left of the top border, got %q", top)
 	}
 }
 

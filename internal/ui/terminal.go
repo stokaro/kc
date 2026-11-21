@@ -191,7 +191,7 @@ func (t *Terminal) View() tea.View {
 	}
 
 	if t.showPanels {
-		view, cur := t.renderTwoLineViewWithCursor()
+		view, cur := t.renderInlineViewWithCursor()
 		return viewWithCursor(view, cur)
 	}
 
@@ -199,52 +199,23 @@ func (t *Terminal) View() tea.View {
 	return viewWithCursor(terminalView, cursor)
 }
 
-// renderTwoLineViewWithCursor renders the 2-line view and returns cursor
-func (t *Terminal) renderTwoLineViewWithCursor() (string, *tea.Cursor) {
+// inlineTerminalLines is the height of the shell area shown under the panels.
+// Like the Midnight Commander command line it is a single line: the line with
+// the shell cursor.
+const inlineTerminalLines = 1
+
+// renderInlineViewWithCursor renders the inline shell area and returns its cursor.
+func (t *Terminal) renderInlineViewWithCursor() (string, *tea.Cursor) {
 	if t.terminal == nil {
 		fallback := lipgloss.NewStyle().
 			Width(t.width).
-			Height(2).
+			Height(inlineTerminalLines).
 			Render("Terminal not initialized")
 		return fallback, nil
 	}
 
 	terminalView, termCur := t.terminalView()
-	return renderTwoLineFrom(terminalView, termCur, t.width)
-}
-
-// renderTwoLineView renders the 2-line view when panels are visible
-func (t *Terminal) renderTwoLineView() string {
-	if t.terminal == nil {
-		return lipgloss.NewStyle().
-			Width(t.width).
-			Height(2).
-			Render("Terminal not initialized")
-	}
-
-	terminalView, _ := t.terminalView()
-	terminalLines := strings.Split(terminalView, "\n")
-
-	// Take the last 2 lines to show the cursor and previous line
-	var lines []string
-	if len(terminalLines) >= 2 {
-		lines = terminalLines[len(terminalLines)-2:]
-	} else {
-		lines = terminalLines
-	}
-
-	// Ensure we have exactly 2 lines
-	for len(lines) < 2 {
-		lines = append(lines, "")
-	}
-
-	// Join lines
-	content := strings.Join(lines, "\n")
-
-	return lipgloss.NewStyle().
-		Width(t.width).
-		Height(2).
-		Render(content)
+	return renderInlineFrom(terminalView, termCur, t.width, inlineTerminalLines)
 }
 
 func (t *Terminal) terminalView() (string, *tea.Cursor) {
@@ -264,62 +235,41 @@ func (t *Terminal) terminalView() (string, *tea.Cursor) {
 	}
 }
 
-// renderTwoLineFrom produces a two-line view from a full terminal view and optional cursor.
-// It clamps the cursor position to existing lines and always returns exactly 2 lines rendered
-// to the specified width. When the cursor is present, it is repositioned to Y=1.
-func renderTwoLineFrom(terminalView string, termCur *tea.Cursor, width int) (string, *tea.Cursor) {
+// renderInlineFrom cuts height lines out of a full terminal view. With a
+// cursor it shows the cursor line and the lines above it, and moves the cursor
+// to the last line; without one it shows the last lines of the view. The
+// result always has exactly height lines rendered to width.
+func renderInlineFrom(terminalView string, termCur *tea.Cursor, width, height int) (string, *tea.Cursor) {
+	if height < 1 {
+		height = 1
+	}
 	terminalLines := strings.Split(terminalView, "\n")
+	render := func(lines []string) string {
+		return lipgloss.NewStyle().
+			Width(width).
+			Height(height).
+			Render(strings.Join(lines, "\n"))
+	}
 
 	if termCur == nil {
-		// No cursor available, show last 2 lines of terminal output
-		var lines []string
-		if len(terminalLines) >= 2 {
-			lines = terminalLines[len(terminalLines)-2:]
-		} else {
-			lines = terminalLines
-		}
-		// Ensure we have exactly 2 lines
-		for len(lines) < 2 {
+		start := max(0, len(terminalLines)-height)
+		lines := append([]string(nil), terminalLines[start:]...)
+		for len(lines) < height {
 			lines = append(lines, "")
 		}
-		content := strings.Join(lines, "\n")
-		view := lipgloss.NewStyle().
-			Width(width).
-			Height(2).
-			Render(content)
-		return view, nil
+		return render(lines), nil
 	}
 
-	// Show the cursor line and the line before it
-	var lines []string
-	if len(terminalLines) == 0 {
-		lines = []string{"", ""}
-		view := lipgloss.NewStyle().
-			Width(width).
-			Height(2).
-			Render(strings.Join(lines, "\n"))
-		return view, nil
-	}
-	y := termCur.Y
-	if y < 0 {
-		y = 0
-	}
-	if y >= len(terminalLines) {
-		y = len(terminalLines) - 1
+	y := clampInt(termCur.Y, 0, len(terminalLines)-1)
+	start := max(0, y+1-height)
+	lines := append([]string(nil), terminalLines[start:y+1]...)
+	for len(lines) < height {
+		lines = append([]string{""}, lines...)
 	}
 	cur := *termCur
-	cur.Y = 1
+	cur.Y = height - 1
 	cur.Blink = true
-	if y > 0 {
-		lines = []string{terminalLines[y-1], terminalLines[y]}
-	} else {
-		lines = []string{"", terminalLines[y]}
-	}
-	view := lipgloss.NewStyle().
-		Width(width).
-		Height(2).
-		Render(strings.Join(lines, "\n"))
-	return view, &cur
+	return render(lines), &cur
 }
 
 func (t *Terminal) immediatePollCmd() tea.Cmd {

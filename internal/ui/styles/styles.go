@@ -49,7 +49,8 @@ var (
 	PanelTableHeaderStyle = lipgloss.NewStyle().
 				Background(lipgloss.Blue).
 				Foreground(lipgloss.Yellow).
-				Bold(true)
+				Bold(true).
+				Align(lipgloss.Center)
 
 		// Border and frame styles
 	BorderStyle = lipgloss.NewStyle().
@@ -66,29 +67,23 @@ var (
 				BorderForeground(lipgloss.Cyan).
 				BorderLeft(false)
 
-		// Function key styles
-	FunctionKeyStyle = lipgloss.NewStyle().
+		// Function bar slots (Midnight Commander layout): key number on
+		// black, label filling the rest of the slot.
+	FunctionBarKeyStyle = lipgloss.NewStyle().
 				Background(lipgloss.Black).
-				Padding(0, 0, 0, 1)
+				Foreground(lipgloss.White)
 
-	FunctionKeyDescriptionStyle = lipgloss.NewStyle().
-					Background(lipgloss.Cyan).
-					Foreground(lipgloss.Black).
-					Padding(0, 1, 0, 0)
+	FunctionBarLabelStyle = lipgloss.NewStyle().
+				Background(lipgloss.Cyan).
+				Foreground(lipgloss.Black)
 
-	FunctionKeyDisabledStyle = lipgloss.NewStyle().
+	FunctionBarDisabledStyle = lipgloss.NewStyle().
 					Background(lipgloss.Color(ColorDarkGrey)).
-					Foreground(lipgloss.White).
-					Padding(0, 1, 0, 0)
+					Foreground(lipgloss.White)
 
 	FunctionKeyBarStyle = lipgloss.NewStyle().
 				Background(lipgloss.Black).
 				Foreground(lipgloss.White)
-
-	FunctionKeyTitleStyle = lipgloss.NewStyle().
-				Background(lipgloss.Blue).
-				Foreground(lipgloss.Color(ColorWhite)).
-				Bold(true)
 
 		// Toggle message styles
 	ToggleMessageStyle = lipgloss.NewStyle().

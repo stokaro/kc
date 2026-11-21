@@ -91,7 +91,8 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Calculate dimensions
 	terminalHeight := a.inlineTerminalHeight()
 	// Reserve space for the inline terminal (if visible) and function keys (1)
-	reserved := terminalHeight + 1
+	commandHeight := a.commandLineHeight()
+	reserved := terminalHeight + commandHeight + 1
 	panelHeight := a.height - reserved
 	if panelHeight < 3 {
 		panelHeight = 3
@@ -148,7 +149,7 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 		)
 	}
 
-	// Add terminal (2 lines)
+	// Add the inline shell line
 	terminalView := ""
 	var terminalCursor *tea.Cursor
 	if terminalHeight > 0 {
@@ -157,15 +158,15 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 
 	// Add function key bar
 	functionKeys := a.renderFunctionKeys()
-	combinedView := lipgloss.JoinVertical(lipgloss.Left, panels, functionKeys)
-	if terminalHeight > 0 {
-		combinedView = lipgloss.JoinVertical(
-			lipgloss.Left,
-			panels,
-			terminalView,
-			functionKeys,
-		)
+	parts := []string{panels}
+	if commandHeight > 0 {
+		parts = append(parts, a.renderCommandLine())
 	}
+	if terminalHeight > 0 {
+		parts = append(parts, terminalView)
+	}
+	parts = append(parts, functionKeys)
+	combinedView := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	// Busy overlay: show a small 2x2 ASCII animation centered over the main view
 	if a.busyActive {
@@ -188,7 +189,7 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	}
 	if terminalCursor != nil {
 		// Calculate the offset: panels height
-		offsetY := panelHeight
+		offsetY := panelHeight + commandHeight
 		adjustedCursor := tea.NewCursor(terminalCursor.X, terminalCursor.Y+offsetY)
 		adjustedCursor.Blink = terminalCursor.Blink
 		adjustedCursor.Color = terminalCursor.Color
@@ -214,7 +215,7 @@ func (a *App) renderBusyOverlay() string {
 	return st.Render(f)
 }
 
-// renderTerminalArea renders the 2-line terminal area in main view
+// renderTerminalArea renders the inline shell area in the main view
 func (a *App) renderTerminalArea() (string, *tea.Cursor) {
 	if view, cursor, ok := a.terminalAreaCache.get(); ok {
 		if a.interactiveCommandActive() {
@@ -302,6 +303,15 @@ func (a *App) refreshFoldersAfterViewChange() {
 
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
+	if a.functionBar == nil {
+		return ""
+	}
+	return a.functionBar.Render(a.functionBarState())
+}
+
+// functionBarState captures what the function bar shows. Rendering and click
+// handling share it so the slots they compute always match.
+func (a *App) functionBarState() functionBarState {
 	state := functionBarState{
 		Width:        a.width,
 		ToastActive:  a.toastActive,
@@ -318,10 +328,7 @@ func (a *App) renderFunctionKeys() string {
 	if a.terminal != nil {
 		state.TerminalHasInput = a.terminal.HasInput()
 	}
-	if a.functionBar == nil {
-		return ""
-	}
-	return a.functionBar.Render(state)
+	return state
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
@@ -334,140 +341,66 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			return nil
 		}
 	}
-	var keys []struct {
-		label   string
-		enabled bool
-		action  func() tea.Cmd
-	}
-	enterEnabled := false
-	if panel := a.activePanelRef(); panel != nil {
-		if panel.Mode() == PanelModeCommand && panel.HasInteractiveCommand() && !panel.HasCommandFocus() && a.terminal != nil && !a.terminal.HasInput() {
-			enterEnabled = true
-		}
-	}
 	if a.showTerminal {
-		keys = []struct {
-			label   string
-			enabled bool
-			action  func() tea.Cmd
-		}{
-			{label: uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd {
-				a.showTerminal = false
-				a.terminal.SetShowPanels(true)
-				a.invalidateView("function bar return to panels")
-				a.invalidateFunctionBar("terminal exit")
-				a.invalidateTerminalArea("terminal exit")
-				return nil
-			}},
-		}
-	} else {
-		panel := a.activePanelRef()
-		caps := a.capabilitiesForPanel(panel)
-		makeLbl := func(key, label string, enabled bool) string {
-			desc := uistyles.FunctionKeyDescriptionStyle
-			if !enabled {
-				desc = uistyles.FunctionKeyDisabledStyle
-			}
-			return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
-		}
-		invoke := func(action PanelAction) func() tea.Cmd {
-			return func() tea.Cmd {
-				if panel == nil {
-					return nil
-				}
-				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				cmd := panel.invokeActionIfAllowed(ctx, action)
-				cancel()
-				return cmd
-			}
-		}
-		enterAction := func() tea.Cmd {
-			if !enterEnabled {
-				return nil
-			}
-			if panel == nil {
-				return nil
-			}
-			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-			defer cancel()
-			return panel.FocusCommand(ctx)
-		}
-		keys = []struct {
-			label   string
-			enabled bool
-			action  func() tea.Cmd
-		}{
-			{makeLbl("F1", "Help", caps.HasHelp), caps.HasHelp, invoke(PanelActionHelp)},
-			{makeLbl("F2", "Options", caps.HasOptions), caps.HasOptions, invoke(PanelActionOptions)},
-			{makeLbl("F3", "View", caps.CanView), caps.CanView, invoke(PanelActionView)},
-			{makeLbl("F4", "Edit", caps.CanEdit), caps.CanEdit, invoke(PanelActionEdit)},
-			{makeLbl("F5", "Copy", caps.CanCopy), caps.CanCopy, invoke(PanelActionCopy)},
-			{makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
-			{makeLbl("F7", "Namespace", caps.CanCreateNS), caps.CanCreateNS, invoke(PanelActionCreateNamespace)},
-			{makeLbl("F8", "Delete", caps.CanDelete), caps.CanDelete, invoke(PanelActionDelete)},
-			{uistyles.FunctionKeyStyle.Render("F9") + uistyles.FunctionKeyDescriptionStyle.Render("Commands"), caps.HasContextMenu, invoke(PanelActionMenu)},
-			{uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
-		}
-		if enterEnabled {
-			keys = append(keys, struct {
-				label   string
-				enabled bool
-				action  func() tea.Cmd
-			}{makeLbl("Enter", "Focus", enterEnabled), enterEnabled, enterAction})
-		}
-		keys = append(keys, struct {
-			label   string
-			enabled bool
-			action  func() tea.Cmd
-		}{
-			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
-				a.showTerminal = true
-				a.terminal.SetShowPanels(false)
-				a.invalidateView("function bar fullscreen")
-				a.invalidateFunctionBar("terminal enter")
-				a.invalidateTerminalArea("terminal enter")
-				return nil
-			},
-		})
-	}
-
-	spans := make([]int, len(keys)+1)
-	acc := 0
-	for i, k := range keys {
-		spans[i] = acc
-		acc += lipgloss.Width(k.label)
-	}
-	spans[len(keys)] = acc
-
-	for i := 0; i < len(keys); i++ {
-		if x >= spans[i] && x < spans[i+1] {
-			if keys[i].enabled && keys[i].action != nil {
-				return keys[i].action()
-			}
+		if functionKeyAt(len(compactFunctionKeys(functionBarState{ShowTerminal: true})), a.width, x) < 0 {
 			return nil
 		}
+		a.showTerminal = false
+		a.terminal.SetShowPanels(true)
+		a.invalidateView("function bar return to panels")
+		a.invalidateFunctionBar("terminal exit")
+		a.invalidateTerminalArea("terminal exit")
+		return nil
+	}
+
+	state := a.functionBarState()
+	keys := panelFunctionKeys(state)
+	i := functionKeyAt(len(keys), state.Width, x)
+	if i < 0 || !keys[i].Enabled {
+		return nil
+	}
+	panel := a.activePanelRef()
+	if panel == nil {
+		return nil
+	}
+	invoke := func(action PanelAction) tea.Cmd {
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		defer cancel()
+		return panel.invokeActionIfAllowed(ctx, action)
+	}
+	switch keys[i].ID {
+	case functionKeyHelp:
+		return invoke(PanelActionHelp)
+	case functionKeyOptions:
+		return invoke(PanelActionOptions)
+	case functionKeyView:
+		return invoke(PanelActionView)
+	case functionKeyEdit:
+		return invoke(PanelActionEdit)
+	case functionKeyCopy:
+		return invoke(PanelActionCopy)
+	case functionKeyRenameMove:
+		return a.renameMoveItem()
+	case functionKeyNamespace:
+		return invoke(PanelActionCreateNamespace)
+	case functionKeyDelete:
+		return invoke(PanelActionDelete)
+	case functionKeyCommands:
+		return invoke(PanelActionMenu)
+	case functionKeyQuit:
+		return tea.Quit
+	case functionKeyFocus:
+		if a.terminal == nil || a.terminal.HasInput() {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		defer cancel()
+		return panel.FocusCommand(ctx)
 	}
 	return nil
 }
 
-// renderToggleMessage renders the toggle message for fullscreen mode
+// renderToggleMessage renders the key bar shown under the fullscreen terminal.
 func (a *App) renderToggleMessage() string {
-	// Create the same layout as function keys
-	key := uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels")
-	title := uistyles.FunctionKeyTitleStyle.Render("Kubernetes Commander")
-
-	// Calculate the exact spacing needed to push title to the right edge
-	spacing := a.width - len(key) - len(title)
-	if spacing < 0 {
-		spacing = 1 // minimum spacing
-	}
-
-	content := key + strings.Repeat(" ", spacing) + title
-
-	// Create a full-width container
-	fullWidthStyle := uistyles.FunctionKeyBarStyle.
-		Width(a.width).
-		Align(lipgloss.Left)
-
-	return fullWidthStyle.Render(content)
+	return renderFunctionKeySlots(compactFunctionKeys(functionBarState{ShowTerminal: true}), a.width)
 }

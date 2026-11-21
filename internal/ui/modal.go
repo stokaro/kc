@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/sttts/kc/internal/overlay"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -22,6 +24,9 @@ type Modal struct {
 	onClose          func() tea.Cmd
 	escPressed       bool
 	closeOnSingleEsc bool
+	// closeOnEscTimeout closes the modal when a lone Esc is not followed by a
+	// digit (Esc+digit emulates F-keys) before the Esc timeout expires.
+	closeOnEscTimeout bool
 	// Windowed overlay support
 	windowed       bool
 	winWidth       int
@@ -126,6 +131,11 @@ func (m *Modal) SetOnClose(callback func() tea.Cmd) {
 // SetCloseOnSingleEsc controls whether a lone Esc closes the modal. Esc+digit
 // handling remains active regardless.
 func (m *Modal) SetCloseOnSingleEsc(v bool) { m.closeOnSingleEsc = v }
+
+// SetCloseOnEscTimeout makes a lone Esc close the modal once the Esc timeout
+// expires, keeping Esc+digit available as F-key emulation. It only matters
+// when closeOnSingleEsc is false.
+func (m *Modal) SetCloseOnEscTimeout(v bool) { m.closeOnEscTimeout = v }
 
 // SetEscTimeout configures the double-ESC timeout window.
 func (m *Modal) SetEscTimeout(timeout time.Duration) {
@@ -235,6 +245,13 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.escPressed {
 			// Timeout expired without second ESC; cancel sequence.
 			m.escPressed = false
+			if m.closeOnEscTimeout {
+				m.Hide()
+				if m.onClose != nil {
+					return m, m.onClose()
+				}
+				return m, nil
+			}
 			// For closeOnSingleEsc=false, do nothing (wait for explicit action)
 			// For true, single ESC already closed immediately above.
 			return m, nil
@@ -586,74 +603,140 @@ func (m *Modal) keyAtFooterColumn(x int) (string, bool) {
 	return "", false
 }
 
+// buildFooter renders the modal's key bar in the layout of the panel function
+// bar. Footers with function keys (F1..F10) get ten numbered slots like Midnight
+// Commander; other footers get one slot per hint. Slots are spread over the full
+// width unless a footer status (e.g. the search input) needs the space.
 func (m *Modal) buildFooter(includeEsc bool) string {
-	var builder strings.Builder
-	currentWidth := 0
 	m.footerCursor = nil
-	appendHint := func(key, label string, enabled bool) {
-		if builder.Len() > 0 {
-			builder.WriteString(" ")
-			currentWidth += lipgloss.Width(" ")
-		}
-		style := uistyles.FunctionKeyDescriptionStyle
-		if !enabled {
-			style = uistyles.FunctionKeyDisabledStyle
-		}
-		segment := uistyles.FunctionKeyStyle.Render(key) + style.Render(label)
-		segWidth := lipgloss.Width(segment)
-		m.footerHotspots = append(m.footerHotspots, footerHotspot{
-			key:     key,
-			start:   currentWidth,
-			end:     currentWidth + segWidth,
-			enabled: enabled,
-		})
-		builder.WriteString(segment)
-		currentWidth += segWidth
-	}
-	if includeEsc && m.closeOnSingleEsc {
-		appendHint("Esc", "Close", true)
-	}
+	var hints []FooterHint
 	if provider, ok := m.content.(ModalFooterHints); ok {
 		for _, hint := range provider.FooterHints() {
-			if hint.Key == "" || hint.Label == "" {
-				continue
+			if hint.Key != "" && hint.Label != "" {
+				hints = append(hints, hint)
 			}
-			appendHint(hint.Key, hint.Label, hint.Enabled)
 		}
 	}
+	numbered := false
+	hasEsc := false
+	for _, hint := range hints {
+		if functionKeyNumber(hint.Key) > 0 {
+			numbered = true
+		}
+		if strings.EqualFold(hint.Key, "esc") {
+			hasEsc = true
+		}
+	}
+
+	var keys []functionKey
+	var hotkeys []string
+	if numbered {
+		keys = make([]functionKey, 10)
+		hotkeys = make([]string, 10)
+		for i := range keys {
+			keys[i] = functionKey{Key: fmt.Sprintf("%2d", i+1)}
+			hotkeys[i] = fmt.Sprintf("F%d", i+1)
+		}
+	} else if includeEsc && m.closeOnSingleEsc && !hasEsc {
+		keys = append(keys, functionKey{Key: " Esc", Label: "Close", Enabled: true})
+		hotkeys = append(hotkeys, "Esc")
+	}
+	for _, hint := range hints {
+		if n := functionKeyNumber(hint.Key); n > 0 {
+			keys[n-1].Label = hint.Label
+			keys[n-1].Enabled = hint.Enabled
+			continue
+		}
+		keys = append(keys, functionKey{Key: " " + hint.Key, Label: hint.Label, Enabled: hint.Enabled})
+		hotkeys = append(hotkeys, hint.Key)
+	}
+	return m.renderFooterSlots(keys, hotkeys, numbered)
+}
+
+func (m *Modal) renderFooterSlots(keys []functionKey, hotkeys []string, numbered bool) string {
+	natural := make([]int, len(keys))
+	naturalTotal := 0
+	for i, k := range keys {
+		natural[i] = lipgloss.Width(k.Key) + lipgloss.Width(k.Label) + 1
+		naturalTotal += natural[i]
+	}
+
+	status := ""
+	statusWidth := 0
 	if statusProvider, ok := m.content.(ModalFooterStatus); ok {
-		avail := m.width - currentWidth
-		if builder.Len() > 0 {
-			builder.WriteString(" ")
-			currentWidth++
-			avail--
-		}
-		if avail > 0 {
-			if status := statusProvider.FooterStatus(avail); strings.TrimSpace(status) != "" {
-				segment := status
-				segWidth := lipgloss.Width(segment)
-				start := currentWidth
-				m.footerHotspots = append(m.footerHotspots, footerHotspot{
-					key:     "",
-					start:   currentWidth,
-					end:     currentWidth + segWidth,
-					enabled: false,
-				})
-				builder.WriteString(segment)
-				if cursorProvider, ok := m.content.(ModalFooterCursor); ok {
-					if cur := cursorProvider.FooterCursor(avail); cur != nil {
-						clone := tea.NewCursor(start+cur.X, cur.Y)
-						clone.Blink = cur.Blink
-						clone.Color = cur.Color
-						clone.Shape = cur.Shape
-						m.footerCursor = clone
-					}
-				}
-				currentWidth += segWidth
+		if numbered {
+			// Give the status only the room its text needs (up to a third of
+			// the line) so the numbered slots stay readable.
+			statusWidth = m.width / 3
+			if probe := statusProvider.FooterStatus(statusWidth); probe != "" {
+				statusWidth = min(statusWidth, lipgloss.Width(strings.TrimRight(ansi.Strip(probe), " "))+1)
 			}
+		} else {
+			statusWidth = m.width - naturalTotal - 1
+		}
+		if statusWidth > 0 {
+			status = statusProvider.FooterStatus(statusWidth)
+		}
+		if strings.TrimSpace(ansi.Strip(status)) == "" {
+			status, statusWidth = "", 0
 		}
 	}
-	return builder.String()
+
+	barWidth := m.width
+	var starts []int
+	switch {
+	case statusWidth == 0:
+		starts = functionKeySlotStarts(len(keys), barWidth)
+	case numbered:
+		barWidth = max(0, m.width-statusWidth-1)
+		starts = functionKeySlotStarts(len(keys), barWidth)
+	default:
+		barWidth = min(naturalTotal, m.width)
+		starts = make([]int, len(keys)+1)
+		for i, w := range natural {
+			starts[i+1] = min(barWidth, starts[i]+w)
+		}
+	}
+
+	for i, k := range keys {
+		m.footerHotspots = append(m.footerHotspots, footerHotspot{
+			key:     hotkeys[i],
+			start:   starts[i],
+			end:     starts[i+1],
+			enabled: k.Enabled && strings.TrimSpace(k.Label) != "",
+		})
+	}
+	footer := renderFunctionKeySlotsAt(keys, starts)
+	if status == "" {
+		return footer
+	}
+	start := barWidth + 1
+	m.footerHotspots = append(m.footerHotspots, footerHotspot{
+		start: start,
+		end:   start + lipgloss.Width(status),
+	})
+	if cursorProvider, ok := m.content.(ModalFooterCursor); ok {
+		if cur := cursorProvider.FooterCursor(statusWidth); cur != nil {
+			clone := tea.NewCursor(start+cur.X, cur.Y)
+			clone.Blink = cur.Blink
+			clone.Color = cur.Color
+			clone.Shape = cur.Shape
+			m.footerCursor = clone
+		}
+	}
+	return footer + " " + status
+}
+
+// functionKeyNumber returns n for "F<n>" with n in 1..10, or 0.
+func functionKeyNumber(key string) int {
+	if len(key) < 2 || (key[0] != 'F' && key[0] != 'f') {
+		return 0
+	}
+	n, err := strconv.Atoi(key[1:])
+	if err != nil || n < 1 || n > 10 {
+		return 0
+	}
+	return n
 }
 
 func clampInt(v, minVal, maxVal int) int {

@@ -59,16 +59,19 @@ func (v *TextViewer) View() tea.View {
 func (v *TextViewer) FooterHints() []FooterHint {
 	if v.inner.SearchMode() {
 		return []FooterHint{
-			{Key: "Enter", Label: "Search", Enabled: true},
+			{Key: "Enter", Label: "OK", Enabled: true},
+			{Key: "Tab", Label: "Next field", Enabled: true},
+			{Key: "Space", Label: "Toggle", Enabled: true},
 			{Key: "Esc", Label: "Cancel", Enabled: true},
 		}
 	}
 	return []FooterHint{
 		{Key: "F2", Label: "Options", Enabled: v.onOptions != nil},
-		{Key: "F3", Label: "Next", Enabled: v.inner.HasSearchMatches()},
+		{Key: "F3", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "F4", Label: "Edit", Enabled: v.onEdit != nil},
 		{Key: "F7", Label: "Search", Enabled: true},
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
+		{Key: "n", Label: "Next", Enabled: v.inner.HasSearchMatches()},
 	}
 }
 

@@ -118,8 +118,8 @@ func TestAppFunctionBarUpdate(t *testing.T) {
 		t.Fatal("Right panel should have CanView=false (after entering fresh folder)")
 	}
 
-	enabledF3 := uistyles.FunctionKeyStyle.Render("F3") + uistyles.FunctionKeyDescriptionStyle.Render("View")
-	disabledF3 := uistyles.FunctionKeyStyle.Render("F3") + uistyles.FunctionKeyDisabledStyle.Render("View")
+	enabledF3 := uistyles.FunctionBarKeyStyle.Render(" 3") + uistyles.FunctionBarLabelStyle.Render("View")
+	disabledF3 := uistyles.FunctionBarKeyStyle.Render(" 3") + uistyles.FunctionBarDisabledStyle.Render("View")
 
 	// Test App switching
 	app.activePanel = 0 // Left active
