@@ -187,6 +187,9 @@ func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error
 	sessionCtx, cancelSession := context.WithTimeout(ctx, fsSessionTimeout)
 	defer cancelSession()
 	sess, err := f.session.Session(sessionCtx)
+	if err != nil && errors.Is(err, podfs.ErrHelperNeeded) {
+		return f.helperConsentRows(), nil
+	}
 	if err != nil {
 		log := ctrllog.FromContext(sessionCtx).WithName("podfs_folder").
 			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container)
@@ -501,6 +504,15 @@ type containerSessionHandle struct {
 	helper  bool
 	// helperContainer is the debug helper the session runs in, if any.
 	helperContainer string
+	// allowHelper records the user's consent to add a debug helper.
+	allowHelper bool
+}
+
+// approveHelper lets later sessions add a debug helper.
+func (h *containerSessionHandle) approveHelper() {
+	h.mu.Lock()
+	h.allowHelper = true
+	h.mu.Unlock()
 }
 
 // execTarget returns the container kubectl exec must use and how a path in
@@ -539,7 +551,9 @@ func (h *containerSessionHandle) Session(ctx context.Context) (podfs.ExecSession
 	if h.session != nil {
 		return h.session, nil
 	}
-	session, err := h.factory.NewSession(ctx, h.spec)
+	spec := h.spec
+	spec.AllowHelper = h.allowHelper
+	session, err := h.factory.NewSession(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -706,4 +720,61 @@ func isContextError(err error) bool {
 		return false
 	}
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// helperConsentRows offers to start a debug helper for a container without
+// a shell. Starting one changes the pod, so it is a confirmed action.
+func (f *PodContainerFSFolder) helperConsentRows() []table.Row {
+	item := &helperStartItem{
+		SimpleItem: NewSimpleItem("start_helper", []string{"Start a debug helper...", "", "", ""}, f.Path(), WhiteStyle()),
+		folder:     f,
+	}
+	item.RowItem.details = "The container has no shell; Enter starts a debug helper to browse it"
+	return []table.Row{item}
+}
+
+// helperStartItem asks for consent to add a debug helper to the pod.
+type helperStartItem struct {
+	*SimpleItem
+	folder *PodContainerFSFolder
+}
+
+func (i *helperStartItem) Confirmation() Confirmation {
+	spec := i.folder.session.spec
+	return Confirmation{
+		Title: "Start a debug helper?",
+		Details: [][2]string{
+			{"Context", i.folder.Deps.ClusterKey.ContextName},
+			{"Namespace", spec.Namespace},
+			{"Pod", spec.Pod},
+			{"Container", spec.Container},
+		},
+		Notes: []string{
+			"Adds an ephemeral busybox container with",
+			"CAP_SYS_PTRACE to the pod. It exits after a",
+			"minute without use but stays in the pod spec",
+			"until the pod is recreated. Browsing again",
+			"later adds another one.",
+		},
+		Action: "Start",
+	}
+}
+
+func (i *helperStartItem) Confirm() error {
+	i.folder.session.approveHelper()
+	i.folder.reload()
+	return nil
+}
+
+// reload drops the shown rows and loads the directory again.
+func (f *PodContainerFSFolder) reload() {
+	f.loadMu.Lock()
+	f.rows, f.fresh = nil, false
+	start := !f.loading
+	f.loading = true
+	f.loadMu.Unlock()
+	if start {
+		go f.load()
+	}
+	f.markDirty()
 }

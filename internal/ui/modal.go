@@ -29,6 +29,7 @@ type Modal struct {
 	closeOnEscTimeout bool
 	// Windowed overlay support
 	windowed       bool
+	danger         bool // red: the dialog confirms a change to the cluster
 	winWidth       int
 	winHeight      int
 	background     string        // full-screen base to overlay on when windowed
@@ -176,6 +177,9 @@ func (m *Modal) WindowPosition() (winX, winY, winW, winH int, ok bool) {
 	}
 	return m.windowOffsetX, m.windowOffsetY, m.winWidth, m.winHeight, true
 }
+
+// SetDanger draws the dialog in red, for confirming changes to the cluster.
+func (m *Modal) SetDanger(on bool) { m.danger = on }
 
 // SetMode configures the modal presentation style.
 func (m *Modal) SetMode(mode ModalMode) { m.mode = mode }
@@ -361,6 +365,12 @@ func (m *Modal) View() tea.View {
 
 		frameBg := lipgloss.Color(uistyles.ColorModalBg)
 		frameFg := lipgloss.Color(uistyles.ColorModalFg)
+		titleFg := lipgloss.Color(uistyles.ColorModalTitle)
+		if m.danger {
+			frameBg = lipgloss.Color(uistyles.ColorDangerBg)
+			frameFg = lipgloss.Color(uistyles.ColorDangerFg)
+			titleFg = frameFg
+		}
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(frameFg).
@@ -370,7 +380,8 @@ func (m *Modal) View() tea.View {
 			Height(winH)
 
 		labelStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(uistyles.ColorModalTitle)).
+			Foreground(titleFg).
+			Bold(m.danger).
 			Background(frameBg).
 			Padding(0, 1)
 		label := labelStyle.Render(m.title)

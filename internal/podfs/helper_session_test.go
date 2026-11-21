@@ -83,3 +83,59 @@ func TestCreateHelperAddsPtrace(t *testing.T) {
 		t.Fatalf("plain helper must not ask for capabilities")
 	}
 }
+
+func TestPickHelper(t *testing.T) {
+	running := corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}
+	done := corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed"}}
+	pod := func(states map[string]corev1.ContainerState, names ...string) *corev1.Pod {
+		p := &corev1.Pod{}
+		for _, n := range names {
+			p.Spec.EphemeralContainers = append(p.Spec.EphemeralContainers, corev1.EphemeralContainer{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: n}})
+			if st, ok := states[n]; ok {
+				p.Status.EphemeralContainerStatuses = append(p.Status.EphemeralContainerStatuses, corev1.ContainerStatus{Name: n, State: st})
+			}
+		}
+		return p
+	}
+	cases := []struct {
+		name    string
+		pod     *corev1.Pod
+		want    string
+		running bool
+	}{
+		{"none", pod(nil), "kc-fs-ptrace-app-0", false},
+		{"running", pod(map[string]corev1.ContainerState{"kc-fs-ptrace-app-0": running}, "kc-fs-ptrace-app-0"), "kc-fs-ptrace-app-0", true},
+		{"starting", pod(nil, "kc-fs-ptrace-app-0"), "kc-fs-ptrace-app-0", true},
+		{"idle exit", pod(map[string]corev1.ContainerState{"kc-fs-ptrace-app-0": done, "kc-fs-ptrace-app-1": done}, "kc-fs-ptrace-app-0", "kc-fs-ptrace-app-1"), "kc-fs-ptrace-app-2", false},
+		{"other container", pod(map[string]corev1.ContainerState{"kc-fs-ptrace-db-0": running}, "kc-fs-ptrace-db-0"), "kc-fs-ptrace-app-0", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, run := pickHelper(tc.pod, "kc-fs-ptrace", "app")
+			if got != tc.want || run != tc.running {
+				t.Fatalf("pickHelper = %q, %v; want %q, %v", got, run, tc.want, tc.running)
+			}
+		})
+	}
+}
+
+func TestHeartbeatPrefixesCommands(t *testing.T) {
+	var buf strings.Builder
+	s := &nativeSession{spec: SessionSpec{Heartbeat: "/tmp/.kc-fs-alive"}, stdin: nopWriteCloser{&buf}}
+	if err := s.writeCommand("__kc_ls '/'"); err != nil {
+		t.Fatal(err)
+	}
+	if got := buf.String(); got != "touch '/tmp/.kc-fs-alive' 2>/dev/null; __kc_ls '/'\n" {
+		t.Fatalf("command = %q", got)
+	}
+}
+
+func TestHelperScriptExitsWhenIdle(t *testing.T) {
+	if !strings.Contains(helperScript, "-lt 60") || !strings.Contains(helperScript, helperHeartbeat) || !strings.Contains(helperScript, helperSleepMarker) {
+		t.Fatalf("script = %s", helperScript)
+	}
+}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }

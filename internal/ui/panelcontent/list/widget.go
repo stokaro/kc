@@ -928,6 +928,9 @@ func (w *Widget) enterItem(ctx context.Context) tea.Cmd {
 		w.folderHandler(true, id, nil)
 		return nil
 	}
+	if action, ok := row.(models.ConfirmedAction); ok {
+		return func() tea.Msg { return models.ConfirmRequest{Action: action} }
+	}
 	enterable, ok := row.(models.Enterable)
 	if !ok {
 		return nil
