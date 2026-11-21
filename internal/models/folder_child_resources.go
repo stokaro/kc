@@ -16,6 +16,7 @@ import (
 func NewChildResourcesFolder(deps Deps, parentGVR schema.GroupVersionResource, parentNamespace, parentName string, childGVR schema.GroupVersionResource, path []string) *ObjectsFolder {
 	// Create the base ObjectsFolder for the child resource
 	folder := NewObjectsFolder(deps, childGVR, parentNamespace, path, nil)
+	folder.kubectlNote = "owned by " + kubectlResource(parentGVR) + "/" + parentName
 
 	// Capture the original populate function
 	originalPopulate := folder.rows.populate

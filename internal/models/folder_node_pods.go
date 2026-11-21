@@ -20,6 +20,7 @@ func NewNodePodsFolder(deps Deps, path []string, nodeName string) *ObjectsFolder
 	}
 	scoped := deps.ForSelectorScope(selectors)
 	folder := NewObjectsFolder(scoped, podGVR, "", path, nil)
+	folder.kubectlArgs = []string{"--field-selector", "spec.nodeName=" + nodeName}
 	folder.FilterUnstructured = func(u *unstructured.Unstructured) bool {
 		if u == nil {
 			return false
