@@ -341,8 +341,17 @@ func (m *Modal) View() tea.View {
 			windowOffsetX = m.windowOffsetX
 			windowOffsetY = m.windowOffsetY
 		}
-		windowOffsetX = clampInt(windowOffsetX, 0, max(0, bgWidth-winW))
-		windowOffsetY = clampInt(windowOffsetY, 0, max(0, availableHeight-winH))
+		// Like mc, the frame sits inside a padded window that casts a
+		// shadow; drop the padding when the screen is too small for it.
+		padX, padY := dialogPadX, dialogPadY
+		if winW+2*padX > bgWidth {
+			padX = 0
+		}
+		if winH+2*padY > availableHeight {
+			padY = 0
+		}
+		windowOffsetX = clampInt(windowOffsetX, padX, max(padX, bgWidth-winW-padX))
+		windowOffsetY = clampInt(windowOffsetY, padY, max(padY, availableHeight-winH-padY))
 		m.contentOffsetX = windowOffsetX + 1
 		m.contentOffsetY = windowOffsetY + 1
 		if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
@@ -353,7 +362,7 @@ func (m *Modal) View() tea.View {
 		frameBg := lipgloss.Color(uistyles.ColorModalBg)
 		frameFg := lipgloss.Color(uistyles.ColorModalFg)
 		boxStyle := lipgloss.NewStyle().
-			Border(lipgloss.DoubleBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(frameFg).
 			BorderBackground(frameBg).
 			Background(frameBg).
@@ -361,7 +370,7 @@ func (m *Modal) View() tea.View {
 			Height(winH)
 
 		labelStyle := lipgloss.NewStyle().
-			Foreground(frameFg).
+			Foreground(lipgloss.Color(uistyles.ColorModalTitle)).
 			Background(frameBg).
 			Padding(0, 1)
 		label := labelStyle.Render(m.title)
@@ -398,15 +407,18 @@ func (m *Modal) View() tea.View {
 			Width(winW).
 			Height(winH - 1).
 			Render(inner)
-		winFrame := top + "\n" + winBottom
+		winFrame := padDialog(top+"\n"+winBottom, winW, padX, padY, frameBg)
 
 		// Compose window over background (centered)
 		composed := overlay.Composite(
 			winFrame,
 			base,
 			overlay.Left, overlay.Top,
-			windowOffsetX, windowOffsetY,
+			windowOffsetX-padX, windowOffsetY-padY,
 		)
+		if padX > 0 || padY > 0 {
+			composed = castShadow(composed, base, windowOffsetX-padX, windowOffsetY-padY, winW+2*padX, winH+2*padY)
+		}
 		bgLines := strings.Split(composed, "\n")
 		// Footer line
 		footer := m.buildFooter(false)

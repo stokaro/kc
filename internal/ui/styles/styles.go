@@ -12,7 +12,8 @@ const (
 	ColorDarkGrey         = "8"  // bright black (grey)
 	ColorWhite            = "15" // bright white
 	ColorOrange           = "208"
-	ColorModalBg          = ColorWhite
+	ColorModalBg          = ColorGrey // mc dialogs: black on light grey
+	ColorModalTitle       = ColorDarkerBlue
 	ColorModalFg          = ColorBlack
 	ColorModalSelBg       = ColorCyan
 	ColorModalButtonBg    = ColorDarkGrey
