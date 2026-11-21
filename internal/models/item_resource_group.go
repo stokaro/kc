@@ -459,9 +459,7 @@ func (r *ResourceGroupItem) EmptyState() (empty, pending bool) {
 	r.mu.Lock()
 	fresh := r.emptyKnown && !r.lastPeek.IsZero() && time.Since(r.lastPeek) < interval
 	backoff := time.Since(r.lastError) < interval
-	if r.emptyKnown {
-		r.decided, r.decidedEmpty = true, r.empty
-	}
+	r.rememberEmptyLocked()
 	val := r.decided && r.decidedEmpty
 	pending = !r.decided && r.lastError.IsZero()
 	start := !fresh && !backoff && !r.peeking && !r.closed && !r.synced
@@ -616,7 +614,17 @@ func (r *ResourceGroupItem) notifyIfChanged(onUpdate func()) {
 	}
 }
 
+// rememberEmptyLocked keeps the emptiness before it is forgotten. A recount
+// can start before the folder has read the first answer, and when it
+// finishes with the same answer nothing notifies the folder again.
+func (r *ResourceGroupItem) rememberEmptyLocked() {
+	if r.emptyKnown {
+		r.decided, r.decidedEmpty = true, r.empty
+	}
+}
+
 func (r *ResourceGroupItem) recordPublishedLocked() bool {
+	r.rememberEmptyLocked()
 	changed := false
 	if r.countKnown {
 		if !r.publishedCountKnown || r.count != r.publishedCount {
@@ -690,6 +698,7 @@ func (r *ResourceGroupItem) scheduleRecount() {
 	r.recounting = true
 	r.recountPending = false
 	r.nextPeekScheduled = false
+	r.rememberEmptyLocked()
 	r.countKnown = false
 	r.emptyKnown = false
 	r.lastPeek = time.Time{}
