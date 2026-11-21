@@ -401,6 +401,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model, cmd := a.modalManager.Update(msg)
 			a.modalManager = model.(*ModalManager)
 			cmds = append(cmds, cmd)
+			// The dialog may have changed (a key moved the selection); the
+			// cached screen must not outlive that, or the change shows only
+			// with the next unrelated message.
+			a.invalidateView("modal update")
 			// While a modal is open, still forward non-key messages to the
 			// terminal (process output, window size). Background is snapshotted,
 			// so this stays light and keeps the 2-line terminal fresh.

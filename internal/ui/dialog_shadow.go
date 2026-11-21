@@ -11,8 +11,10 @@ import (
 
 // Padding between a dialog's window edge and its frame, as in mc.
 const (
-	dialogPadX = 2
+	dialogPadX = 1
 	dialogPadY = 1
+	// dialogShadowW is the width of the shadow on the right.
+	dialogShadowW = 2
 )
 
 // shadowStyle draws what lies under a dialog's shadow: the text stays
@@ -70,8 +72,8 @@ func castShadow(screen, base string, x, y, w, h int) string {
 		lines[row] = ansi.Cut(lines[row], 0, from) + shadowStyle.Render(under) + ansi.Cut(lines[row], to, width)
 	}
 	for row := y + 1; row < y+h; row++ {
-		shade(row, x+w, x+w+dialogPadX)
+		shade(row, x+w, x+w+dialogShadowW)
 	}
-	shade(y+h, x+dialogPadX, x+w+dialogPadX)
+	shade(y+h, x+dialogShadowW, x+w+dialogShadowW)
 	return strings.Join(lines, "\n")
 }
