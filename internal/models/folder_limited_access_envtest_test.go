@@ -58,7 +58,7 @@ func TestLimitedUserSeesAllowedResourcesOnly(t *testing.T) {
 		AppConfig: appconfig.Default(),
 	}
 
-	root := NewRootFolder(deps, nil, "default")
+	root := NewRootFolder(deps, "default")
 	waitFolder(t, root)
 	assertRowPresent(t, root, "namespaces")
 

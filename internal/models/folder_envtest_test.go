@@ -65,7 +65,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 		AppConfig:  panelCfg,
 	}
 
-	root := NewRootFolder(deps, nil, "default")
+	root := NewRootFolder(deps, "default")
 	waitFolder(t, root)
 	assertRows(t, "root", root, map[string][]string{
 		"namespaces": {"/namespaces", "v1"},

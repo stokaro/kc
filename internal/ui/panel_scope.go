@@ -20,8 +20,7 @@ func (a *App) newScopedNavigator(idx int) *navui.Navigator {
 	cfg := a.ensurePanelConfig(panel)
 	a.syncPanelConfig(panel)
 	deps := a.makeDeps(a.cl, cfg, a.currentClusterKey())
-	enter := a.makeEnterContextFunc(cfg)
-	return navui.NewNavigator(models.NewRootFolder(deps, enter, a.panelScope[idx]))
+	return navui.NewNavigator(models.NewRootFolder(deps, a.panelScope[idx]))
 }
 
 // showNavigatorRoot puts the panel on its navigator's current folder.
@@ -256,8 +255,8 @@ func (a *App) handleScopeClick(m tea.Mouse) (tea.Cmd, bool) {
 		a.setActivePanel(idx, "scope click")
 		return a.loadNamespacesForPicker(idx), true
 	case "context":
-		// Per-panel contexts come with the context picker.
-		return nil, true
+		a.setActivePanel(idx, "scope click")
+		return a.showContextPicker(), true
 	}
 	return nil, false
 }
