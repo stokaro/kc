@@ -34,10 +34,13 @@ type ResourceGroupItem struct {
 	countKnown bool
 	empty      bool
 	emptyKnown bool
-	countOnce  sync.Once
-	lastPeek   time.Time
-	lastError  time.Time
-	onChange   func()
+	// decided and decidedEmpty keep the last known emptiness across recounts.
+	decided      bool
+	decidedEmpty bool
+	countOnce    sync.Once
+	lastPeek     time.Time
+	lastError    time.Time
+	onChange     func()
 
 	publishedCount      int
 	publishedCountKnown bool
@@ -440,14 +443,27 @@ func (r *ResourceGroupItem) applyPeekLocked(res peekResult) (bool, bool) {
 // onChange callback refreshes the folder when the answer changes. Unknown
 // counts as not empty, so the row stays visible until a peek says otherwise.
 func (r *ResourceGroupItem) EmptyCached() bool {
+	empty, _ := r.EmptyState()
+	return empty
+}
+
+// EmptyState is EmptyCached plus whether the answer is still pending: the
+// emptiness has never been known and no peek has failed yet. A recount
+// forgets the emptiness for a moment; the last known answer covers that gap
+// so a filtered row does not flash in and out.
+func (r *ResourceGroupItem) EmptyState() (empty, pending bool) {
 	if !r.isWatchable() {
-		return true
+		return true, false
 	}
 	interval := r.peekBaseInterval()
 	r.mu.Lock()
 	fresh := r.emptyKnown && !r.lastPeek.IsZero() && time.Since(r.lastPeek) < interval
 	backoff := time.Since(r.lastError) < interval
-	val := r.emptyKnown && r.empty
+	if r.emptyKnown {
+		r.decided, r.decidedEmpty = true, r.empty
+	}
+	val := r.decided && r.decidedEmpty
+	pending = !r.decided && r.lastError.IsZero()
 	start := !fresh && !backoff && !r.peeking && !r.closed && !r.synced
 	if start {
 		r.peeking = true
@@ -470,7 +486,7 @@ func (r *ResourceGroupItem) EmptyCached() bool {
 			r.emptyWithin(interval)
 		}()
 	}
-	return val
+	return val, pending
 }
 
 func (r *ResourceGroupItem) String() string {
