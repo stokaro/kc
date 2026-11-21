@@ -20,6 +20,7 @@ import (
 	"github.com/sttts/kc/internal/ui"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"k8s.io/client-go/rest"
 	klog "k8s.io/klog/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -116,6 +117,10 @@ func main() {
 	// Configure logging. Default: silent. With -v>=1: log to stderr during startup,
 	// then to ~/.kc/debug.log only once the UI starts. With -v>=3: enable debug logs.
 	switchToUILogger, debugLogPath := setupControllerRuntimeLogger(cli.Verbosity)
+	// client-go prints API deprecation warnings ("v1 Endpoints is deprecated")
+	// to stderr by default, which draws over the TUI. Send them through klog,
+	// which goes to the debug log or nowhere, like the other logs.
+	rest.SetDefaultWarningHandler(rest.WarningLogger{})
 	startPprofServer(strings.TrimSpace(cli.PprofAddr))
 
 	if commandMatches(ctx.Command(), "kc version", "version") {
