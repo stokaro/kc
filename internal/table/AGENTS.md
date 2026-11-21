@@ -44,5 +44,4 @@ list.InsertAfter("a", SliceRow{ID:"a1"})
 ## Commits & PRs
 - Short, imperative subjects; focused diffs with relevant tests/docs.
 - Before pushing: `go build ./...` and `go test ./...`.
-- Include the AI co-author line in commits: `Co-Authored-By: Codex CLI Agent <noreply@openai.com>`.
 - Never run `git add -A`; stage files explicitly so unrelated changes stay untouched.
