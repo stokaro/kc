@@ -152,3 +152,13 @@ func TestSearchBackwardsDirection(t *testing.T) {
 		t.Fatalf("previous in backwards mode should move down, got %d", w.activeMatch)
 	}
 }
+
+func TestSearchDialogPaste(t *testing.T) {
+	w := New("")
+	w.SetContent("abc", Metadata{})
+	_ = w.beginSearch()
+	w.Update(tea.PasteMsg{Content: "needle"})
+	if got := w.searchDialog.query(); got != "needle" {
+		t.Fatalf("paste should fill the search string, got %q", got)
+	}
+}

@@ -680,6 +680,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKeyMsg(msg, cmds)
+	case tea.PasteMsg:
+		// Paste goes where typing goes: the focused command widget, or the shell.
+		if a.interactiveCommandActive() {
+			panel := a.activePanelRef()
+			model, cmd := panel.Update(msg)
+			if idx, ok := a.panelIndexFor(panel); ok {
+				if idx == 0 {
+					a.leftPanel = model.(*Panel)
+				} else {
+					a.rightPanel = model.(*Panel)
+				}
+			}
+			return a, tea.Batch(append(cmds, cmd)...)
+		}
+		return a, tea.Batch(append(cmds, a.updateTerminal(msg, "paste"))...)
 	case commandExitMsg:
 		if msg.OnExit == appconfig.CommandExitRestore || msg.OnExit == appconfig.CommandExitClose {
 			if panel := a.panelByIndex(msg.PanelIdx); panel != nil {

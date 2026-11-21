@@ -129,3 +129,16 @@ func TestRenderInlineFrom_SingleLineNoCursor(t *testing.T) {
 		t.Fatalf("expected last line without cursor, got %q %+v", out, cur)
 	}
 }
+
+func TestPasteInput(t *testing.T) {
+	tests := map[string]string{
+		"kubectl get pods": "kubectl get pods",
+		"echo a\necho b\n": "\x1b[200~echo a\recho b\r\x1b[201~",
+		"line1\r\nline2":   "\x1b[200~line1\rline2\x1b[201~",
+	}
+	for in, want := range tests {
+		if got := pasteInput(in); got != want {
+			t.Fatalf("pasteInput(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -22,7 +22,14 @@ type terminalPollMsg struct {
 	token uint64
 }
 
-const terminalPollInterval = 100 * time.Millisecond
+const (
+	terminalPollInterval = 100 * time.Millisecond
+	// After input, poll fast for a short while so the shell's echo shows up
+	// at once instead of on the next idle poll.
+	terminalBurstInterval = 10 * time.Millisecond
+	terminalBurstWindow   = 500 * time.Millisecond
+	terminalEchoDelay     = 3 * time.Millisecond
+)
 
 // Terminal represents the bottom terminal component
 type Terminal struct {
@@ -46,6 +53,12 @@ type Terminal struct {
 	pollSeq       uint64
 	pollToken     uint64
 	pollScheduled bool
+	burstUntil    time.Time
+	// cursor is the emulator cursor captured together with the last frame.
+	// bubbleterm reads the cursor live but the text only on poll, so a live
+	// cursor runs ahead of the text while typing (a blank cell shows first).
+	cursor     *tea.Cursor
+	haveCursor bool
 }
 
 // NewTerminal creates a new terminal instance
@@ -141,6 +154,12 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Always update bubbleterm first to check process status
 	if t.terminal != nil {
+		if paste, ok := msg.(tea.PasteMsg); ok {
+			if t.showPanels {
+				t.hasTyped = true
+			}
+			return t, tea.Batch(t.terminal.SendInput(pasteInput(paste.Content)), t.inputPollCmd())
+		}
 		// Swallow mouse events while panels are visible to avoid sending
 		// mouse escape sequences into the PTY (which shows up as garbage
 		// in the 2-line terminal view). In fullscreen terminal mode, let
@@ -156,19 +175,13 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		model, cmd := t.terminal.Update(translateKeyForTerminal(msg))
 		t.terminal = model.(*bubbleterm.Model)
-
-		// Track if user has typed (for key routing logic)
-		if t.showPanels {
-			switch msg := msg.(type) {
-			case tea.KeyMsg:
-				// Mark that user has typed (for Enter key routing)
-				if msg.String() != "enter" {
-					t.hasTyped = true
-				} else {
-					// Reset on Enter (command executed)
-					t.hasTyped = false
-				}
-			}
+		if _, isKey := msg.(tea.KeyMsg); isKey {
+			return t, tea.Batch(cmd, t.inputPollCmd(), t.trackTyped(msg))
+		}
+		if _, isMouse := msg.(tea.MouseMsg); !isMouse {
+			// A poll result (or other emulator message): take the cursor
+			// that belongs to this frame.
+			t.snapshotCursor()
 		}
 
 		return t, tea.Batch(cmd, t.immediatePollCmd())
@@ -225,6 +238,9 @@ func (t *Terminal) terminalView() (string, *tea.Cursor) {
 	switch term := any(t.terminal).(type) {
 	case interface{ View() tea.View }:
 		view := term.View()
+		if t.haveCursor {
+			return viewString(view), cloneCursor(t.cursor)
+		}
 		return viewString(view), view.Cursor
 	case interface{ View() (string, *tea.Cursor) }:
 		return term.View()
@@ -272,25 +288,85 @@ func renderInlineFrom(terminalView string, termCur *tea.Cursor, width, height in
 	return render(lines), &cur
 }
 
+// snapshotCursor stores the emulator cursor for the frame just applied.
+func (t *Terminal) snapshotCursor() {
+	if t.terminal == nil {
+		return
+	}
+	t.cursor = t.terminal.View().Cursor
+	t.haveCursor = true
+}
+
+func cloneCursor(c *tea.Cursor) *tea.Cursor {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	return &cp
+}
+
+// trackTyped records whether the user typed into the inline shell line.
+func (t *Terminal) trackTyped(msg tea.Msg) tea.Cmd {
+	if !t.showPanels {
+		return nil
+	}
+	if key, ok := msg.(tea.KeyMsg); ok {
+		// Enter runs the command and gives the keys back to the panels.
+		t.hasTyped = key.String() != "enter"
+	}
+	return nil
+}
+
+// inputPollCmd starts fast polling after input and schedules the first poll
+// right after the shell had a moment to echo.
+func (t *Terminal) inputPollCmd() tea.Cmd {
+	if t == nil || t.terminal == nil {
+		return nil
+	}
+	t.burstUntil = time.Now().Add(terminalBurstWindow)
+	return t.schedulePoll(terminalEchoDelay)
+}
+
+func (t *Terminal) pollInterval() time.Duration {
+	if time.Now().Before(t.burstUntil) {
+		return terminalBurstInterval
+	}
+	return terminalPollInterval
+}
+
+// pasteInput prepares pasted text for the PTY. Multi-line text is wrapped in
+// bracketed paste markers so a shell does not run each line as it arrives;
+// shells with line editing (zsh, bash 5.1+, fish) enable bracketed paste.
+// Single-line text is sent as is, which is safe either way.
+func pasteInput(content string) string {
+	if !strings.ContainsAny(content, "\r\n") {
+		return content
+	}
+	content = strings.ReplaceAll(content, "\r\n", "\r")
+	content = strings.ReplaceAll(content, "\n", "\r")
+	return "\x1b[200~" + content + "\x1b[201~"
+}
+
 func (t *Terminal) immediatePollCmd() tea.Cmd {
 	if t == nil || t.terminal == nil {
 		return nil
 	}
 	now := time.Now()
+	interval := t.pollInterval()
 	if !t.lastPoll.IsZero() {
 		elapsed := now.Sub(t.lastPoll)
-		if elapsed < terminalPollInterval {
+		if elapsed < interval {
 			if t.pollScheduled {
 				return nil
 			}
-			delay := terminalPollInterval - elapsed
+			delay := interval - elapsed
 			return t.schedulePoll(delay)
 		}
 	}
 	t.lastPoll = now
 	t.pollScheduled = false
 	poll := t.terminal.UpdateTerminal()
-	timer := t.schedulePoll(terminalPollInterval)
+	timer := t.schedulePoll(interval)
 	if poll == nil {
 		return timer
 	}
