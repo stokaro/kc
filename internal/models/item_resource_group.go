@@ -51,6 +51,7 @@ type ResourceGroupItem struct {
 	peekBlocked         bool
 	peekForbiddenLogged bool
 	hasAny              func(context.Context, schema.GroupVersionResource, string) (bool, error)
+	peeking             bool // true while a background emptiness peek runs
 }
 
 func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, gvk schema.GroupVersionKind, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
@@ -90,31 +91,54 @@ func (r *ResourceGroupItem) ComputeCountAsync(onUpdate func()) {
 	})
 }
 
+// informerSyncTimeout bounds how long a count waits for an informer to sync.
+// An informer that cannot list (no permission, broken API) never syncs, so
+// waiting on the long-lived context would block forever.
+const informerSyncTimeout = 30 * time.Second
+
 func (r *ResourceGroupItem) Count() int {
 	if !r.watchable {
 		return 0
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.peekBlocked {
+		r.mu.Unlock()
 		return 0
 	}
 	if r.countKnown {
-		return r.count
+		count := r.count
+		r.mu.Unlock()
+		return count
 	}
+	r.mu.Unlock()
+
 	logger := crlog.FromContext(r.deps.Ctx)
 	logger.Info("ensuring informer for resource count", "gvr", r.gvr.String(), "namespace", r.namespace)
-	count, ok := r.countFromInformerLocked()
+	// Wait for the informer without holding r.mu: the UI thread takes r.mu
+	// to read cached state and must never wait for the network.
+	informer, status := r.syncedInformer()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.countKnown {
+		return r.count
+	}
+	var (
+		count int
+		ok    bool
+	)
+	switch status {
+	case informerUnsupported:
+		r.watchable = false
+		count, ok = 0, true
+	case informerSynced:
+		count, ok = r.countFromInformerLocked(informer)
+	}
 	if ok {
 		r.count = count
 		r.countKnown = true
-		if count == 0 {
-			r.empty = true
-			r.emptyKnown = true
-		} else {
-			r.empty = false
-			r.emptyKnown = true
-		}
+		r.empty = count == 0
+		r.emptyKnown = true
 		return r.count
 	}
 	return 0
@@ -140,7 +164,11 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 		r.mu.Unlock()
 		return r.empty
 	}
-	empty, ok := r.peekEmptyLocked()
+	hasAny := r.hasAny
+	r.mu.Unlock()
+	res := r.peekRemote(hasAny)
+	r.mu.Lock()
+	empty, ok := r.applyPeekLocked(res)
 	prevEmpty := r.emptyKnown && r.empty
 	r.lastPeek = time.Now()
 	if ok {
@@ -182,43 +210,73 @@ func (r *ResourceGroupItem) TryCount() (int, bool) {
 	return r.count, true
 }
 
-func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
-	ctx := r.deps.Ctx
+type informerStatus int
+
+const (
+	informerFailed informerStatus = iota
+	informerSynced
+	informerUnsupported
+)
+
+// syncedInformer returns the informer for the resource once it has synced,
+// waiting at most informerSyncTimeout. It must be called without r.mu held.
+func (r *ResourceGroupItem) syncedInformer() (crcache.Informer, informerStatus) {
+	r.mu.Lock()
 	if !r.gvkKnown {
 		gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
 		if err != nil {
+			r.mu.Unlock()
 			crlog.FromContext(r.deps.Ctx).Info("mapper KindFor failed", "gvr", r.gvr.String(), "namespace", r.namespace, "error", err)
-			return 0, false
+			return nil, informerFailed
 		}
 		r.gvk = gvk
 		r.gvkKnown = true
 	}
+	gvk := r.gvk
+	r.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(r.deps.Ctx, informerSyncTimeout)
+	defer cancel()
 	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(r.gvk)
-	informer, err := r.deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(true))
+	obj.SetGroupVersionKind(gvk)
+	informer, err := r.deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(false))
 	if err != nil {
 		if apierrors.IsMethodNotSupported(err) {
 			crlog.FromContext(r.deps.Ctx).Info("resource watch not supported; skipping informer", "gvr", r.gvr.String(), "namespace", r.namespace)
-			r.watchable = false
-			return 0, true
+			return nil, informerUnsupported
 		}
-		return 0, false
+		r.deps.reportReadError(r.what(), err)
+		return nil, informerFailed
 	}
 	r.ensureInformerHandler(informer)
-	if !informer.HasSynced() {
-		toolscache.WaitForCacheSync(ctx.Done(), informer.HasSynced)
+	if !informer.HasSynced() && !toolscache.WaitForCacheSync(ctx.Done(), informer.HasSynced) {
+		// The informer keeps retrying; its first sync fires an event that
+		// triggers a recount.
+		r.deps.reportReadError(r.what(), ctx.Err())
+		return nil, informerFailed
 	}
+	return informer, informerSynced
+}
+
+func (r *ResourceGroupItem) what() string {
+	if r.namespace == "" {
+		return r.gvr.Resource
+	}
+	return r.gvr.Resource + " in " + r.namespace
+}
+
+func (r *ResourceGroupItem) countFromInformerLocked(informer crcache.Informer) (int, bool) {
 	type storeInformer interface{ GetStore() toolscache.Store }
 	type indexerInformer interface{ GetIndexer() toolscache.Indexer }
-	switch {
-	case func() bool { _, ok := informer.(storeInformer); return ok }():
-		items := informer.(storeInformer).GetStore().List()
-		return r.countObjects(items), true
-	case func() bool { _, ok := informer.(indexerInformer); return ok }():
-		items := informer.(indexerInformer).GetIndexer().List()
-		return r.countObjects(items), true
+	switch inf := informer.(type) {
+	case storeInformer:
+		return r.countObjects(inf.GetStore().List()), true
+	case indexerInformer:
+		return r.countObjects(inf.GetIndexer().List()), true
 	default:
 		// Fallback to a lightweight client peek if informer/store not available.
+		ctx, cancel := context.WithTimeout(r.deps.Ctx, r.peekTimeout())
+		defer cancel()
 		hasAny := true
 		if ok, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace); err == nil {
 			hasAny = ok
@@ -270,7 +328,16 @@ func (r *ResourceGroupItem) countViaClient(ctx context.Context) (int, bool) {
 	return len(list.Items), true
 }
 
-func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
+type peekResult struct {
+	metricsZero bool // apiserver metrics report no objects at all
+	noPeek      bool // no way to peek
+	has         bool
+	err         error
+}
+
+// peekRemote asks the apiserver whether any object exists. It does network
+// calls with a timeout and must be called without r.mu held.
+func (r *ResourceGroupItem) peekRemote(hasAny func(context.Context, schema.GroupVersionResource, string) (bool, error)) peekResult {
 	ctx, cancel := context.WithTimeout(r.deps.Ctx, r.peekTimeout())
 	defer cancel()
 	// Prefer apiserver metrics when they definitively report zero.
@@ -279,37 +346,80 @@ func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 	// peeks/informers to localize existence.
 	if r.deps.Cl != nil {
 		if cnt, ok := r.deps.Cl.StorageCount(ctx, r.gvr, r.peekInterval()); ok && cnt == 0 {
-			r.lastPeek = time.Now()
-			r.recordPeekSuccessLocked()
-			r.emptyKnown = true
-			r.empty = true
-			r.count = 0
-			r.countKnown = true
-			return true, true
+			return peekResult{metricsZero: true}
 		}
 	}
 	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
-	hasAny := r.hasAny
 	if hasAny == nil && r.deps.Cl != nil {
 		hasAny = r.deps.Cl.HasAnyByGVR
 	}
 	if hasAny == nil {
-		return false, false
+		return peekResult{noPeek: true}
 	}
 	has, err := hasAny(ctx, r.gvr, r.namespace)
-	if err != nil {
-		if apierrors.IsForbidden(err) {
-			r.blockPeeksLocked(err)
+	if err != nil && !apierrors.IsForbidden(err) {
+		r.deps.reportReadError(r.what(), err)
+	}
+	return peekResult{has: has, err: err}
+}
+
+// applyPeekLocked records a peek result and reports (empty, known).
+func (r *ResourceGroupItem) applyPeekLocked(res peekResult) (bool, bool) {
+	switch {
+	case res.metricsZero:
+		r.lastPeek = time.Now()
+		r.recordPeekSuccessLocked()
+		r.emptyKnown = true
+		r.empty = true
+		r.count = 0
+		r.countKnown = true
+		return true, true
+	case res.noPeek:
+		return false, false
+	case res.err != nil:
+		if apierrors.IsForbidden(res.err) {
+			r.blockPeeksLocked(res.err)
 			return true, true
 		}
 		r.lastPeek = time.Now()
-		r.recordPeekErrorLocked(err)
+		r.recordPeekErrorLocked(res.err)
 		r.scheduleNextPeekLocked()
-		crlog.FromContext(r.deps.Ctx).Error(err, "peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
+		crlog.FromContext(r.deps.Ctx).Error(res.err, "peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
 		return false, false
 	}
 	r.recordPeekSuccessLocked()
-	return !has, true
+	return !res.has, true
+}
+
+// EmptyCached reports the last known emptiness without touching the network.
+// When the value is stale it starts a peek in the background; the item's
+// onChange callback refreshes the folder when the answer changes. Unknown
+// counts as not empty, so the row stays visible until a peek says otherwise.
+func (r *ResourceGroupItem) EmptyCached() bool {
+	if !r.watchable {
+		return true
+	}
+	interval := r.peekBaseInterval()
+	r.mu.Lock()
+	fresh := r.emptyKnown && !r.lastPeek.IsZero() && time.Since(r.lastPeek) < interval
+	backoff := time.Since(r.lastError) < interval
+	val := r.emptyKnown && r.empty
+	start := !fresh && !backoff && !r.peeking
+	if start {
+		r.peeking = true
+	}
+	r.mu.Unlock()
+	if start {
+		go func() {
+			defer func() {
+				r.mu.Lock()
+				r.peeking = false
+				r.mu.Unlock()
+			}()
+			r.emptyWithin(interval)
+		}()
+	}
+	return val
 }
 
 func (r *ResourceGroupItem) String() string {
@@ -353,13 +463,24 @@ func (r *ResourceGroupItem) applySpec(spec resourceGroupSpec, deps Deps, created
 	}
 	r.RowItem.details = spec.detail
 	r.enter = spec.enter
-	r.deps = deps
-	r.gvr = spec.gvr
-	if spec.gvk.Kind != "" {
+	// Background recounts and peeks read deps, gvr and namespace without the
+	// lock. The folder re-applies the same spec on every rebuild, so write
+	// these only when they actually change.
+	if created || r.deps.Cl != deps.Cl || r.deps.AppConfig != deps.AppConfig {
+		r.deps = deps
+	}
+	if r.gvr != spec.gvr {
+		r.gvr = spec.gvr
+	}
+	if spec.gvk.Kind != "" && (!r.gvkKnown || r.gvk != spec.gvk) {
+		r.mu.Lock()
 		r.gvk = spec.gvk
 		r.gvkKnown = true
+		r.mu.Unlock()
 	}
-	r.namespace = spec.namespace
+	if r.namespace != spec.namespace {
+		r.namespace = spec.namespace
+	}
 	switch {
 	case created:
 		r.watchable = spec.watchable
@@ -504,7 +625,9 @@ func (r *ResourceGroupItem) scheduleRecount() {
 		log := crlog.FromContext(ctx)
 		log.Info("resource group recount started", "gvr", r.gvr.String(), "namespace", r.namespace)
 		_ = r.Count()
-		hasAny, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
+		peekCtx, cancel := context.WithTimeout(ctx, r.peekTimeout())
+		hasAny, err := r.deps.Cl.HasAnyByGVR(peekCtx, r.gvr, r.namespace)
+		cancel()
 		if err != nil {
 			log.Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
 		}

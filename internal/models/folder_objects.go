@@ -393,6 +393,8 @@ type liveSourceTarget struct {
 // keeping rows synced with informer events for the target GVR.
 type liveObjectRowSource struct {
 	populate        func(context.Context) ([]table.Row, error)
+	reportErr       func(error) // shows a read failure to the user; may be nil
+	failingSince    time.Time
 	onFolderDirty   func()
 	mu              sync.Mutex
 	rows            []table.Row
@@ -420,6 +422,7 @@ func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
 	)
 	rows.setTarget(liveSourceTarget{gvr: owner.gvr, namespace: owner.namespace})
 	rows.watchTTL = watchDuration(owner.Deps)
+	rows.reportErr = listErrorReporter(owner.Deps, owner.gvr, owner.namespace)
 	return rows
 }
 
@@ -568,8 +571,14 @@ func (s *liveObjectRowSource) ensureLocked(ctx context.Context) {
 		}
 		// keep dirty so we retry next time
 		s.dirty = true
+		if s.failingSince.IsZero() {
+			s.failingSince = time.Now()
+		} else if s.reportErr != nil && time.Since(s.failingSince) > listFailureGrace {
+			s.reportErr(err)
+		}
 		return
 	}
+	s.failingSince = time.Time{}
 	s.rows = rows
 	s.rebuildIndexLocked()
 	s.dirty = false
@@ -710,17 +719,26 @@ func newLiveKeyRowSource(deps Deps, gvr schema.GroupVersionResource, namespace, 
 	})
 	rows.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: name})
 	rows.watchTTL = watchDuration(deps)
+	rows.reportErr = listErrorReporter(deps, gvr, namespace)
 	return rows
 }
+
+// informerStartTimeout bounds getting (not syncing) an informer from the cache.
+const informerStartTimeout = 5 * time.Second
+
+// listFailureGrace is how long a list may keep failing (for example while the
+// informer syncs) before the user is told.
+const listFailureGrace = 10 * time.Second
 
 func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, onEvent func(), onStop func()) (func(), error) {
 	if deps.Cl == nil {
 		return nil, nil
 	}
-	ctx := deps.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	// This runs on the UI thread (from Lines). Do not wait for the informer
+	// to sync: an informer that cannot list never syncs and the UI would hang
+	// forever. The handler below sees the initial objects as add events.
+	ctx, cancelStart := context.WithTimeout(deps.Ctx, informerStartTimeout)
+	defer cancelStart()
 	log := ctrllog.FromContext(ctx).WithName("resourceWatch").WithValues("gvr", gvr.String(), "namespace", namespace, "name", name)
 	mapper := deps.Cl.RESTMapper()
 	if mapper == nil {
@@ -732,8 +750,15 @@ func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namesp
 	}
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
-	informer, err := deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(true))
+	informer, err := deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(false))
 	if err != nil || informer == nil {
+		if err != nil && !apierrors.IsForbidden(err) {
+			what := gvr.Resource
+			if namespace != "" {
+				what += " in " + namespace
+			}
+			deps.reportReadError(what, err)
+		}
 		return nil, err
 	}
 	type handlerReg interface {
@@ -769,10 +794,37 @@ func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namesp
 		log.Error(err, "failed to add informer handler")
 		return nil, err
 	}
-	if informer.HasSynced() && onEvent != nil {
-		onEvent()
-	}
+	// Signal once the informer has synced so the folder re-lists from the
+	// cache. This waits in the background; an informer that never syncs
+	// (no permission) only leaves this goroutine waiting until cancel.
+	stop := make(chan struct{})
+	go func() {
+		select {
+		case <-deps.Ctx.Done():
+			return
+		case <-stop:
+			return
+		default:
+		}
+		synced := informer.HasSynced()
+		if !synced {
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				select {
+				case <-deps.Ctx.Done():
+				case <-stop:
+				}
+			}()
+			synced = toolscache.WaitForCacheSync(done, informer.HasSynced)
+		}
+		if synced && onEvent != nil {
+			onEvent()
+		}
+	}()
+	var stopOnce sync.Once
 	cancel := func() {
+		stopOnce.Do(func() { close(stop) })
 		if h, ok := reg.(handlerReg); ok {
 			_ = h.Remove()
 		}
@@ -876,4 +928,12 @@ func (o *ObjectsFolder) ageTick() {
 	o.ageTimer = nil
 	interval := o.nextAgeIntervalLocked(time.Now())
 	o.scheduleAgeTimerLocked(interval)
+}
+
+func listErrorReporter(deps Deps, gvr schema.GroupVersionResource, namespace string) func(error) {
+	what := gvr.Resource
+	if namespace != "" {
+		what += " in " + namespace
+	}
+	return func(err error) { deps.reportReadError(what, err) }
 }

@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
@@ -34,6 +35,17 @@ type Deps struct {
 	ClusterKey       kccluster.Key
 	NamespaceFactory NamespaceClusterFactory
 	PodFSFactory     podfs.Factory
+	// ReportError shows a read failure to the user (a red status message).
+	// It may be nil in tests and is safe to call from any goroutine.
+	ReportError func(error)
+}
+
+// reportReadError reports that reading what failed.
+func (d Deps) reportReadError(what string, err error) {
+	if d.ReportError == nil || err == nil {
+		return
+	}
+	d.ReportError(fmt.Errorf("could not read %s: %w", what, err))
 }
 
 // ForNamespace derives a copy of Deps using a namespace-scoped cluster when available.

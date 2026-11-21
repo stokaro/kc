@@ -129,7 +129,9 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		item.SetOnChange(handler)
 		item.ComputeCountAsync(handler)
 		visible := true
-		empty := item.Empty()
+		// Never peek the apiserver on the UI thread; use the cached answer
+		// and let a background peek refresh the folder.
+		empty := item.EmptyCached()
 		if item.Forbidden() {
 			visible = false
 		} else if showNonEmpty && empty {
@@ -244,7 +246,10 @@ func (f *ResourcesFolder) onResourceGroupCountChanged(item *ResourceGroupItem) {
 	if count, ok := item.TryCount(); ok {
 		item.setCountCell(fmt.Sprintf("%d", count))
 	}
-	f.BaseFolder.markDirtyFromSource()
+	// Rebuild the rows, not just repaint them: emptiness and permissions
+	// arrive from background peeks and decide which rows are visible.
+	// populate only reads cached state, so this is cheap.
+	f.BaseFolder.markDirty()
 }
 
 func favoritesMap(list []string) map[string]bool {
