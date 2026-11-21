@@ -818,12 +818,17 @@ func (w *Widget) renderItem(item Item, selected bool) string {
 
 // --- selection helpers -----------------------------------------------------
 
+// tableHeaderLines is the column header the table draws above its rows.
+const tableHeaderLines = 1
+
 func (w *Widget) selectByVisibleRow(ctx context.Context, row int, button tea.MouseButton) tea.Cmd {
 	if row < 0 {
 		return nil
 	}
 	if w.useFolder && w.folder != nil && w.bt != nil {
-		if id, ok := w.bt.VisibleRowID(row); ok {
+		// row counts from the table's header line; VisibleRowID counts
+		// data rows only.
+		if id, ok := w.bt.VisibleRowID(row - tableHeaderLines); ok {
 			w.SelectByRowID(ctx, id)
 			if button == tea.MouseRight {
 				return w.invoke(ctx, panelcontent.ActionMenu)

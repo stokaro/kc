@@ -76,3 +76,27 @@ func TestQuickSearch(t *testing.T) {
 		}
 	}
 }
+
+// A click reports the row counted from the table header; the first data
+// row sits right below it.
+func TestClickSelectsRowUnderMouse(t *testing.T) {
+	ctx := t.Context()
+	var rows []table.Row
+	for _, n := range []string{"a", "b", "c"} {
+		rows = append(rows, models.NewSimpleItem(n, []string{"/" + n}, nil, models.WhiteStyle()))
+	}
+	w := New(panelcontent.WidgetDeps{})
+	w.UseFolder(true)
+	_, _ = w.Update(ctx, tea.WindowSizeMsg{Width: 30, Height: 10})
+	w.SetFolder(ctx, &rowsFolder{rows: rows}, false)
+	for row, want := range map[int]string{1: "a", 2: "b", 3: "c"} {
+		w.handleMouse(ctx, panelcontent.MouseMsg{Intent: panelcontent.MouseIntentClick, Row: row, Button: tea.MouseLeft})
+		if got := w.CurrentItem(ctx).Name; got != want {
+			t.Fatalf("click on row %d selected %q, want %q", row, got, want)
+		}
+	}
+	w.handleMouse(ctx, panelcontent.MouseMsg{Intent: panelcontent.MouseIntentClick, Row: 0, Button: tea.MouseLeft})
+	if got := w.CurrentItem(ctx).Name; got != "c" {
+		t.Fatalf("a click on the header must not move the selection, got %q", got)
+	}
+}
