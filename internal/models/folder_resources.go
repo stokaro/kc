@@ -264,9 +264,8 @@ func (f *ResourcesFolder) onResourceGroupCountChanged(item *ResourceGroupItem) {
 	if f == nil || item == nil {
 		return
 	}
-	if count, ok := item.TryCount(); ok {
-		item.setCountCell(fmt.Sprintf("%d", count))
-	}
+	// The rebuild writes the count cell on the UI thread; this runs on a
+	// background goroutine and must not touch the row.
 	// Rebuild the rows, not just repaint them: emptiness and permissions
 	// arrive from background peeks and decide which rows are visible.
 	// populate only reads cached state, so this is cheap.

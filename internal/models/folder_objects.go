@@ -76,6 +76,13 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	return o.rowsFromList(list, order), nil
 }
 
+// Close stops the folder's watch; navigators call it when they drop the folder.
+func (o *ObjectsFolder) Close() {
+	if o.rows != nil {
+		o.rows.Close()
+	}
+}
+
 // GVR exposes the folder's group-version-resource identifier.
 func (o *ObjectsFolder) GVR() schema.GroupVersionResource { return o.gvr }
 
@@ -437,7 +444,26 @@ type liveObjectRowSource struct {
 	watchBlocked    bool
 	forbiddenLogged bool
 	target          liveSourceTarget
+
+	// Background loading. With deps set, lists load off the UI thread at
+	// most once per listRefreshInterval; the UI waits for a load only until
+	// its own deadline and otherwise keeps the rows it has. Without deps
+	// (unit tests) populate runs synchronously.
+	deps        *Deps
+	loading     bool
+	loaded      bool
+	loadDone    chan struct{}
+	lastLoad    time.Time
+	notifyTimer *time.Timer
+	closed      bool
 }
+
+// listRefreshInterval spaces list reloads of an open folder. Informer events
+// mark it dirty; a busy namespace would otherwise re-list on every event.
+var listRefreshInterval = time.Second
+
+// listLoadTimeout bounds one background list load.
+const listLoadTimeout = 30 * time.Second
 
 func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
 	rows := newLiveObjectRowSourceWithHooks(
@@ -448,6 +474,7 @@ func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
 		},
 	)
 	rows.setTarget(liveSourceTarget{gvr: owner.gvr, namespace: owner.namespace})
+	rows.useBackground(owner.Deps)
 	rows.watchTTL = watchDuration(owner.Deps)
 	rows.reportErr = listErrorReporter(owner.Deps, owner.gvr, owner.namespace)
 	return rows
@@ -590,7 +617,105 @@ func (s *liveObjectRowSource) ensureLocked(ctx context.Context) {
 	if !s.dirty {
 		return
 	}
-	rows, err := s.populate(ctx)
+	if s.deps == nil {
+		rows, err := s.populate(ctx)
+		s.applyLoadLocked(ctx, rows, err)
+		return
+	}
+	if s.loaded && s.deps.Activity.Paused() {
+		// A dialog covers the panel; reload once it closes.
+		return
+	}
+	if !s.loading {
+		if wait := listRefreshInterval - time.Since(s.lastLoad); s.loaded && wait > 0 {
+			s.notifyLaterLocked(wait)
+			return
+		}
+		s.startLoadLocked()
+	}
+	done := s.loadDone
+	s.mu.Unlock()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+	s.mu.Lock()
+}
+
+// useBackground switches the source to background loads tied to deps.Ctx.
+func (s *liveObjectRowSource) useBackground(deps Deps) {
+	s.mu.Lock()
+	s.deps = &deps
+	s.mu.Unlock()
+}
+
+func (s *liveObjectRowSource) startLoadLocked() {
+	s.loading = true
+	s.dirty = false // events during the load mark it dirty again
+	s.lastLoad = time.Now()
+	done := make(chan struct{})
+	s.loadDone = done
+	root := s.deps.Ctx
+	go func() {
+		ctx, cancel := context.WithTimeout(root, listLoadTimeout)
+		rows, err := s.populate(ctx)
+		cancel()
+		s.mu.Lock()
+		if !s.closed {
+			s.applyLoadLocked(root, rows, err)
+		}
+		s.loading = false
+		s.loaded = true
+		close(done)
+		s.mu.Unlock()
+		s.notifyFolder()
+	}()
+}
+
+// notifyLaterLocked asks the folder to repaint after d, which retries a
+// dirty list once the refresh interval has passed.
+func (s *liveObjectRowSource) notifyLaterLocked(d time.Duration) {
+	if s.notifyTimer != nil || s.closed {
+		return
+	}
+	s.notifyTimer = time.AfterFunc(d, func() {
+		s.mu.Lock()
+		s.notifyTimer = nil
+		s.mu.Unlock()
+		s.notifyFolder()
+	})
+}
+
+func (s *liveObjectRowSource) notifyFolder() {
+	if s.onFolderDirty != nil {
+		s.onFolderDirty()
+	}
+}
+
+// Close stops the watch and pending refreshes; the source serves its last
+// rows afterwards.
+func (s *liveObjectRowSource) Close() {
+	s.mu.Lock()
+	s.closed = true
+	if s.notifyTimer != nil {
+		s.notifyTimer.Stop()
+		s.notifyTimer = nil
+	}
+	if s.watchTimer != nil {
+		s.watchTimer.Stop()
+		s.watchTimer = nil
+	}
+	cancel := s.watchCancel
+	s.watchCancel = nil
+	s.watchFactory = nil
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// applyLoadLocked stores the result of a list load.
+func (s *liveObjectRowSource) applyLoadLocked(ctx context.Context, rows []table.Row, err error) {
 	if err != nil {
 		if apierrors.IsForbidden(err) {
 			s.blockListLocked(ctx, err)

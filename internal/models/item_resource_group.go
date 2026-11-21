@@ -117,7 +117,7 @@ func (r *ResourceGroupItem) Enter() (Folder, error) {
 // ComputeCountAsync triggers Count() on a background goroutine and invokes the
 // provided callback once the count is known.
 func (r *ResourceGroupItem) ComputeCountAsync(onUpdate func()) {
-	if !r.watchable {
+	if !r.isWatchable() {
 		return
 	}
 	r.countOnce.Do(func() {
@@ -134,7 +134,7 @@ func (r *ResourceGroupItem) ComputeCountAsync(onUpdate func()) {
 const informerSyncTimeout = 30 * time.Second
 
 func (r *ResourceGroupItem) Count() int {
-	if !r.watchable {
+	if !r.isWatchable() {
 		return 0
 	}
 	r.mu.Lock()
@@ -189,7 +189,7 @@ func (r *ResourceGroupItem) Empty() bool {
 }
 
 func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
-	if !r.watchable {
+	if !r.isWatchable() {
 		return true
 	}
 	r.mu.Lock()
@@ -440,7 +440,7 @@ func (r *ResourceGroupItem) applyPeekLocked(res peekResult) (bool, bool) {
 // onChange callback refreshes the folder when the answer changes. Unknown
 // counts as not empty, so the row stays visible until a peek says otherwise.
 func (r *ResourceGroupItem) EmptyCached() bool {
-	if !r.watchable {
+	if !r.isWatchable() {
 		return true
 	}
 	interval := r.peekBaseInterval()
@@ -532,6 +532,7 @@ func (r *ResourceGroupItem) applySpec(spec resourceGroupSpec, deps Deps, created
 	if r.namespace != spec.namespace {
 		r.namespace = spec.namespace
 	}
+	r.mu.Lock()
 	switch {
 	case created:
 		r.watchable = spec.watchable
@@ -542,6 +543,15 @@ func (r *ResourceGroupItem) applySpec(spec resourceGroupSpec, deps Deps, created
 	default:
 		r.watchable = spec.watchable
 	}
+	r.mu.Unlock()
+}
+
+// isWatchable reads watchable, which Count may clear from a background
+// goroutine and applySpec may set on a folder rebuild.
+func (r *ResourceGroupItem) isWatchable() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.watchable
 }
 
 func (r *ResourceGroupItem) setCountCell(value string) {
@@ -715,14 +725,8 @@ func (r *ResourceGroupItem) scheduleRecount() {
 				log.Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
 			}
 		}
-		r.mu.Lock()
-		count := r.count
-		countKnown := r.countKnown
-		r.mu.Unlock()
-		if countKnown {
-			r.setCountCell(fmt.Sprintf("%d", count))
-		}
-		// Rebuild the folder only when the visible count or emptiness changed.
+		// Rebuild the folder only when the visible count or emptiness
+		// changed; the rebuild writes the count cell on the UI thread.
 		r.notifyIfChanged(nil)
 	}()
 }
