@@ -55,6 +55,7 @@ func (f *SecretKeysFolder) buildRows(ctx context.Context) ([]table.Row, error) {
 		rowPath := append(append([]string{}, f.Path()...), k)
 		item := NewSimpleItem(k, []string{k}, rowPath, style)
 		item.WithViewContent(keyViewContent(f.Deps, gvr, f.Namespace, f.Name, k, true))
+		item.SetViewCommand(keyViewCommand(f.Deps, "secret", f.Namespace, f.Name, k, true))
 		rows = append(rows, item)
 	}
 	return rows, nil

@@ -25,12 +25,18 @@ type busyDoneMsg struct {
 type showToastMsg struct {
 	text string
 	ttl  time.Duration
+	info bool // a confirmation, not an error: drawn on cyan instead of red
 }
 type toastTickMsg struct{}
 
 // ShowToast returns a Cmd to display a transient notification.
 func (a *App) ShowToast(text string, ttl time.Duration) tea.Cmd {
 	return func() tea.Msg { return showToastMsg{text: text, ttl: ttl} }
+}
+
+// ShowInfo returns a Cmd to display a transient confirmation.
+func (a *App) ShowInfo(text string, ttl time.Duration) tea.Cmd {
+	return func() tea.Msg { return showToastMsg{text: text, ttl: ttl, info: true} }
 }
 
 // withBusy runs work in a background command and shows a spinner if it takes

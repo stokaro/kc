@@ -316,6 +316,7 @@ func (a *App) functionBarState() functionBarState {
 		Width:        a.width,
 		ToastActive:  a.toastActive,
 		ToastText:    a.toastText,
+		ToastInfo:    a.toastInfo,
 		ShowTerminal: a.showTerminal,
 		ActivePanel:  a.activePanel,
 	}

@@ -55,6 +55,7 @@ func (f *ConfigMapKeysFolder) buildRows(ctx context.Context) ([]table.Row, error
 		rowPath := append(append([]string{}, f.Path()...), k)
 		item := NewSimpleItem(k, []string{k}, rowPath, style)
 		item.WithViewContent(keyViewContent(f.Deps, gvr, f.Namespace, f.Name, k, false))
+		item.SetViewCommand(keyViewCommand(f.Deps, "configmap", f.Namespace, f.Name, k, false))
 		rows = append(rows, item)
 	}
 	return rows, nil

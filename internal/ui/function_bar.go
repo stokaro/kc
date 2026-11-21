@@ -12,6 +12,7 @@ type functionBarState struct {
 	Width                int
 	ToastActive          bool
 	ToastText            string
+	ToastInfo            bool
 	ShowTerminal         bool
 	ActivePanel          int
 	PanelHasCommandFocus bool
@@ -48,6 +49,9 @@ func (f *functionBar) Render(state functionBarState) string {
 			Background(lipgloss.Color("196")).
 			Foreground(lipgloss.White).
 			Bold(true)
+		if state.ToastInfo {
+			toastStyle = toastStyle.Background(lipgloss.Cyan).Foreground(lipgloss.Black)
+		}
 		f.key = sig
 		f.cache.set(toastStyle.Width(state.Width).Render(msg), nil)
 		view, _, _ := f.cache.get()
@@ -190,7 +194,7 @@ func (f *functionBar) signature(state functionBarState) string {
 	return fmt.Sprintf("w=%d toast=%t tt=%s term=%t panel=%d cmd=%t mode=%d interactive=%t termInput=%t caps=%t-%t-%t-%t-%t-%t-%t-%t",
 		state.Width,
 		state.ToastActive,
-		state.ToastText,
+		state.ToastText+fmt.Sprint(state.ToastInfo),
 		state.ShowTerminal,
 		state.ActivePanel,
 		state.PanelHasCommandFocus,
