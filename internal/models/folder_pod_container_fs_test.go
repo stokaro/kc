@@ -9,14 +9,38 @@ import (
 	"time"
 
 	"github.com/sttts/kc/internal/podfs"
+	table "github.com/sttts/kc/internal/table"
 )
 
 type fakePodFSFactory struct {
 	session podfs.ExecSession
 	err     error
+	block   chan struct{} // when set, NewSession waits for it to close
 }
 
-func (f fakePodFSFactory) NewSession(context.Context, podfs.SessionSpec) (podfs.ExecSession, error) {
+// loadedLines waits for the background load and returns the folder's rows.
+func loadedLines(t *testing.T, folder *PodContainerFSFolder, n int) []table.Row {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		rows := folder.Lines(t.Context(), 0, n)
+		if len(rows) > 1 && rows[1].(interface{ Details() string }).Details() != "Reading "+folder.dir {
+			return rows
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("folder never finished loading")
+	return nil
+}
+
+func (f fakePodFSFactory) NewSession(ctx context.Context, _ podfs.SessionSpec) (podfs.ExecSession, error) {
+	if f.block != nil {
+		select {
+		case <-f.block:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -60,7 +84,7 @@ func TestPodContainerFSFolderListsEntries(t *testing.T) {
 	handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
 	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
 
-	rows := folder.Lines(ctx, 0, 10)
+	rows := loadedLines(t, folder, 10)
 	if len(rows) < 3 { // Back + two entries
 		t.Fatalf("expected at least 3 rows, got %d", len(rows))
 	}
@@ -90,7 +114,7 @@ func TestPodContainerFSFolderMissingShellMessage(t *testing.T) {
 	handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
 	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
 
-	rows := folder.Lines(ctx, 0, 5)
+	rows := loadedLines(t, folder, 5)
 	if len(rows) < 2 {
 		t.Fatalf("expected rows")
 	}
@@ -107,5 +131,33 @@ func TestPodContainerFSFolderMissingShellMessage(t *testing.T) {
 	}
 	if !strings.Contains(body, "lacks /bin/sh") || !strings.Contains(title, "filesystem") {
 		t.Fatalf("unexpected view content: title=%q body=%q", title, body)
+	}
+}
+
+// A slow session (exec, then the debug helper) must not block the UI: the
+// first call returns a loading row at once, and the rows appear when the
+// background load finishes, independent of the caller's short deadline.
+func TestPodContainerFSFolderLoadsInBackground(t *testing.T) {
+	release := make(chan struct{})
+	session := &fakeExecSession{entries: []podfs.FileEntry{{Name: "etc", Type: podfs.EntryTypeDir}}}
+	deps := Deps{Ctx: t.Context(), PodFSFactory: fakePodFSFactory{session: session, block: release}}
+	handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
+	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
+
+	uiCtx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	rows := folder.Lines(uiCtx, 0, 5)
+	if time.Since(start) > 100*time.Millisecond {
+		t.Fatalf("Lines blocked for %v", time.Since(start))
+	}
+	if len(rows) != 2 || rows[1].(interface{ Details() string }).Details() != "Reading /" {
+		t.Fatalf("expected a loading row, got %d rows", len(rows))
+	}
+	time.Sleep(20 * time.Millisecond) // past the UI deadline
+	close(release)
+	rows = loadedLines(t, folder, 5)
+	if id := rows[1].(interface{ ID() string }).ID(); id != "/etc" {
+		t.Fatalf("first entry = %q, want /etc", id)
 	}
 }
