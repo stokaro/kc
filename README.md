@@ -76,7 +76,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F10`      | Quit (`Esc+0` alternative; `Ctrl+Q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
 | `Ctrl+O`   | Toggle the integrated terminal.                                                 |
-| `Alt+C`    | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not send Alt. |
+| `Alt+C`    | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not send Alt. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `Ctrl+C`   | Quit.                                                                           |
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.

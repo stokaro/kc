@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -92,26 +91,58 @@ func (a *App) commandLineCopyHit(x int) bool {
 	return a.panelCommand() != "" && x >= a.width-lipgloss.Width(renderCopyHint()) && x < a.width
 }
 
-// copyPanelCommand puts the active panel's command on the clipboard.
-//
-// It writes OSC 52 to the terminal, so the terminal on the user's machine
-// sets its clipboard; this also works over SSH. Inside tmux or screen the
-// sequence is wrapped for passthrough as well. When kc runs locally it also
-// calls a clipboard tool (pbcopy and friends), because Terminal.app ignores
-// OSC 52. Over SSH that tool would fill the remote clipboard, so it is skipped.
+// copyPanelCommand puts the active panel's command on the clipboard the way
+// Claude Code does it: a local clipboard tool (pbcopy, wl-copy, xclip,
+// xsel) when kc runs locally, OSC 52 over SSH or when no tool exists, and,
+// inside tmux, the tmux paste buffer as well. The toast says which path was
+// used; OSC 52 cannot confirm that the terminal accepted the text.
 func (a *App) copyPanelCommand() tea.Cmd {
 	command := a.panelCommand()
 	if command == "" {
 		return nil
 	}
-	cmds := []tea.Cmd{tea.Raw(osc52Sequence(command, os.Getenv)), a.ShowToast("Copied: "+command, 2*time.Second)}
-	if !isSSHSession(os.Getenv) {
-		cmds = append(cmds, func() tea.Msg {
-			_ = copyWithLocalTool(command)
-			return nil
-		})
+	plan := planCopy(os.Getenv, exec.LookPath)
+	var cmds []tea.Cmd
+	if plan.osc52 {
+		cmds = append(cmds, tea.Raw(osc52Sequence(command, os.Getenv)))
 	}
+	cmds = append(cmds, func() tea.Msg {
+		if plan.tmux {
+			_ = runWithInput(command, "tmux", "load-buffer", "-")
+		}
+		via := "OSC 52 (the terminal must allow clipboard access)"
+		if plan.tool != nil {
+			if err := runWithInput(command, plan.tool...); err != nil {
+				return showToastMsg{text: "Copy failed: " + err.Error(), ttl: 3 * time.Second}
+			}
+			via = plan.tool[0]
+		}
+		if plan.tmux {
+			via += " and the tmux buffer"
+		}
+		return showToastMsg{text: "Copied via " + via + ": " + command, ttl: 2 * time.Second}
+	})
 	return tea.Batch(cmds...)
+}
+
+type copyPlan struct {
+	tool  []string // local clipboard tool, nil when not used
+	osc52 bool
+	tmux  bool
+}
+
+func planCopy(getenv func(string) string, lookPath func(string) (string, error)) copyPlan {
+	plan := copyPlan{tmux: getenv("TMUX") != ""}
+	if !isSSHSession(getenv) {
+		for _, tool := range clipboardTools {
+			if _, err := lookPath(tool[0]); err == nil {
+				plan.tool = tool
+				break
+			}
+		}
+	}
+	plan.osc52 = plan.tool == nil
+	return plan
 }
 
 // osc52Sequence builds the clipboard escape sequence. The plain sequence is
@@ -141,15 +172,8 @@ var clipboardTools = [][]string{
 	{"xsel", "--clipboard", "--input"},
 }
 
-func copyWithLocalTool(text string) error {
-	for _, tool := range clipboardTools {
-		path, err := exec.LookPath(tool[0])
-		if err != nil {
-			continue
-		}
-		cmd := exec.Command(path, tool[1:]...)
-		cmd.Stdin = strings.NewReader(text)
-		return cmd.Run()
-	}
-	return errors.New("no clipboard tool found")
+func runWithInput(text string, argv ...string) error {
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
 }
