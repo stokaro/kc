@@ -949,6 +949,7 @@ func passesModal(msg tea.Msg) bool {
 	case showToastMsg, toastTickMsg:
 		// Toasts must keep their hide timer running behind a dialog, or
 		// one shown before the dialog opened never goes away.
+		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
 		return true
