@@ -35,6 +35,10 @@ type ObjectsFolder struct {
 	ageTimer           *time.Timer
 	Filter             func(*tablecache.Row) bool
 	FilterUnstructured func(*unstructured.Unstructured) bool
+
+	// kubectlArgs and kubectlNote refine KubectlCommand for filtered folders.
+	kubectlArgs []string
+	kubectlNote string
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -98,6 +102,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
 	ctor, hasChild := o.childConstructor()
+	namespaced := o.namespace == "" && o.resourceNamespaced()
 
 	for _, ii := range idxs {
 		rr := &rl.Items[ii]
@@ -105,7 +110,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 			continue
 		}
 		name := rowName(rr)
-		id := name
+		ns, id := o.objectNamespaceAndID(namespaced, rr.ObjectMeta.Namespace, name)
 		cells := buildCells(rr.Cells, vis, hasChild)
 		basePath := append(append([]string{}, o.Path()...), name)
 		info := RowStyleInfo{
@@ -116,10 +121,10 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		}
 		info.Unstructured = unstructuredFromRow(rr)
 		style := applyRowStylers(info)
-		obj := NewObjectRow(id, cells, basePath, o.gvr, o.namespace, name, style)
+		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
-		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
-		obj.RowItem.details = objectDetails(o.namespace, name, kind, gvStr)
+		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
+		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
 		if len(ageCols) > 0 {
 			if hook := newAgeCellHook(ageCols, rr.ObjectMeta.CreationTimestamp.Time); hook != nil {
 				obj.RowItem.SetCellsHook(hook.apply)
@@ -127,7 +132,6 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 			}
 		}
 		if hasChild && ctor != nil {
-			ns := o.namespace
 			nm := name
 			rows = append(rows, NewObjectWithChildItem(obj, func() (Folder, error) {
 				return ctor(o.Deps, ns, nm, basePath), nil
@@ -142,22 +146,26 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 
 func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order string) []table.Row {
 	o.installAgeHooks(nil)
-	names := make([]string, 0, len(list.Items))
-	byName := make(map[string]*unstructured.Unstructured, len(list.Items))
+	namespaced := o.namespace == "" && o.resourceNamespaced()
+	ids := make([]string, 0, len(list.Items))
+	byID := make(map[string]*unstructured.Unstructured, len(list.Items))
 	for i := range list.Items {
 		if o.FilterUnstructured != nil && !o.FilterUnstructured(&list.Items[i]) {
 			continue
 		}
-		names = append(names, list.Items[i].GetName())
-		byName[list.Items[i].GetName()] = &list.Items[i]
+		_, id := o.objectNamespaceAndID(namespaced, list.Items[i].GetNamespace(), list.Items[i].GetName())
+		ids = append(ids, id)
+		byID[id] = &list.Items[i]
 	}
-	sort.Strings(names)
-	rows := make([]table.Row, 0, len(names))
+	sort.Strings(ids)
+	rows := make([]table.Row, 0, len(ids))
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
 	ctor, hasChild := o.childConstructor()
-	for _, name := range names {
-		item := byName[name]
+	for _, id := range ids {
+		item := byID[id]
+		name := item.GetName()
+		ns, _ := o.objectNamespaceAndID(namespaced, item.GetNamespace(), name)
 		basePath := append(append([]string{}, o.Path()...), name)
 		title := name
 		if hasChild {
@@ -165,7 +173,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		}
 		meta := metav1.ObjectMeta{
 			Name:              name,
-			Namespace:         o.namespace,
+			Namespace:         ns,
 			UID:               item.GetUID(),
 			Labels:            item.GetLabels(),
 			Annotations:       item.GetAnnotations(),
@@ -180,12 +188,11 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 			BaseStyle:    WhiteStyle(),
 		}
 		style := applyRowStylers(info)
-		obj := NewObjectRow(name, []string{title}, basePath, o.gvr, o.namespace, name, style)
+		obj := NewObjectRow(id, []string{title}, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
-		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
-		obj.RowItem.details = objectDetails(o.namespace, name, kind, gvStr)
+		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
+		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
 		if hasChild && ctor != nil {
-			ns := o.namespace
 			nm := name
 			rows = append(rows, NewObjectWithChildItem(obj, func() (Folder, error) {
 				return ctor(o.Deps, ns, nm, basePath), nil
@@ -195,6 +202,47 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		}
 	}
 	return rows
+}
+
+// objectNamespaceAndID returns the namespace to address an object with and its
+// row ID. Folders listing across all namespaces have no namespace of their own,
+// so the object's namespace is used, and the ID includes it because names are
+// only unique within a namespace.
+//
+// namespaced is the result of resourceNamespaced, computed once per listing.
+func (o *ObjectsFolder) objectNamespaceAndID(namespaced bool, objectNamespace, name string) (string, string) {
+	if o.namespace != "" {
+		return o.namespace, name
+	}
+	// Table rows may carry a guessed namespace for cluster-scoped objects
+	// (tablecache falls back to the second cell), so only trust it for
+	// namespaced resources.
+	if objectNamespace == "" || !namespaced {
+		return "", name
+	}
+	return objectNamespace, objectNamespace + "/" + name
+}
+
+// resourceNamespaced reports whether the folder's resource is namespaced. When
+// the scope cannot be determined it assumes namespaced, so objects keep the
+// namespace they report.
+func (o *ObjectsFolder) resourceNamespaced() bool {
+	if o.Deps.Cl == nil {
+		return true
+	}
+	mapper := o.Deps.Cl.RESTMapper()
+	if mapper == nil {
+		return true
+	}
+	gvk, err := mapper.KindFor(o.gvr)
+	if err != nil {
+		return true
+	}
+	mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return true
+	}
+	return mapping.Scope.Name() == meta.RESTScopeNameNamespace
 }
 
 func (o *ObjectsFolder) kindString() string {
