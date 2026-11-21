@@ -141,9 +141,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle modals first
 	if a.modalManager.IsModalVisible() {
-		switch msg.(type) {
-		case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg:
-			// Let modal result messages fall through to the main switch so they can close dialogs.
+		switch {
+		case passesModal(msg):
+			// Fall through to the main switch.
 		default:
 			// Intercept modal-scoped commits while the dialog is open.
 			switch m := msg.(type) {
@@ -871,4 +871,19 @@ func (a *App) handleCommandWatchTick(msg commandWatchTickMsg) (tea.Model, tea.Cm
 	restart := panel.RestartCommand(ctx)
 	next := a.scheduleCommandWatch(msg.PanelIdx)
 	return a, tea.Batch(restart, next)
+}
+
+// passesModal reports whether msg skips an open modal and goes to the main
+// switch. Modal results do, so they can close their dialog. So do messages
+// from background wait loops: their handler re-arms the wait, and if the
+// modal swallowed one, the loop would stop for the rest of the session
+// (no more read errors, panel refreshes or discovery updates).
+func passesModal(msg tea.Msg) bool {
+	switch msg.(type) {
+	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg:
+		return true
+	case readErrorMsg, FolderDirtyMsg, DiscoveryRefreshedMsg:
+		return true
+	}
+	return false
 }
