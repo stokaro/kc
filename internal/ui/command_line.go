@@ -2,12 +2,14 @@ package ui
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/sttts/kc/internal/models"
 )
 
@@ -90,19 +92,45 @@ func (a *App) commandLineCopyHit(x int) bool {
 	return a.panelCommand() != "" && x >= a.width-lipgloss.Width(renderCopyHint()) && x < a.width
 }
 
-// copyPanelCommand puts the active panel's command on the clipboard. It sends
-// OSC 52 (works over SSH in terminals that allow it) and also runs a local
-// clipboard tool when one exists, because Terminal.app ignores OSC 52.
+// copyPanelCommand puts the active panel's command on the clipboard.
+//
+// It writes OSC 52 to the terminal, so the terminal on the user's machine
+// sets its clipboard; this also works over SSH. Inside tmux or screen the
+// sequence is wrapped for passthrough as well. When kc runs locally it also
+// calls a clipboard tool (pbcopy and friends), because Terminal.app ignores
+// OSC 52. Over SSH that tool would fill the remote clipboard, so it is skipped.
 func (a *App) copyPanelCommand() tea.Cmd {
 	command := a.panelCommand()
 	if command == "" {
 		return nil
 	}
-	local := func() tea.Msg {
-		_ = copyWithLocalTool(command)
-		return nil
+	cmds := []tea.Cmd{tea.Raw(osc52Sequence(command, os.Getenv)), a.ShowToast("Copied: "+command, 2*time.Second)}
+	if !isSSHSession(os.Getenv) {
+		cmds = append(cmds, func() tea.Msg {
+			_ = copyWithLocalTool(command)
+			return nil
+		})
 	}
-	return tea.Batch(tea.SetClipboard(command), local, a.ShowToast("Copied: "+command, 2*time.Second))
+	return tea.Batch(cmds...)
+}
+
+// osc52Sequence builds the clipboard escape sequence. The plain sequence is
+// always sent (tmux with set-clipboard on forwards it itself); inside tmux
+// or screen a passthrough-wrapped copy follows for setups that rely on
+// allow-passthrough.
+func osc52Sequence(text string, getenv func(string) string) string {
+	seq := ansi.SetSystemClipboard(text)
+	switch {
+	case getenv("TMUX") != "":
+		return seq + ansi.TmuxPassthrough(seq)
+	case strings.HasPrefix(getenv("TERM"), "screen") && getenv("STY") != "":
+		return seq + ansi.ScreenPassthrough(seq, 0)
+	}
+	return seq
+}
+
+func isSSHSession(getenv func(string) string) bool {
+	return getenv("SSH_CONNECTION") != "" || getenv("SSH_TTY") != "" || getenv("SSH_CLIENT") != ""
 }
 
 // clipboardTools lists local clipboard writers in order of preference.
