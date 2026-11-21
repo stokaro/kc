@@ -55,7 +55,7 @@ func renderCommandLine(command string, width int) string {
 	label := " Command: "
 	hint := ""
 	if command != "" {
-		hint = commandLineStyle.Render("Copy ") + commandLineKey.Render("Alt+C") + commandLineStyle.Render(" ")
+		hint = renderCopyHint()
 	}
 	room := width - lipgloss.Width(label) - lipgloss.Width(hint) - 1
 	if room < 10 {
@@ -68,6 +68,26 @@ func renderCommandLine(command string, width int) string {
 	body := commandLineLabel.Render(label) + commandLineCommand.Render(command)
 	gap := max(0, width-lipgloss.Width(body)-lipgloss.Width(hint))
 	return body + commandLineStyle.Render(strings.Repeat(" ", gap)) + hint
+}
+
+// copyHintIcon is the clickable copy button at the right of the line.
+const copyHintIcon = "📋"
+
+func renderCopyHint() string {
+	return commandLineStyle.Render(copyHintIcon+" Copy ") + commandLineKey.Render("Alt+C") + commandLineStyle.Render(" ")
+}
+
+// commandLineY is the screen row of the command line, or -1 when hidden.
+func (a *App) commandLineY() int {
+	if a.commandLineHeight() == 0 {
+		return -1
+	}
+	return a.height - 1 - a.inlineTerminalHeight() - a.commandLineHeight()
+}
+
+// commandLineCopyHit reports whether x falls on the copy button.
+func (a *App) commandLineCopyHit(x int) bool {
+	return a.panelCommand() != "" && x >= a.width-lipgloss.Width(renderCopyHint()) && x < a.width
 }
 
 // copyPanelCommand puts the active panel's command on the clipboard. It sends

@@ -712,6 +712,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(cmds...)
 			}
 			m := mm.Mouse()
+			if m.Y == a.commandLineY() {
+				if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft && a.commandLineCopyHit(m.X) {
+					return a, a.copyPanelCommand()
+				}
+				return a, nil
+			}
 			if m.Y == a.height-1 {
 				if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
 					if cmd := a.handleFunctionKeyClick(m.X); cmd != nil {

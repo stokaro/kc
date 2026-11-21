@@ -14,7 +14,7 @@ func TestRenderCommandLine(t *testing.T) {
 	if lipgloss.Width(line) != 80 {
 		t.Fatalf("width = %d, want 80", lipgloss.Width(line))
 	}
-	if !strings.HasPrefix(plain, " Command: kubectl get pods -n web") || !strings.HasSuffix(plain, "Copy Alt+C ") {
+	if !strings.HasPrefix(plain, " Command: kubectl get pods -n web") || !strings.HasSuffix(plain, "📋 Copy Alt+C ") {
 		t.Fatalf("unexpected line %q", plain)
 	}
 
