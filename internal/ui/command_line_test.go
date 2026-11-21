@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -57,5 +58,46 @@ func TestIsSSHSession(t *testing.T) {
 		return ""
 	}) {
 		t.Fatalf("SSH_CONNECTION means an SSH session")
+	}
+}
+
+func TestPlanCopy(t *testing.T) {
+	env := func(vars map[string]string) func(string) string {
+		return func(k string) string { return vars[k] }
+	}
+	have := func(names ...string) func(string) (string, error) {
+		return func(n string) (string, error) {
+			for _, x := range names {
+				if x == n {
+					return "/usr/bin/" + n, nil
+				}
+			}
+			return "", errors.New("not found")
+		}
+	}
+	tests := []struct {
+		name     string
+		env      map[string]string
+		tools    []string
+		wantTool string
+		osc52    bool
+		tmux     bool
+	}{
+		{"local mac", nil, []string{"pbcopy"}, "pbcopy", false, false},
+		{"local without tool", nil, nil, "", true, false},
+		{"ssh ignores remote tool", map[string]string{"SSH_TTY": "/dev/pts/1"}, []string{"xclip"}, "", true, false},
+		{"ssh in tmux", map[string]string{"SSH_TTY": "/dev/pts/1", "TMUX": "x"}, nil, "", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := planCopy(env(tt.env), have(tt.tools...))
+			gotTool := ""
+			if p.tool != nil {
+				gotTool = p.tool[0]
+			}
+			if gotTool != tt.wantTool || p.osc52 != tt.osc52 || p.tmux != tt.tmux {
+				t.Fatalf("plan = %+v", p)
+			}
+		})
 	}
 }
