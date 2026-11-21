@@ -1,15 +1,16 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/sttts/kc/internal/models"
+	"github.com/sttts/kc/internal/ui/viewer"
 )
 
 // copyCommandKey copies the kubectl command of the active panel. Alt+C is
@@ -91,38 +92,63 @@ func (a *App) commandLineCopyHit(x int) bool {
 	return a.panelCommand() != "" && x >= a.width-lipgloss.Width(renderCopyHint()) && x < a.width
 }
 
-// copyPanelCommand puts the active panel's command on the clipboard the way
-// Claude Code does it: a local clipboard tool (pbcopy, wl-copy, xclip,
-// xsel) when kc runs locally, OSC 52 over SSH or when no tool exists, and,
-// inside tmux, the tmux paste buffer as well. The toast says which path was
-// used; OSC 52 cannot confirm that the terminal accepted the text.
+// copyResultMsg reports a finished copy. Without a modal it becomes a toast;
+// with a modal open it goes to the modal content (the viewer shows it in its
+// command line, since the toast row is covered).
+type copyResultMsg struct {
+	text  string
+	error bool
+}
+
+// copyPanelCommand puts the active panel's command on the clipboard.
 func (a *App) copyPanelCommand() tea.Cmd {
 	command := a.panelCommand()
 	if command == "" {
 		return nil
 	}
+	return a.copyText(command, command)
+}
+
+// copyText puts text on the clipboard the way Claude Code does it: a local
+// clipboard tool (pbcopy, wl-copy, xclip, xsel) when kc runs locally, OSC 52
+// over SSH or when no tool exists, and, inside tmux, the tmux paste buffer
+// as well. The confirmation names the path used and what was copied; OSC 52
+// cannot confirm that the terminal accepted the text.
+func (a *App) copyText(text, what string) tea.Cmd {
+	if text == "" {
+		return nil
+	}
 	plan := planCopy(os.Getenv, exec.LookPath)
 	var cmds []tea.Cmd
 	if plan.osc52 {
-		cmds = append(cmds, tea.Raw(osc52Sequence(command, os.Getenv)))
+		cmds = append(cmds, tea.Raw(osc52Sequence(text, os.Getenv)))
 	}
 	cmds = append(cmds, func() tea.Msg {
 		if plan.tmux {
-			_ = runWithInput(command, "tmux", "load-buffer", "-")
+			_ = runWithInput(text, "tmux", "load-buffer", "-")
 		}
 		via := "OSC 52 (the terminal must allow clipboard access)"
 		if plan.tool != nil {
-			if err := runWithInput(command, plan.tool...); err != nil {
-				return showToastMsg{text: "Copy failed: " + err.Error(), ttl: 3 * time.Second}
+			if err := runWithInput(text, plan.tool...); err != nil {
+				return copyResultMsg{text: "Copy failed: " + err.Error(), error: true}
 			}
 			via = plan.tool[0]
 		}
 		if plan.tmux {
 			via += " and the tmux buffer"
 		}
-		return showToastMsg{text: "Copied via " + via + ": " + command, ttl: 2 * time.Second}
+		return copyResultMsg{text: "Copied " + what + " via " + via}
 	})
 	return tea.Batch(cmds...)
+}
+
+// copyWhat describes copied text for the confirmation message.
+func copyWhat(req viewer.CopyRequestMsg) string {
+	lines := strings.Count(req.Text, "\n") + 1
+	if lines > 1 {
+		return fmt.Sprintf("%s (%d lines)", req.What, lines)
+	}
+	return fmt.Sprintf("%s (%d chars)", req.What, len([]rune(req.Text)))
 }
 
 type copyPlan struct {

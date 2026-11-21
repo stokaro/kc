@@ -13,7 +13,11 @@ type TextViewer struct {
 	onEdit    func() tea.Cmd
 	onOptions func() tea.Cmd
 	onClose   func() tea.Cmd
+	bar       viewerCommandBar
 }
+
+// SetCommand sets the kubectl command shown under the text.
+func (v *TextViewer) SetCommand(cmd string) { v.bar.command = cmd }
 
 func newViewer(theme string, onEdit, onOptions, onClose func() tea.Cmd) *TextViewer {
 	w := viewer.New(theme)
@@ -43,6 +47,9 @@ func (v *TextViewer) Init() tea.Cmd { return nil }
 func (v *TextViewer) SetDimensions(w, h int) { v.width, v.height = w, h }
 
 func (v *TextViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, handled := v.bar.handle(msg, v.inner, v.width, v.height); handled {
+		return v, cmd
+	}
 	if cmd, handled := v.inner.Update(msg); handled {
 		return v, cmd
 	}
@@ -53,7 +60,17 @@ func (v *TextViewer) View() tea.View {
 	if v.height <= 0 || v.width <= 0 {
 		return tea.NewView("")
 	}
-	return tea.NewView(v.inner.View(viewer.Frame{Width: v.width, Height: v.height, Focused: true}))
+	return tea.NewView(renderViewerWithBar(v.inner, &v.bar, v.width, v.height))
+}
+
+// renderViewerWithBar draws the viewer text with the command line below it.
+func renderViewerWithBar(inner *viewer.Widget, bar *viewerCommandBar, width, height int) string {
+	rows := bar.rows(height)
+	body := inner.View(viewer.Frame{Width: width, Height: height - rows, Focused: true})
+	if rows == 0 {
+		return body
+	}
+	return body + "\n" + bar.render(width)
 }
 
 func (v *TextViewer) FooterHints() []FooterHint {
@@ -65,14 +82,14 @@ func (v *TextViewer) FooterHints() []FooterHint {
 			{Key: "Esc", Label: "Cancel", Enabled: true},
 		}
 	}
-	return []FooterHint{
+	return append([]FooterHint{
 		{Key: "F2", Label: "Options", Enabled: v.onOptions != nil},
 		{Key: "F3", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "F4", Label: "Edit", Enabled: v.onEdit != nil},
 		{Key: "F7", Label: "Search", Enabled: true},
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "n", Label: "Next", Enabled: v.inner.HasSearchMatches()},
-	}
+	}, viewerCopyHints(v.bar.command != "")...)
 }
 
 func (v *TextViewer) SetTheme(theme string) {
@@ -128,6 +145,10 @@ func (v *TextViewer) HandleModalEscape(key tea.KeyMsg) (bool, tea.Cmd) {
 	}
 	if cmd, handled := v.inner.HandleEscape(); handled {
 		return true, cmd
+	}
+	if v.inner.HasSelection() {
+		v.inner.ClearSelection()
+		return true, nil
 	}
 	return false, nil
 }

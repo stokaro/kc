@@ -221,6 +221,7 @@ type App struct {
 	// Toast notification state (auto-dismiss)
 	toastActive bool
 	toastText   string
+	toastInfo   bool
 	toastUntil  time.Time
 	// Logger that emits toasts on errors with rate limiting
 	toastLogger            *ToastLogger
@@ -2028,6 +2029,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 		return nil
 	})
 	view.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
+	view.SetCommand(itemViewCommand(item))
 	view.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(view) })
 	modalTitle := a.modalTitleFromItem(item, title)
 	modal := NewModal(modalTitle, view)
@@ -2079,6 +2081,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	}
 	title := fmt.Sprintf("logs:%s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
 	logsViewer := NewLogsViewer(title, stream, cancel, a.viewerTheme())
+	logsViewer.SetCommand(itemViewCommand(item))
 	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
 	logsViewer.SetOnClose(func() tea.Cmd {
@@ -4044,3 +4047,12 @@ func (n namespaceCommandItem) Namespace() string { return n.namespace }
 func (n namespaceCommandItem) Name() string { return n.namespace }
 
 func (n namespaceCommandItem) SupportsVerb(string) bool { return true }
+
+// itemViewCommand returns the kubectl command that prints what the viewer
+// shows for item, or "" when the item has none.
+func itemViewCommand(item models.Item) string {
+	if vc, ok := item.(interface{ ViewCommand() string }); ok {
+		return vc.ViewCommand()
+	}
+	return ""
+}

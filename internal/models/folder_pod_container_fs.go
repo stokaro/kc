@@ -67,6 +67,7 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 	logPath := append(append([]string{}, f.Path()...), "logs", "latest")
 	logItem := NewContainerLogItem("logs_latest", []string{"logs"}, logPath, logSpec)
 	logItem.RowItem.details = "Stream container logs"
+	logItem.SetViewCommand(logsCommand(f.Deps, logSpec))
 	rows = append(rows, logItem)
 
 	rootPath := append(append([]string{}, f.Path()...), "root")
@@ -411,6 +412,10 @@ func newPodFSFileItem(id string, cells []string, path []string, fsPath string, s
 	}
 	item.RowItem.details = fmt.Sprintf("%d bytes%s", size, detailsSuffix)
 	item.WithViewContent(podFSFileViewContent(folder, fsPath, size))
+	if folder != nil && folder.session != nil {
+		spec := folder.session.spec
+		item.SetViewCommand(kubectlCommand(folder.Deps, "exec", spec.Pod, "-n", spec.Namespace, "-c", spec.Container, "--", "cat", fsPath))
+	}
 	return item
 }
 

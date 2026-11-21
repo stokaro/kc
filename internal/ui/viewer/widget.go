@@ -69,6 +69,8 @@ type Widget struct {
 	searchMatches    []matchLocation
 	searchMatchIndex map[int][]int
 	activeMatch      int
+
+	sel selection
 }
 
 type matchLocation struct {
@@ -78,9 +80,10 @@ type matchLocation struct {
 }
 
 type displayMatch struct {
-	start  int
-	end    int
-	active bool
+	start    int
+	end      int
+	active   bool
+	selected bool // mouse selection, drawn on cyan
 }
 
 // New constructs a viewer widget with an optional theme name.
@@ -108,6 +111,7 @@ func (w *Widget) SetContent(text string, meta Metadata) {
 	}
 	w.offset = 0
 	w.hOffset = 0
+	w.sel = selection{}
 	w.clearSearchState()
 }
 
@@ -211,6 +215,11 @@ func (w *Widget) Update(msg tea.Msg) (tea.Cmd, bool) {
 		if cmd, handled := w.handleKey(m.String()); handled {
 			return cmd, true
 		}
+	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+		if w.searchDialog != nil {
+			return nil, false
+		}
+		return w.handleMouseSelection(m.(tea.MouseMsg))
 	case tea.MouseWheelMsg:
 		mouse := tea.Mouse(m)
 		switch mouse.Button {
@@ -777,6 +786,9 @@ func (w *Widget) visibleLines() []string {
 		if i < len(segment) {
 			lineIdx := start + i
 			matches := w.lineMatches(lineIdx)
+			if from, to, ok := w.selectionRange(lineIdx); ok {
+				matches = withSelection(matches, from, to)
+			}
 			if w.wrapMode {
 				result[i] = renderWrappedLine(segment[i], matches)
 			} else {
@@ -966,6 +978,7 @@ func renderWrappedLine(line string, matches []displayMatch) string {
 		activeBg  = "\033[43m"
 		resetCode = "\033[0m"
 	)
+	const selectedBg = "\033[46m"
 	line = trimBackgroundPrefix(strings.TrimSuffix(line, resetCode))
 	var b strings.Builder
 	b.WriteString(baseBg)
@@ -991,6 +1004,9 @@ func renderWrappedLine(line string, matches []displayMatch) string {
 			desired := matchBg
 			if matches[matchIdx].active {
 				desired = activeBg
+			}
+			if matches[matchIdx].selected {
+				desired = selectedBg
 			}
 			if desired != currentBg {
 				b.WriteString(desired)
@@ -1017,6 +1033,7 @@ func applyHighlightedBackground(line string, width int, matches []displayMatch) 
 		activeBg  = "\033[43m"
 		resetCode = "\033[0m"
 	)
+	const selectedBg = "\033[46m"
 	line = trimBackgroundPrefix(strings.TrimSuffix(line, resetCode))
 	line = padLine(line, width)
 	var b strings.Builder
@@ -1043,6 +1060,9 @@ func applyHighlightedBackground(line string, width int, matches []displayMatch) 
 			desired := matchBg
 			if matches[matchIdx].active {
 				desired = activeBg
+			}
+			if matches[matchIdx].selected {
+				desired = selectedBg
 			}
 			if desired != currentBg {
 				b.WriteString(desired)
