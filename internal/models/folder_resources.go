@@ -132,11 +132,14 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		visible := true
 		// Never peek the apiserver on the UI thread; use the cached answer
 		// and let a background peek refresh the folder.
-		empty := item.EmptyCached()
+		empty, pending := item.EmptyState()
 		if item.Forbidden() {
 			visible = false
-		} else if showNonEmpty && !spec.uncounted && empty {
-			// Uncounted types (all namespaces) have no emptiness to filter on.
+		} else if showNonEmpty && !spec.uncounted && (empty || pending) {
+			// Uncounted types (all namespaces) have no emptiness to filter
+			// on. A type whose emptiness is not known yet stays hidden, so
+			// the list grows to the non-empty types instead of showing all
+			// of them and then shrinking.
 			visible = false
 		}
 		sig := makeResourceGroupSignature(spec, visible, idx)
