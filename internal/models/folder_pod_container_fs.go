@@ -467,7 +467,8 @@ func newPodFSFileItem(id string, cells []string, path []string, fsPath string, s
 	item.WithViewContent(podFSFileViewContent(folder, fsPath, size))
 	if folder != nil && folder.session != nil {
 		spec := folder.session.spec
-		item.SetViewCommand(kubectlCommand(folder.Deps, "exec", spec.Pod, "-n", spec.Namespace, "-c", spec.Container, "--", "cat", fsPath))
+		container, p := folder.session.execTarget(fsPath)
+		item.SetViewCommand(kubectlCommand(folder.Deps, "exec", spec.Pod, "-n", spec.Namespace, "-c", container, "--", "cat", p))
 	}
 	return item
 }
@@ -498,6 +499,20 @@ type containerSessionHandle struct {
 	mu      sync.Mutex
 	session podfs.ExecSession
 	helper  bool
+	// helperContainer is the debug helper the session runs in, if any.
+	helperContainer string
+}
+
+// execTarget returns the container kubectl exec must use and how a path in
+// the target container is spelled there: inside the debug helper the
+// target's files live under podfs.HelperRoot.
+func (h *containerSessionHandle) execTarget(p string) (container, path string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.helperContainer != "" {
+		return h.helperContainer, podfs.HelperPath(p)
+	}
+	return h.spec.Container, p
 }
 
 func newContainerSessionHandle(factory podfs.Factory, namespace, pod, container string) *containerSessionHandle {
@@ -533,6 +548,10 @@ func (h *containerSessionHandle) Session(ctx context.Context) (podfs.ExecSession
 	} else {
 		h.helper = false
 	}
+	h.helperContainer = ""
+	if hc, ok := session.(interface{ HelperContainer() string }); ok {
+		h.helperContainer = hc.HelperContainer()
+	}
 	h.session = session
 	return session, nil
 }
@@ -549,6 +568,7 @@ func (h *containerSessionHandle) Close() error {
 	err := h.session.Close()
 	h.session = nil
 	h.helper = false
+	h.helperContainer = ""
 	return err
 }
 
@@ -561,6 +581,7 @@ func (h *containerSessionHandle) Invalidate() {
 		_ = h.session.Close()
 		h.session = nil
 		h.helper = false
+		h.helperContainer = ""
 	}
 	h.mu.Unlock()
 }

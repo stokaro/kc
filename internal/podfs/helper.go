@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -25,6 +27,7 @@ type helperConfig struct {
 	image            string
 	command          []string
 	namePrefix       string
+	ptracePrefix     string // helpers with CAP_SYS_PTRACE
 	readinessTimeout time.Duration
 }
 
@@ -32,8 +35,9 @@ func newHelperManager(client kubernetes.Interface) *helperManager {
 	cfg := helperConfig{
 		enabled:          true,
 		image:            getenvDefault("KC_PODFS_HELPER_IMAGE", "docker.io/library/busybox:1.36.1"),
-		command:          []string{"/bin/sh", "-c", "trap : TERM INT; while true; do sleep 3600; done"},
+		command:          []string{"/bin/sh", "-c", "trap : TERM INT; while true; do sleep 3600; done # " + helperSleepMarker},
 		namePrefix:       "kc-fs-helper",
+		ptracePrefix:     "kc-fs-ptrace",
 		readinessTimeout: 60 * time.Second,
 	}
 	if strings.EqualFold(os.Getenv("KC_PODFS_HELPER_DISABLE"), "1") {
@@ -50,17 +54,30 @@ func (m *helperManager) ensureHelper(ctx context.Context, spec SessionSpec) (Ses
 	if !m.available() {
 		return spec, fmt.Errorf("pod filesystem helper disabled")
 	}
+	// Prefer a helper with CAP_SYS_PTRACE: it can read the filesystem of a
+	// target running as another user through /proc/1/root. Pod security
+	// admission (baseline and stricter) rejects that capability; a plain
+	// helper still reaches targets that run as root.
+	ptrace := true
 	pods := m.client.CoreV1().Pods(spec.Namespace)
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		helperName := sanitizeHelperName(fmt.Sprintf("%s-%s-%d", m.cfg.namePrefix, spec.Container, attempt))
+		prefix := m.cfg.namePrefix
+		if ptrace {
+			prefix = m.cfg.ptracePrefix
+		}
+		helperName := sanitizeHelperName(fmt.Sprintf("%s-%s-%d", prefix, spec.Container, attempt))
 		pod, err := pods.Get(ctx, spec.Pod, metav1.GetOptions{})
 		if err != nil {
 			return spec, err
 		}
 		if !helperExists(pod, helperName) {
-			if err := m.createHelper(ctx, pods, pod, spec.Container, helperName); err != nil {
+			if err := m.createHelper(ctx, pods, pod, spec.Container, helperName, ptrace); err != nil {
 				lastErr = err
+				if ptrace && (apierrors.IsForbidden(err) || apierrors.IsInvalid(err)) {
+					ptrace = false
+					attempt = -1
+				}
 				continue
 			}
 		}
@@ -123,6 +140,10 @@ func helperExists(pod *corev1.Pod, name string) bool {
 	return false
 }
 
+// helperSleepMarker tags the helper's own command line, so a session can
+// tell the helper's PID 1 from the target's.
+const helperSleepMarker = "kc-fs-helper"
+
 var helperNameSanitizer = regexp.MustCompile(`[^a-z0-9-]+`)
 
 func sanitizeHelperName(input string) string {
@@ -145,7 +166,7 @@ func getenvDefault(key, def string) string {
 	return def
 }
 
-func (m *helperManager) createHelper(ctx context.Context, pods typedcorev1.PodInterface, pod *corev1.Pod, targetContainer, helperName string) error {
+func (m *helperManager) createHelper(ctx context.Context, pods typedcorev1.PodInterface, pod *corev1.Pod, targetContainer, helperName string, ptrace bool) error {
 	ec := corev1.EphemeralContainer{
 		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
 			Name:            helperName,
@@ -156,6 +177,11 @@ func (m *helperManager) createHelper(ctx context.Context, pods typedcorev1.PodIn
 			TTY:             true,
 		},
 		TargetContainerName: targetContainer,
+	}
+	if ptrace {
+		ec.SecurityContext = &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{Add: []corev1.Capability{"SYS_PTRACE"}},
+		}
 	}
 	pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers, ec)
 	_, err := pods.UpdateEphemeralContainers(ctx, pod.Name, pod, metav1.UpdateOptions{})
