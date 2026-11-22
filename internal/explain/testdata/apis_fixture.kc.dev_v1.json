@@ -1,0 +1,92 @@
+{
+  "openapi": "3.0.0",
+  "info": {"title": "Kubernetes CRD Swagger", "version": "v0.1.0"},
+  "paths": {},
+  "components": {
+    "schemas": {
+      "dev.kc.fixture.v1.Deployment": {
+        "description": "Deployment is a fixture CRD whose kind clashes with apps/v1 Deployment.",
+        "type": "object",
+        "required": ["spec"],
+        "properties": {
+          "apiVersion": {"description": "APIVersion defines the versioned schema of this representation of an object.", "type": "string"},
+          "kind": {"description": "Kind is a string value representing the REST resource this object represents.", "type": "string"},
+          "metadata": {
+            "allOf": [{"$ref": "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"}],
+            "description": "Standard object's metadata."
+          },
+          "spec": {
+            "description": "Spec of the fixture deployment.",
+            "type": "object",
+            "required": ["target"],
+            "properties": {
+              "target": {"description": "Target names the cluster to deploy to.", "type": "string"},
+              "mode": {"type": "string", "enum": ["Blue", "Green", ""], "default": "Blue"},
+              "undocumented": {"type": "integer", "format": "int64"},
+              "config": {
+                "description": "Free-form configuration.",
+                "type": "object",
+                "x-kubernetes-preserve-unknown-fields": true
+              },
+              "port": {"x-kubernetes-int-or-string": true, "anyOf": [{"type": "integer"}, {"type": "string"}]},
+              "steps": {
+                "description": "Ordered rollout steps.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["name"],
+                  "properties": {
+                    "name": {"description": "Step name.", "type": "string"},
+                    "weight": {"type": "integer"}
+                  }
+                },
+                "x-kubernetes-list-map-keys": ["name"],
+                "x-kubernetes-list-type": "map"
+              },
+              "routes": {
+                "description": "Routes keyed by host name.",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "backend": {"description": "Backend service.", "type": "string"}
+                  }
+                }
+              },
+              "matrix": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": "object", "properties": {"cell": {"type": "string"}}}}
+              }
+            }
+          },
+          "status": {
+            "type": "object",
+            "x-kubernetes-preserve-unknown-fields": true
+          }
+        },
+        "x-kubernetes-group-version-kind": [{"group": "fixture.kc.dev", "kind": "Deployment", "version": "v1"}]
+      },
+      "dev.kc.fixture.v1.Loop": {
+        "description": "Loop references itself, like JSONSchemaProps does.",
+        "type": "object",
+        "properties": {
+          "next": {"allOf": [{"$ref": "#/components/schemas/dev.kc.fixture.v1.Loop"}], "description": "Next element."},
+          "broken": {"allOf": [{"$ref": "#/components/schemas/dev.kc.fixture.v1.Missing"}]}
+        },
+        "x-kubernetes-group-version-kind": [{"group": "fixture.kc.dev", "kind": "Loop", "version": "v1"}]
+      },
+      "dev.kc.fixture.v1.Opaque": {
+        "type": "object",
+        "x-kubernetes-preserve-unknown-fields": true,
+        "x-kubernetes-group-version-kind": [{"group": "fixture.kc.dev", "kind": "Opaque", "version": "v1"}]
+      },
+      "io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta": {
+        "description": "ObjectMeta is metadata that all persisted resources must have.",
+        "type": "object",
+        "properties": {
+          "name": {"description": "Name must be unique within a namespace.", "type": "string"}
+        }
+      }
+    }
+  }
+}

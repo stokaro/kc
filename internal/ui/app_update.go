@@ -3,13 +3,13 @@ package ui
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	"github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -36,9 +36,11 @@ func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 }
 
 // Update handles messages and updates the application state
-func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	a.syncActivity()
 	defer a.syncActivity()
+	// Start the access reviews the selected row needs for function key gating.
+	defer func() { cmd = batchAccessPrefetch(cmd, a.accessPrefetchCmd()) }()
 	if a.cfg != nil {
 		a.logMsg(msg)
 	}
@@ -52,8 +54,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.pendingCmdsMu.Unlock()
 	viewWasValid := a.mainViewCache.valid
 
+	// An open node shell owns the keyboard and the screen.
+	if a.nodeShell != nil {
+		cmd, handled := a.updateNodeShell(msg)
+		cmds = append(cmds, cmd)
+		if handled {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
 	// Always adapt size
 	switch msg := msg.(type) {
+	case panelWalkMsg:
+		if cmd := a.continuePanelNavigation(msg.panel, msg.gen); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return a, tea.Batch(cmds...)
+	case startupLogsTargetMsg:
+		if cmd := a.startStartupLogs(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return a, tea.Batch(cmds...)
 	case startupIntentMsg:
 		if cmd := a.applyStartupIntent(); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -93,6 +114,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commandWatchTickMsg:
 		model, cmd := a.handleCommandWatchTick(msg)
 		return model, cmd
+	case logStreamOpenedMsg, logStreamMsg:
+		// Stream results go to their viewer even when a dialog (F2) covers
+		// it; routed through the top modal they would be dropped and the
+		// stream would stop.
+		var v *LogsViewer
+		switch m := msg.(type) {
+		case logStreamOpenedMsg:
+			v = m.viewer
+		case logStreamMsg:
+			v = m.viewer
+		}
+		if v != nil {
+			_, cmd := v.Update(msg)
+			cmds = append(cmds, cmd)
+			a.invalidateView("logs stream")
+		}
+		return a, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		msg.Width = max(40, msg.Width)
 		msg.Height = max(5, msg.Height)
@@ -169,20 +207,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if panel != nil {
 					currentTableMode = panel.TableMode()
 				}
-				widthSavePending := false
-				saveHandled := false
 				if m.SetPanelWidth && (m.Accept || m.SaveDefault) {
 					targetPercent := clampPercent(m.PanelWidthPercent)
 					if resizeCmds := a.setPanelWidthPercent(targetIdx, targetPercent); len(resizeCmds) > 0 {
 						cmds = append(cmds, resizeCmds...)
 					}
 					if m.SaveDefault {
-						if a.cfg == nil {
-							a.cfg = appconfig.Default()
-						}
-						a.cfg.Panel.Width.LeftPercent = a.leftPanelWidthPercent
-						a.cfg.Panel.Width.RightPercent = a.rightPanelWidthPercent
-						widthSavePending = true
+						left, right := a.leftPanelWidthPercent, a.rightPanelWidthPercent
+						a.cfg.Panel.Width.LeftPercent = left
+						a.cfg.Panel.Width.RightPercent = right
+						subCmds = append(subCmds, a.saveDefaults(func(c *appconfig.Config) {
+							c.Panel.Width.LeftPercent = left
+							c.Panel.Width.RightPercent = right
+						}))
 					}
 				}
 				if m.Resources != nil && (m.Accept || m.SaveDefault) {
@@ -206,9 +243,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.Close {
 						closedBySubMsg = true
 					}
-					if m.SaveDefault {
-						saveHandled = true
-					}
+				}
+				if m.Objects != nil && m.Accept && m.Objects.HasFaultsOnly {
+					// Faults only is a per-folder view state; Save as
+					// defaults does not store it.
+					a.setPanelFaultsOnly(a.panelByIndex(m.PanelIndex), m.Objects.FaultsOnly)
 				}
 				if m.Objects != nil && (m.Accept || m.SaveDefault) {
 					tableMode := currentTableMode
@@ -229,9 +268,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.Close {
 						closedBySubMsg = true
 					}
-					if m.SaveDefault {
-						saveHandled = true
-					}
 				}
 				if m.Command != nil && (m.Accept || m.SaveDefault) {
 					cmdMsg := CommandOptionsChangedMsg{
@@ -247,27 +283,28 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						closedBySubMsg = true
 					}
 				}
-				if widthSavePending && !saveHandled {
-					_ = appconfig.Save(a.cfg)
+				if m.Accept && !m.SaveDefault {
+					subCmds = append(subCmds, a.sessionOnly())
 				}
 				if m.Close && !closedBySubMsg {
 					a.hideModal()
 				}
 				return a, tea.Batch(subCmds...)
 			case ResourcesOptionsChangedMsg:
+				var saveCmd tea.Cmd
 				if m.SaveDefault {
 					// Persist current dialog values to config defaults
-					if a.cfg == nil {
-						a.cfg = appconfig.Default()
+					change := func(c *appconfig.Config) {
+						if m.HasInclude {
+							c.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
+						}
+						if m.HasOrder {
+							c.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
+						}
+						c.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
 					}
-					if m.HasInclude {
-						a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
-					}
-					if m.HasOrder {
-						a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
-					}
-					a.cfg.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
-					_ = appconfig.Save(a.cfg)
+					change(a.cfg)
+					saveCmd = a.saveDefaults(change)
 					a.applyResourceOptions(a.leftPanel)
 					a.applyResourceOptions(a.rightPanel)
 				}
@@ -321,28 +358,26 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.Close {
 					a.hideModal()
 				}
-				return a, nil
+				return a, saveCmd
 			case ObjectOptionsChangedMsg:
+				var saveCmd tea.Cmd
 				if m.SaveDefault {
-					if a.cfg == nil {
-						a.cfg = appconfig.Default()
+					change := func(c *appconfig.Config) {
+						switch strings.ToLower(m.TableMode) {
+						case "fit":
+							c.Panel.Table.Mode = appconfig.TableModeFit
+						default:
+							c.Panel.Table.Mode = appconfig.TableModeScroll
+						}
+						if strings.EqualFold(m.Columns, appconfig.ColumnsModeWide) {
+							c.Objects.Columns = appconfig.ColumnsModeWide
+						} else {
+							c.Objects.Columns = appconfig.ColumnsModeNormal
+						}
+						c.Objects.Order = m.ObjectsOrder
 					}
-					// Save table mode
-					switch strings.ToLower(m.TableMode) {
-					case "fit":
-						a.cfg.Panel.Table.Mode = appconfig.TableModeFit
-					default:
-						a.cfg.Panel.Table.Mode = appconfig.TableModeScroll
-					}
-					// Save columns mode to objects.columns
-					if strings.EqualFold(m.Columns, "wide") {
-						a.cfg.Objects.Columns = "wide"
-					} else {
-						a.cfg.Objects.Columns = "normal"
-					}
-					// Save objects order
-					a.cfg.Objects.Order = m.ObjectsOrder
-					_ = appconfig.Save(a.cfg)
+					change(a.cfg)
+					saveCmd = a.saveDefaults(change)
 				}
 				if a.activePanel == 0 {
 					ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -378,7 +413,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.Close {
 					a.hideModal()
 				}
-				return a, nil
+				return a, saveCmd
 			case CommandOptionsChangedMsg:
 				panel := a.activePanelRef()
 				panelIdx := a.activePanel
@@ -453,6 +488,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Re-dispatch the original message for normal handling
 		return a, func() tea.Msg { return msg.msg }
+	case explainLoadedMsg:
+		return a, a.handleExplainLoaded(msg)
+	case configSavedMsg:
+		return a, a.handleConfigSaved(msg)
 	case showToastMsg:
 		a.toastActive = true
 		a.toastText = msg.text
@@ -481,9 +520,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case kubectlEditFinishedMsg:
-		if msg.tempConfig != "" {
-			_ = os.Remove(msg.tempConfig)
-		}
 		if msg.err != nil {
 			if a.toastLogger != nil {
 				a.enqueueCmd(a.toastLogger.Errorf("kubectl edit %s failed: %v", msg.resourceRef, msg.err))
@@ -493,6 +529,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.refreshPanelAfterEdit(msg.panelIndex)
+		return a, nil
+	case RowFilterResultMsg:
+		if msg.Close {
+			a.hideModal()
+		}
+		if msg.Confirm {
+			a.applyRowFilterText(msg.Panel, msg.Text)
+		}
 		return a, nil
 	case NamespaceCreateResultMsg:
 		if msg.Close {
@@ -591,20 +635,33 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PanelSelectionChangedMsg:
 		if panel := msg.Panel; panel != nil {
 			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-			panel.NotifySelection(ctxSel, msg.Selection)
+			cmds = append(cmds, panel.NotifySelection(ctxSel, msg.Selection))
 			cancelSel()
 			if idx, ok := a.panelIndexFor(panel); ok {
 				other := a.panelByIndex(1 - idx)
 				if other != nil {
 					ctxOther, cancelOther := context.WithTimeout(a.ctx, panelContextTimeout)
-					other.NotifySelection(ctxOther, msg.Selection)
+					cmds = append(cmds, other.NotifySelection(ctxOther, msg.Selection))
 					cancelOther()
 				}
 			}
 		}
 		a.invalidateFunctionBar("selection changed")
 		a.invalidateView("selection changed")
-		return a, nil
+		return a, tea.Batch(cmds...)
+	case panelcontent.BackgroundMsg:
+		// Delivered to both panels directly: behind a dialog or the full
+		// screen terminal the default route would drop it, and the widget
+		// would wait for it forever.
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		for idx := 0; idx < 2; idx++ {
+			if panel := a.panelByIndex(idx); panel != nil {
+				cmds = append(cmds, panel.DeliverBackground(ctx, msg))
+			}
+		}
+		cancel()
+		a.invalidateView("panel content loaded")
+		return a, tea.Batch(cmds...)
 	case PanelModeSelectedMsg:
 		if panel := a.panelByIndex(msg.PanelIndex); panel != nil {
 			log := ctrllog.FromContext(a.ctx).WithName("panelMode").WithValues("panelIdx", msg.PanelIndex, "mode", msg.Mode)
@@ -630,7 +687,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if sel.ID != "" || sel.Item != nil {
 					log.Info("replaying selection", "selectionID", sel.ID, "path", sel.Path)
 					sel.Force = true
-					panel.NotifySelection(ctxSel, sel)
+					cmds = append(cmds, panel.NotifySelection(ctxSel, sel))
 				} else {
 					log.Info("missing selection to replay")
 				}
@@ -647,13 +704,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 	case resourceDeletedMsg:
 		if msg.err != nil {
+			text := deleteResultText(msg)
 			if a.toastLogger != nil {
-				a.enqueueCmd(a.toastLogger.Errorf("Delete %s failed: %v", kubectlResourceRef(msg.target.gvr, msg.target.name), msg.err))
+				a.enqueueCmd(a.toastLogger.Errorf("%s", text))
 			} else {
-				a.enqueueCmd(a.ShowToast(fmt.Sprintf("Delete failed: %v", msg.err), 5*time.Second))
+				a.enqueueCmd(a.ShowToast(text, 5*time.Second))
 			}
-			return a, nil
 		}
+		// Refresh on failure too: a replaced or vanished object means the
+		// panel shows stale rows.
 		a.refreshPanelAfterEdit(msg.target.panelIdx)
 		return a, nil
 	case EscTimeoutMsg:
@@ -673,13 +732,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		panel.RefreshFolder(ctx)
+		// A Describe or Manifest panel may show an object of this folder:
+		// the other panel follows this one's selection, and this panel's
+		// own content came from its list. Each widget rereads at most once
+		// a second, and only when its object changed.
+		for idx := 0; idx < 2; idx++ {
+			if p := a.panelByIndex(idx); p != nil {
+				cmds = append(cmds, p.RefreshContent(ctx))
+			}
+		}
 		cancel()
 		a.invalidateView(fmt.Sprintf("folder dirty panel %d", msg.PanelIdx))
 		// Always wake the renderer when data changed so cached frames are dropped
-		return a, tea.Batch(
+		cmds = append(cmds,
 			tea.Tick(0, func(time.Time) tea.Msg { return nil }),
 			a.waitFolderDirtyEvents(),
 		)
+		return a, tea.Batch(cmds...)
 	case DiscoveryRefreshedMsg:
 		a.handleDiscoveryRefresh()
 		return a, a.watchDiscovery()
@@ -697,16 +766,46 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleExecResolved(msg)
 	case execFinishedMsg:
 		return a, a.handleExecFinished(msg)
+	case models.OpenObjectRequest:
+		return a, a.openLinkedObject(msg.Link)
+	case linkSelectMsg:
+		return a, a.selectLinkedRow(msg)
+	case portForwardPlanMsg, portForwardInputMsg, portForwardStartedMsg:
+		return a, a.handlePortForwardMsg(msg)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
+		return a, a.handleTransferMsg(msg)
+	case models.NodeShellRequest:
+		return a, tea.Batch(append(cmds, a.startNodeShell(msg))...)
+	case nodeShellStartedMsg:
+		return a, tea.Batch(append(cmds, a.handleNodeShellStarted(msg))...)
+	case execEndedMsg:
+		return a, tea.Batch(append(cmds, a.handleExecEnded(msg))...)
+	case nodeShellDeletedMsg:
+		return a, tea.Batch(append(cmds, a.handleNodeShellDeleted(msg))...)
+	case objectActionPreparedMsg:
+		return a, a.handleObjectActionPrepared(msg)
+	case objectActionDoneMsg:
+		return a, a.handleObjectActionDone(msg)
+	case selectCreatedMsg:
+		return a, a.selectCreatedRow(msg)
 	case startupSelectMsg:
 		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
+	case pathJumpMsg:
+		return a, a.continueJump(msg.jump)
 	case contextSwitchedMsg:
 		return a, a.applyContextSwitch(msg)
 	case namespacesLoadedMsg:
 		return a, a.showNamespacePicker(msg)
 	case viewer.CopyRequestMsg:
 		return a, a.copyText(msg.Text, copyWhat(msg))
+	case accessResultMsg:
+		return a, tea.Batch(append(cmds, a.handleAccessResult())...)
+	case relatedFolderMsg:
+		return a, a.handleRelatedFolder(msg)
+	case compareResultMsg:
+		return a, msg.view.apply(msg)
 	case copyResultMsg:
 		if msg.error {
 			return a, a.ShowToast(msg.text, 3*time.Second)
@@ -743,6 +842,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	default:
 		if mm, ok := msg.(tea.MouseMsg); ok {
+			// The open menu bar takes every mouse event until it closes.
+			if a.menuBar.IsOpen() {
+				return a, tea.Batch(append(cmds, a.handleMenuBarMouse(mm))...)
+			}
 			if a.showTerminal {
 				m := mm.Mouse()
 				if m.Y == a.height-1 {
@@ -948,12 +1051,16 @@ func (a *App) handleCommandWatchTick(msg commandWatchTickMsg) (tea.Model, tea.Cm
 // (no more read errors, panel refreshes or discovery updates).
 func passesModal(msg tea.Msg) bool {
 	switch msg.(type) {
-	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg:
+	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg, RowFilterResultMsg:
 		return true
 	case viewer.CopyRequestMsg:
 		// The app owns the clipboard; the viewer only asks.
 		return true
 	case readErrorMsg, FolderDirtyMsg, DiscoveryRefreshedMsg:
+		return true
+	case panelcontent.BackgroundMsg:
+		// Panel content keeps loading behind a dialog; a dropped result
+		// would leave the widget waiting for it.
 		return true
 	case showToastMsg, toastTickMsg:
 		// Toasts must keep their hide timer running behind a dialog, or
@@ -961,6 +1068,24 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
+		// The copy dialog drives itself; a swallowed tick would freeze its
+		// progress and a swallowed result would leave it open for good.
+		return true
+	case accessResultMsg:
+		// Function keys and an open access view redraw from the cache.
+		return true
+	case compareResultMsg:
+		// The result names its viewer; it must not be lost when another
+		// dialog (viewer options) is on top while the manifests load.
+		return true
+	case portForwardPlanMsg, portForwardInputMsg, portForwardStartedMsg:
+		// The dialog answers itself; a forward that finished starting
+		// reports even when another dialog opened meanwhile.
+		return true
+	case configSavedMsg:
+		// C-s keeps the options dialog open; its result must still show.
 		return true
 	}
 	return false

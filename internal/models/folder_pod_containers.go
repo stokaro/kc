@@ -114,12 +114,13 @@ func (f *PodContainerListFolder) buildRows(ctx context.Context) ([]table.Row, er
 		name := c.Name
 		kind := c.Kind
 		target := containerExecTarget(f.Deps, f.Namespace, f.Pod, name, kind, c.Stdin, c.TTY)
-		item := NewContainerItem(name, []string{c.Label}, sectionPath, nameStyle, containerViewContent(f.Deps, f.Namespace, f.Pod, name), func() (Folder, error) {
+		item := NewContainerItem(name, []string{c.Label}, sectionPath, nameStyle, containerViewContent(f.Deps, f.Namespace, f.Pod, name, kind), func() (Folder, error) {
 			detail := NewPodContainerDetailFolder(f.Deps, sectionPath, f.Namespace, f.Pod, name, kind)
 			detail.execTarget = &target
 			return detail, nil
 		})
 		item.RowItem.details = c.Detail
+		item.SetPod(f.Namespace, f.Pod)
 		item.SetViewCommand(kubectlCommand(f.Deps, "get", "pod", f.Pod, "-n", f.Namespace, "-o",
 			`jsonpath={.spec.`+containerField(kind)+`[?(@.name=="`+name+`")]}`))
 		item.SetExecTarget(target)
