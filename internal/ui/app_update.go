@@ -11,6 +11,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	"github.com/sttts/kc/internal/ui/viewer"
+	"github.com/sttts/kc/internal/workloadaction"
 	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -776,6 +777,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, a.handlePortForwardMsg(msg)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case workloadaction.Request:
+		return a, a.startWorkloadAction(msg)
+	case workloadMessage:
+		return a, a.handleWorkloadMsg(msg)
 	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
 		return a, a.handleTransferMsg(msg)
 	case models.NodeShellRequest:
@@ -1070,6 +1075,9 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case workloadMessage:
+		// The workload dialogs answer themselves.
 		return true
 	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
 		// The copy dialog drives itself; a swallowed tick would freeze its

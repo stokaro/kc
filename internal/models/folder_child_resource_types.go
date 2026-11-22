@@ -58,5 +58,6 @@ func (f *ChildResourceTypesFolder) populate(ctx context.Context) ([]table.Row, e
 		item.RowItem.details = "Stream logs of all pods and containers"
 		rows = append(rows, item)
 	}
+	rows = append(rows, extraObjectRows(f.Deps, f.parentGVR, f.parentNamespace, f.parentName, f.Path())...)
 	return rows, nil
 }
