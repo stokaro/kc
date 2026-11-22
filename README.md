@@ -1,6 +1,8 @@
 # Kubernetes Commander (kc)
 
-[![Build Status](https://github.com/sttts/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/sttts/kc/actions/workflows/build.yml)
+[![Build Status](https://github.com/stokaro/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/stokaro/kc/actions/workflows/build.yml)
+
+> **Origin:** kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) (upstream). This repository is developed independently and has diverged a lot from it: key bindings, features and internals differ. Report issues for this version at [stokaro/kc](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE) for attribution.
 
 ![Kubernetes Commander TUI](docs/screenshot.png)
 
@@ -25,33 +27,54 @@ A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, B
 
 ## Getting Started
 
-### Build and Run
+### Install with Homebrew
+
+The tap is [`stokaro/homebrew-kc`](https://github.com/stokaro/homebrew-kc). It works on macOS and Linux:
 
 ```bash
-go run ./cmd/kc
+brew install --cask stokaro/kc/kc
 ```
 
-Prefer a compiled binary?
+The tap starts with the first release of this fork. Until then, use a source build.
+
+### Download a release binary
+
+Each release on the [GitHub Releases page](https://github.com/stokaro/kc/releases) has `.tar.gz` archives for Linux and macOS (amd64 and arm64) and a `kc_checksums.txt` file:
 
 ```bash
-go build -o kc ./cmd/kc
+VERSION=X.Y.Z   # without the leading "v"
+curl -LO "https://github.com/stokaro/kc/releases/download/v${VERSION}/kc_${VERSION}_linux_amd64.tar.gz"
+curl -LO "https://github.com/stokaro/kc/releases/download/v${VERSION}/kc_checksums.txt"
+shasum -a 256 --check --ignore-missing kc_checksums.txt
+tar -xzf "kc_${VERSION}_linux_amd64.tar.gz" kc
+./kc --version
+```
+
+The checksum file is signed with [cosign](https://docs.sigstore.dev/) by the release workflow. To check the signature, also download `kc_checksums.txt.sigstore.json` and run:
+
+```bash
+cosign verify-blob --bundle kc_checksums.txt.sigstore.json kc_checksums.txt \
+  --certificate-identity-regexp '^https://github.com/stokaro/kc/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+### Build from source
+
+kc needs Go 1.27 or newer.
+
+```bash
+git clone https://github.com/stokaro/kc.git
+cd kc
+go run ./cmd/kc            # run without building
+go build -o kc ./cmd/kc    # or build a binary
 ./kc
 ```
 
-### Install via Homebrew
+`go install github.com/stokaro/kc/cmd/kc@latest` does not work yet: the Go module path is still the upstream one.
 
-```bash
-brew tap sttts/homebrew-kc
-# macOS (notarized GUI build)
-brew install --cask sttts/homebrew-kc/kc
+### Check the installed version
 
-# Linux / CLI-only formula
-brew install sttts/homebrew-kc/kc
-```
-
-## Releases
-
-Binaries are published by the maintainers via GitHub Releases and the Homebrew tap. Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, notarizes the macOS artifacts, and refreshes the Homebrew tap. See `docs/RELEASING.md` for the Apple signing credentials required for CI.
+`kc --version` and `kc version --client` print the kc version, the client-go version, the commit and the build date. They do not read a kubeconfig or contact a cluster. `kc version` also asks the current cluster for its version, as `kubectl version` does, and fails when it cannot reach one.
 
 ### Kubectl-style shortcuts
 
