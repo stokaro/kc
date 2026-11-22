@@ -113,7 +113,7 @@ func (f *PodContainerListFolder) buildRows(ctx context.Context) ([]table.Row, er
 		sectionPath := append(append([]string{}, f.Path()...), c.Name)
 		name := c.Name
 		kind := c.Kind
-		item := NewContainerItem(name, []string{c.Label}, sectionPath, nameStyle, containerViewContent(f.Deps, f.Namespace, f.Pod, name), func() (Folder, error) {
+		item := NewContainerItem(name, []string{c.Label}, sectionPath, nameStyle, containerViewContent(f.Deps, f.Namespace, f.Pod, name, kind), func() (Folder, error) {
 			return NewPodContainerDetailFolder(f.Deps, sectionPath, f.Namespace, f.Pod, name, kind), nil
 		})
 		item.RowItem.details = c.Detail
