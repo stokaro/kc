@@ -419,6 +419,7 @@ func (m *TextInputModal) renderButtonsRow(width int) (string, []buttonRect) {
 	return row, rects
 }
 
+//revive:disable-next-line:flag-parameter focused and confirm pick the button style only.
 func (m *TextInputModal) renderButton(label string, focused, confirm bool) string {
 	if strings.TrimSpace(label) == "" {
 		label = " "
