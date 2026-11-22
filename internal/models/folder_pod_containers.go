@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	table "github.com/sttts/kc/internal/table"
+	table "github.com/stokaro/kc/internal/table"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"

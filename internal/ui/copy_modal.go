@@ -8,7 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // CopyToLocalResultMsg captures the outcome of the copy dialog.

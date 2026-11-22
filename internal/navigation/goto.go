@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sttts/kc/internal/models"
+	"github.com/stokaro/kc/internal/models"
 )
 
 // GoToStep describes a selection to apply on the current folder and whether to

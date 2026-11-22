@@ -2,7 +2,7 @@ package models
 
 import (
 	"charm.land/lipgloss/v2"
-	table "github.com/sttts/kc/internal/table"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // RowItem is the minimal table-backed item implementation shared by all rows.

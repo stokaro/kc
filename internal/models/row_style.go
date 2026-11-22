@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/tablecache"
+	"github.com/stokaro/kc/internal/tablecache"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"

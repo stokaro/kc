@@ -9,9 +9,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/ui/viewer"
-	"github.com/sttts/kc/pkg/appconfig"
+	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/viewer"
+	"github.com/stokaro/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 

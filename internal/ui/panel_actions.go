@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
+	models "github.com/stokaro/kc/internal/models"
 )
 
 // PanelAction identifies high-level actions exposed by a panel.

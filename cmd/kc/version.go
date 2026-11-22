@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/sttts/kc"
+	"github.com/stokaro/kc"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"

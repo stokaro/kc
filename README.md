@@ -1,6 +1,6 @@
 # Kubernetes Commander (kc)
 
-[![Build Status](https://github.com/sttts/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/sttts/kc/actions/workflows/build.yml)
+[![Build Status](https://github.com/stokaro/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/stokaro/kc/actions/workflows/build.yml)
 
 ![Kubernetes Commander TUI](docs/screenshot.png)
 

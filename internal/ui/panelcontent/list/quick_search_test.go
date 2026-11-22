@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	models "github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 )
 
 // rowsFolder serves fixed rows.

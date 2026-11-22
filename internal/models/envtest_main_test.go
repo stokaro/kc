@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	kctesting "github.com/sttts/kc/internal/testing"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )

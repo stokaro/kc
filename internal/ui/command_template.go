@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"text/template"
 
-	"github.com/sttts/kc/internal/models"
+	"github.com/stokaro/kc/internal/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 

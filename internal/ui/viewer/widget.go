@@ -11,8 +11,8 @@ import (
 	chroma "github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/sttts/kc/internal/overlay"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+	"github.com/stokaro/kc/internal/overlay"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 const (

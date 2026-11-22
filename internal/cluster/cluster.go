@@ -29,7 +29,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	// Table-rendering cache integration
-	tablecache "github.com/sttts/kc/internal/tablecache"
+	tablecache "github.com/stokaro/kc/internal/tablecache"
 )
 
 func init() {

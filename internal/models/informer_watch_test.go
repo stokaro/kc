@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	kctesting "github.com/sttts/kc/internal/testing"
-	"github.com/sttts/kc/pkg/appconfig"
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
+	"github.com/stokaro/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

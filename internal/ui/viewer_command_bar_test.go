@@ -6,7 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/ui/viewer"
+	"github.com/stokaro/kc/internal/ui/viewer"
 )
 
 func TestViewerCommandBar(t *testing.T) {

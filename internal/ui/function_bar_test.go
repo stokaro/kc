@@ -6,7 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 func TestFunctionBarEnterHintInteractiveCommand(t *testing.T) {

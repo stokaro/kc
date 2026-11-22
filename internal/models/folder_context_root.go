@@ -3,7 +3,7 @@ package models
 import (
 	"context"
 
-	table "github.com/sttts/kc/internal/table"
+	table "github.com/stokaro/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 

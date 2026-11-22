@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 )
 
 func TestPlaceholderFrameInfoSuppressesFooter(t *testing.T) {

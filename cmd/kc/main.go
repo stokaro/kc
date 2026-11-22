@@ -17,7 +17,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/go-logr/logr"
-	"github.com/sttts/kc/internal/ui"
+	"github.com/stokaro/kc/internal/ui"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/rest"

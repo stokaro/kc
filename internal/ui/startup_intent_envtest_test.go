@@ -10,8 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/pkg/kubeconfig"
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

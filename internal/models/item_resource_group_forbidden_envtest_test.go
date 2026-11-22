@@ -3,8 +3,8 @@ package models
 import (
 	"testing"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/pkg/appconfig"
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 )

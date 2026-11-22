@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc"
+	"github.com/stokaro/kc"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
 )
 

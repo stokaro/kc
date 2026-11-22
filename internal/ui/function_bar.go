@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 type functionBarState struct {

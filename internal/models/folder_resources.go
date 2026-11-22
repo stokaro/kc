@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	table "github.com/sttts/kc/internal/table"
-	"github.com/sttts/kc/pkg/appconfig"
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/pkg/appconfig"
 	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // mockModel is a simple mock model for testing

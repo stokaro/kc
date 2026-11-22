@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	kctesting "github.com/sttts/kc/internal/testing"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"

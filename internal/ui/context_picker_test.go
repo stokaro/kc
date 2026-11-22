@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/sttts/kc/pkg/kubeconfig"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 func TestContextChoices(t *testing.T) {

@@ -3,9 +3,9 @@ package ui
 import (
 	"testing"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 

@@ -6,7 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // Padding between a dialog's window edge and its frame, as in mc.

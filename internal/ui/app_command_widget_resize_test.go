@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 )
 
 type recordingWidget struct {

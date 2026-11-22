@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/podfs"
-	"github.com/sttts/kc/pkg/appconfig"
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/podfs"
+	"github.com/stokaro/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"

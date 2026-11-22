@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/ui/viewer"
+	"github.com/stokaro/kc/internal/ui/viewer"
 )
 
 // copyAllKey copies the whole viewer content.

@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	"github.com/sttts/kc/internal/ui/viewer"
-	describe "github.com/sttts/kc/pkg/describe"
+	models "github.com/stokaro/kc/internal/models"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	"github.com/stokaro/kc/internal/ui/viewer"
+	describe "github.com/stokaro/kc/pkg/describe"
 )
 
 // Widget renders kubectl describe output for the selected object.
