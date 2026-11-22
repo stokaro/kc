@@ -115,6 +115,30 @@ func (w *Widget) SetContent(text string, meta Metadata) {
 	w.clearSearchState()
 }
 
+// UpdateContent replaces the text like SetContent, for a newer version of the
+// same document: the scroll position and a committed search stay. A mouse
+// selection is dropped because its positions may no longer match the text.
+func (w *Widget) UpdateContent(text string, meta Metadata) {
+	offset, hOffset := w.offset, w.hOffset
+	w.raw = text
+	w.metadata = meta
+	w.rawLines = strings.Split(text, "\n")
+	w.updateMaxLineWidth()
+	if w.plain {
+		w.lines = append([]string{}, w.rawLines...)
+	} else {
+		w.highlight()
+	}
+	w.sel = selection{}
+	if w.searchRe != nil {
+		w.updateSearchMatches()
+	}
+	w.offset = offset
+	w.scrollBy(0)
+	w.hOffset = hOffset
+	w.clampHorizontalOffset()
+}
+
 // SetPlainMode toggles syntax highlighting; when plain mode is enabled, content
 // updates avoid chroma re-rendering so we can append lines cheaply (logs view).
 func (w *Widget) SetPlainMode(on bool) {
