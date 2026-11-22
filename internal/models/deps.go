@@ -113,3 +113,26 @@ func (d Deps) ForSelectorScope(selectors map[schema.GroupVersionResource]crcache
 	d.ClusterKey = key
 	return d, release
 }
+
+// unscoped returns Deps for the shared cluster of the context: without a
+// namespace or selector scope. Owners and used-by lookups read other types
+// than the folder they start from, and a selector-scoped cache (the pods of
+// a node) sees only part of a type, a namespace-scoped one no cluster-scoped
+// objects. Callers filter by namespace themselves. The returned release
+// gives up the unscoped cluster; it is never nil.
+func (d Deps) unscoped() (Deps, func()) {
+	key := d.ClusterKey
+	key.Namespace = ""
+	key.SelectorKey = ""
+	if key == d.ClusterKey || d.NamespaceFactory == nil {
+		return d, noRelease
+	}
+	cl, release, err := d.NamespaceFactory(d.Ctx, key, nil)
+	if err != nil {
+		crlog.FromContext(d.Ctx).Error(err, "unscoped cluster acquisition failed")
+		return d, noRelease
+	}
+	d.Cl = cl
+	d.ClusterKey = key
+	return d, release
+}

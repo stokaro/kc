@@ -781,6 +781,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.showNamespacePicker(msg)
 	case viewer.CopyRequestMsg:
 		return a, a.copyText(msg.Text, copyWhat(msg))
+	case relatedFolderMsg:
+		return a, a.handleRelatedFolder(msg)
 	case compareResultMsg:
 		return a, msg.view.apply(msg)
 	case copyResultMsg:
