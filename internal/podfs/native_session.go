@@ -29,9 +29,11 @@ const (
 )
 
 type nativeSession struct {
-	spec    SessionSpec
-	cfg     *rest.Config
-	client  kubernetes.Interface
+	spec   SessionSpec
+	cfg    *rest.Config
+	client kubernetes.Interface
+	// exec replaces the SPDY exec of extra streams (tar) in tests.
+	exec    execFunc
 	stdin   io.WriteCloser
 	lineCh  chan string
 	doneCh  chan struct{}
