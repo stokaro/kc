@@ -48,6 +48,10 @@ type LogOptions struct {
 	SinceSeconds int64
 	Timestamps   bool
 	Previous     bool
+	// Container is the container choice of the Logs panel: "" for the
+	// default, logswidget.ContainerAll or a container name. The fullscreen
+	// viewer streams one fixed container and leaves it empty.
+	Container string
 }
 
 func logOptionsFromSpec(spec models.LogsSpec) LogOptions {
