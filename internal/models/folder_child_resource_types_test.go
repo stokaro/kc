@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -60,5 +61,38 @@ func TestChildResourceTypesFolderMultipleEntries(t *testing.T) {
 	want1 := append(path, childB.Resource)
 	if !reflect.DeepEqual(paths[0], want0) || !reflect.DeepEqual(paths[1], want1) {
 		t.Fatalf("paths = %v, want [%v %v]", paths, want0, want1)
+	}
+}
+
+func TestChildResourceTypesFolderAppendsRegisteredObjectRows(t *testing.T) {
+	deps := Deps{AppConfig: appconfig.Default(), CtxName: "mba"}
+	widgets := schema.GroupVersionResource{Group: "rows.example.test", Version: "v1", Resource: "widgets"}
+	gadgets := schema.GroupVersionResource{Group: "rows.example.test", Version: "v1", Resource: "gadgets"}
+	child := schema.GroupVersionResource{Version: "v1", Resource: "pods"}
+	RegisterObjectRows(widgets, func(d Deps, namespace, name string, path []string) []table.Row {
+		return []table.Row{NewSimpleItem(namespace+"/"+name+"/act", []string{"Act on " + name + " in " + d.CtxName}, path, nil)}
+	})
+
+	path := []string{"namespaces", "demo", "widgets", "w1"}
+	rows, err := NewChildResourceTypesFolder(deps, widgets, "demo", "w1", []schema.GroupVersionResource{child}, path).populate(t.Context())
+	if err != nil {
+		t.Fatalf("populate: %v", err)
+	}
+	var cells []string
+	for _, r := range rows {
+		_, c, _, _ := r.Columns()
+		cells = append(cells, c[0])
+	}
+	if want := []string{"/pods", "Act on w1 in mba"}; !reflect.DeepEqual(cells, want) {
+		t.Fatalf("rows = %q, want %q", cells, want)
+	}
+
+	// Rows registered for one resource do not appear under another.
+	rows, err = NewChildResourceTypesFolder(deps, gadgets, "demo", "g1", []schema.GroupVersionResource{child}, path).populate(t.Context())
+	if err != nil {
+		t.Fatalf("populate: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("gadget rows = %d, want only /pods", len(rows))
 	}
 }

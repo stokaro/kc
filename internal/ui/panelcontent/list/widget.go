@@ -936,6 +936,10 @@ func (w *Widget) enterItem(ctx context.Context) tea.Cmd {
 	if action, ok := row.(models.ConfirmedAction); ok {
 		return func() tea.Msg { return models.ConfirmRequest{Action: action} }
 	}
+	if mr, ok := row.(models.MessageRow); ok {
+		msg := mr.EnterMessage()
+		return func() tea.Msg { return msg }
+	}
 	enterable, ok := row.(models.Enterable)
 	if !ok {
 		return nil

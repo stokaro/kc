@@ -45,5 +45,6 @@ func (f *ChildResourceTypesFolder) populate(ctx context.Context) ([]table.Row, e
 		})
 		rows = append(rows, item)
 	}
+	rows = append(rows, extraObjectRows(f.Deps, f.parentGVR, f.parentNamespace, f.parentName, f.Path())...)
 	return rows, nil
 }
