@@ -163,6 +163,9 @@ panel:
     rightPercent: 50
 
 input:
+  # How long kc waits for the key after Esc (Esc c, Esc 3, Esc s). A lone
+  # Esc in a viewer closes it after this time.
+  escTimeout: 1s
   mouse:
     doubleClickTimeout: 300ms
 
