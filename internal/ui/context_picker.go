@@ -144,8 +144,15 @@ func (a *App) applyContextSwitch(msg contextSwitchedMsg) tea.Cmd {
 	})
 	a.ensureTermContext()
 	a.goToNamespace(contextNamespace(msg.target))
+	// Read-only mode follows the context: redraw the RO marker and the keys.
+	a.syncPanelScopeLabels()
 	a.invalidateView("context switch")
-	return a.ShowInfo("Context: "+msg.target.Name, 2*time.Second)
+	a.invalidateFunctionBar("context switch")
+	info := "Context: " + msg.target.Name
+	if a.readOnly() {
+		info += " (read-only)"
+	}
+	return a.ShowInfo(info, 2*time.Second)
 }
 
 // contextNamespace is the namespace kc starts with in a context.

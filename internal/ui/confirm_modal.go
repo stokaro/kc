@@ -126,6 +126,10 @@ func (m *ConfirmModel) View() tea.View {
 // showConfirm opens a red dialog for action and remembers it until the
 // user answers.
 func (a *App) showConfirm(action models.ConfirmedAction) tea.Cmd {
+	// A confirmed action changes the cluster by definition.
+	if a.accessPolicy().ReadOnly {
+		return a.readOnlyRefusal(confirmedActionName(action))
+	}
 	model := NewConfirmModel(action.Confirmation())
 	modal := NewModal("Confirm", model)
 	modal.SetDanger(true)
@@ -146,8 +150,21 @@ func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
 	if !msg.ok || action == nil {
 		return nil
 	}
+	if a.accessPolicy().ReadOnly {
+		// The context became read-only while the dialog was open.
+		return a.readOnlyRefusal(confirmedActionName(action))
+	}
 	if err := action.Confirm(); err != nil {
 		return a.ShowToast("Failed: "+err.Error(), 5*time.Second)
 	}
 	return nil
+}
+
+// confirmedActionName names a confirmed action in messages: its dialog
+// title without the question mark ("Start a debug helper").
+func confirmedActionName(action models.ConfirmedAction) string {
+	if name := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(action.Confirmation().Title), "?")); name != "" {
+		return name
+	}
+	return "This action"
 }

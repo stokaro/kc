@@ -357,7 +357,12 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 	state := a.functionBarState()
 	keys := panelFunctionKeys(state)
 	i := functionKeyAt(len(keys), state.Width, x)
-	if i < 0 || !keys[i].Enabled {
+	if i < 0 {
+		return nil
+	}
+	if !keys[i].Enabled && !(a.readOnly() && mutatingFunctionKey(keys[i].ID)) {
+		// A grayed key does nothing, except that read-only mode explains
+		// why its write keys are grayed.
 		return nil
 	}
 	panel := a.activePanelRef()

@@ -40,6 +40,8 @@ type cliFlags struct {
 	As         string         `help:"Username to impersonate for the operation (regular user or service account)"`
 	AsGroup    []string       `help:"Group to impersonate for the operation (repeatable)"`
 	AsUID      string         `help:"UID to impersonate for the operation"`
+	ReadOnly   bool           `name:"readonly" xor:"readonly" help:"Open every context read-only: no edit, delete, namespace creation, debug helper or dangerous commands"`
+	Write      bool           `xor:"readonly" help:"Allow writes in every context, ignoring the readOnly config"`
 	Root       rootCommand    `cmd:"" hidden:"true" default:"1"`
 	Get        getCommand     `cmd:"get" help:"Mirror kubectl get"`
 	Logs       logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
@@ -159,10 +161,24 @@ func main() {
 		ImpersonateUser:    strings.TrimSpace(cli.As),
 		ImpersonateUID:     strings.TrimSpace(cli.AsUID),
 		ImpersonateGroups:  append([]string(nil), cli.AsGroup...),
+		ReadOnly:           readOnlyOverride(&cli),
 	}
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// readOnlyOverride maps --readonly and --write to the UI's read-only
+// override. Kong refuses both at once (xor), so at most one is set.
+func readOnlyOverride(cli *cliFlags) ui.ReadOnlyOverride {
+	switch {
+	case cli.ReadOnly:
+		return ui.ReadOnlyForced
+	case cli.Write:
+		return ui.ReadOnlyWriteForced
+	default:
+		return ui.ReadOnlyFromConfig
 	}
 }
 

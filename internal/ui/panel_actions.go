@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/access"
 	models "github.com/sttts/kc/internal/models"
 )
 
@@ -33,6 +34,17 @@ type PanelEnvironment struct {
 	AllowEditObjects      bool
 	AllowDeleteObjects    bool
 	AllowCreateNamespaces bool
+	// Permit reports whether an action needing these access checks stays
+	// enabled (the read-only preference). Nil permits all.
+	Permit func(checks ...access.Check) bool
+	// ReadOnly is set when the current context is read-only. A mutating key
+	// pressed then still reaches its handler, which refuses it with a
+	// message instead of doing nothing silently.
+	ReadOnly bool
+}
+
+func (e PanelEnvironment) permits(checks ...access.Check) bool {
+	return e.Permit == nil || e.Permit(checks...)
 }
 
 // PanelEnvironmentSupplier resolves the current environment prior to computing capabilities.
@@ -96,17 +108,18 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 				caps.CanCopy = true
 			}
 			if obj, ok := item.(models.ObjectItem); ok {
-				if env.AllowEditObjects && obj.SupportsVerb("update") {
+				target := objectAccessTarget(obj)
+				if env.AllowEditObjects && obj.SupportsVerb("update") && env.permits(access.EditChecks(target)...) {
 					caps.CanEdit = true
 				}
-				if env.AllowDeleteObjects && obj.SupportsVerb("delete") {
+				if env.AllowDeleteObjects && obj.SupportsVerb("delete") && env.permits(access.DeleteChecks(target)...) {
 					caps.CanDelete = true
 				}
 			}
 		}
 	}
 	// Namespace creation depends on both environment and location.
-	if env.AllowCreateNamespaces {
+	if env.AllowCreateNamespaces && env.permits(access.CreateNamespaceChecks()...) {
 		if strings.EqualFold(strings.TrimSpace(p.GetCurrentPath()), "/namespaces") {
 			caps.CanCreateNS = true
 		}
@@ -165,7 +178,20 @@ func (p *Panel) actionAllowed(ctx context.Context, action PanelAction) bool {
 
 func (p *Panel) invokeActionIfAllowed(ctx context.Context, action PanelAction) tea.Cmd {
 	if !p.actionAllowed(ctx, action) {
+		if mutatingPanelAction(action) && p.environment().ReadOnly {
+			// The handler refuses with a read-only message.
+			return p.InvokeAction(action)
+		}
 		return nil
 	}
 	return p.InvokeAction(action)
+}
+
+// mutatingPanelAction reports whether action changes the cluster.
+func mutatingPanelAction(action PanelAction) bool {
+	switch action {
+	case PanelActionEdit, PanelActionCreateNamespace, PanelActionDelete:
+		return true
+	}
+	return false
 }

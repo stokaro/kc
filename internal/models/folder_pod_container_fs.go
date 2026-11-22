@@ -728,6 +728,13 @@ func isContextError(err error) bool {
 // helperConsentRows offers to start a debug helper for a container without
 // a shell. Starting one changes the pod, so it is a confirmed action.
 func (f *PodContainerFSFolder) helperConsentRows() []table.Row {
+	if f.Deps.ReadOnly {
+		// Read-only mode: say why the container cannot be browsed, and offer
+		// nothing to confirm. The UI refuses confirmed actions as well.
+		item := NewSimpleItem("helper_read_only", []string{"Debug helper disabled (read-only mode)", "", "", ""}, f.Path(), DimStyle())
+		item.RowItem.details = "The container has no shell, and read-only mode does not add a debug helper to the pod"
+		return []table.Row{item}
+	}
 	item := &helperStartItem{
 		SimpleItem: NewSimpleItem("start_helper", []string{"Start a debug helper...", "", "", ""}, f.Path(), WhiteStyle()),
 		folder:     f,
@@ -735,6 +742,9 @@ func (f *PodContainerFSFolder) helperConsentRows() []table.Row {
 	item.RowItem.details = "The container has no shell; Enter starts a debug helper to browse it"
 	return []table.Row{item}
 }
+
+// errReadOnlyHelper refuses the debug helper in read-only mode.
+var errReadOnlyHelper = errors.New("read-only mode: the debug helper is disabled")
 
 // helperStartItem asks for consent to add a debug helper to the pod.
 type helperStartItem struct {
@@ -764,6 +774,9 @@ func (i *helperStartItem) Confirmation() Confirmation {
 }
 
 func (i *helperStartItem) Confirm() error {
+	if i.folder.Deps.ReadOnly {
+		return errReadOnlyHelper
+	}
 	i.folder.session.approveHelper()
 	i.folder.reload()
 	return nil

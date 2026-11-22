@@ -44,6 +44,9 @@ type Deps struct {
 	ReportError func(error)
 	// Activity pauses background count refreshes; nil never pauses.
 	Activity *Activity
+	// ReadOnly is set when the context is in read-only mode: folders then
+	// offer no rows that change the cluster (the debug helper consent row).
+	ReadOnly bool
 }
 
 // reportReadError reports that reading what failed.
