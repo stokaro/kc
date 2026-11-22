@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -44,8 +45,8 @@ type PodContainerDetailFolder struct {
 	execTarget *ExecTarget
 }
 
-func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, container string, kind containerKind) *PodContainerDetailFolder {
-	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path)
+func NewPodContainerDetailFolder(deps Deps, folderPath []string, namespace, pod, container string, kind containerKind) *PodContainerDetailFolder {
+	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, folderPath)
 	handle := newContainerSessionHandle(deps.PodFSFactory, namespace, pod, container)
 	folder := &PodContainerDetailFolder{
 		BaseFolder: base,
@@ -70,7 +71,7 @@ func (f *PodContainerDetailFolder) buildRows(ctx context.Context) ([]table.Row, 
 		Follow:    true,
 		TailLines: DefaultLogsTailLines,
 	}
-	logPath := append(append([]string{}, f.Path()...), "logs", "latest")
+	logPath := append(slices.Clone(f.Path()), "logs", "latest")
 	logItem := NewContainerLogItem(f.Deps, "logs_latest", []string{"logs"}, logPath, logSpec)
 	logItem.RowItem.details = "Stream container logs"
 	rows = append(rows, logItem)
@@ -78,7 +79,7 @@ func (f *PodContainerDetailFolder) buildRows(ctx context.Context) ([]table.Row, 
 	if restarts := f.restartCount(ctx); restarts > 0 {
 		prevSpec := logSpec
 		prevSpec.Previous = true
-		prevPath := append(append([]string{}, f.Path()...), "logs", "previous")
+		prevPath := append(slices.Clone(f.Path()), "logs", "previous")
 		prevItem := NewContainerLogItem(f.Deps, "logs_previous", []string{"logs (previous)"}, prevPath, prevSpec)
 		prevItem.RowItem.details = fmt.Sprintf("Logs of the previous instance (%d restarts)", restarts)
 		rows = append(rows, prevItem)
@@ -87,12 +88,12 @@ func (f *PodContainerDetailFolder) buildRows(ctx context.Context) ([]table.Row, 
 	if f.execTarget != nil {
 		shellTarget = *f.execTarget
 	}
-	shellItem := NewContainerShellItem("shell", []string{"shell"}, append(append([]string{}, f.Path()...), "shell"), shellTarget)
+	shellItem := NewContainerShellItem("shell", []string{"shell"}, append(slices.Clone(f.Path()), "shell"), shellTarget)
 	shellItem.RowItem.details = "Open a shell (bash, else sh)"
 	shellItem.SetViewCommand(shellTarget.Command(ExecShell))
 	rows = append(rows, shellItem)
 
-	rootPath := append(append([]string{}, f.Path()...), "root")
+	rootPath := append(slices.Clone(f.Path()), "root")
 	if f.session == nil {
 		unavailable := NewSimpleItem("root_unavailable", []string{"/root"}, rootPath, DimStyle())
 		unavailable.RowItem.details = fsUnavailableMessage
@@ -167,7 +168,7 @@ type PodContainerFSFolder struct {
 	rows    []table.Row // last load result
 }
 
-func NewPodContainerFSFolder(deps Deps, path []string, dir string, session *containerSessionHandle, ephemeral bool) *PodContainerFSFolder {
+func NewPodContainerFSFolder(deps Deps, folderPath []string, dir string, session *containerSessionHandle, ephemeral bool) *PodContainerFSFolder {
 	if dir == "" {
 		dir = "/"
 	}
@@ -176,7 +177,7 @@ func NewPodContainerFSFolder(deps Deps, path []string, dir string, session *cont
 		{Title: " Type"},
 		{Title: " Size"},
 		{Title: " Modified"},
-	}, path)
+	}, folderPath)
 	folder := &PodContainerFSFolder{
 		BaseFolder: base,
 		dir:        sanitizeContainerPath(dir),
@@ -304,7 +305,7 @@ func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error
 		return entries[i].Name < entries[j].Name
 	})
 	for _, entry := range entries {
-		rowPath := append(append([]string{}, f.Path()...), entry.Name)
+		rowPath := append(slices.Clone(f.Path()), entry.Name)
 		displaySize := formatBytes(entry.Size)
 		mod := formatModTime(entry.UpdatedAt)
 		cells := []string{entry.Name, string(entry.Type), displaySize, mod}
@@ -332,7 +333,7 @@ func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error
 	return rows, nil
 }
 
-func (f *PodContainerFSFolder) containerReady(ctx context.Context) (bool, string, string) {
+func (f *PodContainerFSFolder) containerReady(ctx context.Context) (ready bool, state, detail string) {
 	if f == nil || !f.ephemeral || f.session == nil || f.Deps.Cl == nil {
 		return true, "", ""
 	}
@@ -522,8 +523,8 @@ type PodFSFileItem struct {
 // FSEntry returns the listing entry the row shows.
 func (i *PodFSFileItem) FSEntry() podfs.FileEntry { return i.entry }
 
-func NewPodFSDirItem(id string, cells []string, path []string, style *lipgloss.Style, enter func() (Folder, error)) *PodFSDirItem {
-	return &PodFSDirItem{RowItem: NewRowItem(id, cells, path, style), enter: enter}
+func NewPodFSDirItem(id string, cells, rowPath []string, style *lipgloss.Style, enter func() (Folder, error)) *PodFSDirItem {
+	return &PodFSDirItem{RowItem: NewRowItem(id, cells, rowPath, style), enter: enter}
 }
 
 func (d *PodFSDirItem) Enter() (Folder, error) {
@@ -533,9 +534,9 @@ func (d *PodFSDirItem) Enter() (Folder, error) {
 	return d.enter()
 }
 
-func newPodFSFileItem(fsPath string, cells []string, path []string, entry podfs.FileEntry, folder *PodContainerFSFolder) *PodFSFileItem {
+func newPodFSFileItem(fsPath string, cells, rowPath []string, entry podfs.FileEntry, folder *PodContainerFSFolder) *PodFSFileItem {
 	size, target := entry.Size, entry.Target
-	item := NewSimpleItem(fsPath, cells, path, WhiteStyle())
+	item := NewSimpleItem(fsPath, cells, rowPath, WhiteStyle())
 	detailsSuffix := ""
 	if target != "" {
 		detailsSuffix = fmt.Sprintf(" → %s", target)
@@ -592,7 +593,7 @@ func (h *containerSessionHandle) approveHelper() {
 // execTarget returns the container kubectl exec must use and how a path in
 // the target container is spelled there: inside the debug helper the
 // target's files live under podfs.HelperRoot.
-func (h *containerSessionHandle) execTarget(p string) (container, path string) {
+func (h *containerSessionHandle) execTarget(p string) (container, execPath string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.helperContainer != "" {
@@ -747,7 +748,7 @@ func (f *PodContainerFSFolder) readFileContent(ctx context.Context, fsPath strin
 	if f.session == nil {
 		return nil, fmt.Errorf("pod filesystem unavailable")
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	for range 2 {
 		sessionCtx, cancelSession := context.WithTimeout(ctx, fsSessionTimeout)
 		sess, err := f.session.Session(sessionCtx)
 		if err != nil {

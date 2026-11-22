@@ -161,7 +161,7 @@ func readinessStatus(u *unstructured.Unstructured, condType string) conditionSta
 		return ""
 	}
 	for _, raw := range conds {
-		m, ok := raw.(map[string]interface{})
+		m, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -182,7 +182,7 @@ func unstructuredFromRow(row *tablecache.Row) *unstructured.Unstructured {
 	obj, err := runtime.Decode(unstructuredDec, row.Object.Raw)
 	if err != nil {
 		// try generic map decoding as a fallback
-		var data map[string]interface{}
+		var data map[string]any
 		if err := json.Unmarshal(row.Object.Raw, &data); err != nil {
 			return nil
 		}

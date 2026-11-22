@@ -1,7 +1,6 @@
 package models
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -20,7 +19,7 @@ func TestChildResourceTypesFolderListsEntries(t *testing.T) {
 	path := []string{"namespaces", "demo", "deployments", "demo-deploy"}
 
 	folder := NewChildResourceTypesFolder(deps, parentGVR, "demo", "demo-deploy", []schema.GroupVersionResource{childGVR}, path)
-	rows, err := folder.populate(context.Background())
+	rows, err := folder.populate(t.Context())
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
@@ -54,7 +53,7 @@ func TestChildResourceTypesFolderMultipleEntries(t *testing.T) {
 	path := []string{"namespaces", "demo", "services", "svc-a"}
 
 	folder := NewChildResourceTypesFolder(deps, parentGVR, "demo", "svc-a", []schema.GroupVersionResource{childA, childB}, path)
-	rows, err := folder.populate(context.Background())
+	rows, err := folder.populate(t.Context())
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}

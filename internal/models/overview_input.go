@@ -149,7 +149,7 @@ func (in *overviewInput) missingReason(gvrs ...schema.GroupVersionResource) stri
 // those kinds are not listed. The lists share the cache's objects, so the
 // rules must not modify them.
 func loadOverviewInput(ctx context.Context, r crclient.Reader, namespace string, unavailable func(schema.GroupVersionResource) string) *overviewInput {
-	in := &overviewInput{namespace: namespace, missing: map[schema.GroupVersionResource]string{}}
+	in := &overviewInput{namespace: namespace, missing: make(map[schema.GroupVersionResource]string)}
 	for _, k := range overviewKinds {
 		if unavailable != nil {
 			if reason := unavailable(k.gvr); reason != "" {

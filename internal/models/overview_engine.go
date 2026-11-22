@@ -109,7 +109,7 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 		idleAfter: ttl,
 		keepEvery: ttl / 3,
 		now:       time.Now,
-		listeners: map[int]func(){},
+		listeners: make(map[int]func()),
 	}
 	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps) }
 	e.measure = func() *overviewMeasured {
@@ -379,7 +379,7 @@ func acquireOverviewConn(_ context.Context, deps Deps) (overviewConn, error) {
 }
 
 func newClusterOverviewConn(cl *kccluster.Cluster, release func()) *clusterOverviewConn {
-	return &clusterOverviewConn{cl: cl, release: release, informers: map[schema.GroupVersionResource]crcache.Informer{}, failed: map[schema.GroupVersionResource]string{}}
+	return &clusterOverviewConn{cl: cl, release: release, informers: make(map[schema.GroupVersionResource]crcache.Informer), failed: make(map[schema.GroupVersionResource]string)}
 }
 
 // clusterOverviewConn reads the overview kinds from a kc cluster's cache.

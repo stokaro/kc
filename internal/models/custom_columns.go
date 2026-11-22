@@ -90,7 +90,7 @@ func planCustomColumns(deps Deps, gvr schema.GroupVersionResource, mode string) 
 	}
 	cc := &customColumns{
 		gvr:  gvr,
-		hide: map[string]struct{}{},
+		hide: make(map[string]struct{}),
 		report: func(title string, err error) {
 			reportColumnErrorOnce(deps, "eval\x00"+gvr.String()+"\x00"+title, fmt.Errorf("column %s of %s: %w", title, gvr.Resource, err))
 		},

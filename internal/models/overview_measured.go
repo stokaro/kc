@@ -89,29 +89,7 @@ func containerLimitRule(rc *ruleContext, f overviewFinding, resource corev1.Reso
 			if len(used) == 0 {
 				return
 			}
-			best, bestName, bestLimit := -1.0, "", int64(0)
-			for _, c := range podLimitedContainers(p) {
-				lim, ok := c.Resources.Limits[resource]
-				if !ok || lim.IsZero() {
-					continue
-				}
-				limit := lim.Value()
-				if resource == corev1.ResourceCPU {
-					limit = lim.MilliValue()
-				}
-				for _, u := range used {
-					if u.name != c.Name {
-						continue
-					}
-					use := u.mem
-					if resource == corev1.ResourceCPU {
-						use = u.cpu
-					}
-					if pct := percent(use, limit); pct > best {
-						best, bestName, bestLimit = pct, c.Name, limit
-					}
-				}
-			}
+			best, bestName, bestLimit := highestLimitUse(p, used, resource)
 			if bestName == "" || best < float64(warnPercent) {
 				return
 			}
@@ -124,10 +102,40 @@ func containerLimitRule(rc *ruleContext, f overviewFinding, resource corev1.Reso
 	})
 }
 
+// highestLimitUse returns the container of p that uses the largest share of
+// its resource limit, with that share in percent and the limit. name is empty
+// when no container with a limit has usage.
+func highestLimitUse(p *corev1.Pod, used []containerUsage, resource corev1.ResourceName) (pct float64, name string, limit int64) {
+	pct = -1.0
+	for _, c := range podLimitedContainers(p) {
+		lim, ok := c.Resources.Limits[resource]
+		if !ok || lim.IsZero() {
+			continue
+		}
+		cLimit := lim.Value()
+		if resource == corev1.ResourceCPU {
+			cLimit = lim.MilliValue()
+		}
+		for _, u := range used {
+			if u.name != c.Name {
+				continue
+			}
+			use := u.mem
+			if resource == corev1.ResourceCPU {
+				use = u.cpu
+			}
+			if share := percent(use, cLimit); share > pct {
+				pct, name, limit = share, c.Name, cLimit
+			}
+		}
+	}
+	return pct, name, limit
+}
+
 // podLimitedContainers returns the containers metrics cover: the app
 // containers and the restartable init containers (sidecars).
 func podLimitedContainers(p *corev1.Pod) []corev1.Container {
-	out := append([]corev1.Container{}, p.Spec.Containers...)
+	out := append(make([]corev1.Container, 0, len(p.Spec.Containers)), p.Spec.Containers...)
 	for _, c := range p.Spec.InitContainers {
 		if c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways {
 			out = append(out, c)

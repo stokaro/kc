@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,7 +21,7 @@ type PodContainersFolder struct {
 
 // NewPodContainersFolder constructs the pod containers folder.
 func NewPodContainersFolder(deps Deps, parentPath []string, namespace, pod string) *PodContainersFolder {
-	path := append([]string{}, parentPath...)
+	path := append(make([]string, 0, len(parentPath)), parentPath...)
 	cols := []table.Column{{Title: " Name"}}
 	base := NewBaseFolder(deps, cols, path)
 	folder := &PodContainersFolder{BaseFolder: base, Namespace: namespace, Pod: pod}
@@ -50,7 +51,7 @@ func (f *PodContainersFolder) buildRows(ctx context.Context) ([]table.Row, error
 		if section.count == 0 {
 			continue
 		}
-		sectionPath := append(append([]string{}, f.Path()...), section.id)
+		sectionPath := append(slices.Clone(f.Path()), section.id)
 		detail := fmt.Sprintf("%d %s", section.count, section.detail)
 		item := NewContainerSectionItem(section.id, []string{section.label}, sectionPath, WhiteStyle(), func() (Folder, error) {
 			return NewPodContainerListFolder(f.Deps, sectionPath, f.Namespace, f.Pod, section.kind), nil
@@ -64,7 +65,7 @@ func (f *PodContainersFolder) buildRows(ctx context.Context) ([]table.Row, error
 		Follow:    true,
 		TailLines: DefaultLogsTailLines,
 	}
-	logPath := append(append([]string{}, f.Path()...), "logs")
+	logPath := append(slices.Clone(f.Path()), "logs")
 	logItem := NewWorkloadLogItem(f.Deps, "logs_all", []string{"logs (all containers)"}, logPath, spec)
 	logItem.RowItem.details = "Stream logs of all containers"
 	logItem.SetViewCommand(logItem.WorkloadLogsCommand(spec, spec.LogsSpec(), "", f.Deps.AppConfig.Viewer.Logs.EffectiveMaxRequests()))
@@ -122,7 +123,7 @@ func (f *PodContainerListFolder) buildRows(ctx context.Context) ([]table.Row, er
 	nameStyle := WhiteStyle()
 	containers := f.extractContainers(podObj)
 	for _, c := range containers {
-		sectionPath := append(append([]string{}, f.Path()...), c.Name)
+		sectionPath := append(slices.Clone(f.Path()), c.Name)
 		name := c.Name
 		kind := c.Kind
 		target := containerExecTarget(f.Deps, f.Namespace, f.Pod, name, kind, c.Stdin, c.TTY)

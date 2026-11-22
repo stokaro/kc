@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,9 +29,9 @@ func TestCustomColumnsFromSharedCache(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	const ns = "custom-columns"
-	mustCreate(t, cli, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
-	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: ns}, Data: map[string]string{"color": "blue"}})
-	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm2", Namespace: ns}})
+	mustCreate(t, cli, &corev1.Namespace{Name: ns})
+	mustCreate(t, cli, &corev1.ConfigMap{Name: "cm1", Namespace: ns, Data: map[string]string{"color": "blue"}})
+	mustCreate(t, cli, &corev1.ConfigMap{Name: "cm2", Namespace: ns})
 
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
@@ -55,7 +54,7 @@ func TestCustomColumnsFromSharedCache(t *testing.T) {
 	want := map[string][]string{"cm1": {"/cm1", "blue"}, "cm2": {"/cm2", "<none>"}}
 	var got map[string][]string
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		got = map[string][]string{}
+		got = make(map[string][]string)
 		n := folder.Len(ctx)
 		for _, r := range folder.Lines(ctx, 0, n) {
 			id, cells, _, _ := r.Columns()

@@ -11,7 +11,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -45,7 +44,7 @@ func (e *namespaceUserEnv) errors() []error {
 func (e *namespaceUserEnv) openHolds() map[kccluster.Key]int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	out := map[kccluster.Key]int{}
+	out := make(map[kccluster.Key]int)
 	for k, n := range e.holds {
 		if n != 0 {
 			out[k] = n
@@ -85,7 +84,7 @@ func newNamespaceUserEnv(t *testing.T, user string, grantNamespaces ...string) *
 	}
 	t.Cleanup(sharedLease.Release)
 	shared := sharedLease.Cluster()
-	e := &namespaceUserEnv{admin: admin, shared: shared, holds: map[kccluster.Key]int{}}
+	e := &namespaceUserEnv{admin: admin, shared: shared, holds: make(map[kccluster.Key]int)}
 	e.deps = Deps{
 		Cl:         shared,
 		Ctx:        ctx,
@@ -149,7 +148,7 @@ func grantPodsInNamespace(t *testing.T, cl *kccluster.Cluster, namespace, user s
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod-reader", Namespace: namespace},
+		Name: "pod-reader", Namespace: namespace,
 		Rules: []rbacv1.PolicyRule{
 			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}},
 		},
@@ -158,9 +157,9 @@ func grantPodsInNamespace(t *testing.T, cl *kccluster.Cluster, namespace, user s
 		t.Fatalf("create role in %s: %v", namespace, err)
 	}
 	binding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod-reader", Namespace: namespace},
-		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: role.Name},
-		Subjects:   []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: user}},
+		Name: "pod-reader", Namespace: namespace,
+		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: role.Name},
+		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: user}},
 	}
 	if err := cl.GetClient().Create(ctx, binding); err != nil {
 		t.Fatalf("create rolebinding in %s: %v", namespace, err)
@@ -171,7 +170,7 @@ func deletePod(t *testing.T, cl *kccluster.Cluster, namespace, name string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
+	p := &corev1.Pod{Name: name, Namespace: namespace}
 	if err := cl.GetClient().Delete(ctx, p, crclient.GracePeriodSeconds(0)); err != nil {
 		t.Fatalf("delete pod %s/%s: %v", namespace, name, err)
 	}
