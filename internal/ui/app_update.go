@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	"github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -591,20 +592,33 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PanelSelectionChangedMsg:
 		if panel := msg.Panel; panel != nil {
 			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-			panel.NotifySelection(ctxSel, msg.Selection)
+			cmds = append(cmds, panel.NotifySelection(ctxSel, msg.Selection))
 			cancelSel()
 			if idx, ok := a.panelIndexFor(panel); ok {
 				other := a.panelByIndex(1 - idx)
 				if other != nil {
 					ctxOther, cancelOther := context.WithTimeout(a.ctx, panelContextTimeout)
-					other.NotifySelection(ctxOther, msg.Selection)
+					cmds = append(cmds, other.NotifySelection(ctxOther, msg.Selection))
 					cancelOther()
 				}
 			}
 		}
 		a.invalidateFunctionBar("selection changed")
 		a.invalidateView("selection changed")
-		return a, nil
+		return a, tea.Batch(cmds...)
+	case panelcontent.BackgroundMsg:
+		// Delivered to both panels directly: behind a dialog or the full
+		// screen terminal the default route would drop it, and the widget
+		// would wait for it forever.
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		for idx := 0; idx < 2; idx++ {
+			if panel := a.panelByIndex(idx); panel != nil {
+				cmds = append(cmds, panel.DeliverBackground(ctx, msg))
+			}
+		}
+		cancel()
+		a.invalidateView("panel content loaded")
+		return a, tea.Batch(cmds...)
 	case PanelModeSelectedMsg:
 		if panel := a.panelByIndex(msg.PanelIndex); panel != nil {
 			log := ctrllog.FromContext(a.ctx).WithName("panelMode").WithValues("panelIdx", msg.PanelIndex, "mode", msg.Mode)
@@ -630,7 +644,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if sel.ID != "" || sel.Item != nil {
 					log.Info("replaying selection", "selectionID", sel.ID, "path", sel.Path)
 					sel.Force = true
-					panel.NotifySelection(ctxSel, sel)
+					cmds = append(cmds, panel.NotifySelection(ctxSel, sel))
 				} else {
 					log.Info("missing selection to replay")
 				}
@@ -673,13 +687,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		panel.RefreshFolder(ctx)
+		// A Describe or Manifest panel may show an object of this folder:
+		// the other panel follows this one's selection, and this panel's
+		// own content came from its list. Each widget rereads at most once
+		// a second, and only when its object changed.
+		for idx := 0; idx < 2; idx++ {
+			if p := a.panelByIndex(idx); p != nil {
+				cmds = append(cmds, p.RefreshContent(ctx))
+			}
+		}
 		cancel()
 		a.invalidateView(fmt.Sprintf("folder dirty panel %d", msg.PanelIdx))
 		// Always wake the renderer when data changed so cached frames are dropped
-		return a, tea.Batch(
+		cmds = append(cmds,
 			tea.Tick(0, func(time.Time) tea.Msg { return nil }),
 			a.waitFolderDirtyEvents(),
 		)
+		return a, tea.Batch(cmds...)
 	case DiscoveryRefreshedMsg:
 		a.handleDiscoveryRefresh()
 		return a, a.watchDiscovery()
@@ -945,6 +969,10 @@ func passesModal(msg tea.Msg) bool {
 		// The app owns the clipboard; the viewer only asks.
 		return true
 	case readErrorMsg, FolderDirtyMsg, DiscoveryRefreshedMsg:
+		return true
+	case panelcontent.BackgroundMsg:
+		// Panel content keeps loading behind a dialog; a dropped result
+		// would leave the widget waiting for it.
 		return true
 	case showToastMsg, toastTickMsg:
 		// Toasts must keep their hide timer running behind a dialog, or

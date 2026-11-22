@@ -259,9 +259,12 @@ type App struct {
 	helpViewer             *MarkdownHelpViewer
 	podfsFactory           podfs.Factory
 	folderDirtyCh          chan FolderDirtyMsg
-	readErrCh              chan error // read failures from models, shown as red toasts
-	panelNamespace         [2]string
-	namespaceCommandTarget [2]string
+	// describeRenderer is reused while describeRendererCluster is a.cl.
+	describeRenderer        *describe.Renderer
+	describeRendererCluster *kccluster.Cluster
+	readErrCh               chan error // read failures from models, shown as red toasts
+	panelNamespace          [2]string
+	namespaceCommandTarget  [2]string
 }
 
 const (
@@ -1089,10 +1092,13 @@ func (a *App) setupPanelInputs() {
 		panel.RegisterMode(PanelModeDescribe, func(p *Panel) PanelWidget {
 			deps := p.manifestWidgetDeps()
 			deps.Describe = a.describeFunc()
+			deps.Paused = a.activity.Paused
 			return describewidget.New(deps)
 		})
 		panel.RegisterMode(PanelModeManifest, func(p *Panel) PanelWidget {
-			return manifestwidget.New(p.manifestWidgetDeps())
+			deps := p.manifestWidgetDeps()
+			deps.Paused = a.activity.Paused
+			return manifestwidget.New(deps)
 		})
 	}
 	if a.leftPanel != nil {
@@ -1107,14 +1113,50 @@ func (a *App) setupPanelInputs() {
 	}
 }
 
+// describeFunc prepares describe reads on the UI goroutine: it takes the
+// cluster and the cached renderer now, so the background reads never touch
+// App fields that a context switch replaces.
 func (a *App) describeFunc() panelcontent.DescribeFunc {
-	return func(ctx context.Context, target describe.Target) (describe.Result, error) {
-		renderer, err := a.newDescribeRenderer()
-		if err != nil {
-			return describe.Result{}, err
+	return func(target describe.Target) panelcontent.DescribeReads {
+		cl, root := a.cl, a.ctx
+		renderer, err := a.describeRendererForCluster()
+		return panelcontent.DescribeReads{
+			Describe: func() (describe.Result, error) {
+				if err != nil {
+					return describe.Result{}, err
+				}
+				ctrllog.FromContext(root).WithName("describe").Info("describe",
+					"gvr", target.GVR.String(), "namespace", target.Namespace, "name", target.Name)
+				return renderer.Describe(target)
+			},
+			Version: func() string {
+				if cl == nil {
+					return ""
+				}
+				ctx, cancel := context.WithTimeout(root, requestTimeout)
+				defer cancel()
+				obj, err := cl.GetByGVR(ctx, target.GVR, target.Namespace, target.Name)
+				if err != nil || obj == nil {
+					return ""
+				}
+				return obj.GetResourceVersion()
+			},
 		}
-		return renderer.Describe(target)
 	}
+}
+
+// describeRendererForCluster returns one renderer per cluster connection,
+// so a describe does not rebuild the REST client plumbing.
+func (a *App) describeRendererForCluster() (*describe.Renderer, error) {
+	if a.describeRenderer != nil && a.describeRendererCluster == a.cl {
+		return a.describeRenderer, nil
+	}
+	renderer, err := a.newDescribeRenderer()
+	if err != nil {
+		return nil, err
+	}
+	a.describeRenderer, a.describeRendererCluster = renderer, a.cl
+	return renderer, nil
 }
 
 func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
@@ -1122,6 +1164,11 @@ func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
 		return nil, fmt.Errorf("cluster client unavailable")
 	}
 	cfg := rest.CopyConfig(a.cl.GetConfig())
+	if cfg.Timeout == 0 {
+		// The describer takes no context; the timeout bounds each request so
+		// a hung server cannot hold the panel's only load in flight.
+		cfg.Timeout = requestTimeout
+	}
 	mapper := a.cl.RESTMapper()
 	disco := a.cl.DiscoveryClient()
 	var loader clientcmd.ClientConfig
