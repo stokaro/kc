@@ -89,6 +89,17 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
 
+### cd on the shell line
+
+As in mc, `cd` typed on the shell line below the panels moves the active panel instead of running in the shell:
+
+- `cd pods`, `cd po`, `cd deploy/myapp` – a resource type (any name kubectl accepts, such as `po` or `deployments.apps`) and optionally an object. A relative path that starts with a type goes from the root when the panel is not on a type list.
+- `cd /namespaces/kube-system/pods` – an absolute path, as the panel title shows it; `cd ..` goes up, `cd ./name` stays relative.
+- `cd -n kube-system svc`, `cd -A pods` – change the panel's namespace scope first.
+- `cd -` – back to where the panel was before the last jump; `cd` or `cd ~` – the root in the namespace kc started in.
+
+kc waits up to 10 seconds for each part of the path to appear (lists fill from the cluster) and shows an error on the command line when it does not. Types the root hides because they are empty can still be entered this way. Only plain `cd` lines are taken over; after Tab, a cursor key or with shell syntax such as `&&` or `$`, the line goes to the shell. `builtin cd` always reaches the shell. Details: `docs/adr/0040-cd-from-shell-line.md`.
+
 ## Custom Commands
 
 You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F9** menu. Commands run in a terminal panel and can use templates to reference the selected item.

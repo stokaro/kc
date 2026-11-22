@@ -262,6 +262,12 @@ type App struct {
 	readErrCh              chan error // read failures from models, shown as red toasts
 	panelNamespace         [2]string
 	namespaceCommandTarget [2]string
+	// panelNavs are the running NavigatePanel walks, one per panel.
+	panelNavs   [2]*panelNavigation
+	panelNavGen uint64
+	// prevLocation is where each panel was before its last NavigatePanel
+	// call; cd - goes there.
+	prevLocation [2]*PanelPath
 }
 
 const (
