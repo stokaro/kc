@@ -106,8 +106,7 @@ func (m *CommandSelectorModel) TargetNamespace() string { return m.targetNamespa
 func (m *CommandSelectorModel) TargetLeft() bool { return m.targetLeft }
 
 func (m *CommandSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.String() {
 		case "esc":
 			if m.onCancel != nil {

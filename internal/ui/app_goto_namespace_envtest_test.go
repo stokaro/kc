@@ -84,10 +84,7 @@ func TestGoToNamespaceExistingNavigatesPanels(t *testing.T) {
 
 	waitCtx, cancelWait := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelWait()
-	for {
-		if app.namespaceExists(nsName) {
-			break
-		}
+	for !app.namespaceExists(nsName) {
 		select {
 		case <-time.After(50 * time.Millisecond):
 		case <-waitCtx.Done():

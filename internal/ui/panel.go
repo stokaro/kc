@@ -242,6 +242,13 @@ func (p *Panel) listWidget(ctx context.Context) *listwidget.Widget {
 	return nil
 }
 
+// accessorListWidget returns the list widget for the accessors that take no
+// context. The context reaches only the first size update of a widget that
+// this call builds.
+func (p *Panel) accessorListWidget() *listwidget.Widget {
+	return p.listWidget(context.Background())
+}
+
 // namespace returns the active namespace derived from the backing folder when available.
 func (p *Panel) namespace(ctx context.Context) string {
 	if lw := p.listWidget(ctx); lw != nil {
@@ -443,14 +450,14 @@ func (p *Panel) AvailableModes() []PanelViewMode {
 // SetResourceViewOptions sets the per-panel view toggles for resource groups.
 func (p *Panel) SetResourceViewOptions(showNonEmpty bool, order string) {
 	p.invalidateRenderCache()
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		lw.SetResourceViewOptions(showNonEmpty, order)
 	}
 }
 
 // ResourceViewOptions returns current per-panel options.
 func (p *Panel) ResourceViewOptions() (bool, string) {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		return lw.ResourceViewOptions()
 	}
 	return false, "favorites"
@@ -495,7 +502,7 @@ func (p *Panel) ClearFolder(ctx context.Context) {
 
 // Folder returns the active folder if the list widget is folder-backed.
 func (p *Panel) Folder() models.Folder {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		return lw.Folder()
 	}
 	return nil
@@ -519,7 +526,7 @@ func (p *Panel) SetTableMode(ctx context.Context, mode string) {
 
 // TableMode returns the current mode label ("scroll" or "fit").
 func (p *Panel) TableMode() string {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		return lw.TableMode()
 	}
 	return "scroll"
@@ -535,7 +542,7 @@ func (p *Panel) SetColumnsMode(ctx context.Context, mode string) {
 
 // ColumnsMode returns the current columns mode label.
 func (p *Panel) ColumnsMode() string {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		return lw.ColumnsMode()
 	}
 	return "normal"
@@ -550,7 +557,7 @@ func (p *Panel) SetObjectOrder(ctx context.Context, order string) {
 }
 
 func (p *Panel) ObjectOrder() string {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		return lw.ObjectOrder()
 	}
 	return "name"
@@ -670,7 +677,7 @@ func (p *Panel) SelectedNavItem(ctx context.Context) (models.Item, bool) {
 // folder-backed rendering is active. The callback receives whether a back
 // navigation was requested and, if not back, the next Folder (may be nil).
 func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next models.Folder)) {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		lw.SetFolderNavHandler(h)
 	}
 }
@@ -828,7 +835,7 @@ func (p *Panel) View() tea.View {
 	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
 	content := viewString(p.renderContent(ctx))
 	cursor := p.widgetCursor(ctx)
-	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	footer := p.renderFooter(ctx, info.SuppressFooter)
 
 	if footer == "" {
 		view := tea.NewView(lipgloss.JoinVertical(
@@ -875,7 +882,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	p.height = size.Height
 
 	info := p.frameInfo(ctx, size.Width)
-	footerContent := p.renderFooterWithWidth(ctx, info.FooterStatus, info.SuppressFooter, size.Width)
+	footerContent := p.renderFooterWithWidth(ctx, info.SuppressFooter, size.Width)
 	footerFrame, footerHeight := p.renderFramedFooter(footerContent, width)
 	if info.SuppressFooter {
 		footerFrame = ""
@@ -1030,16 +1037,16 @@ func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) tea.Vi
 	return tea.NewView("")
 }
 
-func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) string {
-	return p.renderFooterWithWidth(ctx, status, suppress, p.width)
+func (p *Panel) renderFooter(ctx context.Context, suppress bool) string {
+	return p.renderFooterWithWidth(ctx, suppress, p.width)
 }
 
-func (p *Panel) renderFooterWithWidth(ctx context.Context, status string, suppress bool, width int) string {
+// renderFooterWithWidth renders the widget's footer. The footer status is
+// rendered on the frame, so it is not repeated here.
+func (p *Panel) renderFooterWithWidth(ctx context.Context, suppress bool, width int) string {
 	if suppress {
 		return ""
 	}
-	// The status string is rendered on the frame; avoid duplicating it in the footer line.
-	status = ""
 	renderedFooter := ""
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if fp, ok := widget.(panelcontent.FooterProvider); ok {
@@ -1059,7 +1066,7 @@ func (p *Panel) renderFooterWithWidth(ctx context.Context, status string, suppre
 		if lipgloss.Width(text) > width {
 			text = truncateToWidth(text, width)
 		}
-		style := uistyles.PanelFooterStyle.Copy().
+		style := uistyles.PanelFooterStyle.
 			Width(width).
 			Height(1)
 		styled[i] = style.Align(lipgloss.Left).Render(text)
@@ -1106,7 +1113,7 @@ func (p *Panel) FrameContentSize(ctx context.Context, frameWidth, frameHeight in
 	}
 	contentWidth := max(1, frameWidth-2)
 	info := p.frameInfo(ctx, contentWidth)
-	footerContent := p.renderFooterWithWidth(ctx, info.FooterStatus, info.SuppressFooter, contentWidth)
+	footerContent := p.renderFooterWithWidth(ctx, info.SuppressFooter, contentWidth)
 	footerFrame, footerHeight := p.renderFramedFooter(footerContent, frameWidth)
 	if info.SuppressFooter || footerFrame == "" {
 		footerHeight = 0
@@ -1227,7 +1234,7 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 	rightGap := topBorderStyler(strings.Repeat(border.Top, rightGapWidth))
 	top := topLeft + leftGap + renderedLabel + rightGap + topIndicator + topRight
 
-	bottomView := boxStyle.Copy().
+	bottomView := boxStyle.
 		BorderTop(false).
 		Width(width).
 		Height(height - 1).
@@ -1314,7 +1321,7 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	renderedText := ""
 	textWidth := 0
 	if text != "" {
-		style := uistyles.PanelFooterStyle.Copy()
+		style := uistyles.PanelFooterStyle
 		if p.commandFocused {
 			style = style.
 				Background(lipgloss.Color(uistyles.ColorModalBg)).
@@ -1420,14 +1427,14 @@ func truncateStringToWidth(s string, maxWidth int) string {
 
 // renderItem renders a single item
 func (p *Panel) GetStatus() string {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		return lw.Status()
 	}
 	return "Empty"
 }
 
 func (p *Panel) GetSelectedItems() []Item {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		ctx := context.Background()
 		if selected := lw.SelectedItems(ctx); len(selected) > 0 {
 			return selected
@@ -1437,7 +1444,7 @@ func (p *Panel) GetSelectedItems() []Item {
 }
 
 func (p *Panel) GetCurrentItem() *Item {
-	if lw := p.listWidget(nil); lw != nil {
+	if lw := p.accessorListWidget(); lw != nil {
 		if item := lw.CurrentItem(context.Background()); item != nil {
 			return item
 		}

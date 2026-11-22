@@ -341,7 +341,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 	if i < 0 {
 		return nil
 	}
-	if !keys[i].Enabled && !(a.readOnly() && mutatingFunctionKey(keys[i].ID)) {
+	if !keys[i].Enabled && (!a.readOnly() || !mutatingFunctionKey(keys[i].ID)) {
 		// A grayed key does nothing, except that read-only mode explains
 		// why its write keys are grayed.
 		return nil

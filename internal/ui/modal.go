@@ -443,7 +443,7 @@ func (m *Modal) View() tea.View {
 			Height(innerH).
 			Render(inner)
 
-		winBottom := boxStyle.Copy().
+		winBottom := boxStyle.
 			BorderTop(false).
 			Width(winW).
 			Height(winH - 1).
@@ -545,7 +545,7 @@ func (m *Modal) View() tea.View {
 	}
 
 	// Box content under header (no footer inside the frame)
-	bottomSty := boxStyle.Copy().
+	bottomSty := boxStyle.
 		BorderTop(false).
 		Width(m.width).
 		// Reserve one terminal line for the footer outside the frame

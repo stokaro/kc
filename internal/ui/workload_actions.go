@@ -18,8 +18,6 @@ import (
 // object-action registry, its confirm path (showClusterActionConfirm) and
 // its input step.
 
-func init() { workloadaction.RegisterRows() }
-
 // workloadMessage marks the messages of this flow. They pass an open
 // dialog, since the dialogs of the flow send them.
 type workloadMessage interface{ workloadMessage() }

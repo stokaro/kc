@@ -224,9 +224,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 				}
 				if m.SetPanelWidth && (m.Accept || m.SaveDefault) {
 					targetPercent := clampPercent(m.PanelWidthPercent)
-					if resizeCmds := a.setPanelWidthPercent(targetIdx, targetPercent); len(resizeCmds) > 0 {
-						cmds = append(cmds, resizeCmds...)
-					}
+					subCmds = append(subCmds, a.setPanelWidthPercent(targetIdx, targetPercent)...)
 					if m.SaveDefault {
 						left, right := a.leftPanelWidthPercent, a.rightPanelWidthPercent
 						a.cfg.Panel.Width.LeftPercent = left
@@ -917,9 +915,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 				if panel != nil {
 					model, cmd := panel.Update(mm)
 					if panelIdx, ok := a.panelIndexFor(panel); ok {
-						if panelIdx == 0 {
+						switch panelIdx {
+						case 0:
 							a.leftPanel = model.(*Panel)
-						} else if panelIdx == 1 {
+						case 1:
 							a.rightPanel = model.(*Panel)
 						}
 					}

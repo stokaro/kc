@@ -95,8 +95,8 @@ func modalTextInputStyles() textinput.Styles {
 		Background(lipgloss.Color(uistyles.ColorDarkGrey))
 	styles.Focused.Text = focused
 	styles.Blurred.Text = blurred
-	styles.Focused.Placeholder = focused.Copy().Foreground(lipgloss.Color(uistyles.ColorModalFg))
-	styles.Blurred.Placeholder = blurred.Copy().Foreground(lipgloss.Color(uistyles.ColorModalFg))
+	styles.Focused.Placeholder = focused.Foreground(lipgloss.Color(uistyles.ColorModalFg))
+	styles.Blurred.Placeholder = blurred.Foreground(lipgloss.Color(uistyles.ColorModalFg))
 	styles.Focused.Prompt = focused
 	styles.Blurred.Prompt = blurred
 	styles.Cursor.Color = lipgloss.Color(uistyles.ColorModalCursor)
@@ -427,7 +427,7 @@ func (m *TextInputModal) renderButton(label string, focused bool, confirm bool) 
 		Padding(0, 3).
 		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
 		Foreground(lipgloss.Color(uistyles.ColorModalButtonFg))
-	focusedStyle := style.Copy().
+	focusedStyle := style.
 		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
 		Foreground(lipgloss.Color(uistyles.ColorModalButtonFg)).
 		Bold(true)

@@ -80,7 +80,7 @@ func modalText(t *testing.T, app *App, name string) string {
 	if m == nil || app.modalManager.modals[name] != m {
 		t.Fatalf("modal %q is not on top", name)
 	}
-	return ansi.Strip(viewString(m.content.(tea.Model).(interface{ View() tea.View }).View()))
+	return ansi.Strip(viewString(m.content.(interface{ View() tea.View }).View()))
 }
 
 func TestCommandHotkeyConfirmsWithRenderedCommand(t *testing.T) {

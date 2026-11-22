@@ -47,6 +47,7 @@ import (
 	manifestwidget "github.com/stokaro/kc/internal/ui/panelcontent/manifest"
 	"github.com/stokaro/kc/internal/ui/skin"
 	viewpkg "github.com/stokaro/kc/internal/ui/viewer"
+	"github.com/stokaro/kc/internal/workloadaction"
 	"github.com/stokaro/kc/pkg/appconfig"
 	describe "github.com/stokaro/kc/pkg/describe"
 	"github.com/stokaro/kc/pkg/kubeconfig"
@@ -324,6 +325,9 @@ var panelWidthPercentOptions = []int{25, 33, 50, 66, 75, 100}
 
 // NewApp creates a new application instance
 func NewApp() *App {
+	// Workload objects list their actions (scale, restart, rollback) as
+	// rows. Registering more than once is a no-op.
+	workloadaction.RegisterRows()
 	cfg := appconfig.Default()
 	app := &App{
 		cfg:                    cfg,
@@ -712,7 +716,7 @@ func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int
 	panelHeight = max(a.height-reserved, 0)
 	leftWidth, rightWidth = a.panelWidthsFor(a.width)
 	headerOffset = 1
-	return
+	return leftWidth, rightWidth, panelHeight, headerOffset
 }
 
 func (a *App) panelWidthPercentFor(panelIdx int) int {
@@ -743,21 +747,8 @@ func (a *App) panelWidthsFor(total int) (int, int) {
 			left = total - 1
 		}
 	}
-	right := total - left
-	if rightPercent == 0 {
-		right = 0
-	} else if right <= 0 {
-		right = 1
-		if left > 0 {
-			left = total - right
-		}
-	}
-	if left < 0 {
-		left = 0
-	}
-	if right < 0 {
-		right = 0
-	}
+	// left is now in [0, total-1], so the right panel keeps at least one
+	// column.
 	return left, total - left
 }
 
@@ -1446,12 +1437,10 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 	}
 
 	objectSection := false
-	if curFolder != nil {
-		if _, ok := curFolder.(interface {
-			ObjectListMeta() (schema.GroupVersionResource, string, bool)
-		}); ok {
-			objectSection = true
-		}
+	if _, ok := curFolder.(interface {
+		ObjectListMeta() (schema.GroupVersionResource, string, bool)
+	}); ok {
+		objectSection = true
 	}
 	if panel.Mode() != PanelModeList {
 		objectSection = false
@@ -2284,19 +2273,19 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 	}
 	order, groups, err := groupGetTargets(intent)
 	if err != nil {
-		a.notifyIntentError("kubectl get: %v", err)
+		a.notifyIntentErrorf("kubectl get: %v", err)
 		return nil
 	}
 	ns := a.startupIntentNamespace()
 	resolved, warn := a.resolveGetResources(ns, order)
 	if len(resolved) == 0 {
 		if warn != "" {
-			a.notifyIntentError("kubectl get: %s", warn)
+			a.notifyIntentErrorf("kubectl get: %s", warn)
 		}
 		return nil
 	}
 	if warn != "" {
-		a.notifyIntentError("kubectl get: %s", warn)
+		a.notifyIntentErrorf("kubectl get: %s", warn)
 	}
 	if len(order) > 1 {
 		idList := make([]string, 0, len(order))
@@ -2324,7 +2313,7 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 	}
 	return a.NavigatePanel(0, target, func(err error) tea.Cmd {
 		if err != nil {
-			a.notifyIntentError("kubectl get %s: %v", res.name, err)
+			a.notifyIntentErrorf("kubectl get %s: %v", res.name, err)
 			return nil
 		}
 		var cmds []tea.Cmd
@@ -2361,14 +2350,14 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 	order := []string{"pods"}
 	resolved, warn := a.resolveGetResources(ns, order)
 	if warn != "" {
-		a.notifyIntentError("kubectl logs: %s", warn)
+		a.notifyIntentErrorf("kubectl logs: %s", warn)
 	}
 	res, ok := resolved["pods"]
 	if !ok {
 		return nil
 	}
 	if a.cl == nil {
-		a.notifyIntentError("kubectl logs %s: cluster not ready", intent.Pod)
+		a.notifyIntentErrorf("kubectl logs %s: cluster not ready", intent.Pod)
 		return nil
 	}
 	// Choosing the container reads the pod from the API, so it runs off
@@ -2387,7 +2376,7 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 func (a *App) startStartupLogs(msg startupLogsTargetMsg) tea.Cmd {
 	intent := msg.intent
 	if msg.err != nil {
-		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, msg.err)
+		a.notifyIntentErrorf("kubectl logs %s: %v", intent.Pod, msg.err)
 		return nil
 	}
 	a.setActivePanel(0, "startup logs focus left")
@@ -2401,7 +2390,7 @@ func (a *App) startStartupLogs(msg startupLogsTargetMsg) tea.Cmd {
 	target.SelectLast = true
 	return a.NavigatePanel(0, target, func(err error) tea.Cmd {
 		if err != nil {
-			a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
+			a.notifyIntentErrorf("kubectl logs %s: %v", intent.Pod, err)
 			return nil
 		}
 		return a.openLogsViewerForIntent(intent)
@@ -2545,7 +2534,7 @@ func (a *App) ensureManifestPreview(res resolvedResource, name string) tea.Cmd {
 	target.SelectLast = true
 	return a.NavigatePanel(1, target, func(err error) tea.Cmd {
 		if err != nil {
-			a.notifyIntentError("manifest %s/%s: %v", res.name, name, err)
+			a.notifyIntentErrorf("manifest %s/%s: %v", res.name, name, err)
 			return nil
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -2554,7 +2543,7 @@ func (a *App) ensureManifestPreview(res resolvedResource, name string) tea.Cmd {
 	})
 }
 
-func (a *App) notifyIntentError(format string, args ...any) {
+func (a *App) notifyIntentErrorf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if a.toastLogger != nil {
 		a.enqueueCmd(a.toastLogger.Errorf("%s", msg))
@@ -3005,9 +2994,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	if cfg.SwitchToFileLogger != nil {
 		cfg.SwitchToFileLogger()
 		// Refresh contexts so logs use the file-only, unnamed logger (no lingering "startup" name).
-		ctx = ctrllog.IntoContext(ctx, baseLog)
 		app.ctx = ctrllog.IntoContext(app.ctx, baseLog)
-		log = ctrllog.FromContext(ctx)
 	}
 
 	// Ensure terminal is reset on exit

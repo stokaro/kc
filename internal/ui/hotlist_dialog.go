@@ -107,8 +107,7 @@ func (a *App) removeFromHotlist(i int) error {
 // the active panel's location, Del removes the highlighted entry.
 func (a *App) showHotlist() tea.Cmd {
 	idx := a.activePanel
-	var picker *ScopePickerModel
-	picker = NewScopePickerModel(locationChoices(a.hotlist), "", func(c scopeChoice) tea.Cmd {
+	picker := NewScopePickerModel(locationChoices(a.hotlist), "", func(c scopeChoice) tea.Cmd {
 		i, ok := choiceIndex(&c, len(a.hotlist))
 		if !ok {
 			return nil

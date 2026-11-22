@@ -228,9 +228,10 @@ func (m *drainOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "down", "tab":
 		m.focus = (m.focus + 1) % drainFieldCount
 	case "left", "right":
-		if m.focus == drainFieldOK {
+		switch m.focus {
+		case drainFieldOK:
 			m.focus = drainFieldCancel
-		} else if m.focus == drainFieldCancel {
+		case drainFieldCancel:
 			m.focus = drainFieldOK
 		}
 	case "space", " ":

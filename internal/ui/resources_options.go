@@ -96,8 +96,7 @@ func (m *ResourcesOptionsModel) optionAtFocus() int {
 }
 
 func (m *ResourcesOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch t := msg.(type) {
-	case tea.KeyMsg:
+	if t, ok := msg.(tea.KeyMsg); ok {
 		switch t.String() {
 		case "up", "k":
 			if m.focus > 0 {

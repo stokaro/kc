@@ -112,8 +112,7 @@ func (t *Terminal) SetEnv(env []string) { t.env = append([]string(nil), env...) 
 // Update handles messages and updates the terminal state
 func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle window resize events
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
+	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		msg.Width = max(1, msg.Width)
 		msg.Height = max(1, msg.Height)
 
@@ -347,13 +346,10 @@ func pasteInput(content string) string {
 	return "\x1b[200~" + content + "\x1b[201~"
 }
 
+// translateKeyForTerminal returns the message unchanged: Bubble Tea v2 key
+// messages reach the terminal as they are.
 func translateKeyForTerminal(msg tea.Msg) tea.Msg {
-	switch msg.(type) {
-	case tea.KeyMsg, tea.KeyPressMsg, tea.KeyReleaseMsg:
-		return msg
-	default:
-		return msg
-	}
+	return msg
 }
 
 // SetShowPanels sets whether panels are visible

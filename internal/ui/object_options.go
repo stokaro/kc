@@ -61,8 +61,7 @@ type ObjectOptionsChangedMsg struct {
 }
 
 func (m *ObjectOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch t := msg.(type) {
-	case tea.KeyMsg:
+	if t, ok := msg.(tea.KeyMsg); ok {
 		switch t.String() {
 		case "up", "k":
 			if m.focus > 0 {
@@ -141,7 +140,7 @@ func (m *ObjectOptionsModel) View() tea.View {
 		}
 		lpad := labels[i]
 		if w := lipgloss.Width(lpad); w < maxLabel {
-			lpad = lpad + strings.Repeat(" ", maxLabel-w)
+			lpad += strings.Repeat(" ", maxLabel-w)
 		}
 		s := marker + " " + lpad + ": " + values[i]
 		rows = append(rows, st.Width(m.width).Render(s))

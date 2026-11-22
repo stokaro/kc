@@ -174,7 +174,7 @@ func newLogsFilterDialog(v *LogsViewer, done func()) *logsFilterDialog {
 		Padding(0, 3).
 		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
 		Foreground(lipgloss.Color(uistyles.ColorWhite))
-	confirmFocused := confirmStyle.Copy().
+	confirmFocused := confirmStyle.
 		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
 		Foreground(lipgloss.Color(uistyles.ColorBlack)).
 		Bold(true)
@@ -214,8 +214,7 @@ func (d *logsFilterDialog) PreferredSize(maxW, maxH int) (int, int) {
 }
 
 func (d *logsFilterDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch m := msg.(type) {
-	case logsFilterResultMsg:
+	if m, ok := msg.(logsFilterResultMsg); ok {
 		if m.dialog != d {
 			return d, nil
 		}

@@ -35,7 +35,7 @@ func NewCopyToLocalModel() *CopyToLocalModel {
 		Padding(0, 3).
 		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
 		Foreground(lipgloss.Color(uistyles.ColorGrey))
-	confirmFocused := confirmStyle.Copy().
+	confirmFocused := confirmStyle.
 		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
 		Foreground(lipgloss.Color(uistyles.ColorBlack)).
 		Bold(true)
