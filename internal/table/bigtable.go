@@ -69,7 +69,7 @@ type Styles struct {
 	Selector lipgloss.Style
 	Cell     lipgloss.Style
 	Border   lipgloss.Style
-	// Marked applies to rows toggled via Ctrl+T/Insert (multi-select).
+	// Marked applies to rows toggled via C-t/Insert (multi-select).
 	// It should not generally change the background; prefer fg/bold changes.
 	Marked lipgloss.Style
 }

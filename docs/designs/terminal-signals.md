@@ -1,7 +1,7 @@
 # Terminal Signals Design
 
 ## Goal
-Make ctrl-based signals (SIGINT/SIGTSTP) behave like a normal TTY for all embedded terminals: the global 2-line terminal and command widgets. Ctrl+C/Z should hit the foreground process group (shell + child), not just the shell line editor.
+Make ctrl-based signals (SIGINT/SIGTSTP) behave like a normal TTY for all embedded terminals: the global 2-line terminal and command widgets. C-c/Z should hit the foreground process group (shell + child), not just the shell line editor.
 
 ## Constraints & Observations
 - Bubbleterm now re-enables ISIG (and ICANON) on the PTY slave after open, so the kernel synthesizes SIGINT/SIGTSTP from `^C/^Z` like a normal TTY.
@@ -9,8 +9,8 @@ Make ctrl-based signals (SIGINT/SIGTSTP) behave like a normal TTY for all embedd
 - Kc wraps Bubble Tea key messages; we must pass ctrl keys through untouched so the TTY sees the control bytes.
 
 ## Desired Behavior
-- Ctrl+C: deliver SIGINT to the foreground process group of the PTY (shell and its child). Should stop `sleep 10` etc.
-- Ctrl+Z: deliver SIGTSTP to the foreground process group for job control.
+- C-c: deliver SIGINT to the foreground process group of the PTY (shell and its child). Should stop `sleep 10` etc.
+- C-z: deliver SIGTSTP to the foreground process group for job control.
 - Only the focused terminal (global or command widget) should receive/emit signals; no broadcast.
 - Bubbleterm should still accept literal ctrl bytes; no app-level translation required.
 
@@ -38,8 +38,8 @@ Make ctrl-based signals (SIGINT/SIGTSTP) behave like a normal TTY for all embedd
 1) Bubbleterm: enable ISIG/ICANON on the PTY slave after open and restore termios on close. ✅
 2) Bubbleterm: keep `SendSignal` for direct calls, but remove ctrl-key toggles. ✅
 3) kc: forward key msgs untouched; no ctrl-key toggles needed. ✅
-4) Verify manually: run `sleep 10` in both the global terminal and command widget; Ctrl+C should terminate; Ctrl+Z should suspend. Headless test harness optional.
+4) Verify manually: run `sleep 10` in both the global terminal and command widget; C-c should terminate; C-z should suspend. Headless test harness optional.
 
 ## Testing
-- Manual: start kc, run `sleep 10` in both terminals, confirm Ctrl+C kills and Ctrl+Z suspends/returns to prompt; resume with `fg`.
+- Manual: start kc, run `sleep 10` in both terminals, confirm C-c kills and C-z suspends/returns to prompt; resume with `fg`.
 - Automated (optional): bubbleheadless script that launches a shell, sends `sleep 1 &`, then `key ctrl+c` and `key ctrl+z`, and inspects job control output.

@@ -42,7 +42,7 @@ namespace, and the table component measured titles in bytes.
 
 5. **F2 dialog.** The Objects section has "Sort by" (the shown columns of the
    current list) and "Reverse" (Yes/No), as mc's Sort order dialog has a
-   Reverse box. Enter applies to the panel; Ctrl+S saves the order as the
+   Reverse box. Enter applies to the panel; C-s saves the order as the
    default for all lists.
 
 6. **Header mark.** The sorted column shows `↑` (ascending) or `↓`
@@ -58,7 +58,7 @@ namespace, and the table component measured titles in bytes.
 - **k9s keys (Shift+O, Shift+N, Shift+A, ...).** Upper-case letters are typed
   into kc's shell line, so they cannot be panel keys. mc has no default sort
   keys; Meta keys match kc's `M-c`, `M-s` and `M-w`.
-- **Far Manager keys (Ctrl+F3 to Ctrl+F12).** Many terminals, including
+- **Far Manager keys (C-F3 to C-F12).** Many terminals, including
   macOS Terminal, do not send Ctrl with function keys.
 - **Sorting by the cell text.** Cheap, but `10` sorts before `9` and `5m`
   after `1h`, which is what the issue asks to fix.
