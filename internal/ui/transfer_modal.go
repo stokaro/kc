@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/filexfer"
+	"github.com/sttts/kc/internal/models"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -40,6 +41,11 @@ type TransferModel struct {
 	phase     transferPhase
 	details   [][2]string
 	conflicts int
+	// upload marks a copy into a container: a red dialog with Cancel
+	// focused, the kubectl cp equivalent, and target for the refusal check.
+	upload   bool
+	commands []string
+	target   models.ContainerFSSource
 	// progress reads the running copy's counter.
 	progress  func() filexfer.Progress
 	canceling bool
@@ -56,6 +62,15 @@ type TransferModel struct {
 // entries exist at the destination already.
 func NewTransferModel(details [][2]string, conflicts int) *TransferModel {
 	return &TransferModel{details: details, conflicts: conflicts}
+}
+
+// NewUploadModel builds the dialog for a copy into the container dest.
+// commands are the equivalent kubectl cp lines. Cancel has the focus, so
+// Enter alone never writes into the container.
+func NewUploadModel(details [][2]string, conflicts int, commands []string, dest models.ContainerFSSource) *TransferModel {
+	m := &TransferModel{details: details, conflicts: conflicts, upload: true, commands: commands, target: dest}
+	m.focus = len(m.labels()) - 1
+	return m
 }
 
 func (m *TransferModel) Init() tea.Cmd          { return nil }
@@ -166,10 +181,16 @@ func (m *TransferModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *TransferModel) title() string {
 	switch m.phase {
 	case transferPhaseConfirm:
+		if m.upload {
+			return "Copy into the container?"
+		}
 		return "Copy from the container?"
 	case transferPhaseRunning:
 		if m.canceling {
 			return "Canceling the copy..."
+		}
+		if m.upload {
+			return "Copying into the container..."
 		}
 		return "Copying from the container..."
 	}
@@ -185,6 +206,16 @@ func (m *TransferModel) lines() []string {
 		if m.conflicts > 0 {
 			out = append(out, "", fmt.Sprintf(" %d of the entries exist in the destination.", m.conflicts),
 				" Overwrite replaces files and merges directories.")
+		}
+		if m.upload {
+			out = append(out, "", " Writes into the container. Symbolic links and special",
+				" files are left out.")
+			if len(m.commands) > 0 {
+				out = append(out, "", " Same as:")
+				for _, c := range m.commands {
+					out = append(out, " "+c)
+				}
+			}
 		}
 	case transferPhaseRunning:
 		var p filexfer.Progress
@@ -295,6 +326,12 @@ func (m *TransferModel) size() (int, int) {
 func (m *TransferModel) View() tea.View {
 	bg := lipgloss.Color(uistyles.ColorModalBg)
 	fg := lipgloss.Color(uistyles.ColorModalFg)
+	selBg := lipgloss.Color(uistyles.ColorModalButtonSelBg)
+	selFg := fg
+	if m.upload {
+		bg, fg = lipgloss.Color(uistyles.ColorDangerBg), lipgloss.Color(uistyles.ColorDangerFg)
+		selBg, selFg = fg, lipgloss.Color(uistyles.ColorBlack)
+	}
 	row := lipgloss.NewStyle().Background(bg).Foreground(fg).Width(m.width)
 	var out []string
 	for i, l := range m.lines() {
@@ -306,7 +343,7 @@ func (m *TransferModel) View() tea.View {
 	}
 	labels := m.labels()
 	normal := lipgloss.NewStyle().Background(bg).Foreground(fg)
-	focused := lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).Foreground(fg).Bold(true)
+	focused := lipgloss.NewStyle().Background(selBg).Foreground(selFg).Bold(true)
 	rendered := make([]string, len(labels))
 	total := 0
 	for i, l := range labels {

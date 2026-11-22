@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/internal/logmux"
 	models "github.com/sttts/kc/internal/models"
 	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -21,39 +23,56 @@ import (
 var logsPodsGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
 
 func (a *App) newPanelLogsWidget(p *Panel) PanelWidget {
+	var settings logswidget.Settings
+	if a.cfg != nil {
+		defaults := logsSpecWithDefaults(models.LogsSpec{}, a.cfg.Viewer.Logs)
+		settings = logswidget.Settings{
+			TailLines:    defaults.TailLines,
+			SinceSeconds: defaults.SinceSeconds,
+			Timestamps:   defaults.Timestamps,
+		}
+	}
 	return logswidget.New(p.manifestWidgetDeps(), logswidget.Options{
-		Source: a.panelLogsSource(),
-		Theme:  a.viewerTheme(),
-		Wrap:   a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap),
+		Source:   a.panelLogsSource(),
+		Theme:    a.viewerTheme(),
+		Wrap:     a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap),
+		Settings: settings,
 	})
 }
 
 // panelLogsSource captures the cluster on the UI goroutine; the returned
 // Open runs in a tea.Cmd and does the requests.
 func (a *App) panelLogsSource() logswidget.Source {
-	return func(spec models.LogsSpec) logswidget.Open {
+	return func(req logswidget.Request) logswidget.Open {
 		cl, root := a.cl, a.ctx
+		maxRequests := appconfig.DefaultLogsMaxRequests
 		if a.cfg != nil {
-			spec = logsSpecWithDefaults(spec, a.cfg.Viewer.Logs)
+			maxRequests = a.cfg.Viewer.Logs.EffectiveMaxRequests()
 		}
 		return func() (logswidget.Stream, error) {
 			if cl == nil {
 				return logswidget.Stream{}, errors.New("no active cluster")
 			}
-			log := ctrllog.FromContext(root).WithName("panelLogs")
-			if spec.Container == "" {
-				// The pod comes from the shared cache.
-				ctx, cancel := context.WithTimeout(root, requestTimeout)
-				obj, err := cl.GetByGVR(ctx, logsPodsGVR, spec.Namespace, spec.Pod)
-				cancel()
+			spec := req.Spec
+			// The pod comes from the shared cache. Its containers fill the
+			// F2 choice; only the default container needs it.
+			pod, podErr := panelLogsPod(root, cl, spec)
+			var containers []string
+			if podErr == nil {
+				containers = logswidget.ContainerNames(pod)
+			}
+			if req.AllContainers {
+				open, err := clientLogOpener(cl.GetConfig())
 				if err != nil {
 					return logswidget.Stream{}, err
 				}
-				var pod corev1.Pod
-				if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil {
-					return logswidget.Stream{}, err
+				return openPanelAllContainers(root, cl, spec, maxRequests, open, containers)
+			}
+			if spec.Container == "" {
+				if podErr != nil {
+					return logswidget.Stream{}, podErr
 				}
-				spec.Container = logswidget.DefaultContainer(&pod)
+				spec.Container = logswidget.DefaultContainer(pod)
 				if spec.Container == "" {
 					return logswidget.Stream{}, fmt.Errorf("pod %s/%s has no containers", spec.Namespace, spec.Pod)
 				}
@@ -64,17 +83,48 @@ func (a *App) panelLogsSource() logswidget.Source {
 			}
 			opts := spec.PodLogOptions()
 			ctx, cancel := context.WithCancel(root)
+			log := ctrllog.FromContext(root).WithName("panelLogs")
 			log.Info("client stream logs", "gvr", logsPodsGVR.String(), "namespace", spec.Namespace, "pod", spec.Pod,
 				"container", spec.Container, "tailLines", spec.EffectiveTailLines(), "sinceSeconds", spec.SinceSeconds,
-				"timestamps", spec.Timestamps, "follow", spec.Follow)
+				"timestamps", spec.Timestamps, "previous", spec.Previous, "follow", spec.Follow)
 			body, err := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts).Stream(ctx)
 			if err != nil {
 				cancel()
 				return logswidget.Stream{}, err
 			}
-			return logswidget.Stream{Spec: spec, Body: body, Cancel: cancel}, nil
+			return logswidget.Stream{Spec: spec, Containers: containers, Body: body, Cancel: cancel}, nil
 		}
 	}
+}
+
+// panelLogsPod reads the pod of spec from the shared cache.
+func panelLogsPod(root context.Context, cl *kccluster.Cluster, spec models.LogsSpec) (*corev1.Pod, error) {
+	ctx, cancel := context.WithTimeout(root, requestTimeout)
+	defer cancel()
+	obj, err := cl.GetByGVR(ctx, logsPodsGVR, spec.Namespace, spec.Pod)
+	if err != nil {
+		return nil, err
+	}
+	var pod corev1.Pod
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil {
+		return nil, err
+	}
+	return &pod, nil
+}
+
+// openPanelAllContainers merges the logs of every started container of the
+// pod through logmux, as the pod's all-containers logs row does in the
+// fullscreen viewer. The line prefix is plain: the panel viewer shows text.
+// open opens one container stream.
+func openPanelAllContainers(root context.Context, cl *kccluster.Cluster, spec models.LogsSpec, maxRequests int, open logmux.Opener, containers []string) (logswidget.Stream, error) {
+	spec.Container = ""
+	ctx, cancel := context.WithCancel(root)
+	src, err := startWorkloadLogs(ctx, cl, models.WorkloadLogsSpec{Namespace: spec.Namespace, Pod: spec.Pod}, spec, maxRequests, open, false)
+	if err != nil {
+		cancel()
+		return logswidget.Stream{}, err
+	}
+	return logswidget.Stream{Spec: spec, Containers: containers, Body: src, Cancel: cancel}, nil
 }
 
 // followOtherPanelLogs starts a panel that just entered Logs mode on the

@@ -110,6 +110,10 @@ func panelFunctionKeys(state functionBarState) []functionKey {
 		{functionKeyPullDown, " 9", "PullDn", true},
 		{functionKeyQuit, "10", "Quit", true},
 	}
+	if state.PanelMode == PanelModeLogs {
+		// F2 opens the log options in Logs mode (Panel.modeAction).
+		keys[1] = functionKey{functionKeyCommands, " 2", "Options", caps.HasOptions}
+	}
 	if state.PanelMode == PanelModeCommand && state.PanelInteractive {
 		keys = append(keys, functionKey{functionKeyFocus, "Enter", "Focus", !state.TerminalHasInput})
 	}

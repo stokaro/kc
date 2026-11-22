@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 
 	"github.com/sttts/kc/internal/podfs"
 )
@@ -66,4 +67,24 @@ func (f *PodContainerFSFolder) InvalidateSession() {
 	if f.session != nil {
 		f.session.Invalidate()
 	}
+}
+
+// UploadCommand is the kubectl cp command that copies the local path src
+// into the folder's directory as name, for the confirmation dialog. Through
+// the debug helper it names the helper container and the target's files
+// under podfs.HelperRoot, which is where kc writes them.
+func (f *PodContainerFSFolder) UploadCommand(src, name string) string {
+	if f.session == nil {
+		return ""
+	}
+	spec := f.session.spec
+	container, dir := f.session.execTarget(f.dir)
+	return kubectlCommand(f.Deps, "cp", src, spec.Namespace+"/"+spec.Pod+":"+path.Join(dir, name), "-c", container)
+}
+
+// HasEntry reports whether the folder's last listing has name. It does not
+// list again; the copy itself lists before it decides.
+func (f *PodContainerFSFolder) HasEntry(ctx context.Context, name string) bool {
+	_, ok := f.ItemByID(ctx, joinContainerPath(f.dir, name))
+	return ok
 }

@@ -16,7 +16,7 @@ One execution context for every subprocess (`internal/execctx`, ADR 0055).
 ## Backlog
 - [x] mc-style pull-down menu bar on F9 — #48
 - [x] Describe/Manifest panel modes: refresh when the object changes, describe off the UI thread — #47
-- [ ] Logs panel mode that follows the other panel's selection — #49
+- [x] Logs panel mode that follows the other panel's selection — #49
 - [x] Top/metrics: usage columns in pod and node lists — #44
 - [ ] Top/metrics: sorting by consumption — #37
 - [x] Cluster overview `/overview`: capacity (requests and limits), health, risks, activity, thresholds under `overview:` — #51

@@ -77,8 +77,9 @@ func resolveWorkloadPods(ctx context.Context, cl *kccluster.Cluster, spec models
 // startWorkloadLogs resolves which pods spec covers, registers a follower on
 // the shared pod informer and returns the merged stream with the options of
 // logs (its Container is ignored; the mux sets it per target). The mux lives
-// on ctx; open opens one container stream.
-func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.WorkloadLogsSpec, logs models.LogsSpec, maxRequests int, open logmux.Opener) (*workloadLogsSource, error) {
+// on ctx; open opens one container stream. color selects the ANSI-colored
+// line prefix of the fullscreen viewer over the plain one of the Logs panel.
+func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.WorkloadLogsSpec, logs models.LogsSpec, maxRequests int, open logmux.Opener, color bool) (*workloadLogsSource, error) {
 	log := ctrllog.FromContext(ctx).WithName("workloadLogs")
 	startCtx, cancel := context.WithTimeout(ctx, workloadLogsStartTimeout)
 	defer cancel()
@@ -135,7 +136,7 @@ func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.W
 		}
 	}()
 
-	reader := logmux.NewReader(mux, func(l logmux.Line) string { return logmux.Format(l, true) })
+	reader := logmux.NewReader(mux, func(l logmux.Line) string { return logmux.Format(l, color) })
 	return &workloadLogsSource{Reader: reader, mux: mux, stop: stop, selector: selector}, nil
 }
 
@@ -236,7 +237,7 @@ func (a *App) showWorkloadLogs(msg workloadLogsReadyMsg) tea.Cmd {
 		logs = logsSpecWithDefaults(logs, a.cfg.Viewer.Logs)
 	}
 	open := func(ls models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) {
-		src, err := startWorkloadLogs(parent, cl, spec, ls, maxRequests, openContainer)
+		src, err := startWorkloadLogs(parent, cl, spec, ls, maxRequests, openContainer, true)
 		if err != nil {
 			return nil, nil, err
 		}
