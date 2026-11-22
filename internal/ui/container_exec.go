@@ -78,11 +78,11 @@ var errExecReadOnly = errors.New("disabled in read-only mode: a shell or attach 
 // in the session. The access checks for create on pods/exec and pods/attach
 // (#102) can plug in here as well.
 func (a *App) execGate(target models.ExecTarget, _ models.ExecMode) error {
-	context := target.Cluster.ContextName
-	if context == "" {
-		context = a.currentContextName()
+	kubeContext := target.Cluster.ContextName
+	if kubeContext == "" {
+		kubeContext = a.currentContextName()
 	}
-	if a.readOnlyFor(context) {
+	if a.readOnlyFor(kubeContext) {
 		return errExecReadOnly
 	}
 	return nil
