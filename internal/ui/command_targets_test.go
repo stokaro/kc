@@ -16,7 +16,7 @@ var (
 	deploymentsGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 )
 
-func objectRow(gvr schema.GroupVersionResource, namespace, name string) *models.ObjectRow {
+func targetRow(gvr schema.GroupVersionResource, namespace, name string) *models.ObjectRow {
 	id := gvr.GroupVersion().String() + "/" + gvr.Resource + "/" + namespace + "/" + name
 	return models.NewObjectRow(id, []string{name}, nil, gvr, namespace, name, nil)
 }
@@ -32,10 +32,10 @@ func marked(items ...models.Item) []Item {
 func TestCommandTargetsTemplateData(t *testing.T) {
 	t.Parallel()
 
-	cursor := objectRow(podsGVR, "default", "cursor")
-	webDev := objectRow(podsGVR, "dev", "web")
-	webProd := objectRow(podsGVR, "prod", "web")
-	api := objectRow(deploymentsGVR, "prod", "api")
+	cursor := targetRow(podsGVR, "default", "cursor")
+	webDev := targetRow(podsGVR, "dev", "web")
+	webProd := targetRow(podsGVR, "prod", "web")
+	api := targetRow(deploymentsGVR, "prod", "api")
 
 	tests := []struct {
 		name        string
@@ -108,9 +108,9 @@ func TestCommandTargetsTemplateData(t *testing.T) {
 func TestRenderCommandMultipleItems(t *testing.T) {
 	t.Parallel()
 
-	items := commandTargets(objectRow(podsGVR, "default", "cursor"), marked(
-		objectRow(podsGVR, "dev", "web"),
-		objectRow(deploymentsGVR, "prod", "api"),
+	items := commandTargets(targetRow(podsGVR, "default", "cursor"), marked(
+		targetRow(podsGVR, "dev", "web"),
+		targetRow(deploymentsGVR, "prod", "api"),
 	))
 	tmpl := `{{range .Items}}{{.Resource}}.{{.Group}}/{{.Name}}@{{.Namespace}} {{end}}first={{.Name}}`
 
@@ -140,9 +140,9 @@ func TestRenderCommandFallbackGVR(t *testing.T) {
 func TestIsCommandApplicableToTargets(t *testing.T) {
 	t.Parallel()
 
-	pod := objectRow(podsGVR, "dev", "web")
-	otherPod := objectRow(podsGVR, "prod", "web")
-	deploy := objectRow(deploymentsGVR, "prod", "api")
+	pod := targetRow(podsGVR, "dev", "web")
+	otherPod := targetRow(podsGVR, "prod", "web")
+	deploy := targetRow(deploymentsGVR, "prod", "api")
 
 	single := appconfig.CommandConfig{Name: "single", Type: appconfig.CommandTypeSelector}
 	multi := appconfig.CommandConfig{Name: "multi", Type: appconfig.CommandTypeSelector, SupportsMultiSelection: true}
