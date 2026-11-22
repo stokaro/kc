@@ -129,8 +129,8 @@ func dialogText(app *App) string {
 var (
 	keyEnter = tea.KeyPressMsg{Code: tea.KeyEnter}
 	keyTab   = tea.KeyPressMsg{Code: tea.KeyTab}
-	keyEsc   = tea.KeyPressMsg{Code: tea.KeyEscape}
 	keyBack  = tea.KeyPressMsg{Code: tea.KeyBackspace}
+	// keyEsc is shared with menu_bar_test.go.
 )
 
 func keyText(s string) tea.KeyPressMsg { return tea.KeyPressMsg{Code: rune(s[0]), Text: s} }
@@ -180,6 +180,28 @@ func TestWorkloadConfirmRunsOnce(t *testing.T) {
 	}
 	if app.modalManager.IsModalVisible() {
 		t.Error("dialog still open after the run")
+	}
+}
+
+// Read-only mode refuses an approved change before it is sent, also when
+// the context became read-only while the dialog was open.
+func TestWorkloadChangeRefusedInReadOnlyMode(t *testing.T) {
+	app := newWorkloadTestApp(t)
+	var runs []int
+	deliver(t, app, []tea.Msg{workloadStepMsg{change: &fakeWorkloadChange{n: 7, runs: &runs}, ask: true}})
+	app.readOnlyOverride = ReadOnlyForced
+	rest := deliver(t, app, pressDialog(t, app, keyTab, keyEnter))
+	if len(runs) != 0 {
+		t.Fatalf("read-only mode ran the change: %v", runs)
+	}
+	var toast string
+	for _, m := range rest {
+		if s, ok := m.(showToastMsg); ok {
+			toast = s.text
+		}
+	}
+	if want := "Read-only mode: Set to 7 is disabled"; toast != want {
+		t.Fatalf("toast = %q, want %q", toast, want)
 	}
 }
 

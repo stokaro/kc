@@ -189,6 +189,11 @@ Follow-up after #80 merges:
 
 Follow-up after #107 and #102 merge: call their write gate in
 `App.runWorkloadChange` (and hide or gray the rows when the gate says no).
+The read-only gate is in place since this change was merged onto main:
+`runWorkloadChange` calls `refuseReadOnly` with a patch check on approval.
+Hiding or graying the rows, and an RBAC decision from #102's cache, are
+still open. The #80 registry move above is still open too: #80's UI has no
+input step for `Asker` and `Chooser` yet.
 
 Follow-up after #97: the actions appear in the menu bar through #80's
 section; nothing extra.

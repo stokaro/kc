@@ -23,8 +23,12 @@ func TestChildResourceTypesFolderListsEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("rows = %d, want 1", len(rows))
+	// A Deployment also gets its logs row, after the child types.
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if _, ok := rows[1].(WorkloadLogsProvider); !ok {
+		t.Fatalf("last row type = %T, want a WorkloadLogsProvider", rows[1])
 	}
 	item, ok := rows[0].(*ChildResourceItem)
 	if !ok {

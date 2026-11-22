@@ -12,7 +12,7 @@ func pressKey(code rune, text string, mod tea.KeyMod) tea.KeyPressMsg {
 
 func TestDeleteConfirmDefaultNo(t *testing.T) {
 	model := NewDeleteConfirmModel()
-	model.Configure("pods.v1./demo", "default")
+	model.Configure("pods.v1./demo", "default", "")
 	_, cmd := model.Update(pressKey(tea.KeyEnter, "", 0))
 	if cmd == nil {
 		t.Fatalf("expected command on enter")
@@ -29,7 +29,7 @@ func TestDeleteConfirmDefaultNo(t *testing.T) {
 
 func TestDeleteConfirmYesSelection(t *testing.T) {
 	model := NewDeleteConfirmModel()
-	model.Configure("pods.v1./demo", "default")
+	model.Configure("pods.v1./demo", "default", "")
 	m, _ := model.Update(pressKey(tea.KeyLeft, "", 0))
 	model = m.(*DeleteConfirmModel)
 	_, cmd := model.Update(pressKey(tea.KeyEnter, "", 0))
@@ -48,7 +48,7 @@ func TestDeleteConfirmYesSelection(t *testing.T) {
 
 func TestDeleteConfirmRuneShortcut(t *testing.T) {
 	model := NewDeleteConfirmModel()
-	model.Configure("pods.v1./demo", "")
+	model.Configure("pods.v1./demo", "", "")
 	_, cmd := model.Update(pressKey('y', "y", 0))
 	if cmd == nil {
 		t.Fatalf("expected command for rune shortcut")

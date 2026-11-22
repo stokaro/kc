@@ -76,11 +76,27 @@ func (f *NamespacedResourcesFolder) KubectlCommand() string {
 
 func (o *ObjectsFolder) KubectlCommand() string {
 	args := []string{"get", kubectlResource(o.gvr)}
-	args = append(args, namespaceArgs(o.namespace, o.resourceNamespaced())...)
+	namespaced := o.resourceNamespaced()
+	args = append(args, namespaceArgs(o.namespace, namespaced)...)
 	args = append(args, o.kubectlArgs...)
-	cmd := kubectlCommand(o.Deps, args...)
+	if sel := o.RowFilter().Selector(); sel != "" {
+		args = append(args, "-l", sel)
+	}
+	var notes []string
 	if o.kubectlNote != "" {
-		cmd += "  # " + o.kubectlNote
+		notes = append(notes, o.kubectlNote)
+	}
+	if o.Deps.AppConfig != nil {
+		cc := planCustomColumns(o.Deps, o.gvr, o.Deps.AppConfig.Objects.Columns)
+		ccArgs, ccNote := cc.kubectlArgs(namespaced && o.namespace == "")
+		args = append(args, ccArgs...)
+		if ccNote != "" {
+			notes = append(notes, ccNote)
+		}
+	}
+	cmd := kubectlCommand(o.Deps, args...)
+	if len(notes) > 0 {
+		cmd += "  # " + strings.Join(notes, "; ")
 	}
 	return cmd
 }
@@ -132,7 +148,8 @@ func (f *PodContainerFSFolder) KubectlCommand() string {
 }
 
 func (f *ConfigMapKeysFolder) KubectlCommand() string {
-	return kubectlCommand(f.Deps, "get", "configmap", f.Name, "-n", f.Namespace, "-o", "jsonpath={.data}")
+	// The folder lists both fields, so the command prints both.
+	return kubectlCommand(f.Deps, "get", "configmap", f.Name, "-n", f.Namespace, "-o", `jsonpath={.data}{"\n"}{.binaryData}`)
 }
 
 func (f *SecretKeysFolder) KubectlCommand() string {
@@ -153,17 +170,78 @@ func keyViewCommand(deps Deps, kind, namespace, name, key string, secret bool) s
 	return cmd
 }
 
-// logsCommand matches the logs viewer: recent lines, then follow.
+// configMapKeyViewCommand prints one ConfigMap key from the field it lives
+// in; binaryData values are base64 in the API and are decoded.
+func configMapKeyViewCommand(deps Deps, namespace, name, key string, binary bool) string {
+	if !binary {
+		return keyViewCommand(deps, "configmap", namespace, name, key, false)
+	}
+	return kubectlCommand(deps, "get", "configmap", name, "-n", namespace, "-o", "jsonpath={.binaryData."+jsonpathKey(key)+"}") + " | base64 -d"
+}
+
+// logsCommand prints the kubectl command for the options LogsSpec.PodLogOptions
+// sends: recent lines, the since window, timestamps, the previous instance,
+// then follow.
 func logsCommand(deps Deps, spec LogsSpec) string {
 	args := []string{"logs", spec.Pod, "-n", spec.Namespace}
 	if spec.Container != "" {
 		args = append(args, "-c", spec.Container)
 	}
-	if spec.TailLines > 0 {
-		args = append(args, fmt.Sprintf("--tail=%d", spec.TailLines))
+	if tail := spec.EffectiveTailLines(); tail > 0 {
+		args = append(args, fmt.Sprintf("--tail=%d", tail))
+	}
+	if since := FormatLogsSince(spec.SinceSeconds); since != "" {
+		args = append(args, "--since="+since)
+	}
+	if spec.Timestamps {
+		args = append(args, "--timestamps")
+	}
+	if spec.Previous {
+		args = append(args, "-p")
 	}
 	if spec.Follow {
 		args = append(args, "-f")
 	}
 	return kubectlCommand(deps, args...)
+}
+
+// helmCommand joins helm arguments like kubectlCommand; helm names the
+// context flag --kube-context.
+func helmCommand(deps Deps, args ...string) string {
+	parts := []string{"helm"}
+	if deps.CtxName != "" && deps.CtxName != deps.KubectlContext {
+		parts = append(parts, "--kube-context", shellQuote(deps.CtxName))
+	}
+	for _, a := range args {
+		parts = append(parts, shellQuote(a))
+	}
+	return strings.Join(parts, " ")
+}
+
+// helmListCommand lists every release in the scope, whatever its status,
+// as the Helm folder does.
+func helmListCommand(deps Deps, namespace string) string {
+	if namespace == AllNamespaces {
+		return helmCommand(deps, "list", "-a", "-A")
+	}
+	return helmCommand(deps, "list", "-a", "-n", namespace)
+}
+
+func (f *HelmReleasesFolder) KubectlCommand() string {
+	return helmListCommand(f.Deps, f.namespace)
+}
+
+func (f *HelmReleaseFolder) KubectlCommand() string {
+	args := append([]string{"status", f.release, "-n", f.namespace}, revisionArgs(f.revision)...)
+	return helmCommand(f.Deps, args...)
+}
+
+func (f *HelmHistoryFolder) KubectlCommand() string {
+	return helmCommand(f.Deps, "history", f.release, "-n", f.namespace)
+}
+
+// KubectlCommand compares the stored manifest with the live objects.
+func (f *HelmResourcesFolder) KubectlCommand() string {
+	args := append([]string{"get", "manifest", f.rel.Name, "-n", f.rel.Namespace}, revisionArgs(f.revision)...)
+	return helmCommand(f.Deps, args...) + " | " + kubectlCommand(f.Deps, "get", "-f", "-")
 }

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/access"
 	"github.com/sttts/kc/internal/workloadaction"
 )
 
@@ -207,8 +208,13 @@ func (a *App) showWorkloadConfirm(change workloadaction.Change) tea.Cmd {
 
 // runWorkloadChange runs a confirmed change in the background.
 func (a *App) runWorkloadChange(change workloadaction.Change) tea.Cmd {
-	// Gate point: the read-only mode (#107) and the access check (#102)
-	// refuse the write here, before anything is sent.
+	// Read-only mode refuses the write here, before anything is sent. It is
+	// checked on approval, so a context that became read-only while the
+	// dialog was open is refused too. Every workload change is a patch
+	// (scale patches the scale subresource).
+	if cmd := a.refuseReadOnly(confirmationName(change.Confirmation()), access.Check{Verb: "patch"}); cmd != nil {
+		return cmd
+	}
 	return a.withBusy(change.Confirmation().Action, 300*time.Millisecond, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 		defer cancel()
