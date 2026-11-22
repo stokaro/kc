@@ -1,7 +1,5 @@
 # Contributing to kc
 
-First things first: kc is intentionally 100 % vibe coded. Every line so far came from an AI run, and no human has performed a real code review. If you step in, you are blazing the trail for the rest of us—thank you!
-
 ## Dev Environment
 
 - Go 1.27+ (module toolchain is pinned in `go.mod`).
@@ -28,6 +26,4 @@ go build ./cmd/kc
 1. Fork the repo (or create a feature branch if you have write access).
 2. Make your edits, keeping commits focused.
 3. Run the relevant `go test` / `go vet` / `go build` commands above.
-4. Mention that kc is still “AI-authored” in your PR description so reviewers know to double-check assumptions.
-
-Thank you for helping turn a vibe-coded TUI into something people can rely on!
+4. Describe what changed, why, and how you tested it in the PR description.

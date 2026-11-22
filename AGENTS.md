@@ -36,7 +36,6 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 
 ### Key Characteristics
 -   **Server-Side Rendering**: Relies on server-side printing (Table output) from Kubernetes to determine how to display resources, ensuring compatibility with CRDs.
--   **"Vibe-Coded"**: Embraces an AI-assisted, experimental coding style, prioritizing features and "feel" over strict traditional rigor, while maintaining a solid modular architecture.
 
 ### Directory Layout
 -   `cmd/kc/`: Application entrypoint.
