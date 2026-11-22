@@ -316,6 +316,10 @@ type App struct {
 	// call; cd - goes there.
 	prevLocation [2]*PanelPath
 	explainDocs  *explain.Loader // OpenAPI v3 documents for M-e, per cluster and group-version
+
+	// interrupts is held while kubectl owns the terminal, so the SIGINT
+	// of its C-c does not quit kc; see interrupt_gate.go.
+	interrupts interruptGate
 }
 
 const (
@@ -3128,11 +3132,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		<-sigChan
-		// Send quit message to the program
-		p.Quit()
-	}()
+	go forwardQuitSignals(sigChan, &app.interrupts, p.Quit)
 
 	if cfg.SwitchToFileLogger != nil {
 		cfg.SwitchToFileLogger()
