@@ -1087,7 +1087,7 @@ func helpMarkdownContent(raw string) string {
 	filtered := make([]string, 0, len(lines))
 	for _, line := range lines {
 		trim := strings.TrimSpace(line)
-		if strings.Contains(line, "docs/screenshot.png") {
+		if strings.Contains(line, "docs/demo.gif") {
 			continue
 		}
 		if strings.HasPrefix(trim, "![") && strings.Contains(trim, "](") {

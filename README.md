@@ -4,7 +4,7 @@
 
 > **Origin:** kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) (upstream). This repository is developed independently and has diverged a lot from it: key bindings, features and internals differ. Report issues for this version at [stokaro/kc](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE) for attribution.
 
-![Kubernetes Commander TUI](docs/screenshot.png)
+![kc demo: two panels, a live pod list while scaling a Deployment, YAML and logs, copying a file out of a container, draining a node, the terminal](docs/demo.gif)
 
 A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, Bubble Tea v2 and controller-runtime informers. See `TODO.md` for the plan.
 

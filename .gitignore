@@ -37,6 +37,8 @@ go.work.sum
 *.yaml
 # Built-in skins are embedded into the binary.
 !internal/ui/skin/builtin/*.yaml
+# Demo objects for docs/demo/record.sh.
+!docs/demo/seed.yaml
 
 # Editor/IDE
 # .idea/
