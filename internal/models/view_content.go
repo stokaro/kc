@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -18,6 +19,11 @@ import (
 // thread and goes through the cache, which waits for the informer to sync;
 // without a bound an informer that cannot sync would hang kc.
 const viewReadTimeout = 5 * time.Second
+
+// binaryMIME marks view content whose body is raw bytes rather than text.
+// The viewer renders such a body as a summary and a hex dump; F5 still
+// writes the body unchanged. It must match viewer.BinaryMIME.
+const binaryMIME = "application/octet-stream"
 
 func getForView(deps Deps, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
 	ctx, cancel := context.WithTimeout(deps.Ctx, viewReadTimeout)
@@ -83,7 +89,7 @@ func keyViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name,
 				if isProbablyText(decoded) {
 					return title, string(decoded), "", "", filename, nil
 				}
-				return title, string(decoded), "", "application/octet-stream", filename, nil
+				return title, string(decoded), "", binaryMIME, filename, nil
 			}
 			return title, v, "", "", filename, nil
 		default:
@@ -158,11 +164,16 @@ func isProbablyText(b []byte) bool {
 	if len(b) == 0 {
 		return true
 	}
+	// Invalid UTF-8, DEL and C1 controls (0x9b is CSI) would reach the
+	// terminal as mangled text or control sequences.
+	if !utf8.Valid(b) {
+		return false
+	}
 	for _, r := range string(b) {
 		switch {
 		case r == '\n' || r == '\r' || r == '\t':
 			continue
-		case r < 0x20:
+		case r < 0x20, r == 0x7f, r >= 0x80 && r < 0xa0:
 			return false
 		}
 	}
