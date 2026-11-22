@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/models"
@@ -199,5 +200,38 @@ func TestWrapCommand(t *testing.T) {
 	want := []string{"kubectl --context prod drain", "  node-a node-b", "  --ignore-daemonsets", "  --timeout=5m0s"}
 	if !slices.Equal(got, want) {
 		t.Errorf("wrap = %q, want %q", got, want)
+	}
+}
+
+// TestDrainProgressWrapsRefusals covers #139: the dialog cut the PDB
+// refusal at its edge instead of wrapping it.
+func TestDrainProgressWrapsRefusals(t *testing.T) {
+	const msg = "Cannot evict pod as it would violate the pod's disruption budget. The disruption budget web needs 2 healthy pods and has 2 currently"
+	m := newDrainProgressModel([]string{"worker-1"}, func() {})
+	m.setProgress(nodeaction.Progress{Nodes: []nodeaction.NodeProgress{{
+		Node:    "worker-1",
+		Phase:   nodeaction.PhaseEvicting,
+		Blocked: []nodeaction.PodNote{{Namespace: "demo", Name: "web-0", Message: msg}},
+	}}})
+	for _, maxW := range []int{56, 200} {
+		w, h := m.PreferredSize(maxW, 60)
+		m.SetDimensions(w, h)
+		var text []string
+		for l := range strings.SplitSeq(ansi.Strip(m.View().Content), "\n") {
+			if lipgloss.Width(l) > w {
+				t.Fatalf("width %d: line wider than the dialog: %q", w, l)
+			}
+			text = append(text, strings.TrimSpace(l))
+		}
+		joined := strings.Join(strings.Fields(strings.Join(text, " ")), " ")
+		for _, want := range []string{
+			"Refused (usually by a PodDisruptionBudget), retried every " + nodeaction.DefaultRetryDelay.String() + ":",
+			"demo/web-0: " + msg,
+			"Esc cancels; the nodes stay cordoned.",
+		} {
+			if !strings.Contains(joined, want) {
+				t.Fatalf("width %d: dialog text misses %q:\n%s", w, want, strings.Join(text, "\n"))
+			}
+		}
 	}
 }

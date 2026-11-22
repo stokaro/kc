@@ -14,13 +14,11 @@ import (
 	"github.com/stokaro/kc/internal/workloadaction"
 )
 
-// fakeWorkloadChange counts its runs. With ask set it asks for a number,
-// with choose set it offers revisions.
+// fakeWorkloadChange counts its runs. fakeAsker wraps it to ask for a
+// number, and fakeChooser wraps it to offer revisions.
 type fakeWorkloadChange struct {
-	n      int
-	runs   *[]int
-	ask    bool
-	choose bool
+	n    int
+	runs *[]int
 }
 
 func (f *fakeWorkloadChange) Confirmation() models.Confirmation {

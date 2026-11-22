@@ -78,7 +78,7 @@ func TestMenuBarTable(t *testing.T) {
 	app := newMenuTestApp(t)
 	shortcut := regexp.MustCompile(`^(F[0-9]+|(C-x )?[CM]-(F[0-9]+|.)|[+*-])$`)
 	menus := app.menuBarMenus()
-	titles := map[rune]string{}
+	titles := make(map[rune]string)
 	for _, m := range menus {
 		if h := m.Hotkey(); h == 0 {
 			t.Errorf("menu %q has no hotkey", m.Title)
@@ -87,7 +87,7 @@ func TestMenuBarTable(t *testing.T) {
 		} else {
 			titles[h] = m.Title
 		}
-		hot := map[rune]string{}
+		hot := make(map[rune]string)
 		for _, it := range m.Items {
 			if it.IsSeparator() {
 				continue
@@ -142,6 +142,29 @@ func TestMenuBarSetsPanelMode(t *testing.T) {
 		if it.Text() == "List" && it.Checked {
 			t.Fatal("List is still checked in the Right menu")
 		}
+	}
+}
+
+// TestMenuBarSetsLogsMode covers #139: Logs mode was reachable only with
+// C-1 / C-2, not from the Left and Right menus.
+func TestMenuBarSetsLogsMode(t *testing.T) {
+	app := newMenuTestApp(t)
+	// F9, L (Left), G (Logs).
+	app = feedMenu(app, keyF9, tea.KeyPressMsg{Code: 'l', Text: "l"}, tea.KeyPressMsg{Code: 'g', Text: "g"})
+	if got := app.leftPanel.Mode(); got != PanelModeLogs {
+		t.Fatalf("left panel mode = %v, want Logs", got)
+	}
+	if got := app.rightPanel.Mode(); got != PanelModeList {
+		t.Fatalf("right panel mode = %v, want List", got)
+	}
+	checked := false
+	for _, it := range app.panelMenuItems(0) {
+		if it.Text() == "Logs" {
+			checked = it.Checked
+		}
+	}
+	if !checked {
+		t.Fatal("Logs is missing or not checked in the Left menu")
 	}
 }
 

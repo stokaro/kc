@@ -37,6 +37,7 @@ func (a *App) View() tea.View {
 	mainView, mainCursor := a.renderMainView()
 
 	// Overlay modal if visible
+	//nolint:nestif // draws the command menu arrow over the modal; the cases depend on each other
 	if a.modalManager.IsModalVisible() {
 		modalView := a.modalManager.View()
 		modalCursor := modalView.Cursor
@@ -44,7 +45,8 @@ func (a *App) View() tea.View {
 
 		// If command menu is active, draw an external arrow toward the target panel namespace.
 		if a.activeCommandSelector != nil && a.modalManager.GetActiveModal() != nil {
-			if winX, winY, winW, _, ok := a.modalManager.GetActiveModal().WindowPosition(); ok {
+			if win, ok := a.modalManager.GetActiveModal().WindowPosition(); ok {
+				winX, winY, winW := win.X, win.Y, win.Width
 				if a.activeCommandSelector.SelectedIsNamespaced() {
 					row := a.activeCommandSelector.SelectedRow()
 					leftArrow := "\u25c0"  // ◀
@@ -101,10 +103,7 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Reserve space for the inline terminal (if visible) and function keys (1)
 	commandHeight := a.commandLineHeight()
 	reserved := terminalHeight + commandHeight + 1
-	panelHeight := a.height - reserved
-	if panelHeight < 3 {
-		panelHeight = 3
-	}
+	panelHeight := max(a.height-reserved, 3)
 	leftPanelWidth, rightPanelWidth := a.panelWidthsFor(a.width)
 
 	var (
@@ -256,10 +255,7 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 	// clamp the terminal content to a.height-1 lines.
 	toggleMsg := a.renderToggleMessage()
 	lines := strings.Split(terminalView, "\n")
-	maxTerm := a.height - 1
-	if maxTerm < 1 {
-		maxTerm = 1
-	}
+	maxTerm := max(a.height-1, 1)
 	if len(lines) > maxTerm {
 		lines = lines[:maxTerm]
 	} else if len(lines) < maxTerm {
@@ -286,27 +282,6 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 		return combinedView, adjusted
 	}
 	return combinedView, nil
-}
-
-// refreshFoldersAfterViewChange reapplies the current folders to panels so that
-// folder population re-reads the latest panel config.
-func (a *App) refreshFoldersAfterViewChange() {
-	if a.leftNav != nil {
-		cur := a.leftNav.Current()
-		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		a.setPanelFolder(ctx, 0, cur, a.leftNav.HasBack())
-		a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
-		a.leftPanel.RefreshFolder(ctx)
-		cancel()
-	}
-	if a.rightNav != nil {
-		cur := a.rightNav.Current()
-		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		a.setPanelFolder(ctx, 1, cur, a.rightNav.HasBack())
-		a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
-		a.rightPanel.RefreshFolder(ctx)
-		cancel()
-	}
 }
 
 // renderFunctionKeys renders the function key bar
@@ -341,6 +316,8 @@ func (a *App) functionBarState() functionBarState {
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
+//
+//nolint:gocyclo // one short case per function key
 func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 	if a.toastActive && !a.toastOnCommandLine() {
 		return nil
@@ -368,7 +345,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 	if i < 0 {
 		return nil
 	}
-	if !keys[i].Enabled && !(a.readOnly() && mutatingFunctionKey(keys[i].ID)) {
+	if !keys[i].Enabled && (!a.readOnly() || !mutatingFunctionKey(keys[i].ID)) {
 		// A grayed key does nothing, except that read-only mode explains
 		// why its write keys are grayed.
 		return nil

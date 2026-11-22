@@ -1,9 +1,10 @@
 package ui
 
 import (
-	tea "charm.land/bubbletea/v2"
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // trimRight trims only spaces on the right to ignore lipgloss width padding in comparisons.

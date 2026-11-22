@@ -161,7 +161,7 @@ func TestModalManagerShow(t *testing.T) {
 		t.Error("Expected modal to be visible")
 	}
 
-	if !(len(manager.stack) > 0 && manager.stack[len(manager.stack)-1] == "test") {
+	if len(manager.stack) == 0 || manager.stack[len(manager.stack)-1] != "test" {
 		t.Errorf("Expected 'test' to be the active modal")
 	}
 
@@ -217,9 +217,8 @@ func TestModalEscDigitMapsToFunctionKey(t *testing.T) {
 	modal.SetCloseOnSingleEsc(false)
 	modal.Show()
 
-	if _, cmd := modal.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc})); cmd == nil {
-		// ignore; command schedules timeout
-	}
+	// The returned command schedules the Esc timeout; the test does not run it.
+	modal.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc}))
 	modal.Update(tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}))
 
 	keyMsg, ok := content.last.(tea.KeyMsg)

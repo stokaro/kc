@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -9,6 +10,7 @@ import (
 	"github.com/stokaro/kc/internal/models"
 )
 
+//nolint:funlen,gocognit,gocyclo,nestif // the app-wide key dispatch, one branch per key binding; splitting it is a larger refactor than the lint baseline (#128)
 func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, tea.Cmd) {
 	cmds := currentCmds
 	press, isPress := msg.(tea.KeyPressMsg)
@@ -26,11 +28,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	if a.interactiveCommandActive() {
 		if a.activePanel == 0 {
 			model, cmd := a.leftPanel.Update(msg)
-			a.leftPanel = model.(*Panel)
+			a.leftPanel = updatedModel(a.leftPanel, model)
 			cmds = append(cmds, cmd)
 		} else {
 			model, cmd := a.rightPanel.Update(msg)
-			a.rightPanel = model.(*Panel)
+			a.rightPanel = updatedModel(a.rightPanel, model)
 			cmds = append(cmds, cmd)
 		}
 		return a, tea.Batch(cmds...)
@@ -51,11 +53,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
 		switch key.Code {
 		case '1':
-			if cmd := a.cyclePanelModeIfVisible(0); cmd != nil {
+			if cmd, ok := a.cyclePanelModeIfVisible(0); ok {
 				return a, cmd
 			}
 		case '2':
-			if cmd := a.cyclePanelModeIfVisible(1); cmd != nil {
+			if cmd, ok := a.cyclePanelModeIfVisible(1); ok {
 				return a, cmd
 			}
 		}
@@ -67,13 +69,13 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	// Handle global shortcuts first
 	switch press.String() {
 	case "alt+f1":
-		leftWidth, _, _, _ := a.panelAreaMetrics()
+		leftWidth, _ := a.panelWidths()
 		if leftWidth <= 0 {
 			return a, nil
 		}
 		return a, a.showViewOptionsModalForPanel(a.panelByIndex(0))
 	case "alt+f2":
-		_, rightWidth, _, _ := a.panelAreaMetrics()
+		_, rightWidth := a.panelWidths()
 		if rightWidth <= 0 {
 			return a, nil
 		}
@@ -152,7 +154,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		if a.interactiveCommandActive() {
 			break
 		}
-		leftWidth, rightWidth, _, _ := a.panelAreaMetrics()
+		leftWidth, rightWidth := a.panelWidths()
 		if leftWidth <= 0 && rightWidth <= 0 {
 			return a, nil
 		}
@@ -404,11 +406,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// Route all keys to the active panel/command widget when it holds focus.
 			if a.activePanel == 0 {
 				model, cmd := a.leftPanel.Update(msg)
-				a.leftPanel = model.(*Panel)
+				a.leftPanel = updatedModel(a.leftPanel, model)
 				cmds = append(cmds, cmd)
 			} else {
 				model, cmd := a.rightPanel.Update(msg)
-				a.rightPanel = model.(*Panel)
+				a.rightPanel = updatedModel(a.rightPanel, model)
 				cmds = append(cmds, cmd)
 			}
 			return a, tea.Batch(cmds...)
@@ -447,11 +449,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// Handle panel-specific keys
 			if a.activePanel == 0 {
 				model, cmd := a.leftPanel.Update(msg)
-				a.leftPanel = model.(*Panel)
+				a.leftPanel = updatedModel(a.leftPanel, model)
 				cmds = append(cmds, cmd)
 			} else {
 				model, cmd := a.rightPanel.Update(msg)
-				a.rightPanel = model.(*Panel)
+				a.rightPanel = updatedModel(a.rightPanel, model)
 				cmds = append(cmds, cmd)
 			}
 		} else {
@@ -489,10 +491,8 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		"space", // fallback just in case
 	}
 
-	for _, termKey := range terminalKeys {
-		if key == termKey {
-			return false
-		}
+	if slices.Contains(terminalKeys, key) {
+		return false
 	}
 
 	// If the user has typed into the terminal buffer while panels are visible,
@@ -527,10 +527,8 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		"esc",    // Cancel
 	}
 
-	for _, panelKey := range panelKeys {
-		if key == panelKey {
-			return true
-		}
+	if slices.Contains(panelKeys, key) {
+		return true
 	}
 
 	// Special handling for Enter key
@@ -575,16 +573,6 @@ func (a *App) interactiveCommandActive() bool {
 		return false
 	}
 	if p := a.activePanelRef(); p != nil && p.HasCommandFocus() {
-		return true
-	}
-	return false
-}
-
-func (a *App) hasInteractiveCommandOnPanel() bool {
-	if a.showTerminal {
-		return false
-	}
-	if p := a.activePanelRef(); p != nil && p.HasInteractiveCommand() {
 		return true
 	}
 	return false

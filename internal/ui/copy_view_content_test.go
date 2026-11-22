@@ -14,7 +14,7 @@ func TestViewContentCopyRequestKeepsBytes(t *testing.T) {
 		name string
 		data []byte
 	}{
-		{"empty", []byte{}},
+		{"empty", make([]byte, 0)},
 		{"text", []byte("key: value\n")},
 		{"nul and invalid utf-8", []byte{0x00, 0xff, 0xfe, 0x9b, 0x1b, '[', '2', 'J', 0x00, 0x80}},
 		{"all byte values", allBytes()},

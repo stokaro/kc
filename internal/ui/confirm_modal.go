@@ -82,7 +82,7 @@ func (m *ConfirmModel) lines() []string {
 }
 
 // size is the content size the dialog needs.
-func (m *ConfirmModel) size() (int, int) {
+func (m *ConfirmModel) size() (width, height int) {
 	w := 0
 	for _, l := range m.lines() {
 		w = max(w, lipgloss.Width(l)+1)

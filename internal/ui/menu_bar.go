@@ -50,6 +50,7 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 		a.panelModeItem(idx, "&List", PanelModeList),
 		a.panelModeItem(idx, "&Describe", PanelModeDescribe),
 		a.panelModeItem(idx, "&Manifest", PanelModeManifest),
+		a.panelModeItem(idx, "Lo&gs", PanelModeLogs),
 		a.panelModeItem(idx, "&Info", PanelModeInfo),
 		menubar.Separator(),
 		{Label: "Panel &options...", Shortcut: optionsKey, Disabled: !visible, Run: func() tea.Cmd {
@@ -221,7 +222,7 @@ func textKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: str
 
 // panelVisible reports whether panel idx has room on screen.
 func (a *App) panelVisible(idx int) bool {
-	left, right, _, _ := a.panelAreaMetrics()
+	left, right := a.panelWidths()
 	if idx == 0 {
 		return left > 0
 	}

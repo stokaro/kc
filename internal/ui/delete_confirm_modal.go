@@ -116,12 +116,12 @@ func (m *DeleteConfirmModel) View() tea.View {
 	if m.namespace != "" {
 		title = fmt.Sprintf("Delete %s in namespace %q?", m.target, m.namespace)
 	}
-	titleView := bg.Copy().Bold(true).Align(lipgloss.Center).Render(title)
+	titleView := bg.Bold(true).Align(lipgloss.Center).Render(title)
 	lines := []string{titleView}
 	if m.context != "" {
-		lines = append(lines, bg.Copy().Align(lipgloss.Center).Render(fmt.Sprintf("Context: %s", m.context)))
+		lines = append(lines, bg.Align(lipgloss.Center).Render(fmt.Sprintf("Context: %s", m.context)))
 	}
-	helpView := bg.Copy().Faint(true).Align(lipgloss.Center).Render("←/→ Switch • Enter: Confirm • Esc: Cancel")
+	helpView := bg.Faint(true).Align(lipgloss.Center).Render("←/→ Switch • Enter: Confirm • Esc: Cancel")
 	options := []string{
 		m.renderOption("Yes", buttonWidth, m.focus == 0),
 		m.renderOption("No", buttonWidth, m.focus != 0),
@@ -130,7 +130,7 @@ func (m *DeleteConfirmModel) View() tea.View {
 		Background(lipgloss.Color(uistyles.ColorModalBg)).
 		Render(" ")
 	bodyRow := lipgloss.JoinHorizontal(lipgloss.Center, options[0], separator, options[1])
-	bodyView := bg.Copy().Align(lipgloss.Center).Render(bodyRow)
+	bodyView := bg.Align(lipgloss.Center).Render(bodyRow)
 	rowWidth := lipgloss.Width(bodyRow)
 	leftPad := max(0, (innerWidth-rowWidth)/2)
 	bodyLine := len(lines) + 1 // title and context lines, spacer, buttons
@@ -143,7 +143,7 @@ func (m *DeleteConfirmModel) View() tea.View {
 		w: noWidth,
 		h: 1,
 	}
-	spacer := bg.Copy().Render("")
+	spacer := bg.Render("")
 	lines = append(lines, spacer, bodyView, spacer, helpView)
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }

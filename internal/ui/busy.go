@@ -1,8 +1,9 @@
 package ui
 
 import (
-	tea "charm.land/bubbletea/v2"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // BusyShowMsg requests the app to show a spinner with a given token.
@@ -48,12 +49,4 @@ func (a *App) withBusy(label string, delay time.Duration, work func() tea.Msg) t
 	show := tea.Tick(delay, func(time.Time) tea.Msg { return BusyShowMsg{token: tok} })
 	run := func() tea.Msg { return busyDoneMsg{token: tok, msg: work()} }
 	return tea.Batch(show, run)
-}
-
-// startBusyImmediately shows the spinner right away (no delay).
-func (a *App) startBusyImmediately(label string) tea.Cmd {
-	a.busyLabel = label
-	a.busyActive = true
-	a.busyFrame = 0
-	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
 }

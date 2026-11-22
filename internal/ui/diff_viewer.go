@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -211,8 +212,8 @@ func (v *DiffViewer) jump(dir int) {
 			}
 		}
 	} else {
-		for i := len(lines) - 1; i >= 0; i-- {
-			if lines[i] < anchor {
+		for i, line := range slices.Backward(lines) {
+			if line < anchor {
 				next = i
 				break
 			}

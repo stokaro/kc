@@ -32,7 +32,7 @@ func (s stubOpenAPI) PathsWithContext(context.Context) (map[string]openapi.Group
 	if s.err != nil {
 		return nil, s.err
 	}
-	out := map[string]openapi.GroupVersionWithContext{}
+	out := make(map[string]openapi.GroupVersionWithContext)
 	for k, v := range s.paths {
 		out[k] = stubGV{doc: v}
 	}

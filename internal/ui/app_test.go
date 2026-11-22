@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -47,7 +46,7 @@ func TestNewPanel(t *testing.T) {
 		t.Errorf("Expected title to be 'Test Panel', got '%s'", panel.title)
 	}
 
-	if lw := panel.listWidget(context.Background()); lw == nil {
+	if lw := panel.listWidget(t.Context()); lw == nil {
 		t.Fatalf("expected list widget to initialize")
 	} else if len(lw.Items()) != 0 {
 		t.Errorf("Expected empty items slice, got length %d", len(lw.Items()))
@@ -81,7 +80,7 @@ func TestPanelSetDimensions(t *testing.T) {
 		t.Errorf("Expected frame width to be 100, got %d", panel.frameWidth)
 	}
 
-	size, _ := panel.FrameContentSize(context.Background(), 100, 50)
+	size, _ := panel.FrameContentSize(t.Context(), 100, 50)
 	if panel.width != size.Width {
 		t.Errorf("Expected content width to be %d, got %d", size.Width, panel.width)
 	}

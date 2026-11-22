@@ -81,7 +81,7 @@ func TestRenderFrameIndicatorsWithFooter(t *testing.T) {
 func TestRenderFrameTitleLeftAligned(t *testing.T) {
 	p := NewPanel("test")
 	frame := p.renderFrame(strings.Repeat(" ", 10), panelcontent.FrameInfo{}, "/namespaces/default", 40, 6, true, false)
-	top := strings.Split(ansi.Strip(frame), "\n")[0]
+	top, _, _ := strings.Cut(ansi.Strip(frame), "\n")
 	if !strings.HasPrefix(top, "┌─ /namespaces/default ─") {
 		t.Fatalf("expected title at the left of the top border, got %q", top)
 	}
@@ -93,7 +93,7 @@ func TestFooterIndentWithoutMode(t *testing.T) {
 	stub := &footerStub{footer: "footer"}
 	p.widgets[p.mode] = stub
 
-	footer := p.renderFooter(context.Background(), "", false)
+	footer := p.renderFooter(t.Context(), false)
 	lines := strings.Split(ansi.Strip(footer), "\n")
 	if len(lines) == 0 {
 		t.Fatalf("expected footer lines")
@@ -108,7 +108,7 @@ func TestFooterIndentWithoutMode(t *testing.T) {
 }
 
 func TestRenderWithoutFooterKeepsContentHeight(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	p := NewPanel("test")
 	stub := &sizingWidget{
 		info: panelcontent.FrameInfo{

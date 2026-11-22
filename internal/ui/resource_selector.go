@@ -55,8 +55,7 @@ func (rs *ResourceSelector) Init() tea.Cmd {
 
 // Update handles messages and updates the resource selector state
 func (rs *ResourceSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.String() {
 		case "up", "k":
 			rs.moveUp()
@@ -153,10 +152,7 @@ func (rs *ResourceSelector) renderContent() string {
 	// Render items with scrolling
 	contentHeight := rs.height - 3 // -3 for header and footer
 	start := rs.scrollTop
-	end := start + contentHeight
-	if end > len(items) {
-		end = len(items)
-	}
+	end := min(start+contentHeight, len(items))
 
 	var visibleItems []string
 	for i := start; i < end; i++ {

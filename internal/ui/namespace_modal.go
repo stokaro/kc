@@ -33,7 +33,7 @@ func NewNamespaceCreateModel() *NamespaceCreateModel {
 		Padding(0, 3).
 		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
 		Foreground(lipgloss.Color(uistyles.ColorWhite))
-	confirmFocused := confirmStyle.Copy().
+	confirmFocused := confirmStyle.
 		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
 		Foreground(lipgloss.Color(uistyles.ColorBlack)).
 		Bold(true)
@@ -60,7 +60,7 @@ func NewNamespaceCreateModel() *NamespaceCreateModel {
 
 func (m *NamespaceCreateModel) Init() tea.Cmd          { return m.modal.Init() }
 func (m *NamespaceCreateModel) SetDimensions(w, h int) { m.modal.SetDimensions(w, h) }
-func (m *NamespaceCreateModel) PreferredSize(maxW, maxH int) (int, int) {
+func (m *NamespaceCreateModel) PreferredSize(maxW, maxH int) (width, height int) {
 	return m.modal.PreferredSize(maxW, maxH)
 }
 func (m *NamespaceCreateModel) FooterHints() []FooterHint { return m.modal.FooterHints() }

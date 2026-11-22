@@ -8,7 +8,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/stokaro/kc/internal/models"
@@ -53,7 +52,7 @@ func TestOpenLinkedObjectInOtherPanelEnvtest(t *testing.T) {
 	t.Cleanup(createNamespace(t, cl, ns))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "web-config"}}
+	cm := &corev1.ConfigMap{Namespace: ns, Name: "web-config"}
 	if err := cl.GetClient().Create(ctx, cm); err != nil {
 		t.Fatalf("create configmap: %v", err)
 	}

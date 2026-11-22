@@ -182,7 +182,7 @@ The schema comes from the connected cluster (`/openapi/v3`, the source `kubectl 
 
 `F9` (or `Esc 9`, or a click on `9 PullDn`) opens a menu bar on the top row, as in mc. Every entry runs an action that also has a key, and shows that key on the right, so the menus double as a key reference.
 
-- **Left** / **Right**: listing mode (List, Describe, Manifest; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
+- **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
 - **File**: view, edit, copy, create namespace, delete, port forward, owners and used by, explain, marking and selecting rows, quick search, exit.
 - **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
 - **Options**: panel width and the options of each panel.
