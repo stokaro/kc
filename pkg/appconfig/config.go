@@ -14,9 +14,24 @@ import (
 )
 
 type ViewerConfig struct {
-	Theme string `json:"theme"`
-	Mode  string `json:"mode"`
+	Theme string           `json:"theme"`
+	Mode  string           `json:"mode"`
+	Logs  LogsViewerConfig `json:"logs"`
 }
+
+// LogsViewerConfig holds the options a logs viewer opens with.
+type LogsViewerConfig struct {
+	// Tail is the number of recent lines fetched before following. -1
+	// fetches the whole log; 0 means the default of 200.
+	Tail int64 `json:"tail"`
+	// Since limits the log to lines newer than this. 0s means no limit.
+	Since metav1.Duration `json:"since"`
+	// Timestamps prefixes every line with its timestamp.
+	Timestamps bool `json:"timestamps"`
+}
+
+// DefaultLogsTail is the default for viewer.logs.tail.
+const DefaultLogsTail int64 = 200
 
 const (
 	ViewerModeScroll = "scroll"
@@ -192,7 +207,11 @@ type TableConfig struct {
 
 func Default() *Config {
 	return &Config{
-		Viewer: ViewerConfig{Theme: "dracula", Mode: ViewerModeScroll},
+		Viewer: ViewerConfig{
+			Theme: "dracula",
+			Mode:  ViewerModeScroll,
+			Logs:  LogsViewerConfig{Tail: DefaultLogsTail},
+		},
 		Panel: PanelConfig{
 			Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}},
 			Table:     TableConfig{Mode: TableModeScroll},

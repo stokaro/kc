@@ -164,6 +164,12 @@ type viewerOptionsTarget interface {
 	WrapMode() bool
 }
 
+// logOptionsTarget is a viewer whose stream options F2 can change.
+type logOptionsTarget interface {
+	LogOptions() LogOptions
+	SetLogOptions(LogOptions) tea.Cmd
+}
+
 // App represents the main application state
 type App struct {
 	leftPanel    *Panel
@@ -1519,7 +1525,7 @@ func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
 	if target.WrapMode() {
 		wrapMode = appconfig.ViewerModeWrap
 	}
-	content := NewViewOptionsModel(ViewOptionsConfig{
+	optsCfg := ViewOptionsConfig{
 		PanelIndex:       -1,
 		SkipPanelSection: true,
 		Viewer: &ViewOptionsViewerConfig{
@@ -1527,7 +1533,17 @@ func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
 			Theme:      currentTheme,
 			WrapMode:   wrapMode,
 		},
-	})
+	}
+	if lt, ok := target.(logOptionsTarget); ok {
+		o := lt.LogOptions()
+		optsCfg.Logs = &ViewOptionsLogsConfig{
+			TailLines:    o.TailLines,
+			SinceSeconds: o.SinceSeconds,
+			Timestamps:   o.Timestamps,
+			Previous:     o.Previous,
+		}
+	}
+	content := NewViewOptionsModel(optsCfg)
 	modal := a.modalManager.modals["viewer_options"]
 	if modal == nil {
 		modal = NewModal("Viewer Options", content)
@@ -1567,6 +1583,7 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 		}
 		return nil
 	}
+	var restart tea.Cmd
 	apply := msg.Accept || msg.SaveDefault
 	if apply {
 		theme := msg.Viewer.Theme
@@ -1585,6 +1602,23 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 		} else {
 			a.cfg.Viewer.Mode = appconfig.ViewerModeScroll
 		}
+		if lt, ok := target.(logOptionsTarget); ok && msg.Logs != nil {
+			opts := LogOptions{
+				TailLines:    msg.Logs.TailLines,
+				SinceSeconds: msg.Logs.SinceSeconds,
+				Timestamps:   msg.Logs.Timestamps,
+				Previous:     msg.Logs.Previous,
+			}
+			restart = lt.SetLogOptions(opts)
+			if msg.SaveDefault {
+				// Previous belongs to one container's history, not a default.
+				a.cfg.Viewer.Logs = appconfig.LogsViewerConfig{
+					Tail:       opts.TailLines,
+					Since:      metav1.Duration{Duration: time.Duration(opts.SinceSeconds) * time.Second},
+					Timestamps: opts.Timestamps,
+				}
+			}
+		}
 		if msg.SaveDefault {
 			_ = appconfig.Save(a.cfg)
 		}
@@ -1593,7 +1627,7 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 		a.hideModal()
 	}
 	a.viewerOptionsTarget = nil
-	return nil
+	return restart
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
@@ -2025,31 +2059,34 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 		}
 		return nil
 	}
-	opts := &corev1.PodLogOptions{
-		Container: spec.Container,
-		Follow:    true,
+	// The viewer always follows; the configured defaults fill in the rest.
+	// Previous comes from the row.
+	spec.Follow = true
+	if a.cfg != nil {
+		spec = logsSpecWithDefaults(spec, a.cfg.Viewer.Logs)
 	}
-	if spec.Follow {
-		opts.Follow = true
-	}
-	tail := spec.TailLines
-	if tail <= 0 {
-		tail = models.DefaultLogsTailLines
-	}
-	opts.TailLines = &tail
-	ctx, cancel := context.WithCancel(a.ctx)
-	req := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts)
-	stream, err := req.Stream(ctx)
-	if err != nil {
-		cancel()
-		if a.toastLogger != nil {
-			a.enqueueCmd(a.toastLogger.Errorf("Logs stream failed: %v", err))
+	parent := a.ctx
+	open := func(spec models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) {
+		ctx, cancel := context.WithCancel(parent)
+		opts := spec.PodLogOptions()
+		ctrllog.FromContext(ctx).WithName("logsViewer").Info("client stream logs",
+			"gvr", "v1/pods", "namespace", spec.Namespace, "pod", spec.Pod, "container", spec.Container,
+			"tailLines", spec.EffectiveTailLines(), "sinceSeconds", spec.SinceSeconds,
+			"timestamps", spec.Timestamps, "previous", spec.Previous, "follow", spec.Follow)
+		stream, err := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts).Stream(ctx)
+		if err != nil {
+			cancel()
+			return nil, nil, err
 		}
-		return nil
+		return stream, cancel, nil
 	}
 	title := fmt.Sprintf("logs:%s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
-	logsViewer := NewLogsViewer(title, stream, cancel, a.viewerTheme())
-	logsViewer.SetCommand(itemViewCommand(item))
+	logsViewer := NewLogsViewer(title, spec, open, a.viewerTheme())
+	if lc, ok := item.(models.LogsCommander); ok {
+		logsViewer.SetCommandBuilder(lc.LogsCommand)
+	} else {
+		logsViewer.SetCommand(itemViewCommand(item))
+	}
 	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
 	logsViewer.SetOnClose(func() tea.Cmd {
@@ -2069,6 +2106,18 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	a.modalManager.Register("logs_viewer", modal)
 	a.showModal("logs_viewer")
 	return logsViewer.Init()
+}
+
+// logsSpecWithDefaults applies the configured viewer.logs defaults to spec.
+func logsSpecWithDefaults(spec models.LogsSpec, cfg appconfig.LogsViewerConfig) models.LogsSpec {
+	if cfg.Tail != 0 {
+		spec.TailLines = cfg.Tail
+	}
+	if secs := int64(cfg.Since.Seconds()); secs > 0 {
+		spec.SinceSeconds = secs
+	}
+	spec.Timestamps = cfg.Timestamps
+	return spec
 }
 
 func (a *App) modalTitleFromItem(item models.Item, fallback string) string {
@@ -2975,16 +3024,11 @@ func (a *App) fetchLogsSnapshot(ctx context.Context, spec models.LogsSpec) (io.R
 	if err != nil {
 		return nil, err
 	}
-	opts := &corev1.PodLogOptions{
-		Container: spec.Container,
-		Follow:    false,
-	}
-	if spec.TailLines > 0 {
-		opts.TailLines = &spec.TailLines
-	}
 	if spec.Namespace == "" || spec.Pod == "" {
 		return nil, fmt.Errorf("logs spec incomplete")
 	}
+	opts := spec.PodLogOptions()
+	opts.Follow = false
 	req := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts)
 	return req.Stream(ctx)
 }

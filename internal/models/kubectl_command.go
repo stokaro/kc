@@ -153,14 +153,25 @@ func keyViewCommand(deps Deps, kind, namespace, name, key string, secret bool) s
 	return cmd
 }
 
-// logsCommand matches the logs viewer: recent lines, then follow.
+// logsCommand prints the kubectl command for the options LogsSpec.PodLogOptions
+// sends: recent lines, the since window, timestamps, the previous instance,
+// then follow.
 func logsCommand(deps Deps, spec LogsSpec) string {
 	args := []string{"logs", spec.Pod, "-n", spec.Namespace}
 	if spec.Container != "" {
 		args = append(args, "-c", spec.Container)
 	}
-	if spec.TailLines > 0 {
-		args = append(args, fmt.Sprintf("--tail=%d", spec.TailLines))
+	if tail := spec.EffectiveTailLines(); tail > 0 {
+		args = append(args, fmt.Sprintf("--tail=%d", tail))
+	}
+	if since := FormatLogsSince(spec.SinceSeconds); since != "" {
+		args = append(args, "--since="+since)
+	}
+	if spec.Timestamps {
+		args = append(args, "--timestamps")
+	}
+	if spec.Previous {
+		args = append(args, "-p")
 	}
 	if spec.Follow {
 		args = append(args, "-f")
