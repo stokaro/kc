@@ -69,7 +69,8 @@ func TestGoToNamespaceExistingNavigatesPanels(t *testing.T) {
 		t.Fatalf("create namespace: %v", err)
 	}
 	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		// t.Context() is canceled before cleanup functions run.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
 		defer cancel()
 		_ = cl.GetClient().Delete(cleanupCtx, namespace)
 	})

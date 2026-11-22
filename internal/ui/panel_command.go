@@ -65,7 +65,9 @@ type CommandWidget struct {
 	lastSize panelcontent.Size
 }
 
-func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
+// NewCommandWidget builds a command widget. It logs through the logger in
+// ctx until StartCommand replaces it with the logger of the start context.
+func NewCommandWidget(ctx context.Context, deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
 	if deps.Config == nil {
 		deps.Config = appconfig.Default()
 	}
@@ -77,7 +79,7 @@ func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConf
 		panelDeps:   deps,
 		config:      config,
 		escTimeout:  escTimeout,
-		log:         ctrllog.Log.WithName("command"),
+		log:         ctrllog.FromContext(ctx).WithName("command"),
 		post:        deps.Post,
 		interactive: config.Interactive,
 		execSlot:    nextCommandSlot(),

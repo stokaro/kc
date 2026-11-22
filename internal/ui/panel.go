@@ -127,7 +127,7 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 	cfgCopy := config
 	p.commandConfig = &cfgCopy
 	p.commandInteractive = config.Interactive
-	widget := NewCommandWidget(p.listWidgetDeps(), config)
+	widget := NewCommandWidget(ctx, p.listWidgetDeps(), config)
 	widget.SetExecSupplier(p.commandExec)
 	widget.SetInteractive(config.Interactive)
 	widget.SetFocusChangedHandler(p.setCommandFocus)

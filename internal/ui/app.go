@@ -346,7 +346,7 @@ func NewApp() *App {
 	app.usage = models.NewUsageMetrics()
 	app.leftPanel = NewPanel("", app.cfg)
 	app.rightPanel = NewPanel("", app.cfg)
-	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
+	app.terminal.SetLogger(ctrllog.FromContext(app.ctx).WithName("terminal"))
 	app.toastLogger = NewToastLogger(app, 2*time.Second)
 	app.leftPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(0, f) })
 	app.rightPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(1, f) })
@@ -2952,7 +2952,8 @@ type RunConfig struct {
 
 // Run starts the application
 func Run(ctx context.Context, cfg RunConfig) error {
-	ctx = ctrllog.IntoContext(ctx, ctrllog.Log.WithName("startup"))
+	baseLog := ctrllog.FromContext(ctx)
+	ctx = ctrllog.IntoContext(ctx, baseLog.WithName("startup"))
 	log := ctrllog.FromContext(ctx)
 	app := NewApp()
 	app.namespaceOverride = strings.TrimSpace(cfg.Namespace)
@@ -3004,7 +3005,6 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	if cfg.SwitchToFileLogger != nil {
 		cfg.SwitchToFileLogger()
 		// Refresh contexts so logs use the file-only, unnamed logger (no lingering "startup" name).
-		baseLog := ctrllog.Log
 		ctx = ctrllog.IntoContext(ctx, baseLog)
 		app.ctx = ctrllog.IntoContext(app.ctx, baseLog)
 		log = ctrllog.FromContext(ctx)

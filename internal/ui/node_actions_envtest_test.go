@@ -28,7 +28,8 @@ func createEnvtestObject(t *testing.T, cl *kccluster.Cluster, obj crclient.Objec
 		t.Fatalf("create %T %s: %v", obj, obj.GetName(), err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		// t.Context() is canceled before cleanup functions run.
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, obj, crclient.GracePeriodSeconds(0))
 	})

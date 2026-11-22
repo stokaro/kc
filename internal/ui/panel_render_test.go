@@ -93,7 +93,7 @@ func TestFooterIndentWithoutMode(t *testing.T) {
 	stub := &footerStub{footer: "footer"}
 	p.widgets[p.mode] = stub
 
-	footer := p.renderFooter(context.Background(), "", false)
+	footer := p.renderFooter(t.Context(), "", false)
 	lines := strings.Split(ansi.Strip(footer), "\n")
 	if len(lines) == 0 {
 		t.Fatalf("expected footer lines")
@@ -108,7 +108,7 @@ func TestFooterIndentWithoutMode(t *testing.T) {
 }
 
 func TestRenderWithoutFooterKeepsContentHeight(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	p := NewPanel("test")
 	stub := &sizingWidget{
 		info: panelcontent.FrameInfo{

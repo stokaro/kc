@@ -13,7 +13,7 @@ import (
 
 func TestPanelModeSwitchesToManifest(t *testing.T) {
 	panel := NewPanel("test")
-	ctx := context.Background()
+	ctx := t.Context()
 	panel.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
 	panel.SetMode(ctx, PanelModeManifest)
 	if panel.Mode() != PanelModeManifest {
@@ -48,7 +48,7 @@ func TestNextPanelModeCycles(t *testing.T) {
 }
 
 func TestPanelSelectionChangedMessage(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	panel := NewPanel("test")
 	panel.listWidget(ctx) // ensure list widget initialized
 	cmd := panel.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "item-a", Path: "/"})
@@ -82,7 +82,7 @@ func (s *selectionSpyWidget) OnSelectionChanged(_ context.Context, sel panelcont
 }
 
 func TestPanelDescribeModeReplaysSelection(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	panel := NewPanel("test")
 	panel.Update(tea.WindowSizeMsg{Width: 20, Height: 5})
 	spy := &selectionSpyWidget{}
@@ -103,7 +103,7 @@ func TestPanelDescribeModeReplaysSelection(t *testing.T) {
 }
 
 func TestPanelSelectionForceMessage(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	panel := NewPanel("test")
 	panel.listWidget(ctx)
 	// Seed first selection to populate lastSelectionID.
