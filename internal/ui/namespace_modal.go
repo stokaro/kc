@@ -5,10 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"k8s.io/apimachinery/pkg/util/validation"
-
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // NamespaceCreateResultMsg signals the outcome of the namespace creation dialog.
@@ -29,14 +26,6 @@ func NewNamespaceCreateModel() *NamespaceCreateModel {
 	model := &NamespaceCreateModel{
 		hint: "Use lowercase letters, digits, or '-' (max 63 chars)",
 	}
-	confirmStyle := lipgloss.NewStyle().
-		Padding(0, 3).
-		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
-		Foreground(lipgloss.Color(uistyles.ColorWhite))
-	confirmFocused := confirmStyle.
-		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
-		Foreground(lipgloss.Color(uistyles.ColorBlack)).
-		Bold(true)
 	cfg := TextInputModalConfig{
 		Title:        "Create Namespace",
 		Label:        "Namespace",
@@ -49,10 +38,6 @@ func NewNamespaceCreateModel() *NamespaceCreateModel {
 		Validate:     model.validateName,
 		ResultMsg:    model.resultMsg,
 		HideTitle:    true,
-		ButtonStyles: TextInputModalButtonStyles{
-			Confirm:        &confirmStyle,
-			ConfirmFocused: &confirmFocused,
-		},
 	}
 	model.modal = NewTextInputModal(cfg)
 	return model
@@ -69,6 +54,9 @@ func (m *NamespaceCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	_, cmd := m.modal.Update(msg)
 	return m, cmd
 }
+
+// RuleRows implements ModalRules.
+func (m *NamespaceCreateModel) RuleRows() []int { return m.modal.RuleRows() }
 
 func (m *NamespaceCreateModel) View() tea.View {
 	return m.modal.View()

@@ -6,10 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	textinput "charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/stokaro/kc/internal/ui/dialog"
 )
 
 // CopyToLocalResultMsg captures the outcome of the copy dialog.
@@ -19,77 +20,134 @@ type CopyToLocalResultMsg struct {
 	Close   bool
 }
 
-// CopyToLocalModel configures a TextInputModal for file path selection.
+const (
+	copyOKID     = "ok"
+	copyCancelID = "cancel"
+)
+
+// CopyToLocalModel is the dialog that writes an object, a log or a viewer
+// body to a local file, laid out like mc's Copy dialog: the prompt, the
+// target input line, an option and the buttons.
 type CopyToLocalModel struct {
-	modal         *TextInputModal
-	hint          string
+	subject       string
+	input         textinput.Model
+	overwrite     bool
+	form          dialog.Form
+	errMsg        string
 	lastValidPath string
+	width, height int
+	rules         []int
 }
 
 // NewCopyToLocalModel constructs an empty copy dialog model.
 func NewCopyToLocalModel() *CopyToLocalModel {
-	model := &CopyToLocalModel{
-		hint: "Enter an absolute file path. Existing files will be overwritten.",
+	skin := dialog.Normal()
+	m := &CopyToLocalModel{input: dialog.NewInput(skin, ""), form: dialog.Form{Skin: skin}}
+	m.syncItems()
+	return m
+}
+
+func (m *CopyToLocalModel) syncItems() {
+	prompt := "Copy to:"
+	if m.subject != "" {
+		prompt = fmt.Sprintf("Copy %q to:", m.subject)
 	}
-	confirmStyle := lipgloss.NewStyle().
-		Padding(0, 3).
-		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
-		Foreground(lipgloss.Color(uistyles.ColorGrey))
-	confirmFocused := confirmStyle.
-		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
-		Foreground(lipgloss.Color(uistyles.ColorBlack)).
-		Bold(true)
-	cfg := TextInputModalConfig{
-		Title:        "Copy to Local File",
-		Label:        "File path",
-		Description:  model.hint,
-		ConfirmLabel: "Copy",
-		CancelLabel:  "Cancel",
-		MinWidth:     24,
-		MaxWidth:     80,
-		MinHeight:    6,
-		Validate:     model.validatePath,
-		ResultMsg:    model.resultMsg,
-		ButtonStyles: TextInputModalButtonStyles{
-			Confirm:        &confirmStyle,
-			ConfirmFocused: &confirmFocused,
+	m.form.Items = []dialog.Item{
+		dialog.Text{Text: prompt},
+		dialog.Input{Model: &m.input},
+		dialog.Text{Text: m.errMsg, Error: true},
+		dialog.Rule{},
+		dialog.Check{ID: "overwrite", Label: "Over&write an existing file", On: &m.overwrite},
+		dialog.Rule{},
+		dialog.Buttons{
+			{ID: copyOKID, Label: "&OK", Default: true},
+			{ID: copyCancelID, Label: "&Cancel"},
 		},
 	}
-	model.modal = NewTextInputModal(cfg)
-	return model
 }
 
-func (m *CopyToLocalModel) Init() tea.Cmd          { return m.modal.Init() }
-func (m *CopyToLocalModel) SetDimensions(w, h int) { m.modal.SetDimensions(w, h) }
-func (m *CopyToLocalModel) PreferredSize(maxW, maxH int) (width, height int) {
-	return m.modal.PreferredSize(maxW, maxH)
+func (m *CopyToLocalModel) Init() tea.Cmd          { return nil }
+func (m *CopyToLocalModel) SetDimensions(w, h int) { m.width, m.height = w, h }
+
+// PreferredSize implements ModalSizer.
+func (m *CopyToLocalModel) PreferredSize(maxW, _ int) (width, height int) {
+	m.syncItems()
+	width = min(max(m.form.Width(lipgloss.Width(m.input.Value())+4), 50), 80)
+	if maxW > 0 {
+		width = min(width, maxW)
+	}
+	return width, m.form.Height()
 }
-func (m *CopyToLocalModel) FooterHints() []FooterHint { return m.modal.FooterHints() }
+
+// FooterHints implements ModalFooterHints.
+func (m *CopyToLocalModel) FooterHints() []FooterHint {
+	return []FooterHint{
+		{Key: "Enter", Label: "Copy", Enabled: true},
+		{Key: "Esc", Label: "Cancel", Enabled: true},
+	}
+}
+
+// RuleRows implements ModalRules.
+func (m *CopyToLocalModel) RuleRows() []int { return m.rules }
+
+// Error is the validation message on display, or "".
+func (m *CopyToLocalModel) Error() string { return m.errMsg }
 
 func (m *CopyToLocalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	_, cmd := m.modal.Update(msg)
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		switch key.String() {
+		case "ctrl+c", "ctrl+g":
+			return m, m.result(false)
+		}
+	}
+	m.syncItems()
+	ev, cmd := m.form.Update(msg)
+	if ev.Edited || ev.Toggled != "" {
+		m.errMsg = ""
+	}
+	switch ev.Pressed {
+	case copyOKID:
+		if err := m.validatePath(m.input.Value()); err != nil {
+			m.errMsg = err.Error()
+			return m, nil
+		}
+		return m, m.result(true)
+	case copyCancelID:
+		return m, m.result(false)
+	}
 	return m, cmd
 }
 
 func (m *CopyToLocalModel) View() tea.View {
-	return m.modal.View()
+	m.syncItems()
+	content, cursor, rules := m.form.View(max(m.width, 20))
+	m.rules = rules
+	return viewWithCursor(content, cursor)
 }
 
-// Configure sets the dialog subject and default path.
+// Configure sets the dialog subject and default path. The overwrite
+// option starts off, so Enter alone never replaces an existing file.
 func (m *CopyToLocalModel) Configure(subject, path string) {
-	title := fmt.Sprintf("Copy %s to local file", strings.TrimSpace(subject))
-	m.modal.SetTitle(title)
-	m.modal.SetDescription(m.hint)
-	m.modal.SetValue(m.defaultPath(path))
-	m.modal.ClearError()
+	m.subject = strings.TrimSpace(subject)
+	m.input.SetValue(m.defaultPath(path))
+	m.input.CursorEnd()
+	m.overwrite = false
+	m.errMsg = ""
 	m.lastValidPath = ""
+	m.syncItems()
 }
 
 // FocusPath focuses the file path input.
-func (m *CopyToLocalModel) FocusPath() tea.Cmd { return m.modal.FocusInput() }
+func (m *CopyToLocalModel) FocusPath() tea.Cmd {
+	m.syncItems()
+	return m.form.FocusFirst()
+}
 
 // BlurInputs blurs the input control.
-func (m *CopyToLocalModel) BlurInputs() { m.modal.BlurInput() }
+func (m *CopyToLocalModel) BlurInputs() {
+	m.syncItems()
+	m.form.FocusButton(copyCancelID)
+}
 
 func (m *CopyToLocalModel) defaultPath(path string) string {
 	value := expandedPath(strings.TrimSpace(path))
@@ -102,11 +160,17 @@ func (m *CopyToLocalModel) defaultPath(path string) string {
 	return value
 }
 
+// validatePath checks the target and refuses an existing file unless the
+// overwrite option is on.
 func (m *CopyToLocalModel) validatePath(value string) error {
 	normalized, err := m.normalizePath(value)
 	if err != nil {
 		m.lastValidPath = ""
 		return err
+	}
+	if _, err := os.Lstat(normalized); err == nil && !m.overwrite {
+		m.lastValidPath = ""
+		return fmt.Errorf("The file exists; check Overwrite to replace it")
 	}
 	m.lastValidPath = normalized
 	return nil
@@ -138,20 +202,17 @@ func (m *CopyToLocalModel) normalizePath(value string) (string, error) {
 	return absPath, nil
 }
 
-func (m *CopyToLocalModel) resultMsg(res TextInputModalResult) tea.Msg {
+func (m *CopyToLocalModel) result(confirm bool) tea.Cmd {
 	path := m.lastValidPath
 	if path == "" {
-		if normalized, err := m.normalizePath(res.Value); err == nil {
+		if normalized, err := m.normalizePath(m.input.Value()); err == nil {
 			path = normalized
 		} else {
-			path = res.Value
+			path = strings.TrimSpace(m.input.Value())
 		}
 	}
-	return CopyToLocalResultMsg{
-		Path:    path,
-		Confirm: res.Confirm,
-		Close:   res.Close,
-	}
+	msg := CopyToLocalResultMsg{Path: path, Confirm: confirm, Close: true}
+	return func() tea.Msg { return msg }
 }
 
 func expandedPath(value string) string {

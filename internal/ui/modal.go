@@ -81,6 +81,44 @@ type ModalFooterCursor interface {
 	FooterCursor(width int) *tea.Cursor
 }
 
+// ModalRules is content with separator rules across its whole width. A
+// windowed Modal joins them to the frame with tees (├───┤), as mc does.
+type ModalRules interface {
+	// RuleRows are the content rows of the rules in the last View.
+	RuleRows() []int
+}
+
+// joinContentRules joins the rules of content, when it reports any, to
+// the frame box.
+func joinContentRules(content tea.Model, box string) string {
+	if rules, ok := content.(ModalRules); ok {
+		return joinRules(box, rules.RuleRows())
+	}
+	return box
+}
+
+// joinRules replaces the side borders of the given content rows of box
+// (the frame without its top line) with tees.
+func joinRules(box string, rows []int) string {
+	if len(rows) == 0 {
+		return box
+	}
+	lines := strings.Split(box, "\n")
+	for _, r := range rows {
+		// The last line is the bottom border.
+		if r < 0 || r >= len(lines)-1 {
+			continue
+		}
+		l := lines[r]
+		first, last := strings.Index(l, "│"), strings.LastIndex(l, "│")
+		if first < 0 || first == last {
+			continue
+		}
+		lines[r] = l[:first] + "├" + l[first+len("│"):last] + "┤" + l[last+len("│"):]
+	}
+	return strings.Join(lines, "\n")
+}
+
 // FooterHint describes a function key footer entry.
 type FooterHint struct {
 	Key     string
@@ -374,10 +412,7 @@ func (m *Modal) View() tea.View {
 		if winW <= 0 {
 			winW = bgWidth
 		}
-		winH := min(m.winHeight, max(1, availableHeight))
-		if winH <= 0 {
-			winH = 1
-		}
+		winH := max(1, min(m.winHeight, max(1, availableHeight)))
 		innerW := max(1, winW-2)
 		innerH := max(1, winH-2)
 		windowOffsetX := 0
@@ -466,6 +501,7 @@ func (m *Modal) View() tea.View {
 			Width(winW).
 			Height(winH - 1).
 			Render(inner)
+		winBottom = joinContentRules(m.content, winBottom)
 		winFrame := padDialog(top+"\n"+winBottom, winW, padX, padY, frameBg)
 
 		// Compose window over background (centered)

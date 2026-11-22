@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/stokaro/kc/internal/ui/dialog"
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
@@ -70,7 +71,7 @@ func NewCommandPromptModel(prompts []appconfig.CommandPrompt, defaults map[strin
 			f.input.Prompt = ""
 			f.input.CharLimit = 0
 			f.input.SetVirtualCursor(false)
-			f.input.SetStyles(modalTextInputStyles())
+			f.input.SetStyles(dialog.InputStyles(dialog.Normal()))
 			f.input.SetValue(def)
 			f.input.CursorEnd()
 		}
@@ -219,9 +220,10 @@ func (m *CommandPromptModel) View() tea.View {
 	row := lipgloss.NewStyle().Background(bg).Foreground(fg).Width(width)
 	const pad = 2
 	fieldWidth := max(10, width-2*pad)
-	fieldBg := lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorDarkGrey))
-	focusedChoice := fieldBg.Foreground(lipgloss.Color(uistyles.ColorWhite)).Bold(true)
-	blurredChoice := fieldBg.Foreground(lipgloss.Color(uistyles.ColorGrey))
+	skin := dialog.Normal()
+	fieldBg := skin.Input
+	focusedChoice := fieldBg.Bold(true)
+	blurredChoice := fieldBg
 	padding := lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", pad))
 
 	var lines []string
@@ -252,27 +254,16 @@ func (m *CommandPromptModel) View() tea.View {
 	}
 	lines = append(lines, row.Render(""))
 
-	labels := [2]string{"[ OK ]", "[ Cancel ]"}
-	normal := lipgloss.NewStyle().Background(bg).Foreground(fg)
-	focused := lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).Foreground(lipgloss.Color(uistyles.ColorModalButtonFg)).Bold(true)
-	total := lipgloss.Width(labels[0]) + 2 + lipgloss.Width(labels[1])
-	x := max(0, (width-total)/2)
-	y := len(lines)
-	var b strings.Builder
-	b.WriteString(normal.Render(strings.Repeat(" ", x)))
-	for i, l := range labels {
-		style := normal
-		if m.focus == len(m.fields)+i {
-			style = focused
-		}
-		m.buttons[i] = buttonRect{x: x, y: y, w: lipgloss.Width(l), h: 1}
-		b.WriteString(style.Render(l))
-		x += lipgloss.Width(l)
-		if i == 0 {
-			b.WriteString(normal.Render("  "))
-			x += 2
-		}
+	focusedButton := -1
+	if m.focus >= len(m.fields) {
+		focusedButton = m.focus - len(m.fields)
 	}
-	lines = append(lines, row.Render(b.String()))
+	buttonRow, rects := dialog.RenderButtons(skin, width, []dialog.Button{
+		{Label: "OK", Default: true}, {Label: "Cancel"},
+	}, focusedButton)
+	for i, r := range rects {
+		m.buttons[i] = buttonRect{x: r.X, y: len(lines), w: r.W, h: 1}
+	}
+	lines = append(lines, buttonRow)
 	return viewWithCursor(strings.Join(lines, "\n"), cursor)
 }

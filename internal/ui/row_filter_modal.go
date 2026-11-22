@@ -79,6 +79,9 @@ func (m *RowFilterModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *RowFilterModel) View() tea.View { return m.modal.View() }
 
+// RuleRows implements ModalRules.
+func (m *RowFilterModel) RuleRows() []int { return m.modal.RuleRows() }
+
 func (m *RowFilterModel) resultMsg(res TextInputModalResult) tea.Msg {
 	return RowFilterResultMsg{
 		Panel:   m.panel,
