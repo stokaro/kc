@@ -56,5 +56,5 @@ func (f *NodeChildFolder) populate(ctx context.Context) ([]table.Row, error) {
 			return NewNodePodsFolder(f.Deps, podsPath, f.nodeName), nil
 		},
 	)
-	return []table.Row{item}, nil
+	return append([]table.Row{item}, f.nodeShellRows()...), nil
 }

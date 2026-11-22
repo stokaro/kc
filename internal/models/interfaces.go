@@ -39,6 +39,22 @@ type ConfirmedAction interface {
 // ConfirmRequest asks the UI to confirm and then run Action.
 type ConfirmRequest struct{ Action ConfirmedAction }
 
+// ConfirmFollowUp is a ConfirmedAction whose approval hands the UI a
+// message once Confirm succeeded, for work only the UI can do, such as
+// opening a terminal.
+type ConfirmFollowUp interface {
+	FollowUp() any
+}
+
+// NodeShellRequest asks the UI to start a node shell: create Pod in
+// Namespace on Node and open its shell.
+type NodeShellRequest struct {
+	Context   string
+	Node      string
+	Namespace string
+	Pod       string
+}
+
 // ObjectRef names one Kubernetes object by its full GVR.
 type ObjectRef struct {
 	GVR       schema.GroupVersionResource

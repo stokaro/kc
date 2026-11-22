@@ -46,6 +46,21 @@ objects:
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
 
+nodeShell:
+  # Off by default. "Start a node shell..." inside a node creates a
+  # privileged pod with the host PID, network and IPC namespaces on that
+  # node and opens a root shell in the host namespaces.
+  enabled: false
+  # Limit the node shell to these kube contexts; empty means all contexts.
+  # contexts: [kind-dev]
+  # The image needs sh and nsenter.
+  image: docker.io/library/busybox:1.36.1
+  # Namespace of the shell pod; pod security admission must allow
+  # privileged pods there.
+  namespace: default
+  # activeDeadlineSeconds of the pod: it stops after this time even in use.
+  maxDuration: 8h
+
 commands:
   - name: Top Nodes
     command: kubectl top nodes

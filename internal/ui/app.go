@@ -260,6 +260,8 @@ type App struct {
 	activity               *models.Activity     // pauses background refreshes while a dialog is open
 	pendingConfirm         *pendingConfirmation // waits for the red confirmation
 	objectActions          *objectaction.Registry
+	nodeShell              *nodeShellSession // open node shell, shown full screen
+	nodeShellStarting      bool              // a node shell pod is being created
 	namespaceOverride      string
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
@@ -2969,6 +2971,9 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Ensure terminal is reset on exit
 	defer func() {
+		// Delete the pod of an open node shell while the context still
+		// carries the logger.
+		app.closeNodeShell()
 		// Close the embedded terminal/PTY to restore its raw mode
 		if app.terminal != nil {
 			_ = app.terminal.Close()
