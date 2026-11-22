@@ -93,6 +93,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commandWatchTickMsg:
 		model, cmd := a.handleCommandWatchTick(msg)
 		return model, cmd
+	case logStreamOpenedMsg, logStreamMsg:
+		// Stream results go to their viewer even when a dialog (F2) covers
+		// it; routed through the top modal they would be dropped and the
+		// stream would stop.
+		var v *LogsViewer
+		switch m := msg.(type) {
+		case logStreamOpenedMsg:
+			v = m.viewer
+		case logStreamMsg:
+			v = m.viewer
+		}
+		if v != nil {
+			_, cmd := v.Update(msg)
+			cmds = append(cmds, cmd)
+			a.invalidateView("logs stream")
+		}
+		return a, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		msg.Width = max(40, msg.Width)
 		msg.Height = max(5, msg.Height)
