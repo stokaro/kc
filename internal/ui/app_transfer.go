@@ -96,14 +96,8 @@ func (a *App) startTransfer(panel *Panel) (tea.Cmd, bool) {
 	}
 	src := source.TransferSource()
 	req := filexfer.Request{Dir: src.Dir, Entries: entries, Dest: dest.LocalDir()}
-	conflicts := 0
-	for _, e := range entries {
-		if _, err := os.Lstat(filepath.Join(req.Dest, e.Name)); err == nil {
-			conflicts++
-		}
-	}
 	a.openTransfer(&transferJob{
-		model:     NewTransferModel(transferDetails(src, req), conflicts),
+		model:     NewTransferModel(transferDetails(src, req), req.Dest, existingEntries(entries)),
 		req:       req,
 		source:    source,
 		destPanel: 1 - srcIdx,
@@ -169,7 +163,20 @@ func transferDetails(src models.ContainerFSSource, req filexfer.Request) [][2]st
 		{"Container", container},
 		{"From", shortenPath(src.Dir)},
 		{"Entries", list},
-		{"To", shortenPath(req.Dest)},
+	}
+}
+
+// existingEntries counts the entries that exist in a local directory, for
+// the note under the dialog's "to:" line.
+func existingEntries(entries []podfs.FileEntry) func(dir string) int {
+	return func(dir string) int {
+		n := 0
+		for _, e := range entries {
+			if _, err := os.Lstat(filepath.Join(dir, e.Name)); err == nil {
+				n++
+			}
+		}
+		return n
 	}
 }
 
@@ -223,6 +230,8 @@ func (a *App) handleTransferMsg(msg tea.Msg) tea.Cmd {
 				return cmd
 			}
 			job.upload.Policy = msg.policy
+		} else if msg.dest != "" {
+			job.req.Dest = msg.dest
 		}
 		job.req.Policy = msg.policy
 		return a.runTransfer(job)

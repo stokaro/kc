@@ -7,8 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/stokaro/kc/internal/overlay"
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/stokaro/kc/internal/ui/dialog"
 )
 
 // TextInputModalResult describes the outcome of a text input modal interaction.
@@ -21,7 +20,10 @@ type TextInputModalResult struct {
 // TextInputModalResultMsg is emitted when no custom result builder is provided.
 type TextInputModalResultMsg TextInputModalResult
 
-// TextInputModalButtonStyles customizes confirm/cancel button appearance.
+// TextInputModalButtonStyles used to color the filled button blocks.
+//
+// Deprecated: the buttons are drawn in mc's dialog skin; the styles are
+// ignored. Drop the field from new code.
 type TextInputModalButtonStyles struct {
 	Confirm        *lipgloss.Style
 	ConfirmFocused *lipgloss.Style
@@ -44,63 +46,92 @@ type TextInputModalConfig struct {
 	MaxHeight    int
 	Validate     func(string) error
 	ResultMsg    func(TextInputModalResult) tea.Msg
-	ButtonStyles TextInputModalButtonStyles
 	HideTitle    bool
+	// Deprecated: ignored; see TextInputModalButtonStyles.
+	ButtonStyles TextInputModalButtonStyles
 }
 
-type textInputModalFocus int
-
 const (
-	textInputFocusField textInputModalFocus = iota
-	textInputFocusConfirm
-	textInputFocusCancel
+	textInputConfirmID = "confirm"
+	textInputCancelID  = "cancel"
 )
 
-// TextInputModal renders a labelled text input with confirm/cancel buttons.
+// TextInputModal is mc's input dialog: a prompt, a cyan input line, a hint
+// or error line, a rule and the buttons "[< OK >] [ Cancel ]".
 type TextInputModal struct {
 	cfg           TextInputModalConfig
 	input         textinput.Model
-	focus         textInputModalFocus
+	form          dialog.Form
 	errMsg        string
 	width, height int
-	buttonBounds  []buttonRect
+	rules         []int
 }
 
 // NewTextInputModal constructs a TextInputModal with the given configuration.
 func NewTextInputModal(cfg TextInputModalConfig) *TextInputModal {
-	ti := textinput.New()
-	ti.Prompt = ""
-	ti.Placeholder = cfg.Placeholder
-	ti.CharLimit = 0
-	ti.SetVirtualCursor(false)
-	ti.SetStyles(modalTextInputStyles())
-	ti.SetValue(cfg.InitialValue)
-	ti.CursorEnd()
-	_ = ti.Focus()
-	return &TextInputModal{
+	skin := dialog.Normal()
+	m := &TextInputModal{
 		cfg:   cfg,
-		input: ti,
-		focus: textInputFocusField,
+		input: dialog.NewInput(skin, cfg.InitialValue),
+		form:  dialog.Form{Skin: skin},
 	}
+	m.input.Placeholder = cfg.Placeholder
+	m.syncItems()
+	m.form.FocusFirst()
+	return m
 }
 
-func modalTextInputStyles() textinput.Styles {
-	styles := textinput.DefaultLightStyles()
-	focused := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(uistyles.ColorWhite)).
-		Background(lipgloss.Color(uistyles.ColorDarkGrey)).
-		Bold(true)
-	blurred := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(uistyles.ColorGrey)).
-		Background(lipgloss.Color(uistyles.ColorDarkGrey))
-	styles.Focused.Text = focused
-	styles.Blurred.Text = blurred
-	styles.Focused.Placeholder = focused.Foreground(lipgloss.Color(uistyles.ColorModalFg))
-	styles.Blurred.Placeholder = blurred.Foreground(lipgloss.Color(uistyles.ColorModalFg))
-	styles.Focused.Prompt = focused
-	styles.Blurred.Prompt = blurred
-	styles.Cursor.Color = lipgloss.Color(uistyles.ColorModalCursor)
-	return styles
+// syncItems rebuilds the form rows from the configuration and the error.
+func (m *TextInputModal) syncItems() {
+	var items []dialog.Item
+	if !m.cfg.HideTitle && strings.TrimSpace(m.cfg.Title) != "" {
+		items = append(items, dialog.Text{Text: m.cfg.Title, Center: true, Bold: true})
+	}
+	if strings.TrimSpace(m.cfg.Label) != "" {
+		items = append(items, dialog.Text{Text: m.cfg.Label})
+	}
+	items = append(items, dialog.Input{Model: &m.input})
+	// The hint keeps its lines; an error takes the first one, so the
+	// dialog does not change its height.
+	for i, line := range strings.Split(m.cfg.Description, "\n") {
+		if i == 0 && m.errMsg != "" {
+			items = append(items, dialog.Text{Text: m.errMsg, Error: true})
+			continue
+		}
+		items = append(items, dialog.Text{Text: line})
+	}
+	confirm := hotkeyLabel(m.confirmLabel())
+	cancel := hotkeyLabel(m.cancelLabel(), confirm.Hotkey())
+	items = append(items, dialog.Rule{}, dialog.Buttons{
+		{ID: textInputConfirmID, Label: confirm, Default: true},
+		{ID: textInputCancelID, Label: cancel},
+	})
+	m.form.Items = items
+}
+
+// hotkeyLabel marks the first letter of label as its hotkey, or the first
+// letter that is not taken, unless label already has a marker.
+func hotkeyLabel(label string, taken ...rune) dialog.Label {
+	if strings.Contains(label, "&") {
+		return dialog.Label(label)
+	}
+	r := []rune(label)
+	for i, c := range r {
+		lc := []rune(strings.ToLower(string(c)))[0]
+		if lc < 'a' || lc > 'z' {
+			continue
+		}
+		free := true
+		for _, t := range taken {
+			if t == lc {
+				free = false
+			}
+		}
+		if free {
+			return dialog.Label(string(r[:i]) + "&" + string(r[i:]))
+		}
+	}
+	return dialog.Label(label)
 }
 
 // Init implements tea.Model.
@@ -118,9 +149,8 @@ func (m *TextInputModal) PreferredSize(maxContentWidth, maxContentHeight int) (w
 	if maxContentWidth > 0 && width > maxContentWidth {
 		width = maxContentWidth
 	}
-	content, _ := m.render(width)
-	height = lipgloss.Height(content)
-	height = m.clampHeight(height)
+	m.syncItems()
+	height = m.clampHeight(m.form.Height())
 	if maxContentHeight > 0 && height > maxContentHeight {
 		height = maxContentHeight
 	}
@@ -133,59 +163,34 @@ func (m *TextInputModal) View() tea.View {
 	if width <= 0 {
 		width = m.clampWidth(m.desiredWidth())
 	}
-	if width <= 0 {
-		width = 40
-	}
 	content, cursor := m.render(width)
 	return viewWithCursor(content, cursor)
 }
 
+// RuleRows implements ModalRules.
+func (m *TextInputModal) RuleRows() []int { return m.rules }
+
 // Update handles Tea messages.
 func (m *TextInputModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch key := msg.(type) {
-	case tea.KeyMsg:
+	if key, ok := msg.(tea.KeyPressMsg); ok {
 		switch key.String() {
-		case "tab":
-			return m, m.moveFocus(1)
-		case "shift+tab":
-			return m, m.moveFocus(-1)
 		case "esc", "ctrl+c", "ctrl+g":
 			return m, m.emitResult(false, true)
 		}
-		if m.focus == textInputFocusField {
-			before := m.input.Value()
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(key)
-			if m.errMsg != "" && m.input.Value() != before {
-				m.errMsg = ""
-			}
-			// Let Enter submit from the input field.
-			if key.Key().Code == tea.KeyEnter {
-				if submit := m.validateAndSubmit(); submit != nil {
-					return m, submit
-				}
-			}
-			return m, cmd
-		}
-		switch key.Key().Code {
-		case tea.KeyEnter:
-			if m.focus == textInputFocusCancel {
-				return m, m.emitResult(false, true)
-			}
-			return m, m.validateAndSubmit()
-		case tea.KeyLeft:
-			if m.focus != textInputFocusField {
-				return m, m.moveFocus(-1)
-			}
-		case tea.KeyRight:
-			if m.focus != textInputFocusField {
-				return m, m.moveFocus(1)
-			}
-		}
-	case tea.MouseMsg:
-		return m, m.handleMouse(key)
 	}
-	return m, nil
+	m.syncItems()
+	ev, cmd := m.form.Update(msg)
+	if ev.Edited && m.errMsg != "" {
+		m.errMsg = ""
+		m.syncItems()
+	}
+	switch ev.Pressed {
+	case textInputConfirmID:
+		return m, m.validateAndSubmit()
+	case textInputCancelID:
+		return m, m.emitResult(false, true)
+	}
+	return m, cmd
 }
 
 // FooterHints implements ModalFooterHints.
@@ -198,15 +203,15 @@ func (m *TextInputModal) FooterHints() []FooterHint {
 
 // FocusInput focuses the text field.
 func (m *TextInputModal) FocusInput() tea.Cmd {
-	m.focus = textInputFocusField
-	return m.input.Focus()
+	m.syncItems()
+	return m.form.FocusFirst()
 }
 
-// BlurInput blurs the text field.
+// BlurInput moves the focus from the text field to the confirm button.
 func (m *TextInputModal) BlurInput() {
-	m.input.Blur()
-	if m.focus == textInputFocusField {
-		m.focus = textInputFocusConfirm
+	m.syncItems()
+	if m.form.FocusedInput() {
+		m.form.FocusButton(textInputConfirmID)
 	}
 }
 
@@ -227,11 +232,6 @@ func (m *TextInputModal) SetCancelLabel(label string) { m.cfg.CancelLabel = labe
 
 // SetPlaceholder changes the placeholder text.
 func (m *TextInputModal) SetPlaceholder(placeholder string) { m.input.Placeholder = placeholder }
-
-// SetButtonStyles overrides the confirm/cancel button styling.
-func (m *TextInputModal) SetButtonStyles(styles TextInputModalButtonStyles) {
-	m.cfg.ButtonStyles = styles
-}
 
 // SetValue replaces the current text input value.
 func (m *TextInputModal) SetValue(val string) {
@@ -256,222 +256,16 @@ func (m *TextInputModal) ClearError() { m.errMsg = "" }
 // Error returns the last validation error, if any.
 func (m *TextInputModal) Error() string { return m.errMsg }
 
-func (m *TextInputModal) handleMouse(msg tea.MouseMsg) tea.Cmd {
-	if len(m.buttonBounds) == 0 {
-		return nil
-	}
-	mouse := msg.Mouse()
-	if mouse.Button != tea.MouseLeft {
-		return nil
-	}
-	for idx, rect := range m.buttonBounds {
-		if !rect.contains(mouse.X, mouse.Y) {
-			continue
-		}
-		switch msg.(type) {
-		case tea.MouseClickMsg:
-			if idx == 0 {
-				m.focus = textInputFocusConfirm
-			} else {
-				m.focus = textInputFocusCancel
-			}
-			return nil
-		case tea.MouseReleaseMsg:
-			if idx == 0 {
-				m.focus = textInputFocusConfirm
-				return m.validateAndSubmit()
-			}
-			m.focus = textInputFocusCancel
-			return m.emitResult(false, true)
-		}
-		break
-	}
-	return nil
-}
-
 func (m *TextInputModal) render(width int) (string, *tea.Cursor) {
-	var sections []string
-	totalHeight := 0
-	add := func(s string) {
-		sections = append(sections, s)
-		totalHeight += lipgloss.Height(s)
-	}
-
-	if !m.cfg.HideTitle && strings.TrimSpace(m.cfg.Title) != "" {
-		title := lipgloss.NewStyle().
-			Width(width).
-			Align(lipgloss.Center).
-			Background(lipgloss.Color(uistyles.ColorModalBg)).
-			Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-			Bold(true).
-			Render(m.cfg.Title)
-		add(title)
-	}
-
-	label := lipgloss.NewStyle().
-		Width(width).
-		Padding(0, 2).
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Bold(true).
-		Render(m.cfg.Label)
-	add(label)
-
-	field, fieldCursor := m.renderField(width)
-	fieldOffset := totalHeight
-	desc := m.renderDescription(width)
-
-	buttonRow := ""
-	var buttonRects []buttonRect
-	if m.confirmLabel() != "" || m.cancelLabel() != "" {
-		buttonRow, buttonRects = m.renderButtonsRow(width)
-	}
-
-	add(field)
-	add(desc)
-	preButtonsHeight := totalHeight
-	if buttonRow != "" {
-		add(buttonRow)
-	}
-
-	view := lipgloss.JoinVertical(lipgloss.Left, sections...)
-
-	m.buttonBounds = m.buttonBounds[:0]
-	if len(buttonRects) > 0 {
-		m.buttonBounds = make([]buttonRect, len(buttonRects))
-		for i, r := range buttonRects {
-			m.buttonBounds[i] = buttonRect{
-				x: r.x,
-				y: preButtonsHeight + r.y,
-				w: r.w,
-				h: r.h,
-			}
-		}
-	}
-
-	root := lipgloss.NewStyle().
-		Width(width).
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Render(view)
-
-	if fieldCursor != nil {
-		fieldCursor.Position.Y += fieldOffset
-	}
-	return root, fieldCursor
-}
-
-func (m *TextInputModal) renderField(width int) (string, *tea.Cursor) {
-	const sidePad = 2
-	fieldWidth := max(10, width-(sidePad*2))
-	m.input.SetWidth(fieldWidth)
-	base := lipgloss.NewStyle().
-		Width(width).
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Render(strings.Repeat(" ", width))
-	inputBg := lipgloss.NewStyle().
-		Width(fieldWidth).
-		Background(lipgloss.Color(uistyles.ColorDarkGrey)).
-		Render(strings.Repeat(" ", fieldWidth))
-	row := overlay.Composite(inputBg, base, overlay.Left, overlay.Top, sidePad, 0)
-	row = overlay.Composite(m.input.View(), row, overlay.Left, overlay.Top, sidePad, 0)
-	cursor := m.input.Cursor()
-	if cursor != nil {
-		cursor.Position.X += sidePad
-	}
-	return row, cursor
-}
-
-func (m *TextInputModal) renderDescription(width int) string {
-	desc := m.cfg.Description
-	style := lipgloss.NewStyle().
-		Width(width).
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Faint(true).
-		Padding(0, 2)
-	if strings.TrimSpace(desc) == "" {
-		desc = " "
-	}
-	if strings.TrimSpace(m.errMsg) != "" {
-		desc = m.errMsg
-		style = style.Foreground(lipgloss.Color("196")).Faint(false)
-	}
-	return style.Render(desc)
-}
-
-func (m *TextInputModal) renderButtonsRow(width int) (string, []buttonRect) {
-	wrap := func(content string) string {
-		return lipgloss.NewStyle().
-			Background(lipgloss.Color(uistyles.ColorModalBg)).
-			Padding(0, 1).
-			Render(content)
-	}
-	confirmButton := wrap(m.renderButton(m.confirmLabel(), m.focus == textInputFocusConfirm, true))
-	cancelButton := wrap(m.renderButton(m.cancelLabel(), m.focus == textInputFocusCancel, false))
-	content := lipgloss.JoinHorizontal(lipgloss.Left, confirmButton, cancelButton)
-	row := uistyles.AlignCenter(width, content, lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalBg)))
-	contentWidth := lipgloss.Width(content)
-	leftPad := max(0, (width-contentWidth)/2)
-	rects := []buttonRect{
-		{x: leftPad, y: 0, w: lipgloss.Width(confirmButton), h: lipgloss.Height(confirmButton)},
-		{x: leftPad + lipgloss.Width(confirmButton), y: 0, w: lipgloss.Width(cancelButton), h: lipgloss.Height(cancelButton)},
-	}
-	return row, rects
-}
-
-func (m *TextInputModal) renderButton(label string, focused, confirm bool) string {
-	if strings.TrimSpace(label) == "" {
-		label = " "
-	}
-	style := lipgloss.NewStyle().
-		Padding(0, 3).
-		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalButtonFg))
-	focusedStyle := style.
-		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalButtonFg)).
-		Bold(true)
-	if confirm {
-		if focused && m.cfg.ButtonStyles.ConfirmFocused != nil {
-			return m.cfg.ButtonStyles.ConfirmFocused.Render(label)
-		}
-		if !focused && m.cfg.ButtonStyles.Confirm != nil {
-			return m.cfg.ButtonStyles.Confirm.Render(label)
-		}
-		if focused {
-			return focusedStyle.Render(label)
-		}
-		return style.Render(label)
-	}
-	if focused && m.cfg.ButtonStyles.CancelFocused != nil {
-		return m.cfg.ButtonStyles.CancelFocused.Render(label)
-	}
-	if !focused && m.cfg.ButtonStyles.Cancel != nil {
-		return m.cfg.ButtonStyles.Cancel.Render(label)
-	}
-	if focused {
-		return focusedStyle.Render(label)
-	}
-	return style.Render(label)
+	m.syncItems()
+	content, cursor, rules := m.form.View(width)
+	m.rules = rules
+	return lipgloss.NewStyle().Width(width).Background(m.form.Skin.Normal.GetBackground()).Render(content), cursor
 }
 
 func (m *TextInputModal) desiredWidth() int {
-	width := 0
-	if !m.cfg.HideTitle {
-		width = lipgloss.Width(m.cfg.Title)
-	}
-	labelWidth := lipgloss.Width(m.cfg.Label) + 4
-	descWidth := lipgloss.Width(m.cfg.Description) + 4
-	inputWidth := lipgloss.Width(m.input.Value()) + 8
-	confirm := m.renderButton(m.confirmLabel(), false, true)
-	cancel := m.renderButton(m.cancelLabel(), false, false)
-	buttonWidth := lipgloss.Width(confirm) + lipgloss.Width(cancel) + 4
-	for _, candidate := range []int{labelWidth, descWidth, inputWidth, buttonWidth} {
-		if candidate > width {
-			width = candidate
-		}
-	}
-	return m.clampWidth(width)
+	m.syncItems()
+	return m.clampWidth(m.form.Width(lipgloss.Width(m.input.Value()) + 6))
 }
 
 func (m *TextInputModal) clampWidth(w int) int {
@@ -502,19 +296,6 @@ func (m *TextInputModal) clampHeight(h int) int {
 		h = maxHeight
 	}
 	return h
-}
-
-func (m *TextInputModal) moveFocus(delta int) tea.Cmd {
-	next := (int(m.focus) + delta) % 3
-	if next < 0 {
-		next += 3
-	}
-	m.focus = textInputModalFocus(next)
-	if m.focus == textInputFocusField {
-		return m.input.Focus()
-	}
-	m.input.Blur()
-	return nil
 }
 
 func (m *TextInputModal) validateAndSubmit() tea.Cmd {

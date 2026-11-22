@@ -33,7 +33,7 @@ func TestConfirmModelDefaultsToCancel(t *testing.T) {
 	m := NewConfirmModel((&fakeAction{}).Confirmation())
 	m.SetDimensions(40, 8)
 	view := ansi.Strip(viewString(m.View()))
-	for _, want := range []string{"Start?", "Context:  mba", "Pod:      p", "[ Start ]", "[ Cancel ]"} {
+	for _, want := range []string{"Start?", "Context:  mba", "Pod:      p", "[ Start ] [< Cancel >]"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view lacks %q:\n%s", want, view)
 		}
