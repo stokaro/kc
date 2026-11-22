@@ -76,11 +76,24 @@ func (f *NamespacedResourcesFolder) KubectlCommand() string {
 
 func (o *ObjectsFolder) KubectlCommand() string {
 	args := []string{"get", kubectlResource(o.gvr)}
-	args = append(args, namespaceArgs(o.namespace, o.resourceNamespaced())...)
+	namespaced := o.resourceNamespaced()
+	args = append(args, namespaceArgs(o.namespace, namespaced)...)
 	args = append(args, o.kubectlArgs...)
-	cmd := kubectlCommand(o.Deps, args...)
+	var notes []string
 	if o.kubectlNote != "" {
-		cmd += "  # " + o.kubectlNote
+		notes = append(notes, o.kubectlNote)
+	}
+	if o.Deps.AppConfig != nil {
+		cc := planCustomColumns(o.Deps, o.gvr, o.Deps.AppConfig.Objects.Columns)
+		ccArgs, ccNote := cc.kubectlArgs(namespaced && o.namespace == "")
+		args = append(args, ccArgs...)
+		if ccNote != "" {
+			notes = append(notes, ccNote)
+		}
+	}
+	cmd := kubectlCommand(o.Deps, args...)
+	if len(notes) > 0 {
+		cmd += "  # " + strings.Join(notes, "; ")
 	}
 	return cmd
 }

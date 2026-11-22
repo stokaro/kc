@@ -140,10 +140,35 @@ Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace.
+- `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
+
+### Custom Columns
+
+Object lists show the columns the API server sends (`kubectl get`). The `columns` section adds columns computed from the object and hides server columns, per resource type:
+
+```yaml
+columns:
+  apps/v1/deployments:
+    - name: IMAGE
+      jsonPath: .spec.template.spec.containers[*].image
+    - name: Up-to-date
+      hide: true
+  v1/pods:
+    - name: NODE-IP
+      jsonPath: .status.hostIP
+      wide: true
+```
+
+- Keys are `group/version/resource`; the core group has no group part (`v1/pods`, `v1/configmaps`). A key for one version does not apply to another.
+- `jsonPath` takes the same expressions as `kubectl get -o custom-columns` (`.spec.x`, `{.spec.x}`, `[*]`, filters). Several matches are joined with commas; no match prints `<none>`. Added columns come after the server columns.
+- `wide: true` shows an added column only in wide mode (`objects.columns: wide`).
+- `hide: true` hides the server column of that name (case does not matter). `name: "*"` with `hide: true` hides every server column except Name, so the list shows only your columns. Name is never hidden.
+- A bad entry is reported once on the command line when the first list opens; its column stays empty.
+- When added columns are shown, the command line shows the matching `kubectl get ... -o custom-columns=...` command.
 
 ### Full configuration (defaults + inline docs)
 
@@ -192,6 +217,10 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+
+# Columns per resource type, keyed by group/version/resource (v1/pods for
+# the core group). See "Custom Columns" above.
+columns: {}
 ```
 
 ## Contributing / Source

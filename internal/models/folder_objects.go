@@ -64,8 +64,10 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	if o.hasObjOrder && o.objectOrder != "" {
 		order = o.objectOrder
 	}
+	cc := planCustomColumns(o.Deps, o.gvr, columnsMode)
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
-		return o.rowsFromRowList(rl, columnsMode, order), nil
+		cc.loadObjects(ctx, o.Deps, o.namespace)
+		return o.rowsFromRowList(rl, columnsMode, order, cc), nil
 	} else if err != nil && apierrors.IsForbidden(err) {
 		return nil, err
 	}
@@ -73,7 +75,8 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	return o.rowsFromList(list, order), nil
+	cc.setObjects(list.Items)
+	return o.rowsFromList(list, order, cc), nil
 }
 
 // Close stops the folder's watch; navigators call it when they drop the folder.
@@ -93,14 +96,15 @@ func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, b
 	return o.gvr, o.namespace, true
 }
 
-func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, order string) []table.Row {
+func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, order string, cc *customColumns) []table.Row {
 	namespaced := o.namespace == "" && o.resourceNamespaced()
-	vis := visibleColumns(rl.Columns, columnsMode)
+	vis := cc.serverColumns(rl.Columns, visibleColumns(rl.Columns, columnsMode))
 	cols := make([]table.Column, len(vis))
 	for i := range vis {
 		c := rl.Columns[vis[i]]
 		cols[i] = table.Column{Title: c.Name}
 	}
+	cols = append(cols, cc.tableColumns()...)
 	if namespaced {
 		cols = withNamespaceColumn(cols, table.Column{Title: "Namespace"})
 	}
@@ -122,6 +126,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		name := rowName(rr)
 		ns, id := o.objectNamespaceAndID(namespaced, rr.ObjectMeta.Namespace, name)
 		cells := buildCells(rr.Cells, vis, hasChild)
+		cells = append(cells, cc.cells(ns, name)...)
 		if namespaced {
 			cells = withNamespaceColumn(cells, ns)
 		}
@@ -158,11 +163,15 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 	return rows
 }
 
-func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order string) []table.Row {
+func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order string, cc *customColumns) []table.Row {
 	o.installAgeHooks(nil)
 	namespaced := o.namespace == "" && o.resourceNamespaced()
-	if namespaced {
-		o.SetColumns([]table.Column{{Title: " Name"}, {Title: "Namespace"}})
+	if cols := cc.tableColumns(); namespaced || len(cols) > 0 {
+		head := []table.Column{{Title: " Name"}}
+		if namespaced {
+			head = append(head, table.Column{Title: "Namespace"})
+		}
+		o.SetColumns(append(head, cols...))
 	}
 	ids := make([]string, 0, len(list.Items))
 	byID := make(map[string]*unstructured.Unstructured, len(list.Items))
@@ -209,6 +218,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		if namespaced {
 			cells = append(cells, ns)
 		}
+		cells = append(cells, cc.cellsFor(item)...)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
