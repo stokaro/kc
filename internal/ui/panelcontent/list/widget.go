@@ -749,7 +749,8 @@ func (w *Widget) handleKey(ctx context.Context, m tea.KeyMsg) (tea.Cmd, bool) {
 	case "f1":
 		return w.invoke(ctx, panelcontent.ActionHelp), true
 	case "f2":
-		return w.invoke(ctx, panelcontent.ActionOptions), true
+		// F2 is the user menu, as in mc; F9 opens the menu bar.
+		return w.invoke(ctx, panelcontent.ActionMenu), true
 	case "f3":
 		return w.invoke(ctx, panelcontent.ActionView), true
 	case "f4":
@@ -758,8 +759,6 @@ func (w *Widget) handleKey(ctx context.Context, m tea.KeyMsg) (tea.Cmd, bool) {
 		return w.invoke(ctx, panelcontent.ActionCreate), true
 	case "f8":
 		return w.invoke(ctx, panelcontent.ActionDelete), true
-	case "f9":
-		return w.invoke(ctx, panelcontent.ActionMenu), true
 	default:
 		return nil, false
 	}

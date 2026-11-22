@@ -67,14 +67,15 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | Key        | Action                                                                          |
 |------------|---------------------------------------------------------------------------------|
 | `F1`       | Help – opens the README.md markdown viewer (windowed modal).                    |
-| `F2`       | Options – context-aware panel options or viewer theme dialog.                   |
+| `F2`       | User menu – the custom commands menu, as in mc. In viewers: the theme dialog.    |
 | `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, etc. Closes the viewer again. |
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
 | `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. In `/port-forwards` it stops the selected forward. |
-| `F9`       | Menu – Built-in object actions and custom commands.                             |
+| `F9`       | Menu bar – Left, File, Command, Options, Right, as in mc (see below).            |
 | `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
+| `M-F1`, `M-F2` | Panel options of the left or right panel: sort order, columns, non-empty only, width. |
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
@@ -86,7 +87,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `M-u`      | Go forward in that history (`Esc u`).                                           |
 | `M-H`      | List the active panel's history, newest first; `Enter` goes there (`Esc H`).   |
 | `M-o`      | Sort the object list by the next column, ascending. `Esc o` does the same. The sorted column has `↑` (ascending) or `↓` (descending) after its title. |
-| `M-r`      | Reverse the sort of the object list. `Esc r` does the same. `F2` sets the column ("Sort by") and the direction ("Reverse") too. |
+| `M-r`      | Reverse the sort of the object list. `Esc r` does the same. The panel options (`M-F1`, `M-F2`) set the column ("Sort by") and the direction ("Reverse") too. |
 | `M-a`      | In viewers: copy the whole content.                                             |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `M-j`      | Owners: opens `<object>/owners` with the owner references of the selected object, the controller first with the cursor on it. Owners that no longer exist or whose kind the cluster does not serve are listed dim with the reason. `Esc j` does the same. |
@@ -103,6 +104,17 @@ The compare viewer heads the diff with both identities (context, group/version/r
 Rows in `/owners` and `/used-by` behave like the same object in its own list: `Enter` opens its child folder (a Deployment's ReplicaSets, a Pod's containers), `F3` shows its YAML. They are read-only there; edit or delete an object from its own list. `/..` returns to the object.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
+
+## Menu Bar
+
+`F9` (or `Esc 9`, or a click on `9 PullDn`) opens a menu bar on the top row, as in mc. Every entry runs an action that also has a key, and shows that key on the right, so the menus double as a key reference.
+
+- **Left** / **Right**: listing mode (List, Describe, Manifest; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
+- **File**: view, edit, copy, create namespace, delete, port forward, owners and used by, marking and selecting rows, quick search, exit.
+- **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
+- **Options**: panel width and the options of each panel.
+
+`Left`/`Right` move between menus, `Up`/`Down` between entries, `Enter` runs the entry and `Esc` closes the bar. The highlighted letter of a title opens that menu; the highlighted letter of an entry runs it (`M-<letter>` always picks a title). Entries that do not apply to the current selection are dim. With the mouse, click a title to open its menu, click an entry to run it, click anywhere else to close the bar.
 
 ## Port Forwarding
 
@@ -122,7 +134,7 @@ Each panel has a namespace scope, shown at the left of its bottom border next to
 - `!nginx`: keep the rows whose name does not match.
 - `-l app=web`: keep the rows whose labels match the label selector, in the syntax of `kubectl -l`. The copied kubectl command (`M-c`) gets the same `-l`.
 
-An empty text clears the filter. `C-z`, or "Faults only" in `F2` Options, keeps only the rows in a fault state; it combines with the text filter. Faults are the rows kc colors red: pods that are Pending, Failed or Unknown, not ready, or with a container waiting in CrashLoopBackOff, ImagePullBackOff and the like; Deployments, StatefulSets and ReplicaSets with fewer ready replicas than wanted; DaemonSets with unavailable pods; failed Jobs; nodes that are not Ready; PVCs that are not Bound; failed PVs.
+An empty text clears the filter. `C-z`, or "Faults only" in the panel options (`M-F1`, `M-F2`), keeps only the rows in a fault state; it combines with the text filter. Faults are the rows kc colors red: pods that are Pending, Failed or Unknown, not ready, or with a container waiting in CrashLoopBackOff, ImagePullBackOff and the like; Deployments, StatefulSets and ReplicaSets with fewer ready replicas than wanted; DaemonSets with unavailable pods; failed Jobs; nodes that are not Ready; PVCs that are not Bound; failed PVs.
 
 The active filter shows next to the scope in the bottom border (`Filter: !nginx, faults`); a click on it clears it. The filter belongs to the folder: it stays while you look at its objects and come back, and a new listing starts unfiltered. It applies to live updates, and the cursor stays on its row when the row is kept. Marked rows that the filter hides are unmarked.
 ### cd on the shell line
@@ -143,7 +155,7 @@ With `nodeShell.enabled: true` (optionally limited to `nodeShell.contexts`), ent
 
 ## Object Actions
 
-The **F9** menu starts with built-in actions for the selected object, above the custom commands. Each action opens a red confirmation dialog that names the context, namespace and object and shows the equivalent kubectl command.
+The **F2** user menu starts with built-in actions for the selected object, above the custom commands. Each action opens a red confirmation dialog that names the context, namespace and object and shows the equivalent kubectl command.
 
 For CronJobs (`batch/v1`):
 
@@ -154,7 +166,7 @@ An action is hidden when the resource does not offer the API verb it needs (`pat
 
 ## Custom Commands
 
-You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F9** menu. Commands run in a terminal panel and can use templates to reference the selected item.
+You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F2** user menu (also under **Command** in the `F9` menu bar). Commands run in a terminal panel and can use templates to reference the selected item.
 By default, kc ships with `Top Nodes` (global) and `Top Pods` (namespace-scoped) until you define your own commands.
 
 ### Configuration Example

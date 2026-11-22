@@ -818,7 +818,8 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f1":
 			action, mapped = PanelActionHelp, true
 		case "f2":
-			action, mapped = PanelActionOptions, true
+			// F2 is the user menu, as in mc; F9 opens the menu bar in App.
+			action, mapped = PanelActionMenu, true
 		case "f3":
 			action, mapped = PanelActionView, true
 		case "f4":
@@ -829,8 +830,6 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			action, mapped = PanelActionCreateNamespace, true
 		case "f8":
 			action, mapped = PanelActionDelete, true
-		case "f9":
-			action, mapped = PanelActionMenu, true
 		}
 		if mapped {
 			actCtx, actCancel := context.WithTimeout(context.Background(), panelContextTimeout)

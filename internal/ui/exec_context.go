@@ -21,7 +21,7 @@ import (
 //   - the embedded shell gets KUBECONFIG pointing at a generated file whose
 //     path never changes, so the running shell follows context switches;
 //   - F4 (kubectl edit) gets kubectl flags;
-//   - custom commands (F9) get KUBECONFIG pointing at a generated file of
+//   - custom commands (F2) get KUBECONFIG pointing at a generated file of
 //     their own, and the context in their template data.
 
 // shellSlot names the embedded shell's generated kubeconfig.

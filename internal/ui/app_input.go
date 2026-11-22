@@ -17,6 +17,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	// The key after C-x completes or cancels the prefix, whatever it is.
 	ctrlX := a.ctrlXPending
 	a.ctrlXPending = false
+	// The open menu bar takes every key until it closes.
+	if a.menuBar.IsOpen() {
+		return a, a.handleMenuBarKey(press)
+	}
 	// Interactive command focus: route all keys to the active panel widget first.
 	if a.interactiveCommandActive() {
 		if a.activePanel == 0 {
@@ -75,18 +79,15 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		return a, nil
 	case "ctrl+o":
-		// Toggle terminal mode
-		a.showTerminal = !a.showTerminal
-		a.terminal.SetShowPanels(!a.showTerminal)
-		a.invalidateView("ctrl+o toggle terminal")
-		a.invalidateFunctionBar("terminal toggle")
-		a.invalidateTerminalArea("terminal toggle")
-		// Always keep terminal focused for typing
-		a.terminal.Focus()
-		if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
-			return a, tea.Batch(resizeCmds...)
+		return a, a.toggleTerminal()
+
+	case "f9":
+		// F9 opens the pull-down menu bar, as in mc. The custom commands
+		// menu is on F2 (mc's user menu).
+		if !a.showTerminal {
+			a.openMenuBar(-1)
+			return a, nil
 		}
-		return a, nil
 
 	case "ctrl+u":
 		a.swapPanels()
@@ -197,7 +198,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.escPressed = false
 			if panel != nil {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				cmd := panel.invokeActionIfAllowed(ctx, PanelActionOptions)
+				cmd := panel.invokeActionIfAllowed(ctx, PanelActionMenu)
 				cancel()
 				return a, cmd
 			}
@@ -252,12 +253,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		case "9":
 			a.escPressed = false
-			if panel != nil && caps.HasContextMenu {
-				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				cmd := panel.invokeActionIfAllowed(ctx, PanelActionMenu)
-				cancel()
-				return a, cmd
-			}
+			a.openMenuBar(-1)
 			return a, nil
 		case "c":
 			// Esc c is the meta-key fallback for M-c (macOS Option does not
@@ -414,6 +410,22 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 }
 
 // shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
+// toggleTerminal switches between the panels and the fullscreen terminal
+// (C-o, mc's "Switch panels on/off").
+func (a *App) toggleTerminal() tea.Cmd {
+	a.showTerminal = !a.showTerminal
+	a.terminal.SetShowPanels(!a.showTerminal)
+	a.invalidateView("ctrl+o toggle terminal")
+	a.invalidateFunctionBar("terminal toggle")
+	a.invalidateTerminalArea("terminal toggle")
+	// Always keep terminal focused for typing
+	a.terminal.Focus()
+	if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
+		return tea.Batch(resizeCmds...)
+	}
+	return nil
+}
+
 func (a *App) shouldRouteToPanel(key string) bool {
 	// Always route these keys to terminal
 	terminalKeys := []string{

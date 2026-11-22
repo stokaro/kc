@@ -14,7 +14,7 @@ One execution context for every subprocess (`internal/execctx`, ADR 0055).
 - [x] Unit tests for building the context and each consumer's argv and environment (`execctx/*_test.go`, `ui/exec_context_test.go`).
 
 ## Backlog
-- [ ] mc-style pull-down menu bar on F9 — #48
+- [x] mc-style pull-down menu bar on F9 — #48
 - [x] Describe/Manifest panel modes: refresh when the object changes, describe off the UI thread — #47
 - [ ] Logs panel mode that follows the other panel's selection — #49
 - [x] Top/metrics: usage columns in pod and node lists — #44

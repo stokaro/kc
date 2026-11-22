@@ -26,6 +26,7 @@ import (
 	"github.com/sttts/kc/internal/objectaction"
 	"github.com/sttts/kc/internal/podfs"
 	"github.com/sttts/kc/internal/portforward"
+	"github.com/sttts/kc/internal/ui/menubar"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
@@ -186,6 +187,8 @@ type App struct {
 	allResources []schema.GroupVersionKind
 	// Esc sequence tracking
 	escPressed bool
+	// menuBar is the F9 pull-down menu bar (see menu_bar.go).
+	menuBar menubar.Bar
 	// ctrlXPending is set after C-x, the prefix of mc's two-key commands.
 	ctrlXPending bool
 	// Data providers
@@ -603,6 +606,8 @@ func (a *App) showModal(key string) {
 	if a.modalManager == nil {
 		return
 	}
+	// A dialog always covers the menu bar; it must not come back under it.
+	a.menuBar.Close()
 	a.modalManager.Show(key)
 	a.invalidateView("show modal " + key)
 }

@@ -821,6 +821,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	default:
 		if mm, ok := msg.(tea.MouseMsg); ok {
+			// The open menu bar takes every mouse event until it closes.
+			if a.menuBar.IsOpen() {
+				return a, tea.Batch(append(cmds, a.handleMenuBarMouse(mm))...)
+			}
 			if a.showTerminal {
 				m := mm.Mouse()
 				if m.Y == a.height-1 {
