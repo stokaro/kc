@@ -20,6 +20,7 @@ import (
 	"charm.land/lipgloss/v2"
 	readmedoc "github.com/sttts/kc"
 	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/internal/explain"
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/podfs"
@@ -262,6 +263,7 @@ type App struct {
 	readErrCh              chan error // read failures from models, shown as red toasts
 	panelNamespace         [2]string
 	namespaceCommandTarget [2]string
+	explainDocs            *explain.Loader // OpenAPI v3 documents for M-e, per cluster and group-version
 }
 
 const (

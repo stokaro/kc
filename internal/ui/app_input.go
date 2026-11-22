@@ -215,6 +215,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 				return a, cmd
 			}
 			return a, nil
+		case "e":
+			// Esc e is the fallback for M-e.
+			a.escPressed = false
+			return a, a.explainSelection()
 		case "c":
 			// Esc c is the meta-key fallback for M-c (macOS Option does not
 			// send Alt by default).
@@ -279,6 +283,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		if msg.String() == copyCommandKey {
 			return a, a.copyPanelCommand()
+		}
+		if msg.String() == explainKey {
+			return a, a.explainSelection()
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys
