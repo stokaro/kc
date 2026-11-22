@@ -55,6 +55,10 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 - Run examples: `go run examples/handler/main.go`
 - Headless TUI driver: `go run ./cmd/bubbleheadless -- go run ./cmd/kc`
 - All tests (verbose): `go test ./... -v`
+- Envtest suites need control-plane binaries: `export KUBEBUILDER_ASSETS="$(setup-envtest use -p path 1.37.x)"`.
+- Run everything as CI does (an envtest startup failure fails the run): `KC_REQUIRE_ENVTEST=1 go test ./...`
+- Run only the tests that do not need envtest: `KC_SKIP_ENVTEST=1 go test ./...`
+- With neither variable, envtest tests skip when the control plane cannot start. New envtest tests start it through `internal/testing/kcenvtest` (`kcenvtest.Main` in `TestMain` plus `kcenvtest.Require`, or `kcenvtest.Start` per test), never by calling `envtest.Environment.Start` directly. See `docs/adr/0060-require-envtest-in-ci.md`.
 - With coverage: `go test ./... -cover`
 - Static checks: `go vet ./...`
 - Tidy modules (after dep changes): `go mod tidy`
@@ -69,6 +73,7 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
   - `snapshot <file.png>` to write a PNG render of the terminal,
   - `resize <cols> <rows>` and `wait` / `exit` for session control.
 - Designed for CI/e2e test harnesses—script it from shell pipelines or expect-like drivers without allocating a PTY.
+- Run it only against an envtest kubeconfig; see "No Live Clusters" below.
 
 ## Coding Style & Naming Conventions
 - Format: `go fmt ./...` (CI expects gofmt-clean code).
@@ -114,7 +119,7 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 - Framework: standard `testing` with table-driven tests and `t.Run` subtests.
 - Location: `*_test.go` alongside sources (e.g., `pkg/handlers/handler_test.go`).
 - Policy: non-trivial logic MUST be covered by unit tests.
-- Scope: prioritize `pkg/handlers`, `pkg/kubeconfig`, and `internal/ui` model logic; keep tests deterministic (no live clusters).
+- Scope: prioritize `pkg/handlers`, `pkg/kubeconfig`, and `internal/ui` model logic; keep tests deterministic (no live clusters; see "No Live Clusters").
 - Commands: `go test ./pkg/handlers/... -v`, `go test ./internal/ui/... -v`.
 
 ## Commit & Pull Request Guidelines
@@ -144,7 +149,13 @@ See `TODO.md` for the active development plan and current tasks. Keep every TODO
 - Apply the same rule to git permission/lock errors (e.g., `index.lock`): rerun with escalation rather than waiting for additional approval.
 - Never use `git add -A`; stage only intended files.
 
+## No Live Clusters (Important)
+- Never run kc, kubectl, `cmd/bubbleheadless` or any test against a real cluster. This covers every context in `~/.kube/config`, including local ones that look disposable. A real cluster runs real workloads.
+- Test with envtest (`internal/testing/kcenvtest`, assets from `setup-envtest`) or fake clients only.
+- For a manual or headless TUI check, start an envtest API server, write its kubeconfig to a temporary file, and run kc with `KUBECONFIG=<that file>` and `HOME=<temporary dir>`. Never point kc at the default `~/.kube/config` or a copy of a real kubeconfig, and never pass `--context` with a real context name.
+- Read-only checks on a real cluster are not allowed either. kc starts in the kubeconfig's current context, and a scripted key sequence can land on any row: F8 then Enter deletes whatever is under the cursor.
+- If something cannot be checked without a real cluster, say so in the PR and leave it unchecked.
+
 ## Security & Configuration Tips
 - Never commit kubeconfigs, cluster credentials, or secrets.
-- Use `KUBECONFIG` or default `~/.kube/config`; prefer non-production contexts when developing.
-- Avoid tests that require cluster access; abstract clients to allow fakes/mocks.
+- Keep tests deterministic and cluster-free; abstract clients to allow fakes/mocks.

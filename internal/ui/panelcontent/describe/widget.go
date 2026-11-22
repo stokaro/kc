@@ -2,6 +2,7 @@ package describe
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -9,15 +10,21 @@ import (
 	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	"github.com/sttts/kc/internal/ui/panelcontent/reload"
 	"github.com/sttts/kc/internal/ui/viewer"
 	describe "github.com/sttts/kc/pkg/describe"
 )
 
-// Widget renders kubectl describe output for the selected object.
+// Widget renders kubectl describe output for the selected object. Describe
+// issues API requests, so it loads in the background and refreshes when the
+// object changes in the shared cache.
 type Widget struct {
-	deps   panelcontent.WidgetDeps
-	viewer *viewer.Widget
-	sel    panelcontent.Selection
+	deps     panelcontent.WidgetDeps
+	viewer   *viewer.Widget
+	sel      panelcontent.Selection
+	loader   *reload.Loader
+	target   describe.Target
+	shownKey string // key of the content in the viewer
 }
 
 // New constructs a describe widget backed by the shared viewer.
@@ -25,12 +32,19 @@ func New(deps panelcontent.WidgetDeps) *Widget {
 	return &Widget{
 		deps:   deps,
 		viewer: viewer.New("dracula"),
+		loader: &reload.Loader{Paused: deps.Paused},
 	}
 }
 
 func (w *Widget) Init(context.Context) tea.Cmd { return nil }
 
 func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
+	if res, apply, cmd, handled := w.loader.Update(msg); handled {
+		if apply {
+			w.show(res)
+		}
+		return cmd, true
+	}
 	return w.viewer.Update(msg)
 }
 
@@ -46,7 +60,7 @@ func (w *Widget) Resize(_ context.Context, size panelcontent.Size) {
 	w.viewer.Resize(size.Width, size.Height)
 }
 
-func (w *Widget) SetFocus(context.Context, bool) {}
+func (w *Widget) SetFocus(_ context.Context, focused bool) { w.loader.SetActive(focused) }
 
 func (w *Widget) Teardown(context.Context) {}
 
@@ -71,6 +85,9 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	if breadcrumb != "" {
 		info.Breadcrumb = breadcrumb
 	}
+	if w.loader.Loading() {
+		info.HeaderStatus = panelcontent.LoadingStatus
+	}
 	current, total := w.viewer.Position()
 	if total > 0 {
 		above, below := w.viewer.ScrollIndicators()
@@ -92,36 +109,88 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	return info
 }
 
-// OnSelectionChanged refreshes the describe output when the selection changes.
-func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Selection) {
+// OnSelectionChanged loads the describe output for a new selection, or
+// refreshes it when the selection still names the same object.
+func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
 	w.sel = sel
-	w.refresh(ctx)
+	return w.load(ctx)
 }
 
-func (w *Widget) refresh(ctx context.Context) {
+// Refresh reloads the output when the object changed in the shared cache.
+func (w *Widget) Refresh(context.Context) tea.Cmd {
+	return w.loader.Refresh()
+}
+
+func (w *Widget) load(ctx context.Context) tea.Cmd {
 	target, ok := w.selectionTarget(ctx)
 	if !ok {
-		w.viewer.SetContent("Select a resource to describe.", viewer.Metadata{Title: "Describe"})
-		return
+		w.loader.Show("", nil)
+		w.setStatic("Select a resource to describe.", "Describe")
+		return nil
 	}
 	if w.deps.Describe == nil {
-		w.viewer.SetContent("Describe provider unavailable.", viewer.Metadata{Title: describeTitle(target, "")})
-		return
+		w.loader.Show("", nil)
+		w.setStatic("Describe provider unavailable.", describeTitle(target, ""))
+		return nil
 	}
-	result, err := w.deps.Describe(ctx, target)
-	title := describeTitle(target, result.Title)
-	if err != nil {
-		w.viewer.SetContent(fmt.Sprintf("Describe failed: %v", err), viewer.Metadata{Title: title})
-		return
+	key := targetKey(target)
+	if key != w.loader.Key() {
+		w.target = target
+		if w.shownKey == "" {
+			w.viewer.SetContent("Loading...", viewer.Metadata{Title: describeTitle(target, "")})
+		}
 	}
+	return w.loader.Show(key, describeFetch(w.deps.Describe(target)))
+}
+
+// describeFetch skips the describe requests when the cached object still
+// has the resourceVersion of the shown output.
+func describeFetch(reads panelcontent.DescribeReads) reload.Fetch {
+	return func(known string) reload.Result {
+		version := ""
+		if reads.Version != nil {
+			version = reads.Version()
+		}
+		if version != "" && version == known {
+			return reload.Result{Version: version, Unchanged: true}
+		}
+		if reads.Describe == nil {
+			return reload.Result{Err: errors.New("describe provider unavailable")}
+		}
+		res, err := reads.Describe()
+		return reload.Result{Value: res, Version: version, Err: err}
+	}
+}
+
+func (w *Widget) show(res reload.Result) {
+	result, _ := res.Value.(describe.Result)
+	title := describeTitle(w.target, result.Title)
 	body := result.Body
-	if strings.TrimSpace(body) == "" {
+	meta := viewer.Metadata{Title: title, MimeType: "text/plain"}
+	switch {
+	case res.Err != nil:
+		body = fmt.Sprintf("Describe failed: %v", res.Err)
+		meta = viewer.Metadata{Title: title}
+	case strings.TrimSpace(body) == "":
 		body = "No describe output available."
 	}
-	w.viewer.SetContent(body, viewer.Metadata{
-		Title:    title,
-		MimeType: "text/plain",
-	})
+	key := w.loader.Key()
+	if key == w.shownKey {
+		w.viewer.UpdateContent(body, meta)
+		return
+	}
+	w.shownKey = key
+	w.viewer.SetContent(body, meta)
+}
+
+func (w *Widget) setStatic(body, title string) {
+	w.shownKey = ""
+	w.viewer.SetContent(body, viewer.Metadata{Title: title})
+}
+
+// targetKey is the identity of a describe target, with the full GVR.
+func targetKey(t describe.Target) string {
+	return t.GVR.GroupVersion().String() + "/" + t.GVR.Resource + "/" + t.Namespace + "/" + t.Name
 }
 
 func (w *Widget) selectionTarget(ctx context.Context) (describe.Target, bool) {
