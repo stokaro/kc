@@ -112,6 +112,9 @@ type Config struct {
 	Objects    ObjectsConfig       `json:"objects"`
 	Terminal   TerminalConfig      `json:"terminal"`
 	Commands   []CommandConfig     `json:"commands"`
+	// Columns adds and hides object list columns per resource type, keyed
+	// by group/version/resource (see ColumnsKey). Empty by default.
+	Columns map[string][]CustomColumn `json:"columns,omitempty"`
 }
 
 type CommandType string

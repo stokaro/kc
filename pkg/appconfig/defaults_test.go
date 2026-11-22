@@ -124,4 +124,8 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Resources.PeekInterval.Duration != b.Resources.PeekInterval.Duration {
 		t.Fatalf("resources.peekInterval mismatch: yaml=%v code=%v", a.Resources.PeekInterval.Duration, b.Resources.PeekInterval.Duration)
 	}
+	// No custom columns by default; the sample may spell that as {}.
+	if len(a.Columns) != 0 || len(b.Columns) != 0 {
+		t.Fatalf("columns mismatch: yaml=%v code=%v, want none", a.Columns, b.Columns)
+	}
 }
