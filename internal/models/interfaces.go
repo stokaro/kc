@@ -7,6 +7,7 @@ import (
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Item matches the navigation item contract. Navigation will alias to this type.
@@ -21,6 +22,7 @@ type Confirmation struct {
 	Title   string
 	Details [][2]string // label and value: context, namespace, object
 	Notes   []string    // what the change does and what stays behind
+	Command string      // the equivalent kubectl command, when there is one
 	Action  string      // label of the confirming button
 }
 
@@ -34,6 +36,46 @@ type ConfirmedAction interface {
 
 // ConfirmRequest asks the UI to confirm and then run Action.
 type ConfirmRequest struct{ Action ConfirmedAction }
+
+// ObjectRef names one Kubernetes object by its full GVR.
+type ObjectRef struct {
+	GVR       schema.GroupVersionResource
+	Namespace string
+	Name      string
+}
+
+// ClusterAction is a change to the cluster that the UI confirms first.
+// Unlike ConfirmedAction, Run calls the API server, so the UI runs it off
+// the update goroutine.
+type ClusterAction interface {
+	Confirmation() Confirmation
+	Run(ctx context.Context) (ActionResult, error)
+}
+
+// ActionResult reports what a ClusterAction did.
+type ActionResult struct {
+	// Message is shown on the command line.
+	Message string
+	// Created is an object the action created, for the UI to select.
+	Created *ObjectRef
+}
+
+// ActionEnv is what a built-in object action needs from the folder that
+// lists the object.
+type ActionEnv struct {
+	// Client reads from the shared cache and writes to the API server.
+	Client crclient.Client
+	// Context is the kubeconfig context name shown in the dialog.
+	Context string
+	// Kubectl formats the equivalent kubectl command, adding --context
+	// when needed.
+	Kubectl func(args ...string) string
+}
+
+// ActionEnvProvider is a folder whose objects can run built-in actions.
+type ActionEnvProvider interface {
+	ActionEnv() (ActionEnv, bool)
+}
 
 // ObjectItem identifies items backed by Kubernetes objects.
 type ObjectItem interface {
