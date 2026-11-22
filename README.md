@@ -193,7 +193,7 @@ Options > Menu bar visible (or `layout.menuBarVisible: false` in the config) hid
 
 `Left`/`Right` move between menus, `Up`/`Down` between entries, `Enter` runs the entry and `Esc` closes the bar. The highlighted letter of a title opens that menu; the highlighted letter of an entry runs it (`M-<letter>` always picks a title). Entries that do not apply to the current selection are dim. With the mouse, click a title to open its menu, click an entry to run it, click anywhere else to close the bar.
 
-The colors are mc's default skin: white titles and entries on cyan with yellow hotkey letters, a white frame and separators, white on black for the open title and the selected entry, and gray for entries that do not apply.
+The colors are mc's default skin. While no menu is open, the titles are black on cyan with no hotkey letters. An open bar has white titles and entries on cyan with yellow hotkey letters, a white frame and separators, white on black for the open title and the selected entry, and gray for entries that do not apply.
 
 ## Port Forwarding
 

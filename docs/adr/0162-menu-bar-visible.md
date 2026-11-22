@@ -1,6 +1,6 @@
 # 0162. Menu bar visible on the top row
 
-- Status: Accepted
+- Status: Accepted; the idle-bar colors of decision 6 superseded by 0167
 - Date: 2026-11-22
 - Issue: #162
 
