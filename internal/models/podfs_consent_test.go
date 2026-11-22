@@ -32,7 +32,7 @@ func TestPodFSAsksBeforeAddingHelper(t *testing.T) {
 	factory := &consentFactory{sess: &fakeExecSession{entries: []podfs.FileEntry{{Name: "etc", Type: podfs.EntryTypeDir}}}}
 	deps := Deps{Ctx: t.Context(), PodFSFactory: factory}
 	deps.ClusterKey.ContextName = "mba"
-	handle := newContainerSessionHandle(factory, "kube-system", "coredns-x", "coredns")
+	handle := newContainerSessionHandle(t.Context(), factory, "kube-system", "coredns-x", "coredns")
 	folder := NewPodContainerFSFolder(deps, []string{"containers", "coredns", "root"}, "/", handle, false)
 
 	rows := loadedLines(t, folder, 5)
@@ -75,7 +75,7 @@ func TestPodFSAsksBeforeAddingHelper(t *testing.T) {
 	// The helper exits when idle; the next session must not add another
 	// one without asking.
 	handle.Invalidate()
-	if _, err := handle.Session(t.Context()); !errors.Is(err, podfs.ErrHelperNeeded) {
+	if _, _, err := handle.acquire(t.Context()); !errors.Is(err, podfs.ErrHelperNeeded) {
 		t.Fatalf("second session err = %v, want ErrHelperNeeded", err)
 	}
 	factory.mu.Lock()

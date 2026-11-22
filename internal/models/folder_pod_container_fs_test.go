@@ -81,7 +81,7 @@ func TestPodContainerFSFolderListsEntries(t *testing.T) {
 		Ctx:          ctx,
 		PodFSFactory: fakePodFSFactory{session: session},
 	}
-	handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
+	handle := newContainerSessionHandle(t.Context(), deps.PodFSFactory, "ns", "pod", "container")
 	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
 
 	rows := loadedLines(t, folder, 10)
@@ -123,7 +123,7 @@ func TestPodContainerFSFolderFileDetails(t *testing.T) {
 				{Name: "f", Type: podfs.EntryTypeFile, Size: tc.size, UpdatedAt: time.Unix(2, 0)},
 			}}
 			deps := Deps{Ctx: t.Context(), PodFSFactory: fakePodFSFactory{session: session}}
-			handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
+			handle := newContainerSessionHandle(t.Context(), deps.PodFSFactory, "ns", "pod", "container")
 			folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
 			rows := loadedLines(t, folder, 10)
 			if len(rows) < 2 {
@@ -146,7 +146,7 @@ func TestPodContainerFSFolderMissingShellMessage(t *testing.T) {
 		Ctx:          ctx,
 		PodFSFactory: fakePodFSFactory{err: fmt.Errorf("%w", podfs.ErrShellMissing)},
 	}
-	handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
+	handle := newContainerSessionHandle(t.Context(), deps.PodFSFactory, "ns", "pod", "container")
 	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
 
 	rows := loadedLines(t, folder, 5)
@@ -176,7 +176,7 @@ func TestPodContainerFSFolderLoadsInBackground(t *testing.T) {
 	release := make(chan struct{})
 	session := &fakeExecSession{entries: []podfs.FileEntry{{Name: "etc", Type: podfs.EntryTypeDir}}}
 	deps := Deps{Ctx: t.Context(), PodFSFactory: fakePodFSFactory{session: session, block: release}}
-	handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
+	handle := newContainerSessionHandle(t.Context(), deps.PodFSFactory, "ns", "pod", "container")
 	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
 
 	uiCtx, cancel := context.WithTimeout(t.Context(), time.Millisecond)

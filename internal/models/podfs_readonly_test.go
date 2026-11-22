@@ -16,7 +16,7 @@ func TestPodFSReadOnlyOffersNoHelper(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			factory := &consentFactory{}
 			deps := Deps{Ctx: t.Context(), PodFSFactory: factory, ReadOnly: readOnly}
-			handle := newContainerSessionHandle(factory, "kube-system", "coredns-x", "coredns")
+			handle := newContainerSessionHandle(t.Context(), factory, "kube-system", "coredns-x", "coredns")
 			folder := NewPodContainerFSFolder(deps, []string{"containers", "coredns", "root"}, "/", handle, false)
 
 			rows := loadedLines(t, folder, 5)
@@ -42,7 +42,7 @@ func TestPodFSReadOnlyOffersNoHelper(t *testing.T) {
 // refuses to approve the helper.
 func TestPodFSHelperConfirmRefusedInReadOnly(t *testing.T) {
 	factory := &consentFactory{}
-	handle := newContainerSessionHandle(factory, "ns", "pod", "c")
+	handle := newContainerSessionHandle(t.Context(), factory, "ns", "pod", "c")
 	folder := NewPodContainerFSFolder(Deps{Ctx: t.Context(), PodFSFactory: factory, ReadOnly: true}, []string{"root"}, "/", handle, false)
 	item := &helperStartItem{SimpleItem: NewSimpleItem("start_helper", []string{"x"}, nil, WhiteStyle()), folder: folder}
 	if err := item.Confirm(); err == nil {
