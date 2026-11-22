@@ -105,6 +105,41 @@ func TestPodContainerFSFolderListsEntries(t *testing.T) {
 	}
 }
 
+// TestPodContainerFSFolderFileDetails covers #139: the info line read
+// "8 B bytes", a size that already carries its unit followed by "bytes".
+func TestPodContainerFSFolderFileDetails(t *testing.T) {
+	tests := []struct {
+		name string
+		size int64
+		want string
+	}{
+		{name: "small", size: 8, want: "8 bytes"},
+		{name: "empty", size: 0, want: "0 bytes"},
+		{name: "kibibytes", size: 1536, want: "1.5 KiB (1536 bytes)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			session := &fakeExecSession{entries: []podfs.FileEntry{
+				{Name: "f", Type: podfs.EntryTypeFile, Size: tc.size, UpdatedAt: time.Unix(2, 0)},
+			}}
+			deps := Deps{Ctx: t.Context(), PodFSFactory: fakePodFSFactory{session: session}}
+			handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
+			folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
+			rows := loadedLines(t, folder, 10)
+			if len(rows) < 2 {
+				t.Fatalf("expected Back and the file, got %d rows", len(rows))
+			}
+			item, ok := rows[1].(*PodFSFileItem)
+			if !ok {
+				t.Fatalf("row 1 is %T, want *PodFSFileItem", rows[1])
+			}
+			if got := item.Details(); got != tc.want {
+				t.Fatalf("details = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestPodContainerFSFolderMissingShellMessage(t *testing.T) {
 	ctx := context.Background()
 	deps := Deps{
