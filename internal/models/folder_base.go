@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	table "github.com/stokaro/kc/internal/table"
+	table "github.com/sttts/kc/internal/table"
 )
 
 // BaseFolder provides shared metadata (dependencies, columns, breadcrumb path)

@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	models "github.com/stokaro/kc/internal/models"
-	modeltesting "github.com/stokaro/kc/internal/models/testing"
-	table "github.com/stokaro/kc/internal/table"
+	models "github.com/sttts/kc/internal/models"
+	modeltesting "github.com/sttts/kc/internal/models/testing"
+	table "github.com/sttts/kc/internal/table"
 )
 
 type enterItem struct {

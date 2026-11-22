@@ -9,7 +9,7 @@ import (
 	"charm.land/glamour/v2"
 	"charm.land/glamour/v2/styles"
 	"charm.land/lipgloss/v2"
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 var helpLineStyle = lipgloss.NewStyle().

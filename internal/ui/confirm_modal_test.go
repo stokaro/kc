@@ -6,7 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/stokaro/kc/internal/models"
+	"github.com/sttts/kc/internal/models"
 )
 
 type fakeAction struct {

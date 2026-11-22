@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 

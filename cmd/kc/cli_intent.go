@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stokaro/kc/internal/ui"
+	"github.com/sttts/kc/internal/ui"
 )
 
 func parseGetIntent(args []string, output string) (*ui.GetIntent, error) {

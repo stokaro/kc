@@ -117,18 +117,6 @@ jobs:
 
       - uses: sigstore/cosign-installer@v4.1.2
 
-      # Export the tap token only when the secret exists. Without it,
-      # goreleaser writes the Homebrew cask into dist/ and skips the upload.
-      - name: Homebrew tap token
-        env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-        run: |
-          if [ -n "$TAP_TOKEN" ]; then
-            echo "HOMEBREW_TAP_GITHUB_TOKEN=$TAP_TOKEN" >> "$GITHUB_ENV"
-          else
-            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN is not set; the Homebrew cask is not published"
-          fi
-
       - name: Release
         uses: goreleaser/goreleaser-action@v7
         with:

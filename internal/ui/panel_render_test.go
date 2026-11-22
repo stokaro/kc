@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 )
 
 func TestRenderFrameIndicatorsWithoutFooter(t *testing.T) {

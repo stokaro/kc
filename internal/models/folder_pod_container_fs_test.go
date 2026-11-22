@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stokaro/kc/internal/podfs"
-	table "github.com/stokaro/kc/internal/table"
+	"github.com/sttts/kc/internal/podfs"
+	table "github.com/sttts/kc/internal/table"
 )
 
 type fakePodFSFactory struct {

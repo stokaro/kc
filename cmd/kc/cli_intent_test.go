@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/stokaro/kc/internal/ui"
+	"github.com/sttts/kc/internal/ui"
 )
 
 func TestTokenizeGetArgs_SimpleList(t *testing.T) {

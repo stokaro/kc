@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/stokaro/kc/internal/ui"
+	"github.com/sttts/kc/internal/ui"
 )
 
 func TestDeriveStartupIntentRoot(t *testing.T) {

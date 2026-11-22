@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stokaro/kc/internal/tablecache"
-	appconfig "github.com/stokaro/kc/pkg/appconfig"
+	"github.com/sttts/kc/internal/tablecache"
+	appconfig "github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

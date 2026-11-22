@@ -8,9 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	models "github.com/stokaro/kc/internal/models"
-	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
-	describe "github.com/stokaro/kc/pkg/describe"
+	models "github.com/sttts/kc/internal/models"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	describe "github.com/sttts/kc/pkg/describe"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 

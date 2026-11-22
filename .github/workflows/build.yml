@@ -71,39 +71,3 @@ jobs:
           name: kc-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/kc-${{ matrix.goos }}-${{ matrix.goarch }}
           if-no-files-found: error
-
-  release-config:
-    name: release config
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Setup Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          check-latest: true
-
-      - name: Check goreleaser config
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: latest
-          args: check
-
-      - name: Build a snapshot archive
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: latest
-          args: release --snapshot --clean --skip=sign --single-target
-
-      - name: Smoke test the archive without a kubeconfig
-        run: |
-          set -eu
-          dir="$RUNNER_TEMP/kc-smoke"
-          mkdir -p "$dir/home"
-          tar -xzf dist/kc_*_linux_amd64.tar.gz -C "$dir"
-          env -i HOME="$dir/home" KUBECONFIG="$dir/home/missing" PATH=/usr/bin:/bin "$dir/kc" --version
-          env -i HOME="$dir/home" KUBECONFIG="$dir/home/missing" PATH=/usr/bin:/bin "$dir/kc" version --client

@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	models "github.com/stokaro/kc/internal/models"
-	table "github.com/stokaro/kc/internal/table"
+	models "github.com/sttts/kc/internal/models"
+	table "github.com/sttts/kc/internal/table"
 )
 
 // NewStaticFolder builds a BaseFolder populated with the provided rows and columns.

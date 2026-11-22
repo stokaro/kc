@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/stokaro/kc/internal/ui/styles"
+	"github.com/sttts/kc/internal/ui/styles"
 )
 
 // scopeChoice is one entry of a scope picker.

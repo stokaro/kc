@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
-	table "github.com/stokaro/kc/internal/table"
+	table "github.com/sttts/kc/internal/table"
 )
 
 func main() {

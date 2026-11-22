@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	table "github.com/stokaro/kc/internal/table"
-	"github.com/stokaro/kc/internal/tablecache"
+	table "github.com/sttts/kc/internal/table"
+	"github.com/sttts/kc/internal/tablecache"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"

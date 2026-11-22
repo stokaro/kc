@@ -6,7 +6,7 @@ import (
 	textinput "charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // Focus order of the search dialog fields, as in Midnight Commander: the

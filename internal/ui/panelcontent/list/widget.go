@@ -10,10 +10,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	models "github.com/stokaro/kc/internal/models"
-	table "github.com/stokaro/kc/internal/table"
-	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	models "github.com/sttts/kc/internal/models"
+	table "github.com/sttts/kc/internal/table"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // Widget implements the list mode content for panels.

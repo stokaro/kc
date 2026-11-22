@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	"github.com/stokaro/kc/pkg/kubeconfig"
+	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 )
 

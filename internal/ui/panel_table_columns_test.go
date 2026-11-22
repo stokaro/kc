@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/stokaro/kc/internal/models"
-	table "github.com/stokaro/kc/internal/table"
+	"github.com/sttts/kc/internal/models"
+	table "github.com/sttts/kc/internal/table"
 )
 
 // fakeFolder is a minimal Folder implementation for testing column handling.

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stokaro/kc/internal/models"
-	modeltesting "github.com/stokaro/kc/internal/models/testing"
-	table "github.com/stokaro/kc/internal/table"
+	"github.com/sttts/kc/internal/models"
+	modeltesting "github.com/sttts/kc/internal/models/testing"
+	table "github.com/sttts/kc/internal/table"
 )
 
 // helper to make a trivial folder with a path and one name column
