@@ -1,12 +1,17 @@
 package models
 
 import (
+	"context"
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
+
+// ManifestFunc reads an object's manifest.
+type ManifestFunc func(ctx context.Context) (*unstructured.Unstructured, error)
 
 // ObjectRow models a concrete Kubernetes object row.
 type ObjectRow struct {
@@ -15,6 +20,8 @@ type ObjectRow struct {
 	namespace string
 	name      string
 	viewFn    ViewContentFunc
+	manifest  ManifestFunc
+	ctxName   string
 	verbs     []string
 	facts     RowFacts // what a RowFilter looks at
 	hasFacts  bool
@@ -58,6 +65,26 @@ func (o *ObjectRow) ViewContent() (string, string, string, string, string, error
 		return "", "", "", "", "", ErrNoViewContent
 	}
 	return o.viewFn()
+}
+
+// WithManifest makes the row a ManifestSource: fn reads the object, which
+// lives in the kubeconfig context contextName.
+func (o *ObjectRow) WithManifest(contextName string, fn ManifestFunc) *ObjectRow {
+	o.ctxName = contextName
+	o.manifest = fn
+	return o
+}
+
+// ContextName returns the kubeconfig context of the object.
+func (o *ObjectRow) ContextName() string { return o.ctxName }
+
+// Manifest reads the object. It returns ErrNoViewContent when the row has no
+// reader or the object is gone.
+func (o *ObjectRow) Manifest(ctx context.Context) (*unstructured.Unstructured, error) {
+	if o.manifest == nil {
+		return nil, ErrNoViewContent
+	}
+	return o.manifest(ctx)
 }
 
 // SetResourceVerbs stores the server-supported verbs for the underlying resource.

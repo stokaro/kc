@@ -36,6 +36,22 @@ func getForView(deps Deps, gvr schema.GroupVersionResource, namespace, name stri
 	return obj, err
 }
 
+// objectManifest reads an object through the shared cache. Unlike
+// getForView it takes the caller's context: the reader runs in a tea.Cmd, so
+// the caller decides how long to wait.
+func objectManifest(deps Deps, gvr schema.GroupVersionResource, namespace, name string) ManifestFunc {
+	return func(ctx context.Context) (*unstructured.Unstructured, error) {
+		obj, err := deps.Cl.GetByGVR(ctx, gvr, namespace, name)
+		if err != nil {
+			return nil, err
+		}
+		if obj == nil {
+			return nil, ErrNoViewContent
+		}
+		return obj, nil
+	}
+}
+
 func objectViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name string) ViewContentFunc {
 	return func() (string, string, string, string, string, error) {
 		obj, err := getForView(deps, gvr, namespace, name)

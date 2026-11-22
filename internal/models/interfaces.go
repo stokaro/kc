@@ -7,6 +7,7 @@ import (
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/appconfig"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -136,6 +137,18 @@ type Enterable interface {
 // Viewable exposes focused content for viewer panes (F3).
 type Viewable interface {
 	ViewContent() (title, body, lang, mime, filename string, err error)
+}
+
+// ManifestSource is an object row that can read its full manifest, for
+// example to compare it with another object.
+type ManifestSource interface {
+	ObjectItem
+	// ContextName is the kubeconfig context the object lives in.
+	ContextName() string
+	// Manifest reads the object through the shared cache. It may block on
+	// an informer sync, so call it off the UI goroutine. The caller owns
+	// the returned object.
+	Manifest(ctx context.Context) (*unstructured.Unstructured, error)
 }
 
 // LogsProvider identifies rows that can open a streaming logs viewer.

@@ -98,6 +98,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	assertRows(t, "configmap-objects", objs, map[string][]string{
 		"cm1": {"/cm1"},
 	})
+	assertManifest(t, objs, "envtest", "testns", "cm1")
 
 	keysPath := []string{"namespaces", "testns", "configmaps", "cm1"}
 	keys := NewConfigMapKeysFolder(deps, keysPath, "testns", "cm1")
@@ -131,6 +132,31 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 		"x": {"x"},
 		"y": {"y"},
 	})
+}
+
+// assertManifest checks that the object rows of f can read their manifest
+// for comparison, and name their context.
+func assertManifest(t *testing.T, f Folder, wantCtx, ns, name string) {
+	t.Helper()
+	ctx := t.Context()
+	for _, r := range f.Lines(ctx, 0, f.Len(ctx)) {
+		src, ok := r.(ManifestSource)
+		if !ok || src.Name() != name {
+			continue
+		}
+		if got := src.ContextName(); got != wantCtx {
+			t.Fatalf("ContextName() = %q, want %q", got, wantCtx)
+		}
+		obj, err := src.Manifest(ctx)
+		if err != nil {
+			t.Fatalf("Manifest: %v", err)
+		}
+		if obj.GetNamespace() != ns || obj.GetName() != name {
+			t.Fatalf("Manifest returned %s/%s, want %s/%s", obj.GetNamespace(), obj.GetName(), ns, name)
+		}
+		return
+	}
+	t.Fatalf("no ManifestSource row named %q", name)
 }
 
 func seedData(t *testing.T, cli crclient.Client) {

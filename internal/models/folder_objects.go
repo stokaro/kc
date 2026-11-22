@@ -164,6 +164,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		obj.SetResourceVerbs(o.verbs)
 		obj.SetInstance(rr.ObjectMeta.UID, o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
+		obj.WithManifest(o.Deps.CtxName, objectManifest(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
 		if len(ageCols) > 0 {
@@ -253,6 +254,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		obj.SetResourceVerbs(o.verbs)
 		obj.SetInstance(item.GetUID(), o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
+		obj.WithManifest(o.Deps.CtxName, objectManifest(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
 		if hasChild && ctor != nil {
