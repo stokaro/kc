@@ -30,10 +30,6 @@ func (r *ResourceGroupItem) ExplainType() (schema.GroupVersionResource, schema.G
 	return r.gvr, r.gvk
 }
 
-// FolderDeps returns the dependencies the folder was built with, so an
-// action on its rows talks to the same cluster.
-func (b *BaseFolder) FolderDeps() Deps { return b.Deps }
-
 // ExplainSpec identifies the documented type: the resource for the kubectl
 // command and the kind whose schema is shown.
 type ExplainSpec struct {
