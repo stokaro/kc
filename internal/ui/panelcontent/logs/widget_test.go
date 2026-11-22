@@ -64,6 +64,7 @@ type fakeSource struct {
 	mu       sync.Mutex
 	bodies   map[string]*chanBody
 	opened   []models.LogsSpec
+	requests []logswidget.Request
 	canceled map[string]bool
 }
 
@@ -71,18 +72,21 @@ func newFakeSource(bodies map[string]*chanBody) *fakeSource {
 	return &fakeSource{bodies: bodies, canceled: map[string]bool{}}
 }
 
-func (s *fakeSource) Source(spec models.LogsSpec) logswidget.Open {
+func (s *fakeSource) Source(req logswidget.Request) logswidget.Open {
+	spec := req.Spec
 	return func() (logswidget.Stream, error) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if spec.Container == "" {
+		if spec.Container == "" && !req.AllContainers {
 			spec.Container = "app"
 		}
+		s.requests = append(s.requests, req)
 		s.opened = append(s.opened, spec)
 		pod := spec.Pod
 		return logswidget.Stream{
-			Spec: spec,
-			Body: s.bodies[pod],
+			Spec:       spec,
+			Containers: []string{"app", "sidecar"},
+			Body:       s.bodies[pod],
 			Cancel: func() {
 				s.mu.Lock()
 				defer s.mu.Unlock()
