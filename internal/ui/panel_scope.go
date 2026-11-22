@@ -227,11 +227,13 @@ func (a *App) setPanelScope(idx int, ns string) {
 		_, _ = navui.GoTo(ctx, newNav, []navui.GoToStep{{SelectionID: resourceRowID(ns, *keep, true), Enter: true}})
 		cancel()
 	}
+	a.cancelJump(idx)
 	a.showNavigatorRoot(idx)
 	a.syncPanelScopeLabels()
 	if idx == a.activePanel {
 		a.updateTermContextNamespace(ns)
 	}
+	a.recordHistory(idx)
 }
 
 // syncPanelScopeLabels updates the scope drawn in both panel frames.

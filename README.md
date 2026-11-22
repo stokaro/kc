@@ -78,6 +78,10 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
+| `C-\`      | Hotlist, as in mc: saved panel locations with their context and namespace. `Enter` goes to the highlighted entry, `Ins` adds the active panel's location, `Del` (or `F8`) removes the entry. Typing filters the list. Saved in `~/.kc/hotlist.yaml`. |
+| `M-y`      | Go back in the active panel's history of visited locations (`Esc y` does the same). |
+| `M-u`      | Go forward in that history (`Esc u`).                                           |
+| `M-H`      | List the active panel's history, newest first; `Enter` goes there (`Esc H`).   |
 | `M-o`      | Sort the object list by the next column, ascending. `Esc o` does the same. The sorted column has `↑` (ascending) or `↓` (descending) after its title. |
 | `M-r`      | Reverse the sort of the object list. `Esc r` does the same. `F2` sets the column ("Sort by") and the direction ("Reverse") too. |
 | `M-a`      | In viewers: copy the whole content.                                             |
@@ -85,6 +89,8 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `C-c`      | Quit.                                                                           |
 
 Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
+
+Each panel keeps its own history of the last 50 locations. A location is the context, the panel's namespace scope and the rows entered from the panel root, so going back can switch the namespace scope or, for an entry from another context, the context; a context switch puts the other panel at its root, as the context picker does. When a list is still loading, kc waits up to ten seconds for the row it needs.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
 

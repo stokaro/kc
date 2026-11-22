@@ -20,7 +20,7 @@ One execution context for every subprocess (`internal/execctx`, ADR 0055).
 - [x] Top/metrics: usage columns in pod and node lists — #44
 - [ ] Top/metrics: sorting by consumption — #37
 - [ ] Extensible actions: built-in object actions and richer custom commands — #33, #46
-- [ ] Favorites: add and remove favorite resource types from the UI (today only `resources.favorites` in the config).
+- [ ] Favorites: add and remove favorite resource types from the UI (today only `resources.favorites` in the config). The hotlist (`C-\`, #41) saves locations, not resource types.
 
 Dropped as no longer useful:
 - [x] Per-image shell probe cache for podfs: a missing shell now leads to the helper consent row (#21, #26), and the failed exec costs one request per session.

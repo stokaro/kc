@@ -748,6 +748,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.selectCreatedRow(msg)
 	case startupSelectMsg:
 		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
+	case pathJumpMsg:
+		return a, a.continueJump(msg.jump)
 	case contextSwitchedMsg:
 		return a, a.applyContextSwitch(msg)
 	case namespacesLoadedMsg:

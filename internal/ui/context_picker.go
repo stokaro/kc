@@ -120,6 +120,7 @@ func (a *App) switchContext(target *kubeconfig.Context) tea.Cmd {
 // panels to the context's namespace.
 func (a *App) applyContextSwitch(msg contextSwitchedMsg) tea.Cmd {
 	if msg.err != nil {
+		a.pendingJump = nil
 		msg.lease.Release()
 		return a.ShowToast(fmt.Sprintf("Cannot switch to %s: %v", msg.target.Name, msg.err), 5*time.Second)
 	}
@@ -149,7 +150,7 @@ func (a *App) applyContextSwitch(msg contextSwitchedMsg) tea.Cmd {
 	a.ensureTermContext()
 	a.goToNamespace(contextNamespace(msg.target))
 	a.invalidateView("context switch")
-	return a.ShowInfo("Context: "+msg.target.Name, 2*time.Second)
+	return tea.Batch(a.ShowInfo("Context: "+msg.target.Name, 2*time.Second), a.resumePendingJump())
 }
 
 // contextNamespace is the namespace kc starts with in a context.

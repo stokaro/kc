@@ -35,7 +35,6 @@ type Panel struct {
 	width                int
 	height               int
 	currentPath          string
-	pathHistory          []string
 	viewConfig           *ViewConfig
 	contextCountProvider func() int
 	actionHandlers       PanelActionHandlers
@@ -74,7 +73,6 @@ func NewPanel(title string, cfg ...*appconfig.Config) *Panel {
 	p := &Panel{
 		title:           title,
 		currentPath:     "/",
-		pathHistory:     make([]string, 0),
 		mode:            PanelModeList,
 		cfg:             conf,
 		widgets:         make(map[PanelViewMode]PanelWidget),

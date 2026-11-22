@@ -278,6 +278,12 @@ type App struct {
 	readErrCh               chan error // read failures from models, shown as red toasts
 	panelNamespace          [2]string
 	namespaceCommandTarget  [2]string
+	// Navigation history per panel (M-y, M-u, M-H) and the hotlist (C-\).
+	history     [2]*navui.History
+	jumpToken   [2]int
+	pendingJump *pendingJump
+	hotlist     []navui.Location
+	hotlistPath string // empty until Init; tests set it
 }
 
 const (
@@ -375,6 +381,7 @@ func (a *App) Init() tea.Cmd {
 		},
 		a.waitFolderDirtyEvents(),
 		a.waitReadErrors(),
+		a.loadHotlist(),
 		loadToast,
 	)
 }
@@ -2258,6 +2265,7 @@ func (a *App) applyStartupIntent() tea.Cmd {
 		return nil
 	}
 	a.startupIntentApplied = true
+	defer a.recordHistory(0)
 	switch a.startupIntent.Verb {
 	case KubectlVerbGet:
 		return a.applyStartupIntentGet()
@@ -3190,6 +3198,8 @@ func (a *App) goToNamespace(ns string) {
 		a.setActivePanel(1, "right panel folder nav focus")
 		a.handleFolderNav(back, selID, next)
 	})
+	a.recordHistory(0)
+	a.recordHistory(1)
 	a.scheduleStartupIntent()
 }
 
@@ -3285,6 +3295,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		panelReset = func(ctx context.Context) { a.rightPanel.ResetSelectionTop(ctx) }
 		panelRef = a.rightPanel
 	}
+	a.cancelJump(a.activePanel)
 	if back {
 		nav.Back()
 	} else if next != nil {
@@ -3328,6 +3339,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	}
 	a.applyResourceOptions(panelRef)
 	a.syncTerminalNamespaceForNavigator(nav)
+	a.recordHistory(a.activePanel)
 }
 
 // namespaceExists returns true if the namespace exists in the current cluster.
@@ -3526,6 +3538,13 @@ func (a *App) swapPanels() {
 
 	// Swap configs
 	a.leftConfig, a.rightConfig = a.rightConfig, a.leftConfig
+
+	// The namespace scope, the history and any jump belong to the content.
+	a.panelScope[0], a.panelScope[1] = a.panelScope[1], a.panelScope[0]
+	a.history[0], a.history[1] = a.history[1], a.history[0]
+	a.cancelJump(0)
+	a.cancelJump(1)
+	a.syncPanelScopeLabels()
 
 	// Detach old listeners
 	if a.leftFolderDirtyCancel != nil {
