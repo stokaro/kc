@@ -14,7 +14,7 @@ Terminal context manager for the integrated PTY session (`internal/ui/termctx`).
 
 ## Backlog
 - [ ] mc-style pull-down menu bar on F9 — #48
-- [ ] Describe/Manifest panel modes: refresh when the object changes, describe off the UI thread — #47
+- [x] Describe/Manifest panel modes: refresh when the object changes, describe off the UI thread — #47
 - [ ] Logs panel mode that follows the other panel's selection — #49
 - [ ] Top/metrics: usage columns and sorting by consumption — #44, #37
 - [ ] Extensible actions: built-in object actions and richer custom commands — #33, #46
