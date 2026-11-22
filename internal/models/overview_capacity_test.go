@@ -125,20 +125,20 @@ func TestOverviewCapacityAgreesWithInfo(t *testing.T) {
 		}{
 			{
 				finding: mem, node: "mba", label: "Memory",
-				overview: "pods 22% req 25% lim 116% of alloc, node 40% of cap overcommitted",
+				overview: "pods 22% req 25% lim 116% of alloc, node 40% of cap lim overcommitted",
 				info:     []string{"pods 2.3/10.4 Gi allocatable, 22%", "node 6.0/14.9 Gi capacity, 40%", "req 25%, lim 116% (overcommitted)"},
-				severity: severityWarning, infoColor: RowHealthNotReady,
+				severity: severityWarning, infoColor: RowHealthOK,
 			},
 			{
 				finding: cpu, node: "mba", label: "CPU",
-				overview: "pods 15% req 14% lim 112% of alloc, node 30% of cap overcommitted",
+				overview: "pods 15% req 14% lim 112% of alloc, node 30% of cap lim overcommitted",
 				info:     []string{"pods 0.6/4.0 cores allocatable, 15%", "node 1.2/4.0 cores capacity, 30%", "req 14%, lim 112% (overcommitted)"},
-				severity: severityWarning, infoColor: RowHealthNotReady,
+				severity: severityWarning, infoColor: RowHealthOK,
 			},
 			{
 				// The pods use three times their requests; the node is high.
 				finding: cpu, node: "n2", label: "CPU",
-				overview: "pods 75% req 25% lim 0% of alloc, node 87% of cap under-req",
+				overview: "pods 75% req 25% lim 0% of alloc, node 87% of cap pods under-req",
 				info:     []string{"pods 3.0/4.0 cores allocatable, 75% (under-req)", "node 3.5/4.0 cores capacity, 87% (high)", "req 25%, lim 0%"},
 				severity: severityWarning, infoColor: RowHealthNotReady,
 			},
@@ -172,7 +172,7 @@ func TestOverviewCapacityAgreesWithInfo(t *testing.T) {
 			t.Errorf("Info CPU = %q, want %q", barLines(b), want)
 		}
 		// The row's state is its worst node; the most loaded comes first.
-		if cpu.severity != severityWarning || cpu.state != "overcommitted" || !slices.Equal(targetKeys(cpu), []string{"nodes:mba", "nodes:n2"}) {
+		if cpu.severity != severityWarning || cpu.state != "lim overcommitted, 1 of 2 nodes" || !slices.Equal(targetKeys(cpu), []string{"nodes:mba", "nodes:n2"}) {
 			t.Errorf("cpu row = %q %v targets %v", cpu.state, cpu.severity, targetKeys(cpu))
 		}
 	})
@@ -213,13 +213,14 @@ func TestOverviewCapacityUnderRequestedByPods(t *testing.T) {
 	}
 	cfg := appconfig.DefaultOverview()
 	tests := []struct {
-		name     string
-		podMem   int64
-		wantFlag string
-		wantText string
+		name      string
+		podMem    int64
+		wantState string // the /overview row
+		wantFlag  string // the Info bar
+		wantText  string
 	}{
-		{name: "system usage", podMem: 512 << 20, wantFlag: "ok", wantText: "pods 5% req 10% lim 0% of alloc, node 55% of cap"},
-		{name: "pod usage", podMem: 4 << 30, wantFlag: flagUnderRequested, wantText: "pods 40% req 10% lim 0% of alloc, node 55% of cap"},
+		{name: "system usage", podMem: 512 << 20, wantState: "ok", wantFlag: "ok", wantText: "pods 5% req 10% lim 0% of alloc, node 55% of cap"},
+		{name: "pod usage", podMem: 4 << 30, wantState: "pods " + flagUnderRequested, wantFlag: flagUnderRequested, wantText: "pods 40% req 10% lim 0% of alloc, node 55% of cap"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -229,8 +230,8 @@ func TestOverviewCapacityUnderRequestedByPods(t *testing.T) {
 			m := &overviewMeasured{nodes: map[string]usageValues{"mba": {cpu: 400, mem: 6800 << 20}}, pods: use, clusterPods: use}
 			r := measuredReport(t, AllNamespaces, m, objs...)
 			f := mustFinding(t, r, "capacity/memory")
-			if f.state != tc.wantFlag || f.value != tc.wantText {
-				t.Errorf("/overview memory = %q %q, want %q %q", f.value, f.state, tc.wantText, tc.wantFlag)
+			if f.state != tc.wantState || f.value != tc.wantText {
+				t.Errorf("/overview memory = %q %q, want %q %q", f.value, f.state, tc.wantText, tc.wantState)
 			}
 			if b := infoBar(t, infoSummary(r, nil, cfg, "mba"), "Memory"); b.Flag != tc.wantFlag {
 				t.Errorf("Info memory flag = %q, want %q", b.Flag, tc.wantFlag)
@@ -292,7 +293,7 @@ func TestOverviewCapacityMissingSamples(t *testing.T) {
 		cpu := mustFinding(t, r, "capacity/cpu")
 		n1 := overviewTarget1(t, cpu, "n1")
 		// The node is full on its own line; the pods stay n/a.
-		if n1.value != "pods n/a req 0% lim 0% of alloc, node 100% of cap full" || n1.severity != severityFailed {
+		if n1.value != "pods n/a req 0% lim 0% of alloc, node 100% of cap node full" || n1.severity != severityFailed {
 			t.Errorf("n1 = %q %v", n1.value, n1.severity)
 		}
 		if !strings.Contains(cpu.explain, "Pod usage is not available: metrics.k8s.io: forbidden.") {
@@ -317,7 +318,7 @@ func TestOverviewCapacityThresholds(t *testing.T) {
 		wantNode string
 	}{
 		{name: "defaults", cfg: appconfig.DefaultOverview(), wantFlag: "ok", wantNode: "node 1.6/4.0 cores capacity, 40%"},
-		{name: "usage warn 40", cfg: appconfig.OverviewConfig{UsageWarnPercent: 40}, wantFlag: "high", wantNode: "node 1.6/4.0 cores capacity, 40% (high)"},
+		{name: "usage warn 40", cfg: appconfig.OverviewConfig{UsageWarnPercent: 40}, wantFlag: "node high", wantNode: "node 1.6/4.0 cores capacity, 40% (high)"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
