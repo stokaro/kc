@@ -89,6 +89,8 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
 
+kc works with access granted only inside namespaces (a Role and RoleBinding, no ClusterRole). Before it watches a resource type, kc asks the API server (SelfSubjectAccessReview) whether you may list and watch it in all namespaces. If not, a panel scoped to a namespace watches that type in that namespace only, and types you cannot read are hidden instead of showing errors. If you may not list namespaces, the namespace picker shows the context's namespace and the ones used in this session, and you can type a namespace name and press Enter. "All namespaces" stays available for users who may list across namespaces.
+
 ## Custom Commands
 
 You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F9** menu. Commands run in a terminal panel and can use templates to reference the selected item.
