@@ -1,3 +1,8 @@
+layout:
+  # Keep the menu bar titles on the top row, as in mc. false gives the row
+  # to the panels; F9 still opens the bar.
+  menuBarVisible: true
+
 viewer:
   theme: dracula
   mode: scroll

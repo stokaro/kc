@@ -15,7 +15,7 @@ func TestInlineTerminalVisibleInCommandMode(t *testing.T) {
 	}
 
 	panelHeight := app.panelsHeight()
-	expectedPanelHeight := app.height - (1 + app.inlineTerminalHeight() + app.commandLineHeight())
+	expectedPanelHeight := app.height - (1 + app.menuBarRows() + app.inlineTerminalHeight() + app.commandLineHeight())
 	if panelHeight != expectedPanelHeight {
 		t.Fatalf("unexpected panel height with inline terminal visible: got %d, want %d", panelHeight, expectedPanelHeight)
 	}

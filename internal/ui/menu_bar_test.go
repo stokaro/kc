@@ -52,8 +52,18 @@ func TestF9OpensMenuBar(t *testing.T) {
 	if app.menuBar.IsOpen() {
 		t.Fatal("Esc did not close the menu bar")
 	}
+	// The visible bar (the default) stays; the hidden one goes away.
+	if !strings.HasPrefix(topLine(app), "  Left     File") {
+		t.Fatalf("visible menu bar gone after closing: %q", topLine(app))
+	}
+	app.cfg.Layout.MenuBarVisible = false
+	app = feedMenu(app, keyF9)
+	if !strings.HasPrefix(topLine(app), "  Left     File") {
+		t.Fatalf("F9 did not draw the hidden menu bar: %q", topLine(app))
+	}
+	app = feedMenu(app, keyEsc)
 	if strings.HasPrefix(topLine(app), "  Left     File") {
-		t.Fatal("menu bar still drawn after closing")
+		t.Fatal("hidden menu bar still drawn after closing")
 	}
 }
 

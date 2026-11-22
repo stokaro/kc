@@ -867,6 +867,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 				return a, tea.Batch(cmds...)
 			}
 			m := mm.Mouse()
+			if m.Y < a.menuBarRows() {
+				return a, tea.Batch(append(cmds, a.handleIdleMenuBarMouse(mm))...)
+			}
 			if m.Button == tea.MouseLeft {
 				// Take both halves of a click on a scope label: a press
 				// that reached the panel without its release would leave
@@ -998,7 +1001,10 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (panelMouseDispatch, bool) {
 	panelHeight := a.panelsHeight()
 	headerOffset := panelHeaderOffset
 	m := msg.Mouse()
-	if m.Y >= panelHeight {
+	// y is the row within the panel frames, which start under the visible
+	// menu bar.
+	y := m.Y - a.menuBarRows()
+	if y < 0 || y >= panelHeight {
 		return panelMouseDispatch{}, false
 	}
 	panelIdx := 0
@@ -1011,7 +1017,7 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (panelMouseDispatch, bool) {
 	if panel == nil {
 		return panelMouseDispatch{panelIdx: panelIdx}, false
 	}
-	relRow := max(m.Y-headerOffset, 0)
+	relRow := max(y-headerOffset, 0)
 	var panelMsg PanelMouseMsg
 	switch mm := msg.(type) {
 	case tea.MouseWheelMsg:

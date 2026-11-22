@@ -9,6 +9,7 @@ import (
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/overlay"
 	"github.com/stokaro/kc/internal/ui/menubar"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // Menu bar indexes, in the order mc shows them.
@@ -27,12 +28,24 @@ const (
 // shortcut column names that key in mc notation. To add an entry, add one
 // line to the matching items function below.
 func (a *App) menuBarMenus() []menubar.Menu {
+	menus := menuBarTitles()
+	menus[menuLeft].Items = a.panelMenuItems(0)
+	menus[menuFile].Items = a.fileMenuItems()
+	menus[menuCommand].Items = a.commandMenuItems()
+	menus[menuOptions].Items = a.optionsMenuItems()
+	menus[menuRight].Items = a.panelMenuItems(1)
+	return menus
+}
+
+// menuBarTitles returns the menus of the bar without entries: what the
+// visible bar draws, and where its titles are, while no menu is open.
+func menuBarTitles() []menubar.Menu {
 	return []menubar.Menu{
-		menuLeft:    {Title: "&Left", Items: a.panelMenuItems(0)},
-		menuFile:    {Title: "&File", Items: a.fileMenuItems()},
-		menuCommand: {Title: "&Command", Items: a.commandMenuItems()},
-		menuOptions: {Title: "&Options", Items: a.optionsMenuItems()},
-		menuRight:   {Title: "&Right", Items: a.panelMenuItems(1)},
+		menuLeft:    {Title: "&Left"},
+		menuFile:    {Title: "&File"},
+		menuCommand: {Title: "&Command"},
+		menuOptions: {Title: "&Options"},
+		menuRight:   {Title: "&Right"},
 	}
 }
 
@@ -149,6 +162,8 @@ func (a *App) optionsMenuItems() []menubar.Item {
 		{Label: "&Right panel options...", Shortcut: "M-F2", Disabled: !a.panelVisible(1), Run: func() tea.Cmd {
 			return a.showViewOptionsModalForPanel(a.panelByIndex(1))
 		}},
+		menubar.Separator(),
+		{Label: "&Menu bar visible", Checked: a.menuBarVisible(), Run: a.toggleMenuBarVisible},
 	}
 }
 
@@ -265,9 +280,61 @@ func (a *App) handleMenuBarMouse(msg tea.MouseMsg) tea.Cmd {
 	return cmd
 }
 
+// menuBarVisible reports whether layout.menuBarVisible keeps the bar on the
+// top row.
+func (a *App) menuBarVisible() bool {
+	return a.cfg != nil && a.cfg.Layout.MenuBarVisible
+}
+
+// menuBarRows is the number of screen rows above the panels: 1 while the
+// visible menu bar is drawn there, 0 when the setting is off or the
+// terminal is fullscreen (C-o), which covers the whole screen as in mc.
+func (a *App) menuBarRows() int {
+	if a.showTerminal || !a.menuBarVisible() {
+		return 0
+	}
+	return 1
+}
+
+// renderIdleMenuBar draws the visible menu bar while no menu is open.
+func (a *App) renderIdleMenuBar() string {
+	return menubar.RenderTitles(menuBarTitles(), a.width)
+}
+
+// handleIdleMenuBarMouse opens the menu whose title a left button press on
+// the visible bar hit. Every event on the bar row is consumed, as mc does;
+// the release of the click goes to the open bar, which ignores it.
+func (a *App) handleIdleMenuBarMouse(msg tea.MouseMsg) tea.Cmd {
+	m := msg.Mouse()
+	if _, press := msg.(tea.MouseClickMsg); !press || m.Button != tea.MouseLeft {
+		return nil
+	}
+	if i := menubar.TitleIndex(menuBarTitles(), m.X); i >= 0 {
+		a.openMenuBar(i)
+	}
+	return nil
+}
+
+// toggleMenuBarVisible switches layout.menuBarVisible, gives the top row to
+// the panels or takes it back, and saves the setting, as mc saves its
+// setup when the layout changes.
+func (a *App) toggleMenuBarVisible() tea.Cmd {
+	visible := !a.menuBarVisible()
+	if a.cfg != nil {
+		a.cfg.Layout.MenuBarVisible = visible
+	}
+	cmds := a.resizePanelsForCurrentLayout()
+	a.invalidateView("menu bar visible")
+	cmds = append(cmds, a.saveDefaults(func(c *appconfig.Config) {
+		c.Layout.MenuBarVisible = visible
+	}))
+	return tea.Batch(cmds...)
+}
+
 // overlayMenuBar draws the open menu bar over the top row of screen and its
-// drop-down, with a shadow, under the selected title. Like mc with the menu
-// bar hidden, the bar takes the top row only while it is open.
+// drop-down, with a shadow, under the selected title. With the visible bar
+// it covers the idle bar; with layout.menuBarVisible off it covers the top
+// panel row while it is open, as mc does with the menu bar hidden.
 func (a *App) overlayMenuBar(screen string) string {
 	if !a.menuBar.IsOpen() {
 		return screen
