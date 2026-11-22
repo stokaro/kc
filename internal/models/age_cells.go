@@ -53,10 +53,7 @@ func (h *ageCellHook) nextInterval(now time.Time) time.Duration {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	elapsed := now.Sub(h.created)
-	if elapsed < 0 {
-		elapsed = 0
-	}
+	elapsed := max(now.Sub(h.created), 0)
 	switch {
 	case elapsed < 10*time.Minute:
 		return time.Second

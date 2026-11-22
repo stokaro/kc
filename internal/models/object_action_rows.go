@@ -23,7 +23,7 @@ type ObjectRowsFunc func(deps Deps, namespace, name string, path []string) []tab
 
 var (
 	objectRowsMu sync.RWMutex
-	objectRows   = map[schema.GroupVersionResource][]ObjectRowsFunc{}
+	objectRows   = make(map[schema.GroupVersionResource][]ObjectRowsFunc)
 )
 
 // RegisterObjectRows adds rows to the folder shown when entering an object

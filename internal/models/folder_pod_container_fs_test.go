@@ -69,7 +69,7 @@ func (f *fakeExecSession) ReadFile(_ context.Context, path string, limit int64) 
 func (f *fakeExecSession) Close() error { return nil }
 
 func TestPodContainerFSFolderListsEntries(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	session := &fakeExecSession{
 		entries: []podfs.FileEntry{
 			{Name: "etc", Type: podfs.EntryTypeDir, Size: 0, UpdatedAt: time.Unix(1, 0)},
@@ -141,7 +141,7 @@ func TestPodContainerFSFolderFileDetails(t *testing.T) {
 }
 
 func TestPodContainerFSFolderMissingShellMessage(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	deps := Deps{
 		Ctx:          ctx,
 		PodFSFactory: fakePodFSFactory{err: fmt.Errorf("%w", podfs.ErrShellMissing)},

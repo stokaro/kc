@@ -18,7 +18,7 @@ func TestNodeChildFolderPopulatesPodsEntry(t *testing.T) {
 	path := []string{"nodes", "node-a"}
 	folder := NewNodeChildFolder(deps, "node-a", path)
 
-	rows, err := folder.populate(context.Background())
+	rows, err := folder.populate(t.Context())
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
@@ -44,14 +44,14 @@ func TestNodePodsFolderFiltersByNodeName(t *testing.T) {
 	folder := NewNodePodsFolder(deps, path, "node-a")
 
 	matching := &unstructured.Unstructured{}
-	matching.Object = map[string]interface{}{
-		"spec": map[string]interface{}{
+	matching.Object = map[string]any{
+		"spec": map[string]any{
 			"nodeName": "node-a",
 		},
 	}
 	other := &unstructured.Unstructured{}
-	other.Object = map[string]interface{}{
-		"spec": map[string]interface{}{
+	other.Object = map[string]any{
+		"spec": map[string]any{
 			"nodeName": "node-b",
 		},
 	}
@@ -73,7 +73,7 @@ func TestDepsForSelectorScopeSetsSelectorKey(t *testing.T) {
 	}
 	var gotKey string
 	deps := Deps{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		ClusterKey: kccluster.Key{
 			KubeconfigPath: "/tmp/kubeconfig",
 			ContextName:    "ctx",

@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -713,7 +714,7 @@ the restart count and the last termination, so this is an estimate of
 			var bestStatus corev1.ContainerStatus
 			for _, s := range podStatuses(p) {
 				t := s.LastTerminationState.Terminated
-				if s.RestartCount < int32(rc.cfg.RestartThreshold) || t == nil || !rc.within(t.FinishedAt.Time) {
+				if int(s.RestartCount) < rc.cfg.RestartThreshold || t == nil || !rc.within(t.FinishedAt.Time) {
 					continue
 				}
 				if s.RestartCount > best {
@@ -888,7 +889,7 @@ the condition Failed=True.`,
 		},
 	}
 	return countFinding(rc, f, []schema.GroupVersionResource{ovCronJobsGVR, ovJobsGVR}, func() []overviewTarget {
-		newest := map[string]*batchv1.Job{} // by owner UID
+		newest := make(map[string]*batchv1.Job) // by owner UID
 		for i := range rc.in.jobs {
 			j := &rc.in.jobs[i]
 			ref := metav1.GetControllerOf(j)
@@ -1012,7 +1013,7 @@ func podQOSBestEffort(p *corev1.Pod) bool {
 	if p.Spec.Resources != nil && (len(p.Spec.Resources.Requests) > 0 || len(p.Spec.Resources.Limits) > 0) {
 		return false
 	}
-	for _, c := range append(append([]corev1.Container{}, p.Spec.InitContainers...), p.Spec.Containers...) {
+	for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
 		if len(c.Resources.Requests) > 0 || len(c.Resources.Limits) > 0 {
 			return false
 		}

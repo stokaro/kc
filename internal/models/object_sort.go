@@ -237,6 +237,8 @@ func isMissingCell(c any) bool {
 
 // parseSortValue reads c as kind. A cell that does not read as kind is
 // missing.
+//
+//nolint:gocyclo // one case per sort kind; splitting the switch would scatter the parsers
 func parseSortValue(kind sortKind, c any) sortValue {
 	missing := sortValue{missing: true}
 	if isMissingCell(c) {

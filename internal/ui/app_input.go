@@ -51,11 +51,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
 		switch key.Code {
 		case '1':
-			if cmd := a.cyclePanelModeIfVisible(0); cmd != nil {
+			if cmd, ok := a.cyclePanelModeIfVisible(0); ok {
 				return a, cmd
 			}
 		case '2':
-			if cmd := a.cyclePanelModeIfVisible(1); cmd != nil {
+			if cmd, ok := a.cyclePanelModeIfVisible(1); ok {
 				return a, cmd
 			}
 		}

@@ -144,7 +144,7 @@ func (f *RelatedObjectsFolder) KubectlCommand() string {
 
 // startWatch watches what the rows depend on: the object itself for
 // owners, the finder's source types for used-by, in the object's namespace.
-func (f *RelatedObjectsFolder) startWatch(onEvent func(), onStop func()) (func(), error) {
+func (f *RelatedObjectsFolder) startWatch(onEvent, onStop func()) (func(), error) {
 	type watch struct {
 		gvr  schema.GroupVersionResource
 		name string

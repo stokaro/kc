@@ -29,7 +29,7 @@ type ObjectRow struct {
 	origin    ObjectOrigin
 }
 
-func NewObjectRow(id string, cells []string, path []string, gvr schema.GroupVersionResource, namespace, name string, style *lipgloss.Style) *ObjectRow {
+func NewObjectRow(id string, cells, path []string, gvr schema.GroupVersionResource, namespace, name string, style *lipgloss.Style) *ObjectRow {
 	return &ObjectRow{
 		RowItem:   NewRowItem(id, cells, path, style),
 		gvr:       gvr,
@@ -60,7 +60,8 @@ func (o *ObjectRow) WithViewContent(fn ViewContentFunc) *ObjectRow {
 	return o
 }
 
-func (o *ObjectRow) ViewContent() (string, string, string, string, string, error) {
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (o *ObjectRow) ViewContent() (title, body, lang, mime, filename string, err error) {
 	if o.viewFn == nil {
 		return "", "", "", "", "", ErrNoViewContent
 	}

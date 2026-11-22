@@ -15,7 +15,7 @@ type NamespacedObjectsFolder struct {
 // NewNamespacedObjectsFolder constructs a namespaced objects folder. In a
 // namespace, a user who may not list the type in all namespaces gets a
 // cache limited to that namespace; the folder holds it until Close.
-func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string, verbs []string) *NamespacedObjectsFolder {
+func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path, verbs []string) *NamespacedObjectsFolder {
 	release := noRelease
 	if namespace != AllNamespaces {
 		deps, _, release = deps.resolveListScope(gvr, namespace)

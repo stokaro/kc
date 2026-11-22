@@ -59,7 +59,7 @@ func TestNodeShellConfirmationNamesWhatIsCreated(t *testing.T) {
 	item := &NodeShellItem{SimpleItem: NewSimpleItem("x", []string{"x"}, nil, nil), deps: nodeShellDeps(true), node: "node-a"}
 	c := item.Confirmation()
 
-	details := map[string]string{}
+	details := make(map[string]string)
 	for _, d := range c.Details {
 		details[d[0]] = d[1]
 	}

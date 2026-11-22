@@ -19,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -133,7 +132,7 @@ func TestOverviewContainerLimitRules(t *testing.T) {
 	}
 	sidecar := withPod(overviewRunningPod("a", "sidecar"), func(p *corev1.Pod) {
 		p.Spec.InitContainers = []corev1.Container{
-			{Name: "log", RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways), Resources: resources("", "", "", "100Mi")},
+			{Name: "log", RestartPolicy: new(corev1.ContainerRestartPolicyAlways), Resources: resources("", "", "", "100Mi")},
 			{Name: "setup", Resources: resources("", "", "", "100Mi")},
 		}
 	})
@@ -206,15 +205,15 @@ func TestOverviewDiskAndVolumes(t *testing.T) {
 			// twice and counted once.
 			"n1": {nodeFS: fsUse{used: gib(29), capacity: gib(915)}, imageFS: fsUse{used: gib(29), capacity: gib(915)},
 				volumes: []volumeUse{
-					{namespace: "a", claim: "data", fsUse: fsUse{used: gib(9), capacity: gib(10)}},
-					{namespace: "a", claim: "logs", fsUse: fsUse{used: gib(1), capacity: gib(10)}},
-					{namespace: "b", claim: "full", fsUse: fsUse{used: gib(5), capacity: gib(5)}},
+					{namespace: "a", claim: "data", used: gib(9), capacity: gib(10)},
+					{namespace: "a", claim: "logs", used: gib(1), capacity: gib(10)},
+					{namespace: "b", claim: "full", used: gib(5), capacity: gib(5)},
 				}},
 			// A separate image filesystem that is nearly full.
 			"n2": {nodeFS: fsUse{used: gib(10), capacity: gib(100)}, imageFS: fsUse{used: gib(46), capacity: gib(50)},
 				volumes: []volumeUse{
 					// The same claim mounted by a pod on another node.
-					{namespace: "a", claim: "data", fsUse: fsUse{used: gib(9), capacity: gib(10)}},
+					{namespace: "a", claim: "data", used: gib(9), capacity: gib(10)},
 				}},
 		},
 		statsErrors: map[string]string{"n3": "forbidden: nodes/proxy"},
@@ -373,7 +372,7 @@ func TestKubeletStatsFetcher(t *testing.T) {
 	if s.nodeFS != (fsUse{used: 7, capacity: 10}) || s.imageFS != (fsUse{used: 5, capacity: 20}) {
 		t.Fatalf("filesystems = %+v %+v", s.nodeFS, s.imageFS)
 	}
-	if len(s.volumes) != 1 || s.volumes[0] != (volumeUse{namespace: "a", claim: "data-db-0", fsUse: fsUse{used: 90, capacity: 100}}) {
+	if len(s.volumes) != 1 || s.volumes[0] != (volumeUse{namespace: "a", claim: "data-db-0", used: 90, capacity: 100}) {
 		t.Fatalf("volumes = %+v, want only the claim with a capacity", s.volumes)
 	}
 	if _, err := fetch(t.Context(), "n2"); !apierrors.IsForbidden(err) {
@@ -392,9 +391,9 @@ func TestKubeletStatsFetcher(t *testing.T) {
 
 func TestBuildContainerUsage(t *testing.T) {
 	t.Parallel()
-	pm := unstructured.Unstructured{Object: map[string]interface{}{"containers": []interface{}{
-		map[string]interface{}{"name": "app", "usage": map[string]interface{}{"cpu": "250m", "memory": "64Mi"}},
-		map[string]interface{}{"name": "proxy", "usage": map[string]interface{}{"cpu": "10m", "memory": "8Mi"}},
+	pm := unstructured.Unstructured{Object: map[string]any{"containers": []any{
+		map[string]any{"name": "app", "usage": map[string]any{"cpu": "250m", "memory": "64Mi"}},
+		map[string]any{"name": "proxy", "usage": map[string]any{"cpu": "10m", "memory": "8Mi"}},
 	}}}
 	pm.SetNamespace("a")
 	pm.SetName("web")

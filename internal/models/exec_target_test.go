@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -16,14 +15,14 @@ import (
 
 func execTestPod(annotation string) *corev1.Pod {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web-0"},
+		Namespace: "shop", Name: "web-0",
 		Spec: corev1.PodSpec{
 			InitContainers: []corev1.Container{{Name: "migrate"}},
 			Containers: []corev1.Container{
 				{Name: "proxy"},
 				{Name: "app", Stdin: true, TTY: true},
 			},
-			EphemeralContainers: []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debugger", Stdin: true}}},
+			EphemeralContainers: []corev1.EphemeralContainer{{Name: "debugger", Stdin: true}},
 		},
 	}
 	if annotation != "" {
@@ -71,7 +70,7 @@ func TestPodExecTargetPicksTheDefaultContainer(t *testing.T) {
 
 func TestPodExecTargetWithoutContainers(t *testing.T) {
 	t.Parallel()
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "empty"}}
+	pod := &corev1.Pod{Namespace: "shop", Name: "empty"}
 	if _, err := PodExecTarget(Deps{}, pod); err == nil || !strings.Contains(err.Error(), "no containers") {
 		t.Fatalf("err = %v, want a no-containers error", err)
 	}

@@ -12,7 +12,7 @@ type ContainerSectionItem struct {
 	enter func() (Folder, error)
 }
 
-func NewContainerSectionItem(id string, cells []string, path []string, style *lipgloss.Style, enter func() (Folder, error)) *ContainerSectionItem {
+func NewContainerSectionItem(id string, cells, path []string, style *lipgloss.Style, enter func() (Folder, error)) *ContainerSectionItem {
 	return &ContainerSectionItem{RowItem: NewRowItem(id, cells, path, style), enter: enter}
 }
 
@@ -49,7 +49,7 @@ func (c *ContainerItem) ExecTarget(context.Context) (ExecTarget, error) {
 	return *c.exec, nil
 }
 
-func NewContainerItem(id string, cells []string, path []string, style *lipgloss.Style, view ViewContentFunc, enter func() (Folder, error)) *ContainerItem {
+func NewContainerItem(id string, cells, path []string, style *lipgloss.Style, view ViewContentFunc, enter func() (Folder, error)) *ContainerItem {
 	return &ContainerItem{RowItem: NewRowItem(id, cells, path, style), enter: enter, viewFn: view}
 }
 
@@ -60,7 +60,8 @@ func (c *ContainerItem) Enter() (Folder, error) {
 	return c.enter()
 }
 
-func (c *ContainerItem) ViewContent() (string, string, string, string, string, error) {
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (c *ContainerItem) ViewContent() (title, body, lang, mime, filename string, err error) {
 	if c.viewFn == nil {
 		return "", "", "", "", "", ErrNoViewContent
 	}
@@ -76,7 +77,7 @@ type ContainerLogItem struct {
 
 // NewContainerLogItem returns a log row for spec. Its view command is the
 // kubectl command for spec.
-func NewContainerLogItem(deps Deps, id string, cells []string, path []string, spec LogsSpec) *ContainerLogItem {
+func NewContainerLogItem(deps Deps, id string, cells, path []string, spec LogsSpec) *ContainerLogItem {
 	item := NewSimpleItem(id, cells, path, GreenStyle())
 	c := &ContainerLogItem{SimpleItem: item, deps: deps, spec: spec}
 	c.SetViewCommand(c.LogsCommand(spec))
@@ -93,7 +94,7 @@ type ContainerShellItem struct {
 	target ExecTarget
 }
 
-func NewContainerShellItem(id string, cells []string, path []string, target ExecTarget) *ContainerShellItem {
+func NewContainerShellItem(id string, cells, path []string, target ExecTarget) *ContainerShellItem {
 	item := NewSimpleItem(id, cells, path, GreenStyle())
 	return &ContainerShellItem{SimpleItem: item, target: target}
 }

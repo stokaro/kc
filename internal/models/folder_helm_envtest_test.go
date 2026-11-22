@@ -9,7 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -79,7 +78,7 @@ func TestHelmFoldersEnvtest(t *testing.T) {
 	createHelmSecret(t, cli, web(2, "deployed"), false)
 	createHelmSecret(t, cli, helmFixture(ns, "db", 1, "failed"), true)
 	createSecret(t, cl, ns, "not-helm")
-	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "web-config"}})
+	mustCreate(t, cli, &corev1.ConfigMap{Namespace: ns, Name: "web-config"})
 
 	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest", AppConfig: appconfig.Default()}
 
@@ -158,16 +157,16 @@ func TestHelmFoldersPartialAccessEnvtest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "secret-reader"},
-		Rules:      []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get", "list", "watch"}}},
+		Namespace: ns, Name: "secret-reader",
+		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get", "list", "watch"}}},
 	}
 	if err := admin.GetClient().Create(ctx, role); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatal(err)
 	}
 	binding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "secret-reader"},
-		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: role.Name},
-		Subjects:   []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: "helm-ns-user"}},
+		Namespace: ns, Name: "secret-reader",
+		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: role.Name},
+		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: "helm-ns-user"}},
 	}
 	if err := admin.GetClient().Create(ctx, binding); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatal(err)

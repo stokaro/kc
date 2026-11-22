@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -40,7 +41,7 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	nameStyle := WhiteStyle()
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-	nsPath := append(append([]string{}, f.Path()...), "namespaces")
+	nsPath := append(slices.Clone(f.Path()), "namespaces")
 	nsPathCopy := append([]string(nil), nsPath...)
 	namespacesSpec := resourceGroupSpec{
 		id:        "namespaces",
