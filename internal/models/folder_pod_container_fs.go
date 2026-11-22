@@ -305,13 +305,14 @@ func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error
 				}
 			}(entryPath))
 			item.RowItem.details = fmt.Sprintf("Directory (%s)", entryPath)
+			item.entry = entry
 			rows = append(rows, item)
 		case podfs.EntryTypeSymlink:
-			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entryPath, entry.Size, entry.Target, f)
+			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entry, f)
 			fileItem.RowItem.details = fmt.Sprintf("Symlink → %s", entry.Target)
 			rows = append(rows, fileItem)
 		default:
-			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entryPath, entry.Size, "", f)
+			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entry, f)
 			fileItem.RowItem.details = fmt.Sprintf("%s bytes", displaySize)
 			rows = append(rows, fileItem)
 		}
@@ -494,7 +495,20 @@ func (f *PodContainerFSFolder) scheduleRefresh(delay time.Duration) {
 type PodFSDirItem struct {
 	*RowItem
 	enter func() (Folder, error)
+	entry podfs.FileEntry
 }
+
+// FSEntry returns the listing entry the row shows.
+func (d *PodFSDirItem) FSEntry() podfs.FileEntry { return d.entry }
+
+// PodFSFileItem is a file, symbolic link or special file of a container.
+type PodFSFileItem struct {
+	*SimpleItem
+	entry podfs.FileEntry
+}
+
+// FSEntry returns the listing entry the row shows.
+func (i *PodFSFileItem) FSEntry() podfs.FileEntry { return i.entry }
 
 func NewPodFSDirItem(id string, cells []string, path []string, style *lipgloss.Style, enter func() (Folder, error)) *PodFSDirItem {
 	return &PodFSDirItem{RowItem: NewRowItem(id, cells, path, style), enter: enter}
@@ -507,8 +521,9 @@ func (d *PodFSDirItem) Enter() (Folder, error) {
 	return d.enter()
 }
 
-func newPodFSFileItem(id string, cells []string, path []string, fsPath string, size int64, target string, folder *PodContainerFSFolder) *SimpleItem {
-	item := NewSimpleItem(id, cells, path, WhiteStyle())
+func newPodFSFileItem(fsPath string, cells []string, path []string, entry podfs.FileEntry, folder *PodContainerFSFolder) *PodFSFileItem {
+	size, target := entry.Size, entry.Target
+	item := NewSimpleItem(fsPath, cells, path, WhiteStyle())
 	detailsSuffix := ""
 	if target != "" {
 		detailsSuffix = fmt.Sprintf(" → %s", target)
@@ -520,7 +535,7 @@ func newPodFSFileItem(id string, cells []string, path []string, fsPath string, s
 		container, p := folder.session.execTarget(fsPath)
 		item.SetViewCommand(kubectlCommand(folder.Deps, "exec", spec.Pod, "-n", spec.Namespace, "-c", container, "--", "cat", p))
 	}
-	return item
+	return &PodFSFileItem{SimpleItem: item, entry: entry}
 }
 
 func podFSFileViewContent(folder *PodContainerFSFolder, fsPath string, size int64) ViewContentFunc {

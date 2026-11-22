@@ -765,6 +765,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, a.handlePortForwardMsg(msg)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
+		return a, a.handleTransferMsg(msg)
 	case models.NodeShellRequest:
 		return a, tea.Batch(append(cmds, a.startNodeShell(msg))...)
 	case nodeShellStartedMsg:
@@ -1057,6 +1059,10 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
+		// The copy dialog drives itself; a swallowed tick would freeze its
+		// progress and a swallowed result would leave it open for good.
 		return true
 	case accessResultMsg:
 		// Function keys and an open access view redraw from the cache.

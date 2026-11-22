@@ -117,6 +117,10 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 			if _, ok := item.(models.Stoppable); ok {
 				caps.CanDelete = true
 			}
+			if _, ok := item.(models.FSEntryItem); ok {
+				// Directories copy too, to a local panel.
+				caps.CanCopy = true
+			}
 			if obj, ok := item.(models.ObjectItem); ok {
 				target := objectAccessTarget(obj)
 				if env.AllowEditObjects && obj.SupportsVerb("update") && env.permits(access.EditChecks(target)...) {

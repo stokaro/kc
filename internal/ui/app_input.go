@@ -95,6 +95,8 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		a.swapPanels()
 		return a, nil
 
+	case "alt+l":
+		return a, a.toggleLocalPanel()
 	case hotlistKey:
 		if !a.showTerminal {
 			return a, a.showHotlist()
@@ -275,6 +277,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
+		case "l":
+			// Esc l is the fallback for M-l.
+			a.escPressed = false
+			return a, a.toggleLocalPanel()
 		case "k":
 			// Esc k is the fallback for M-k (access view).
 			a.escPressed = false
