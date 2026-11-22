@@ -719,8 +719,6 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 // footerStatus returns the content's footer status and the width it
 // takes, or "" and 0 when the content has none. naturalTotal is the width
 // the keys need.
-//
-//revive:disable-next-line:flag-parameter numbered is the footer layout the status has to fit, not a mode switch.
 func (m *Modal) footerStatus(naturalTotal int, numbered bool) (status string, width int) {
 	statusProvider, ok := m.content.(ModalFooterStatus)
 	if !ok {

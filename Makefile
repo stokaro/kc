@@ -3,12 +3,7 @@
 
 GOLANGCI_LINT := go tool golangci-lint
 
-# golangci-lint reports only what changed since the merge base with this ref
-# (see `issues.new-from-merge-base` in .golangci.yml). Override it to compare
-# against another ref, for example `make lint LINT_BASE=main`.
-LINT_BASE ?= origin/main
-
-.PHONY: all build test vet lint lint-golangci lint-nolintguard lint-fix lint-all
+.PHONY: all build test vet lint lint-golangci lint-nolintguard lint-fix
 
 all: build test lint
 
@@ -33,15 +28,10 @@ lint-nolintguard:
 		go vet -vettool="$$nolintguard" -require-justification ./...
 
 lint-golangci:
-	@echo "Running golangci-lint (new code since $(LINT_BASE))..."
-	$(GOLANGCI_LINT) run --new-from-merge-base=$(LINT_BASE) ./...
+	@echo "Running golangci-lint..."
+	$(GOLANGCI_LINT) run ./...
 
-# Applies the automatic fixes golangci-lint offers for new code, then lints.
+# Applies the automatic fixes golangci-lint offers, then lints.
 lint-fix:
-	$(GOLANGCI_LINT) run --fix --new-from-merge-base=$(LINT_BASE) ./...
+	$(GOLANGCI_LINT) run --fix ./...
 	$(MAKE) lint
-
-# Reports every finding in the tree, including the baseline that `make lint`
-# does not show. It is expected to fail until the baseline is fixed.
-lint-all:
-	$(GOLANGCI_LINT) run --new-from-merge-base= ./...

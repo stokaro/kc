@@ -18,7 +18,7 @@ make lint        # golangci-lint and nolintguard on code changed since origin/ma
 make lint-fix    # apply automatic fixes, then lint
 ```
 
-CI runs `make lint` on every pull request. The lint tools are pinned in the `go.mod` tool block, so `go tool` runs them without a separate install. `make lint-all` lints the whole tree; it still fails on findings that predate the lint setup (see `docs/adr/0118-lint-setup.md`).
+CI runs `make lint` on every pull request. The lint tools are pinned in the `go.mod` tool block, so `go tool` runs them without a separate install. It lints the whole tree and must pass with 0 issues (see `docs/adr/0118-lint-setup.md` and `docs/adr/0128-lint-baseline-removed.md`).
 
 ## Workflow & Expectations
 
