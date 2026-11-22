@@ -60,3 +60,11 @@ commands:
     watchInterval: 5s
     debounce: 500ms
     onExit: keep-open
+  # Optional per command, unset in the defaults:
+  #   hotkey: M-1        # mc notation: M-<key>, C-M-<key>, F11-F24, C-x <key>
+  #   prompts:           # one dialog before running; read as {{.Input.<name>}}
+  #     - name: replicas
+  #       label: Replicas
+  #       default: "1"
+  #       choices: []
+  #   confirm: true      # or a message; red dialog with the rendered command

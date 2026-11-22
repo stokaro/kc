@@ -154,6 +154,14 @@ type CommandConfig struct {
 	WatchInterval          metav1.Duration      `json:"watchInterval"`
 	Debounce               metav1.Duration      `json:"debounce"`
 	OnExit                 CommandExitBehavior  `json:"onExit"`
+	// Hotkey runs the command without the menu, in mc notation ("M-1",
+	// "C-x 1"). See ParseHotkey and ValidateCommands.
+	Hotkey string `json:"hotkey,omitempty"`
+	// Prompts are asked in one dialog before the command runs; the
+	// template reads the answers as {{.Input.<name>}}.
+	Prompts []CommandPrompt `json:"prompts,omitempty"`
+	// Confirm shows the rendered command in a red dialog before it runs.
+	Confirm CommandConfirm `json:"confirm,omitzero"`
 }
 
 // ObjectsConfig controls object-list specific options.

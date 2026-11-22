@@ -124,4 +124,13 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Resources.PeekInterval.Duration != b.Resources.PeekInterval.Duration {
 		t.Fatalf("resources.peekInterval mismatch: yaml=%v code=%v", a.Resources.PeekInterval.Duration, b.Resources.PeekInterval.Duration)
 	}
+	if len(a.Commands) != len(b.Commands) {
+		t.Fatalf("commands mismatch: yaml has %d, code has %d", len(a.Commands), len(b.Commands))
+	}
+	for i := range a.Commands {
+		ya, co := a.Commands[i], b.Commands[i]
+		if ya.Hotkey != co.Hotkey || !reflect.DeepEqual(ya.Prompts, co.Prompts) || ya.Confirm != co.Confirm {
+			t.Fatalf("commands[%d] hotkey/prompts/confirm mismatch: yaml=%+v code=%+v", i, ya, co)
+		}
+	}
 }
