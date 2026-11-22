@@ -96,7 +96,7 @@ func viewerCopyRequest(text, what string) tea.Cmd {
 // viewerHints are the copy hints shared by the viewers' footers.
 func viewerCopyHints(hasCommand bool) []FooterHint {
 	return []FooterHint{
-		{Key: "Alt+A", Label: "Copy all", Enabled: true},
-		{Key: "Alt+C", Label: "Copy cmd", Enabled: hasCommand},
+		{Key: "M-a", Label: "Copy all", Enabled: true},
+		{Key: "M-c", Label: "Copy cmd", Enabled: hasCommand},
 	}
 }

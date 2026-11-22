@@ -27,11 +27,11 @@
 - **DescribeWidget** builds a describe view via helpers (see “Shared Services”) and renders it using a `TextViewer`.
 - **ManifestWidget** reuses the `ViewContent()` contract to display YAML.
 - **FileWidget** can later embed a navigator without touching the panel shell.
-- The app exposes a modal panel-mode picker (Alt+F1/Alt+F2, Ctrl+1/2) built on panel-provided `AvailableModes`, emitting `PanelModeSelectedMsg` to keep switching logic unified with the widget registry.
+- The app exposes a modal panel-mode picker (M-F1/M-F2, Ctrl+1/2) built on panel-provided `AvailableModes`, emitting `PanelModeSelectedMsg` to keep switching logic unified with the widget registry.
 
 ### Mode Controller
 - Implemented in `ui/app.go` to coordinate both panels.
-- Handles mode dialogs (`Alt+F1`, `Alt+F2`, plus `Ctrl+1/2`) and tells the target panel to activate the chosen mode.
+- Handles mode dialogs (`M-F1`, `M-F2`, plus `Ctrl+1/2`) and tells the target panel to activate the chosen mode.
 - Maintains cross-panel relationships: when the source panel selection changes, the controller notifies dependent widgets (describe/manifest) via their optional hooks.
 - Keeps Norton Commander–style shortcuts and full-width toggling logic near the app root so the panel remains UI-agnostic.
 
@@ -42,7 +42,7 @@
 - Theme updates flow from app config into widgets through `WidgetDeps`.
 
 ## Input Handling
-- The app only owns truly global shortcuts (quit, fullscreen/toggle terminal, `Alt+F1/Alt+F2`, `Ctrl+1/2`). Every other key and mouse event is forwarded directly to the active panel.
+- The app only owns truly global shortcuts (quit, fullscreen/toggle terminal, `M-F1/M-F2`, `Ctrl+1/2`). Every other key and mouse event is forwarded directly to the active panel.
 - The panel shell contains a small input router: it gives the widget first shot at each `tea.Msg`; if the widget returns “handled,” the shell stops. Otherwise the shell applies its minimal built-in navigation (selection movement, folder enter/back).
 - Widgets declare their own key and mouse behaviour. `ListWidget` consumes navigation keys, selection toggles, layout toggles (`ctrl+w`), and scroll wheel; `DescribeWidget` might handle search/theme keys; future widgets can claim drag/drop or other mouse gestures.
 - Mouse coordinates are normalized by the panel before invoking the widget so individual widgets never worry about frame borders.
