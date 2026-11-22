@@ -238,7 +238,7 @@ func (w *Widget) record() {
 func usagePercents(s models.InfoSummary) (cpu, mem float64, ok bool) {
 	var gotCPU, gotMem bool
 	for _, b := range s.Bars {
-		if !b.Known || !strings.HasPrefix(b.Detail, "use ") {
+		if !b.Known || !b.Usage {
 			continue
 		}
 		switch b.Label {
@@ -295,6 +295,9 @@ func (w *Widget) lines(width, height int) []string {
 	for _, b := range w.summary.Bars {
 		add(barLine(b, width))
 		add(strings.Repeat(" ", labelWidth+1) + b.Detail)
+		for _, line := range b.More {
+			add(strings.Repeat(" ", labelWidth+1) + line)
+		}
 		if h != nil {
 			var samples []float64
 			switch b.Label {
@@ -333,7 +336,8 @@ func barLine(b models.InfoBar, width int) string {
 	if !b.Known {
 		return label + "n/a"
 	}
-	tail := fmt.Sprintf(" %3.0f%%", b.Percent)
+	// Truncated, as kubectl describe node prints a percentage.
+	tail := fmt.Sprintf(" %3.0f%%", math.Floor(b.Percent))
 	if b.Flag != "" && b.Flag != "ok" {
 		tail += " " + b.Flag
 	}

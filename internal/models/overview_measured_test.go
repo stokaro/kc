@@ -501,7 +501,7 @@ func TestMeasuredUsageReasons(t *testing.T) {
 			}
 		})
 	}
-	if m := measuredUsage(Deps{}, "", new(int), nil); m.nodesReason != "usage metrics are off" || m.podsReason != "usage metrics are off" {
+	if m := measuredUsage(Deps{}, "", true, new(int), nil); m.nodesReason != "usage metrics are off" || m.podsReason != "usage metrics are off" {
 		t.Fatalf("without a registry = %+v", m)
 	}
 }

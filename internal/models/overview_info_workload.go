@@ -62,10 +62,7 @@ func workloadInfoSummary(report *overviewReport, err error, cfgIn appconfig.Over
 		}
 	}
 	if len(out.Top) == 0 {
-		out.TopNote = "no pod usage"
-		if !hasUse {
-			out.TopNote = "pod usage: " + usageNote
-		}
+		out.TopNote = "metrics unavailable: " + usageNote
 	}
 	return out
 }
@@ -80,13 +77,13 @@ func workloadResourceBar(cfg appconfig.OverviewConfig, label string, hasUse bool
 	warn := func(flag string) { bar.Flag, bar.Health = flag, severityWarning.RowHealth() }
 	switch {
 	case hasUse && limited:
-		bar.Known, bar.Percent = true, percent(use, lim)
+		bar.Known, bar.Usage, bar.Percent = true, true, percent(use, lim)
 		bar.Detail = fmt.Sprintf("use %s of lim %s, req %s", format(use), format(lim), format(req))
 		if bar.Percent >= float64(warnPercent) {
 			warn(flagNearLimit)
 		}
 	case hasUse && req > 0:
-		bar.Known, bar.Percent = true, percent(use, req)
+		bar.Known, bar.Usage, bar.Percent = true, true, percent(use, req)
 		bar.Detail = fmt.Sprintf("use %s of req %s, no limit", format(use), format(req))
 		if float64(use) >= cfg.UnderRequestedFactor*float64(req) {
 			warn(flagUnderRequested)
