@@ -454,6 +454,11 @@ type ObjectsConfig struct {
 	Order string `json:"order"`
 	// Columns controls which columns are shown. Valid values are ColumnsModeNormal and ColumnsModeWide.
 	Columns string `json:"columns"`
+	// GroupByNamespace groups a list across namespaces by namespace and
+	// sorts inside each namespace, as kubectl get -A prints it. When false
+	// the sort column orders all rows at once, so the pod with the most
+	// memory comes first whatever its namespace.
+	GroupByNamespace bool `json:"groupByNamespace"`
 }
 
 type TerminalMode string
@@ -512,7 +517,7 @@ func Default() *Config {
 			// Favorites empty by default so we can seed them from discovery's "all" category.
 			Favorites: nil,
 		},
-		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
+		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal, GroupByNamespace: true},
 		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
 		NodeShell: NodeShellConfig{
 			Enabled:     false,
