@@ -124,4 +124,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Resources.PeekInterval.Duration != b.Resources.PeekInterval.Duration {
 		t.Fatalf("resources.peekInterval mismatch: yaml=%v code=%v", a.Resources.PeekInterval.Duration, b.Resources.PeekInterval.Duration)
 	}
+	// Compare the YAML as written: a key missing from the file must fail
+	// here, not be filled in by Normalized.
+	if !reflect.DeepEqual(fromYAML.Overview, fromCode.Overview) {
+		t.Fatalf("overview mismatch: yaml=%+v code=%+v", fromYAML.Overview, fromCode.Overview)
+	}
 }

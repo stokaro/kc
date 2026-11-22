@@ -112,6 +112,66 @@ type Config struct {
 	Objects    ObjectsConfig       `json:"objects"`
 	Terminal   TerminalConfig      `json:"terminal"`
 	Commands   []CommandConfig     `json:"commands"`
+	Overview   OverviewConfig      `json:"overview"`
+}
+
+// OverviewConfig holds the thresholds of the /overview folder. A zero or
+// negative value means the default; Normalized fills it in.
+type OverviewConfig struct {
+	// Window is how far back warning events and container restarts count.
+	Window metav1.Duration `json:"window"`
+	// RestartThreshold is how many restarts make a pod "restarting" when its
+	// last restart is inside Window.
+	RestartThreshold int `json:"restartThreshold"`
+	// RequestsWarnPercent and RequestsFailPercent compare the CPU and memory
+	// requests on a node with its allocatable.
+	RequestsWarnPercent int `json:"requestsWarnPercent"`
+	RequestsFailPercent int `json:"requestsFailPercent"`
+	// LimitsWarnPercent marks a node overcommitted when the limits of its
+	// pods add up to more than this percent of allocatable.
+	LimitsWarnPercent int `json:"limitsWarnPercent"`
+	// PodsWarnPercent compares the pods on a node with allocatable pods.
+	PodsWarnPercent int `json:"podsWarnPercent"`
+	// QuotaWarnPercent flags a ResourceQuota when any used value reaches
+	// this percent of its hard limit.
+	QuotaWarnPercent int `json:"quotaWarnPercent"`
+}
+
+// DefaultOverview returns the default overview thresholds.
+func DefaultOverview() OverviewConfig {
+	return OverviewConfig{
+		Window:              metav1.Duration{Duration: time.Hour},
+		RestartThreshold:    3,
+		RequestsWarnPercent: 80,
+		RequestsFailPercent: 95,
+		LimitsWarnPercent:   100,
+		PodsWarnPercent:     90,
+		QuotaWarnPercent:    80,
+	}
+}
+
+// Normalized returns o with every unset or invalid value replaced by its
+// default.
+func (o OverviewConfig) Normalized() OverviewConfig {
+	d := DefaultOverview()
+	if o.Window.Duration <= 0 {
+		o.Window = d.Window
+	}
+	positive := func(v *int, def int) {
+		if *v <= 0 {
+			*v = def
+		}
+	}
+	positive(&o.RestartThreshold, d.RestartThreshold)
+	positive(&o.RequestsWarnPercent, d.RequestsWarnPercent)
+	positive(&o.RequestsFailPercent, d.RequestsFailPercent)
+	positive(&o.LimitsWarnPercent, d.LimitsWarnPercent)
+	positive(&o.PodsWarnPercent, d.PodsWarnPercent)
+	positive(&o.QuotaWarnPercent, d.QuotaWarnPercent)
+	if o.RequestsFailPercent < o.RequestsWarnPercent {
+		o.RequestsFailPercent = o.RequestsWarnPercent
+	}
+	return o
 }
 
 type CommandType string
@@ -216,6 +276,7 @@ func Default() *Config {
 		},
 		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
 		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
+		Overview: DefaultOverview(),
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
