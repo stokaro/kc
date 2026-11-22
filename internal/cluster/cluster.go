@@ -176,7 +176,9 @@ func (c *Cluster) ensureDiscovery() error {
 	if c.mapper != nil && c.baseMapper != nil && c.disco != nil && c.dyn != nil {
 		return nil
 	}
-	ctrllog.Log.WithName("cluster").Info("initializing discovery clients", "cluster", fmt.Sprintf("%p", c))
+	// New and the accessors that initialize discovery take no context, and
+	// their callers are in internal/ui, so this one line uses the global logger.
+	ctrllog.Log.WithName("cluster").Info("initializing discovery clients", "cluster", fmt.Sprintf("%p", c)) //nolint:forbidigo // no context here, see above
 	dc, err := discovery.NewDiscoveryClientForConfig(rest.CopyConfig(c.GetConfig()))
 	if err != nil {
 		return err
@@ -240,16 +242,20 @@ func (c *Cluster) DiscoveryClient() discovery.CachedDiscoveryInterface {
 }
 
 // RefreshDiscovery invalidates cached discovery information and notifies listeners.
+//
+// RefreshDiscovery takes no context, and callers in internal/models use it,
+// so this logger is global as well.
 func (c *Cluster) RefreshDiscovery() {
+	log := ctrllog.Log.WithName("discovery") //nolint:forbidigo // no context here, see above
 	if err := c.ensureDiscovery(); err != nil {
 		return
 	}
 	if c.disco != nil {
-		ctrllog.Log.WithName("discovery").V(1).Info("RefreshDiscovery invalidate", "cache", fmt.Sprintf("%p", c.disco))
+		log.V(1).Info("RefreshDiscovery invalidate", "cache", fmt.Sprintf("%p", c.disco))
 		c.disco.Invalidate()
 	}
 	if c.baseMapper != nil {
-		ctrllog.Log.WithName("discovery").V(1).Info("RefreshDiscovery reset mapper", "mapper", fmt.Sprintf("%p", c.baseMapper))
+		log.V(1).Info("RefreshDiscovery reset mapper", "mapper", fmt.Sprintf("%p", c.baseMapper))
 		c.baseMapper.Reset()
 	}
 	c.notifyDiscoveryListeners()
