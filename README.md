@@ -161,7 +161,7 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 
 ### JSON logs
 
-The logs viewer keeps every line it reads. Lines that hold one JSON object (optionally after the `--timestamps` time) are shown formatted: time, level (colored by severity), message, then the other fields as `key=value`, with nested objects as dotted keys. Other lines, including broken JSON, are shown as they are. `M-v` switches to the raw lines and back; the filter, the search and follow mode stay.
+The logs viewer and the Logs panel keep the most recent lines they read: up to `viewer.logs.maxLines` lines (default 100000) and about `viewer.logs.maxMemoryMiB` MiB (default 64) each. When either limit is passed, the oldest tenth goes; the footer then counts the dropped lines (`90000 lines (10000 older dropped)`), and a copy with `M-a` or `M-A` says so too. If you were reading lines that were dropped, the view moves to the oldest kept line and the footer says so until you scroll. A line longer than 256 KiB keeps its first 256 KiB and ends with `[kc] line truncated: <n> bytes, the first 262144 kept`. Lines that hold one JSON object (optionally after the `--timestamps` time) are shown formatted: time, level (colored by severity), message, then the other fields as `key=value`, with nested objects as dotted keys. Other lines, including broken JSON, are shown as they are. `M-v` switches to the raw lines and back; the filter, the search and follow mode stay.
 
 `M-g` opens the filter. It takes space-separated terms; a line is shown when it matches every term and no `!` term. The footer shows how many lines pass.
 
@@ -397,6 +397,7 @@ Read-only mode refuses `M-n` before the menu opens.
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer and a Logs panel open with. `F2` in the viewer or the panel changes them there; `C-s` saves them as the defaults.
 - `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot.
+- `viewer.logs.maxLines`, `viewer.logs.maxMemoryMiB` – how many lines, and about how much memory, one logs viewer or Logs panel keeps (defaults 100000 and 64); older lines are dropped, see [JSON logs](#json-logs).
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
@@ -467,6 +468,10 @@ viewer:
     # Log streams a merged logs viewer (all pods of a workload, all
     # containers of a pod) runs at once; more wait for a free slot.
     maxRequests: 50
+    # Lines one logs viewer or Logs panel keeps, and their estimated memory
+    # in MiB; older lines are dropped and the footer counts them.
+    maxLines: 100000
+    maxMemoryMiB: 64
 
 panel:
   scrolling:

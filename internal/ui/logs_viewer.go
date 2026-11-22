@@ -120,6 +120,9 @@ type LogsViewer struct {
 	// merged marks a merged stream: every line starts with a colored
 	// `[pod/container]` prefix, which becomes the record's source.
 	merged bool
+	// lostPlace is set when the lines the user was reading were dropped
+	// to stay within the limits; the next scroll clears it.
+	lostPlace bool
 }
 
 // SetCommand sets the kubectl command shown under the log. A command builder
@@ -200,6 +203,7 @@ func (v *LogsViewer) SetLogOptions(opts LogOptions) tea.Cmd {
 	v.inner.SetLines(nil)
 	v.inner.ScrollToEnd()
 	v.autoFollow = true
+	v.lostPlace = false
 	return v.start()
 }
 
@@ -242,17 +246,20 @@ func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.String() == "end" {
 			if !v.autoFollow {
 				v.autoFollow = true
+				v.lostPlace = false
 				v.inner.ScrollToEnd()
 				return v, nil
 			}
 		}
 		if cmd, handled := v.inner.Update(m); handled {
 			v.autoFollow = v.inner.AtEnd()
+			v.lostPlace = false
 			return v, cmd
 		}
 	case tea.MouseWheelMsg:
 		if cmd, handled := v.inner.Update(m); handled {
 			v.autoFollow = v.inner.AtEnd()
+			v.lostPlace = false
 			return v, cmd
 		}
 	default:
@@ -442,7 +449,7 @@ func (v *LogsViewer) readNextChunk() tea.Cmd {
 	}
 	buf, gen := v.buffer, v.gen
 	return func() tea.Msg {
-		line, err := buf.ReadString('\n')
+		line, err := logview.ReadLine(buf, logview.ReadLimit)
 		if len(line) > 0 {
 			text := strings.TrimRight(line, "\r\n")
 			msg := logStreamMsg{viewer: v, gen: gen, lines: []string{text}}

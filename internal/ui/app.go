@@ -2103,6 +2103,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	}
 	title := fmt.Sprintf("logs:%s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
 	logsViewer := NewLogsViewer(title, spec, open, a.viewerTheme())
+	logsViewer.SetLimits(a.logLimits())
 	if lc, ok := item.(models.LogsCommander); ok {
 		logsViewer.SetCommandBuilder(lc.LogsCommand)
 	} else {

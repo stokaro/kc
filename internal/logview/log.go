@@ -19,72 +19,132 @@ func (m Mode) String() string {
 	return "formatted"
 }
 
-// Log keeps every record of a stream and the display settings. Each record
-// gives at most one display line, so the display can be rebuilt at any time
-// from the retained records. A Log is not safe for concurrent use; the
-// viewer owns it on the update goroutine.
+// Log keeps the recent records of a stream, within its Limits, and the
+// display settings. Each record gives at most one display line, so the
+// display can be rebuilt at any time from the kept records. A Log is not
+// safe for concurrent use; the viewer owns it on the update goroutine.
 type Log struct {
+	// records and shown are parallel: shown[i] says whether records[i]
+	// passes the query.
 	records []Record
+	shown   []bool
+	window  *Window
 	format  Format
 	mode    Mode
 	query   *Query
-	shown   int
+	nShown  int
+	// truncated counts the kept records whose line was cut.
+	truncated int
 }
 
-// NewLog returns an empty log in the formatted view.
+// NewLog returns an empty log in the formatted view with DefaultLimits.
 func NewLog(format Format) *Log {
-	return &Log{format: format}
+	return &Log{format: format, window: NewWindow(DefaultLimits())}
 }
+
+// SetLimits replaces the limits and drops the oldest records that no longer
+// fit. It returns how many display lines were dropped from the front.
+func (l *Log) SetLimits(limits Limits) int {
+	l.window.limits = limits
+	return l.trim()
+}
+
+// Limits returns the limits.
+func (l *Log) Limits() Limits { return l.window.limits }
 
 // Append adds lines from src and returns the display lines of those that
-// pass the query.
-func (l *Log) Append(src Source, lines ...string) []string {
-	out := make([]string, 0, len(lines))
+// pass the query, and how many display lines the caller must drop from the
+// front of its display because their records no longer fit the limits.
+// The dropped lines can include some of the returned ones when one call
+// brings more than the limits hold, so append first, then drop. A line
+// longer than ReadLimit is truncated with a notice.
+func (l *Log) Append(src Source, lines ...string) (shown []string, dropped int) {
+	shown = make([]string, 0, len(lines))
 	for _, line := range lines {
-		l.records = append(l.records, NewRecord(line, src))
-		r := &l.records[len(l.records)-1]
-		if !l.query.Match(r) {
+		r := NewRecord(TruncateLine(line, ReadLimit), src)
+		if IsTruncated(r.Raw) {
+			l.truncated++
+		}
+		match := l.query.Match(&r)
+		l.records = append(l.records, r)
+		l.shown = append(l.shown, match)
+		l.window.Add(Cost(len(r.Raw), r.IsJSON()))
+		if !match {
 			continue
 		}
-		l.shown++
-		out = append(out, l.render(r))
+		l.nShown++
+		shown = append(shown, l.render(&l.records[len(l.records)-1]))
 	}
-	return out
+	return shown, l.trim()
+}
+
+// trim drops the records the window let go and returns how many of them
+// were shown.
+func (l *Log) trim() int {
+	n := l.window.Trim()
+	if n == 0 {
+		return 0
+	}
+	dropped := 0
+	for i := range n {
+		if l.shown[i] {
+			dropped++
+		}
+		if IsTruncated(l.records[i].Raw) {
+			l.truncated--
+		}
+	}
+	// Clear the dropped slots so their lines and parsed objects can be
+	// collected; the slices lose their front and reallocate as they grow.
+	clear(l.records[:n])
+	l.records = l.records[n:]
+	l.shown = l.shown[n:]
+	l.nShown -= dropped
+	return dropped
 }
 
 // Lines returns the display lines of all records that pass the query.
 func (l *Log) Lines() []string {
-	out := make([]string, 0, l.shown)
+	out := make([]string, 0, l.nShown)
 	for i := range l.records {
-		r := &l.records[i]
-		if l.query.Match(r) {
-			out = append(out, l.render(r))
+		if l.shown[i] {
+			out = append(out, l.render(&l.records[i]))
 		}
 	}
 	return out
 }
 
 // Originals returns the original lines of the records that pass the query,
-// unchanged (no formatting, no extraction, invalid UTF-8 kept).
+// unchanged (no formatting, no extraction, invalid UTF-8 kept). A line
+// that was too long ends with its truncation notice.
 func (l *Log) Originals() []string {
-	out := make([]string, 0, l.shown)
+	out := make([]string, 0, l.nShown)
 	for i := range l.records {
-		r := &l.records[i]
-		if l.query.Match(r) {
-			out = append(out, r.Raw)
+		if l.shown[i] {
+			out = append(out, l.records[i].Raw)
 		}
 	}
 	return out
 }
 
-// Records returns the retained records. The slice is shared; do not modify.
+// Records returns the kept records. The slice is shared; do not modify.
 func (l *Log) Records() []Record { return l.records }
 
-// Len returns the number of retained records.
+// Len returns the number of kept records.
 func (l *Log) Len() int { return len(l.records) }
 
 // Shown returns the number of records that pass the query.
-func (l *Log) Shown() int { return l.shown }
+func (l *Log) Shown() int { return l.nShown }
+
+// Dropped returns how many older records were dropped to stay within the
+// limits since the stream started.
+func (l *Log) Dropped() int64 { return l.window.Dropped() }
+
+// Truncated returns how many kept records had their line truncated.
+func (l *Log) Truncated() int { return l.truncated }
+
+// Bytes returns the estimated memory of the kept records.
+func (l *Log) Bytes() int64 { return l.window.Bytes() }
 
 // Mode returns the current view mode.
 func (l *Log) Mode() Mode { return l.mode }
@@ -102,10 +162,11 @@ func (l *Log) SetQuery(q *Query) {
 		q = nil
 	}
 	l.query = q
-	l.shown = 0
+	l.nShown = 0
 	for i := range l.records {
-		if q.Match(&l.records[i]) {
-			l.shown++
+		l.shown[i] = q.Match(&l.records[i])
+		if l.shown[i] {
+			l.nShown++
 		}
 	}
 }
@@ -116,7 +177,10 @@ func (l *Log) SetFormat(f Format) { l.format = f }
 // Reset drops all records and keeps the settings, for a restarted stream.
 func (l *Log) Reset() {
 	l.records = nil
-	l.shown = 0
+	l.shown = nil
+	l.nShown = 0
+	l.truncated = 0
+	l.window.Reset()
 }
 
 func (l *Log) render(r *Record) string {
