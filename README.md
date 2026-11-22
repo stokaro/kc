@@ -61,6 +61,13 @@ Kubernetes Commander accepts a subset of kubectl syntax so you can jump straight
 
 All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s default.
 
+Startup scope flags work as in kubectl, before or after the subcommand:
+
+- `kc --context staging` – start in the `staging` context instead of the current one. kc reads the context from the kubeconfig files it loads (`--kubeconfig`, `$KUBECONFIG` or `~/.kube`); an unknown name stops kc with an error before the UI opens. kubeconfig is not changed.
+- `kc -A`, `kc --context staging -A get pods` – start both panels in the all-namespaces scope, with the Namespace column. `-A` wins over `-n`, as in kubectl.
+- `kc get -A` takes types only: `kc get pods -A web` fails, like kubectl, because a name is only unique in one namespace. `kc logs` does not take `-A`.
+- `--as`, `--as-group` and `--as-uid` keep working with all of these.
+
 ## Key Bindings
 
 | Key        | Action                                                                          |
