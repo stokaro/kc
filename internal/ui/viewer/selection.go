@@ -24,8 +24,8 @@ func (p textPos) before(o textPos) bool {
 	return p.line < o.line || (p.line == o.line && p.col < o.col)
 }
 
-// selection is a mouse selection, kept like in Claude Code: drag with the
-// left button to select, release to copy; a plain click clears it.
+// selection is a mouse selection: drag with the left button to select,
+// release to copy; a plain click clears it.
 type selection struct {
 	active   bool // a selection is shown
 	dragging bool // the left button is held

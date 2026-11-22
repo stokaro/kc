@@ -136,10 +136,9 @@ func (a *App) copyPanelCommand() tea.Cmd {
 	return a.copyText(command, command)
 }
 
-// copyText puts text on the clipboard the way Claude Code does it: a local
-// clipboard tool (pbcopy, wl-copy, xclip, xsel) when kc runs locally, OSC 52
-// over SSH or when no tool exists, and, inside tmux, the tmux paste buffer
-// as well. The confirmation names the path used and what was copied; OSC 52
+// copyText puts text on the clipboard: a local clipboard tool (pbcopy,
+// wl-copy, xclip, xsel) when kc runs locally, OSC 52 over SSH or when no
+// tool exists, and, inside tmux, the tmux paste buffer as well. The confirmation names the path used and what was copied; OSC 52
 // cannot confirm that the terminal accepted the text.
 func (a *App) copyText(text, what string) tea.Cmd {
 	if text == "" {

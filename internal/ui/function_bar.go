@@ -74,7 +74,6 @@ type functionKeyID int
 
 const (
 	functionKeyHelp functionKeyID = iota
-	functionKeyOptions
 	functionKeyView
 	functionKeyEdit
 	functionKeyCopy
@@ -82,6 +81,7 @@ const (
 	functionKeyNamespace
 	functionKeyDelete
 	functionKeyCommands
+	functionKeyPullDown
 	functionKeyQuit
 	functionKeyFocus
 )
@@ -100,14 +100,14 @@ func panelFunctionKeys(state functionBarState) []functionKey {
 	caps := state.Capabilities
 	keys := []functionKey{
 		{functionKeyHelp, " 1", "Help", caps.HasHelp},
-		{functionKeyOptions, " 2", "Options", caps.HasOptions},
+		{functionKeyCommands, " 2", "Menu", caps.HasContextMenu},
 		{functionKeyView, " 3", "View", caps.CanView},
 		{functionKeyEdit, " 4", "Edit", caps.CanEdit},
 		{functionKeyCopy, " 5", "Copy", caps.CanCopy},
 		{functionKeyRenameMove, " 6", "", false},
 		{functionKeyNamespace, " 7", "Namespace", caps.CanCreateNS},
 		{functionKeyDelete, " 8", "Delete", caps.CanDelete},
-		{functionKeyCommands, " 9", "Commands", caps.HasContextMenu},
+		{functionKeyPullDown, " 9", "PullDn", true},
 		{functionKeyQuit, "10", "Quit", true},
 	}
 	if state.PanelMode == PanelModeCommand && state.PanelInteractive {
