@@ -79,6 +79,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		return a, a.showViewOptionsModalForPanel(a.panelByIndex(1))
 	case accessViewKey:
 		return a, a.showAccessView()
+	case overviewKey:
+		if a.panelKeysFree() {
+			return a, a.openOverview()
+		}
 	case "alt+w":
 		if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
 			return a, tea.Batch(resizeCmds...)

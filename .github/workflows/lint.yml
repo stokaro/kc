@@ -1,0 +1,44 @@
+name: Go Lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-lint-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Go lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # golangci-lint reports only lines that differ from the merge base with
+      # origin/main, so the job needs the history and the remote branch.
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Download dependencies
+        run: go mod download
+
+      # On a pull request the merge base with origin/main is the base of the
+      # pull request. On a push to main it would be the pushed commit itself,
+      # which leaves nothing to report, so the push compares with the commit
+      # before it.
+      - name: Lint
+        env:
+          LINT_BASE: ${{ github.event_name == 'push' && 'HEAD~1' || 'origin/main' }}
+        run: make lint LINT_BASE="${LINT_BASE}"

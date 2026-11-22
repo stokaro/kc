@@ -36,9 +36,12 @@ type transferDoneMsg struct {
 
 // transferJob is the copy the dialog shows. There is at most one.
 type transferJob struct {
-	gen       int
-	model     *TransferModel
-	req       filexfer.Request
+	gen   int
+	model *TransferModel
+	req   filexfer.Request
+	// upload is set for a copy from a local directory into a container;
+	// req is then unused and source is the container folder.
+	upload    *filexfer.UploadRequest
 	source    transferSource
 	destPanel int
 	counter   *filexfer.Counter
@@ -60,8 +63,9 @@ type localFolder interface {
 }
 
 // startTransfer opens the copy dialog when F5 is pressed in a container
-// folder and the other panel shows a local directory. It reports false
-// when the panels do not form a copy, so F5 keeps its export behavior.
+// folder and the other panel shows a local directory, or the other way
+// round. It reports false when the panels do not form a copy, so F5 keeps
+// its export behavior.
 func (a *App) startTransfer(panel *Panel) (tea.Cmd, bool) {
 	srcIdx, ok := a.panelIndexFor(panel)
 	if !ok {
@@ -73,7 +77,7 @@ func (a *App) startTransfer(panel *Panel) (tea.Cmd, bool) {
 	}
 	source, ok := srcNav.Current().(*models.PodContainerFSFolder)
 	if !ok {
-		return nil, false
+		return a.startUpload(panel, srcIdx, srcNav, dstNav)
 	}
 	dest, ok := dstNav.Current().(localFolder)
 	if !ok {
@@ -110,7 +114,11 @@ func (a *App) openTransfer(job *transferJob) {
 	a.transferGen++
 	job.gen = a.transferGen
 	a.transfer = job
-	a.modalManager.Register(transferModalKey, NewModal("Copy", job.model))
+	modal := NewModal("Copy", job.model)
+	// A copy into a container changes the cluster: red, like every
+	// confirmation of a change.
+	modal.SetDanger(job.upload != nil)
+	a.modalManager.Register(transferModalKey, modal)
 	a.layoutTransferModal()
 	a.modalManager.Show(transferModalKey)
 	a.invalidateView("transfer dialog")
@@ -204,6 +212,14 @@ func (a *App) handleTransferMsg(msg tea.Msg) tea.Cmd {
 			a.closeTransfer()
 			return nil
 		}
+		if job.upload != nil {
+			// The context may have become read-only while the dialog was open.
+			if cmd := a.refuseUpload(job.model.target); cmd != nil {
+				a.closeTransfer()
+				return cmd
+			}
+			job.upload.Policy = msg.policy
+		}
 		job.req.Policy = msg.policy
 		return a.runTransfer(job)
 	case transferTickMsg:
@@ -228,10 +244,14 @@ func (a *App) handleTransferMsg(msg tea.Msg) tea.Cmd {
 			job.cancel()
 		}
 		job.model.finish(msg.results, msg.err)
-		a.lastCopyDir = job.req.Dest
 		a.refreshPanelAfterEdit(job.destPanel)
 		log := ctrllog.FromContext(a.ctx).WithName("transfer")
-		log.Info("copy from container finished", "dest", job.req.Dest, "summary", summarizeResults(msg.results), "err", msg.err)
+		if job.upload != nil {
+			log.Info("copy into container finished", "src", job.upload.Src, "dir", job.upload.Dir, "summary", summarizeResults(msg.results), "err", msg.err)
+		} else {
+			a.lastCopyDir = job.req.Dest
+			log.Info("copy from container finished", "dest", job.req.Dest, "summary", summarizeResults(msg.results), "err", msg.err)
+		}
 		a.layoutTransferModal()
 		a.invalidateView("transfer done")
 		return nil
@@ -254,6 +274,11 @@ func (a *App) runTransfer(job *transferJob) tea.Cmd {
 	a.layoutTransferModal()
 	a.invalidateView("transfer start")
 	gen, req, source, counter := job.gen, job.req, job.source, job.counter
+	var upload *filexfer.UploadRequest
+	if job.upload != nil {
+		u := *job.upload
+		upload = &u
+	}
 	run := func() tea.Msg {
 		sessCtx, cancelSess := context.WithTimeout(ctx, transferSessionTimeout)
 		sess, err := source.TransferSession(sessCtx)
@@ -261,7 +286,16 @@ func (a *App) runTransfer(job *transferJob) tea.Cmd {
 		if err != nil {
 			return transferDoneMsg{gen: gen, err: err}
 		}
-		results, err := filexfer.Download(ctx, sess, req, counter)
+		var results []filexfer.Result
+		if upload != nil {
+			dst, ok := sess.(filexfer.Destination)
+			if !ok {
+				return transferDoneMsg{gen: gen, err: errors.New("this filesystem session cannot copy into the container")}
+			}
+			results, err = filexfer.Upload(ctx, dst, *upload, counter)
+		} else {
+			results, err = filexfer.Download(ctx, sess, req, counter)
+		}
 		if errors.Is(ctx.Err(), context.Canceled) {
 			// A canceled read leaves the session's command stream in an
 			// unknown state; the next listing opens a new one.

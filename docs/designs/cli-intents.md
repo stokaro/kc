@@ -12,6 +12,7 @@
   - `kc get <resource1>,<resource2>` or `kc get <resource1> <resource2>` → land on the namespace resources folder and multi-select each resource group.
   - Mixed pairs like `kc get pod/foo svc/bar` → navigate to the shallowest shared folder and highlight each requested row.
   - `kc logs <pod> [-c <container>] [--follow]` → open the pod/container logs viewer.
+  - `kc overview` → open `/overview` in the left panel (`docs/adr/0051-cluster-overview.md`). kubectl has no such verb; it takes `-n` and `-A` like `get`.
 - Honor `-n/--namespace` everywhere a kubectl command would, falling back to the context/default namespace when omitted.
 - Honor `--context` and `-A/--all-namespaces` at startup (`docs/adr/0072-startup-context-and-scope.md`). `RunConfig.Context` picks the context before kc connects; `RunConfig.AllNamespaces` starts both panels in `models.AllNamespaces`, and `kc get` resolves its type rows in that scope.
 
@@ -67,6 +68,9 @@
   4. Container row.
   5. Select the `latest` logs row (no Enter).
 - After the navigation completes, enqueue `a.openViewerForPanel(leftPanel)` so the logs modal opens using the existing `LogsProvider` code. Pass `Follow` from the intent into the `LogsSpec`.
+
+### `overview` Verb
+- `KubectlVerbOverview` walks the left panel with `NavigatePanel` to the root of the intent's namespace scope (`-A`, else `-n`, else the context's namespace) and enters the `__overview__` row (`models.OverviewRowID`). `M-i` uses the same path for the active panel.
 
 ### Error Handling
 - If resolution fails (unknown resource, missing pod/container, namespace not found), show a toast and keep both panels at whatever state `goToNamespace` left them in.

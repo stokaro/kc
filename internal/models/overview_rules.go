@@ -60,6 +60,8 @@ type overviewTarget struct {
 	// rank orders targets of the same severity: higher first, then by
 	// namespace and name.
 	rank float64
+	// involved is the object an event is about; Enter on the event opens it.
+	involved *corev1.ObjectReference
 }
 
 // overviewFinding is one row of the overview.
@@ -80,7 +82,11 @@ type overviewFinding struct {
 // overviewReport is the result of one recompute.
 type overviewReport struct {
 	at       time.Time
+	usageAt  time.Time // when the node usage was measured; zero when unknown
 	findings []overviewFinding
+	// nodes and pods feed the Info panel mode.
+	nodes []overviewNodeSummary
+	pods  []overviewPodUsage
 }
 
 // finding returns the finding with id, if any.
@@ -96,33 +102,28 @@ func (r *overviewReport) finding(id string) (overviewFinding, bool) {
 	return overviewFinding{}, false
 }
 
-// nodeUsage is the measured CPU (millicores) and memory (bytes) of a node.
-type nodeUsage struct {
-	cpuMilli int64
-	memBytes int64
-}
-
-// overviewUsage returns the measured usage per node name. ok is false when
-// no usage is known; the capacity rows then say "use n/a". The metrics
-// poller from #44 plugs in here.
-type overviewUsage func() (usage map[string]nodeUsage, ok bool)
-
-// computeOverview applies every rule to in. It only reads in.
-func computeOverview(in *overviewInput, cfg appconfig.OverviewConfig, now time.Time, usage overviewUsage) *overviewReport {
+// computeOverview applies every rule to in. It only reads in and m; a nil m
+// means nothing was measured.
+func computeOverview(in *overviewInput, cfg appconfig.OverviewConfig, now time.Time, m *overviewMeasured) *overviewReport {
 	cfg = cfg.Normalized()
-	rc := ruleContext{in: in, cfg: cfg, now: now, usage: usage}
-	report := &overviewReport{at: now}
+	if m == nil {
+		m = &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", statsReason: "not measured"}
+	}
+	rc := ruleContext{in: in, cfg: cfg, now: now, m: m}
+	report := &overviewReport{at: now, usageAt: m.usageAt}
 	for _, rule := range overviewRules {
 		report.findings = append(report.findings, rule(&rc))
 	}
+	report.nodes = summarizeNodes(&rc)
+	report.pods = summarizePods(&rc)
 	return report
 }
 
 type ruleContext struct {
-	in    *overviewInput
-	cfg   appconfig.OverviewConfig
-	now   time.Time
-	usage overviewUsage
+	in  *overviewInput
+	cfg appconfig.OverviewConfig
+	now time.Time
+	m   *overviewMeasured
 }
 
 // within reports whether t lies inside the configured window before now.
@@ -153,6 +154,7 @@ var overviewRules = []overviewRule{
 	capacityCPURule,
 	capacityMemoryRule,
 	capacityPodsRule,
+	capacityDiskRule,
 	nodesNotReadyRule,
 	nodesPressureRule,
 	nodesCordonedRule,
@@ -173,6 +175,9 @@ var overviewRules = []overviewRule{
 	pdbsBlockingRule,
 	podsBestEffortRule,
 	podsNoMemoryLimitRule,
+	podsNearMemoryLimitRule,
+	podsAtCPULimitRule,
+	volumesNearFullRule,
 	singleReplicaRule,
 	quotasRule,
 	hpasRule,
@@ -276,16 +281,9 @@ func nodeLoads(rc *ruleContext) []*nodeLoad {
 		l.memLim += lim.Memory().Value()
 		l.pods++
 	}
-	var usage map[string]nodeUsage
-	ok := false
-	if rc.usage != nil {
-		usage, ok = rc.usage()
-	}
 	for _, l := range loads {
-		if ok {
-			if u, found := usage[l.node.Name]; found {
-				l.cpuUse, l.memUse, l.hasUse = u.cpuMilli, u.memBytes, true
-			}
+		if u, found := rc.m.nodes[l.node.Name]; found {
+			l.cpuUse, l.memUse, l.hasUse = u.cpu, u.mem, true
 		}
 		l.cpuReqPct, l.cpuLimPct, l.cpuUP = percent(l.cpuReq, l.cpuAlloc), percent(l.cpuLim, l.cpuAlloc), percent(l.cpuUse, l.cpuAlloc)
 		l.memReqPct, l.memLimPct, l.memUP = percent(l.memReq, l.memAlloc), percent(l.memLim, l.memAlloc), percent(l.memUse, l.memAlloc)
@@ -300,17 +298,34 @@ func percent(v, of int64) float64 {
 	return float64(v) * 100 / float64(of)
 }
 
-// capacityFlag classifies requests and limits against allocatable.
-func capacityFlag(cfg appconfig.OverviewConfig, reqPct, limPct float64) (overviewSeverity, string) {
+// flagUnderRequested is the state of a node whose measured usage is well
+// above what its pods request.
+const flagUnderRequested = "under-req"
+
+// capacityFlag classifies requests, limits and the measured usage (when
+// hasUse) against allocatable. All values are percent of allocatable.
+func capacityFlag(cfg appconfig.OverviewConfig, reqPct, limPct float64, hasUse bool, usePct float64) (overviewSeverity, string) {
 	switch {
 	case reqPct >= float64(cfg.RequestsFailPercent):
 		return severityFailed, "full"
+	case hasUse && usePct >= float64(cfg.UsageFailPercent):
+		return severityFailed, "full"
 	case limPct > float64(cfg.LimitsWarnPercent):
 		return severityWarning, "overcommitted"
+	case hasUse && underRequested(cfg, usePct, reqPct):
+		return severityWarning, flagUnderRequested
+	case hasUse && usePct >= float64(cfg.UsageWarnPercent):
+		return severityWarning, "high"
 	case reqPct >= float64(cfg.RequestsWarnPercent):
 		return severityWarning, "high"
 	}
 	return severityOK, "ok"
+}
+
+// underRequested reports whether the usage is at least underRequestedFactor
+// times the requests and large enough to matter.
+func underRequested(cfg appconfig.OverviewConfig, usePct, reqPct float64) bool {
+	return usePct >= float64(cfg.UnderRequestedMinPercent) && usePct >= cfg.UnderRequestedFactor*reqPct
 }
 
 func capacityValue(hasUse bool, use, req, lim float64) string {
@@ -331,13 +346,19 @@ sidecars and pod overhead). They are summed over the nodes and compared with
 the sum of status.allocatable.%[1]s. This row always covers every node and
 every pod on it, whatever the namespace scope.
 
-A node is "full" when its requests reach requestsFailPercent (%[2]d%%),
-"overcommitted" when its limits exceed limitsWarnPercent (%[3]d%%), and
-"high" when its requests reach requestsWarnPercent (%[4]d%%). The row shows
-the worst node. Enter lists the nodes, the most loaded first.
+"use" is the measured usage of the nodes from metrics.k8s.io (NodeMetrics),
+read every 15 seconds while the overview is open. It is n/a when the API is
+not served, cannot be read, or has no value for a node yet.
 
-"use" is the measured usage from metrics.k8s.io; it is not read yet and
-shows n/a.`, resource, rc.cfg.RequestsFailPercent, rc.cfg.LimitsWarnPercent, rc.cfg.RequestsWarnPercent),
+A node is "full" when its requests reach requestsFailPercent (%[2]d%%) or
+its usage reaches usageFailPercent (%[5]d%%); "overcommitted" when its
+limits exceed limitsWarnPercent (%[3]d%%); "under-req" when its usage is at
+least underRequestedFactor (%.1[6]f) times its requests and reaches
+underRequestedMinPercent (%[7]d%%), so the scheduler thinks the node is
+emptier than it is; "high" when its usage reaches usageWarnPercent (%[8]d%%)
+or its requests reach requestsWarnPercent (%[4]d%%). The row shows the
+worst node. Enter lists the nodes, the most loaded first.`, resource, rc.cfg.RequestsFailPercent, rc.cfg.LimitsWarnPercent, rc.cfg.RequestsWarnPercent,
+			rc.cfg.UsageFailPercent, rc.cfg.UnderRequestedFactor, rc.cfg.UnderRequestedMinPercent, rc.cfg.UsageWarnPercent) + usageNote(rc.m.nodesReason),
 		kubectl: [][]string{{"describe", "nodes"}, {"top", "nodes"}},
 	}
 	if reason := rc.in.missingReason(ovNodesGVR, ovPodsGVR); reason != "" {
@@ -351,14 +372,14 @@ shows n/a.`, resource, rc.cfg.RequestsFailPercent, rc.cfg.LimitsWarnPercent, rc.
 		use, req, lim, alloc, usePct, reqPct, limPct := pick(l)
 		sumUse, sumReq, sumLim, sumAlloc = sumUse+use, sumReq+req, sumLim+lim, sumAlloc+alloc
 		allUse = allUse && l.hasUse
-		sev, flag := capacityFlag(rc.cfg, reqPct, limPct)
+		sev, flag := capacityFlag(rc.cfg, reqPct, limPct, l.hasUse, usePct)
 		if sev > worst || (sev == worst && worstFlag == "ok") {
 			worst, worstFlag = sev, flag
 		}
 		f.targets = append(f.targets, overviewTarget{
 			gvr: ovNodesGVR, name: l.node.Name, severity: sev,
 			value: capacityValue(l.hasUse, usePct, reqPct, limPct) + flagSuffix(flag),
-			rank:  max(reqPct, limPct),
+			rank:  max(reqPct, limPct, usePct),
 		})
 	}
 	f.targets = sortTargets(f.targets)
@@ -1193,7 +1214,8 @@ func warningEventsRule(rc *ruleContext) overviewFinding {
 		explain: fmt.Sprintf(`Events of type Warning last seen within the window (%s): the latest of
 series.lastObservedTime, lastTimestamp, eventTime and the creation time.
 Enter lists them, the newest first; the value shows the reason, the
-involved object and how often it happened.`, rc.windowLabel()),
+involved object and how often it happened. Enter on an event opens the
+involved object in the other panel.`, rc.windowLabel()),
 		kubectl: [][]string{kubectlGet("events", append(rc.nsArgs(), "--field-selector", "type=Warning", "--sort-by", ".lastTimestamp")...)},
 	}
 	return countFinding(rc, f, []schema.GroupVersionResource{ovEventsGVR}, func() []overviewTarget {
@@ -1216,9 +1238,10 @@ involved object and how often it happened.`, rc.windowLabel()),
 				value += fmt.Sprintf(" x%d", count)
 			}
 			value += fmt.Sprintf(", %s ago", shortDuration(rc.now.Sub(seen)))
+			involved := e.InvolvedObject
 			out = append(out, overviewTarget{
 				gvr: ovEventsGVR, namespace: e.Namespace, name: e.Name, severity: severityWarning,
-				value: value, rank: float64(seen.UnixNano()),
+				value: value, rank: float64(seen.UnixNano()), involved: &involved,
 			})
 		}
 		return out

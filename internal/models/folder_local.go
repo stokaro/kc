@@ -16,9 +16,9 @@ import (
 // reads like a cluster path.
 const LocalPathPrefix = "local:"
 
-// LocalDirFolder lists a directory of the local filesystem. It is read
-// only: it is the destination of a copy from a container, and shows what
-// the copy wrote.
+// LocalDirFolder lists a directory of the local filesystem. kc does not
+// change it except through a copy: it is the destination of a copy from a
+// container and the source of a copy into one.
 type LocalDirFolder struct {
 	*BaseFolder
 	dir string
@@ -120,7 +120,7 @@ func (f *LocalDirFolder) populate(context.Context) ([]table.Row, error) {
 		rowPath := append(f.Path(), r.name)
 		if !r.dir {
 			cells[1] = formatBytes(r.info.Size())
-			item := NewSimpleItem(full, cells, rowPath, WhiteStyle())
+			item := &LocalFileItem{SimpleItem: NewSimpleItem(full, cells, rowPath, WhiteStyle()), path: full}
 			item.RowItem.details = full
 			out = append(out, item)
 			continue
@@ -156,4 +156,28 @@ type LocalDirItem struct {
 // Enter lists the directory.
 func (d *LocalDirItem) Enter() (Folder, error) { return NewLocalDirFolder(d.deps, d.dir), nil }
 
-var _ Enterable = (*LocalDirItem)(nil)
+// LocalPath returns the absolute path of the directory.
+func (d *LocalDirItem) LocalPath() string { return d.dir }
+
+// LocalEntryItem is a row of a local folder that can be copied into a
+// container.
+type LocalEntryItem interface {
+	Item
+	LocalPath() string
+}
+
+// LocalFileItem is a row of a local folder that is not a directory: a
+// file, a link to one, or a special file.
+type LocalFileItem struct {
+	*SimpleItem
+	path string
+}
+
+// LocalPath returns the absolute path of the entry.
+func (f *LocalFileItem) LocalPath() string { return f.path }
+
+var (
+	_ Enterable      = (*LocalDirItem)(nil)
+	_ LocalEntryItem = (*LocalDirItem)(nil)
+	_ LocalEntryItem = (*LocalFileItem)(nil)
+)

@@ -49,6 +49,7 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 		a.panelModeItem(idx, "&List", PanelModeList),
 		a.panelModeItem(idx, "&Describe", PanelModeDescribe),
 		a.panelModeItem(idx, "&Manifest", PanelModeManifest),
+		a.panelModeItem(idx, "&Info", PanelModeInfo),
 		menubar.Separator(),
 		{Label: "Panel &options...", Shortcut: optionsKey, Disabled: !visible, Run: func() tea.Cmd {
 			return a.showViewOptionsModalForPanel(a.panelByIndex(idx))

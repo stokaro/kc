@@ -1,5 +1,7 @@
 # Contributing to kc
 
+kc started as a fork of [Kubernetes Commander](https://github.com/sttts/kc) (upstream) and is now developed independently in [stokaro/kc](https://github.com/stokaro/kc). It has diverged a lot from upstream, so open issues and pull requests for this version here, not upstream.
+
 ## Dev Environment
 
 - Go 1.27+ (module toolchain is pinned in `go.mod`).
@@ -12,7 +14,11 @@ go fmt ./...
 go test ./... -v
 go vet ./...
 go build ./cmd/kc
+make lint        # golangci-lint and nolintguard on code changed since origin/main
+make lint-fix    # apply automatic fixes, then lint
 ```
+
+CI runs `make lint` on every pull request. The lint tools are pinned in the `go.mod` tool block, so `go tool` runs them without a separate install. `make lint-all` lints the whole tree; it still fails on findings that predate the lint setup (see `docs/adr/0118-lint-setup.md`).
 
 ## Workflow & Expectations
 
@@ -23,7 +29,7 @@ go build ./cmd/kc
 
 ## Opening Changes
 
-1. Fork the repo (or create a feature branch if you have write access).
+1. Fork [stokaro/kc](https://github.com/stokaro/kc) (or create a feature branch if you have write access).
 2. Make your edits, keeping commits focused.
 3. Run the relevant `go test` / `go vet` / `go build` commands above.
 4. Describe what changed, why, and how you tested it in the PR description.

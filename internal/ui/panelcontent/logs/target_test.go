@@ -1,6 +1,7 @@
 package logs_test
 
 import (
+	"slices"
 	"testing"
 
 	models "github.com/sttts/kc/internal/models"
@@ -31,27 +32,37 @@ func TestTarget(t *testing.T) {
 	tests := []struct {
 		name string
 		item models.Item
-		want models.LogsSpec
+		want logswidget.Request
 		ok   bool
 	}{
 		{name: "nil", item: nil},
 		{
 			name: "pod",
 			item: podItem("ns1", "web"),
-			want: models.LogsSpec{Namespace: "ns1", Pod: "web", Follow: true, TailLines: tail},
+			want: logswidget.Request{Spec: models.LogsSpec{Namespace: "ns1", Pod: "web", Follow: true, TailLines: tail}},
 			ok:   true,
 		},
 		{
 			name: "container row",
 			item: containerItem("ns1", "web", "sidecar"),
-			want: models.LogsSpec{Namespace: "ns1", Pod: "web", Container: "sidecar", Follow: true, TailLines: tail},
+			want: logswidget.Request{Spec: models.LogsSpec{Namespace: "ns1", Pod: "web", Container: "sidecar", Follow: true, TailLines: tail}},
 			ok:   true,
 		},
 		{
 			name: "container log row",
 			item: models.NewContainerLogItem(models.Deps{}, "logs_latest", []string{"logs"}, nil, models.LogsSpec{Namespace: "ns1", Pod: "web", Container: "app", TailLines: 50}),
-			want: models.LogsSpec{Namespace: "ns1", Pod: "web", Container: "app", Follow: true, TailLines: 50},
+			want: logswidget.Request{Spec: models.LogsSpec{Namespace: "ns1", Pod: "web", Container: "app", Follow: true, TailLines: 50}},
 			ok:   true,
+		},
+		{
+			name: "all-containers log row of a pod",
+			item: models.NewWorkloadLogItem(models.Deps{}, "logs_all", []string{"logs"}, nil, models.WorkloadLogsSpec{Namespace: "ns1", Pod: "web"}),
+			want: logswidget.Request{Spec: models.LogsSpec{Namespace: "ns1", Pod: "web", Follow: true, TailLines: tail}, AllContainers: true},
+			ok:   true,
+		},
+		{
+			name: "logs row of a workload",
+			item: models.NewWorkloadLogItem(models.Deps{}, "logs", []string{"logs"}, nil, models.WorkloadLogsSpec{Namespace: "ns1", Workload: deploymentsGVR, WorkloadName: "d"}),
 		},
 		{name: "container row without pod", item: models.NewContainerItem("app", []string{"/app"}, nil, nil, nil, nil)},
 		{name: "deployment", item: models.NewObjectRow("d", []string{"d"}, nil, deploymentsGVR, "ns1", "d", nil)},
@@ -99,5 +110,22 @@ func TestDefaultContainer(t *testing.T) {
 				t.Fatalf("DefaultContainer() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestContainerNames(t *testing.T) {
+	t.Parallel()
+	if got := logswidget.ContainerNames(nil); got != nil {
+		t.Fatalf("ContainerNames(nil) = %v, want nil", got)
+	}
+	pod := &corev1.Pod{Spec: corev1.PodSpec{
+		InitContainers:      []corev1.Container{{Name: "init"}},
+		Containers:          []corev1.Container{{Name: "app"}, {Name: "sidecar"}},
+		EphemeralContainers: []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug"}}},
+	}}
+	got := logswidget.ContainerNames(pod)
+	want := []string{"init", "app", "sidecar", "debug"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ContainerNames() = %v, want %v", got, want)
 	}
 }

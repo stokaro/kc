@@ -1,0 +1,345 @@
+version: "2"
+
+# Adapted from stokaro/ptah. See docs/adr/0118-lint-setup.md for what was
+# kept, what was dropped, and why.
+#
+# Run it through `make lint`, which uses the golangci-lint version pinned in
+# the go.mod tool block. A golangci-lint binary of another version may read
+# this file differently.
+
+run:
+  concurrency: 8
+  # No `go:` key on purpose: the default is the go directive in go.mod, and a
+  # second copy of the Go version would drift from it.
+
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - copyloopvar
+    - depguard
+    - dupl
+    - forbidigo
+    - funlen
+    - gochecknoinits
+    - gocognit
+    - gocritic
+    - gocyclo
+    - goprintffuncname
+    - gosec
+    - govet
+    - importas
+    - ineffassign
+    - lll
+    - modernize
+    - nakedret
+    - nestif
+    - nolintlint
+    - revive
+    - staticcheck
+    - unused
+    - whitespace
+  settings:
+    depguard:
+      rules:
+        main:
+          # `pkg` matches by prefix, and when a deny and an allow entry both
+          # match, the longer one wins. So `charm.land/bubbletea` refuses the
+          # v1 path and every v1 subpackage, and the allow entry lets the /v2
+          # module through. See AGENTS.md, "Dependencies Policy".
+          list-mode: lax
+          allow:
+            - charm.land/bubbletea/v2
+            - charm.land/bubbles/v2
+          deny:
+            - pkg: charm.land/bubbletea
+              desc: 'kc uses Bubble Tea v2 only; import charm.land/bubbletea/v2 (see AGENTS.md).'
+            - pkg: charm.land/bubbles
+              desc: 'kc uses Bubbles v2 only; import charm.land/bubbles/v2 (see AGENTS.md).'
+            - pkg: github.com/charmbracelet/bubbletea
+              desc: 'Old Bubble Tea import path; import charm.land/bubbletea/v2 (see AGENTS.md).'
+            - pkg: github.com/charmbracelet/bubbles
+              desc: 'Old Bubbles import path; import charm.land/bubbles/v2 (see AGENTS.md).'
+            - pkg: io/ioutil
+              desc: 'Deprecated: As of Go 1.16, the same functionality is now provided by package `io` or package `os`.'
+            # kc tests use the standard library testing package. The ban is
+            # on the import graph, so a comment that mentions testify does not
+            # trip it.
+            - pkg: github.com/stretchr/testify
+              desc: 'kc tests use the standard library testing package; do not add testify.'
+    forbidigo:
+      # With analyze-types, a pattern matches the package name and the
+      # identifier, and `pkg` pins the import path, so an alias does not hide
+      # a call.
+      analyze-types: true
+      forbid:
+        # Tests derive contexts from t.Context(). This pattern applies to
+        # _test.go files only; see the path-except rule under exclusions.
+        - pattern: '^context\.(Background|TODO)$'
+          pkg: '^context$'
+          msg: 'in tests use t.Context() (see AGENTS.md, "Logging Guidelines")'
+        # The global controller-runtime logger. Code takes its logger from the
+        # context with ctrllog.FromContext(ctx). cmd/kc, which installs the
+        # logger, is excluded below.
+        - pattern: '^log\.Log$'
+          pkg: '^sigs\.k8s\.io/controller-runtime/pkg/log$'
+          msg: 'use ctrllog.FromContext(ctx) instead of the global logger (see AGENTS.md, "Logging Guidelines")'
+        - pattern: '^controllerruntime\.Log$'
+          pkg: '^sigs\.k8s\.io/controller-runtime$'
+          msg: 'use ctrllog.FromContext(ctx) instead of the global logger (see AGENTS.md, "Logging Guidelines")'
+    funlen:
+      lines: 240
+      statements: 160
+    gocognit:
+      min-complexity: 30
+    gocritic:
+      enabled-checks:
+        - badLock
+        - badRegexp
+        - badSorting
+        - badSyncOnceFunc
+        - deferInLoop
+        - dynamicFmtString
+        - emptyDecl
+        - filepathJoin
+    gocyclo:
+      min-complexity: 20
+    importas:
+      no-unaliased: true
+      alias:
+        # AGENTS.md, "Logging Guidelines".
+        - pkg: sigs.k8s.io/controller-runtime/pkg/log
+          alias: ctrllog
+    lll:
+      line-length: 240
+    nakedret: # Discussions on why naked return can be a problem: https://github.com/golang/go/issues/21291
+      max-func-lines: 2 # few lines with bare return can be fine for some super short logicless functions
+    nestif:
+      min-complexity: 6
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-no-explanation:
+        # the following linters are allowed without explanations because usually there's nothing to explain
+        - errcheck
+        - lll
+    # nolintguard does not register as a golangci-lint module plugin. It is
+    # pinned as a Go tool and run through go vet by `make lint-nolintguard`.
+    revive:
+      severity: error
+      # See https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md
+      rules:
+        - name: atomic
+          disabled: false
+        - name: bare-return
+          disabled: true # covered by nakedret linter
+        - name: blank-imports
+          disabled: false
+        - name: bool-literal-in-expr
+          disabled: false
+        - name: confusing-results
+          disabled: false
+        - name: constant-logical-expr
+          disabled: false
+        - name: context-keys-type
+          disabled: false
+        - name: datarace
+          disabled: false
+        - name: deep-exit
+          disabled: false
+        - name: defer
+          disabled: false
+        - name: dot-imports
+          disabled: false
+        - name: duplicated-imports
+          disabled: false
+        - name: early-return
+          disabled: false
+        - name: empty-block
+          disabled: false
+        - name: empty-lines
+          disabled: false
+        - name: enforce-map-style
+          arguments:
+            - make
+          disabled: false
+        - name: enforce-repeated-arg-type-style
+          arguments:
+            - short
+          disabled: false
+        - name: enforce-slice-style
+          arguments:
+            - make
+          disabled: false
+        - name: error-naming
+          disabled: false
+        - name: error-return
+          disabled: false
+        - name: error-strings
+          disabled: false
+        - name: filename-format
+          arguments:
+            - '^[_a-z][_a-z0-9]*.go$'
+          disabled: false
+        - name: flag-parameter
+          disabled: false
+        - name: function-result-limit
+          arguments:
+            - 3
+          disabled: false
+        - name: get-return
+          disabled: false
+        - name: identical-branches
+          disabled: false
+        - name: import-alias-naming
+          arguments:
+            - # require aliases to be lowercased alphanumeric values (the first symbol is always a letter)
+              allowRegex: '^[a-z][a-z0-9]*$'
+              # disallow v1 (or vN, where N is a number) prefixes
+              denyRegex: '^v\d+$'
+          disabled: false
+        - name: import-shadowing
+          disabled: false
+        - name: increment-decrement
+          disabled: false
+        - name: indent-error-flow
+          arguments:
+            - preserveScope
+          disabled: false
+        - name: modifies-value-receiver
+          disabled: false
+        - name: optimize-operands-order
+          disabled: false
+        - name: range
+          disabled: false
+        - name: receiver-naming
+          arguments:
+            - maxLength: 4
+          disabled: false
+        - name: redefines-builtin-id
+          disabled: false
+        - name: redundant-import-alias
+          # AGENTS.md shows `tea "charm.land/bubbletea/v2"` as the correct
+          # import, and the alias names the package where the /v2 path does
+          # not. This rule would report every such import.
+          disabled: true
+        - name: string-of-int
+          disabled: false
+        - name: struct-tag
+          disabled: false
+        - name: superfluous-else
+          disabled: false
+        - name: time-equal
+          disabled: false
+        - name: unchecked-type-assertion
+          arguments:
+            - acceptIgnoredAssertionResult: true
+          disabled: false
+        - name: unconditional-recursion
+          disabled: false
+        - name: unexported-naming
+          disabled: false
+        - name: unexported-return
+          disabled: false
+        - name: unnecessary-stmt
+          disabled: false
+        - name: unreachable-code
+          disabled: false
+        - name: unused-parameter
+          arguments:
+            - allowRegex: '^_'
+          disabled: true # Bubble Tea and controller-runtime interfaces fix many signatures
+        - name: unused-receiver
+          disabled: true # same reason as unused-parameter
+        - name: use-any
+          disabled: false
+        - name: useless-break
+          disabled: false
+        - name: var-naming
+          disabled: false
+        - name: waitgroup-by-value
+          disabled: false
+    staticcheck:
+      checks:
+        - all
+        - -QF1008
+        # Package and exported-symbol comment checks stay off: kc does not
+        # require doc comments on every package and symbol.
+        - -ST1000
+        - -ST1003
+        - -ST1005
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # The context.Background/TODO ban is for tests. Production code creates
+      # its root context in cmd/kc and in Deps.Ctx (see AGENTS.md).
+      - linters:
+          - forbidigo
+        path-except: '_test\.go$'
+        text: 'context\.(Background|TODO)'
+      # cmd/kc installs the global logger and hands it to klog, so it is the
+      # one place that has to name it.
+      - linters:
+          - forbidigo
+        path: '^cmd/kc/'
+        text: 'global logger'
+      - linters:
+          - funlen
+          - gocognit
+          - gocritic
+          - gocyclo
+          - lll
+          - nestif
+          - dupl
+        path: '_test\.go$'
+      - path: '_test\.go$'
+        text: 'function-result-limit:'
+      - path: '_test\.go$'
+        text: 'bool-literal-in-expr:'
+      - path: '_test\.go$'
+        text: 'unchecked-type-assertion:'
+      - path: '(cmd|examples)/.*\.go$'
+        text: 'deep-exit:'
+      - path: '(cmd|examples)/.*\.go$'
+        linters:
+          - gochecknoinits
+      - text: 'var-naming: avoid meaningless package names'
+        linters:
+          - revive
+    paths:
+      - 'third_party$'
+      - 'builtin$'
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # Only code that differs from the merge base with main is reported. The
+  # findings already on main are a baseline, tracked in stokaro/kc#128
+  # (see docs/adr/0118-lint-setup.md). `make lint-all`
+  # reports the whole tree.
+  new-from-merge-base: origin/main
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/sttts/kc)
+  exclusions:
+    generated: lax
+    paths:
+      - 'third_party$'
+      - 'builtin$'
