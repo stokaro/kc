@@ -103,6 +103,7 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | `M-g`      | In the logs viewer: open the filter dialog.                                     |
 | `M-l`      | Open a local directory in the active panel, or leave it again. `Esc l` does the same. |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
+| `M-n`      | In the node list: cordon, uncordon or drain the marked nodes (see [Node Actions](#node-actions)). `Esc n` does the same. |
 | `M-j`      | Owners: opens `<object>/owners` with the owner references of the selected object, the controller first with the cursor on it. Owners that no longer exist or whose kind the cluster does not serve are listed dim with the reason. `Esc j` does the same. |
 | `M-b`      | Used by: opens `<object>/used-by` with the objects that use the selected one, read from the watch cache: pods using a ConfigMap, Secret, PersistentVolumeClaim or ServiceAccount (volumes, env, envFrom, imagePullSecrets, serviceAccountName), Services selecting a Pod, Ingresses routing to a Service, the claim bound to a PersistentVolume. `Esc b` does the same. |
 | `C-x C-d`  | Compare the objects under the cursors of the two panels, as mc's "Compare files". Opens a read-only unified diff of the two YAML manifests. |
@@ -335,6 +336,17 @@ A command acts on the marked rows when any are marked, otherwise on the highligh
     showFor:
       resources: ["pods"]
 ```
+
+## Node Actions
+
+In the node list (`/nodes`), `M-n` (or `Esc n`) opens a menu for the marked nodes, or the node under the cursor when none is marked:
+
+- **Cordon...** and **Uncordon...** set or clear `spec.unschedulable`, like `kubectl cordon` and `kubectl uncordon`. Nodes that are already in that state are left alone.
+- **Drain...** asks for the grace period (`-1` uses each pod's own), a timeout per node (`0` waits as long as it takes), and whether to skip DaemonSet pods, delete emptyDir data and evict pods without a controller (`--force`). kc then reads the nodes' pods and refuses at once, changing nothing, when kubectl would refuse them. Otherwise the red dialog shows what the drain does and the equivalent `kubectl drain` command.
+
+A drain cordons all the nodes first and then evicts their pods node by node through the Eviction API, which respects PodDisruptionBudgets. Mirror pods and, when chosen, DaemonSet pods stay. A dialog shows per node the pods evicted and remaining and the pods a budget refuses; those are asked again every five seconds. `Esc` cancels the drain; the nodes stay cordoned. Cordoned nodes are shown in red, like nodes that are not ready.
+
+Read-only mode refuses `M-n` before the menu opens.
 
 ## Configuration
 

@@ -777,6 +777,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, a.handlePortForwardMsg(msg)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case nodeActionMsg:
+		return a, a.handleNodeActionMsg(msg)
 	case workloadaction.Request:
 		return a, a.startWorkloadAction(msg)
 	case workloadMessage:
@@ -1075,6 +1077,10 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case nodeActionMsg:
+		// Node action dialogs answer themselves, and a drain reports
+		// progress while its dialog is open.
 		return true
 	case workloadMessage:
 		// The workload dialogs answer themselves.

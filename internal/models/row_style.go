@@ -103,6 +103,20 @@ func registerDefaultRowStylers() {
 		return info.BaseStyle
 	}))
 	registerHealthStylers()
+	RegisterRowStylerForGVR(nodeGVR, rowStylerFunc(cordonedNodeStyle))
+}
+
+// cordonedNodeStyle shows a cordoned node (spec.unschedulable) like a node
+// that is not ready: no new pods go there. It is a style only; the faults
+// filter (C-z) does not count a cordoned node.
+func cordonedNodeStyle(info RowStyleInfo) *lipgloss.Style {
+	if info.Unstructured == nil {
+		return info.BaseStyle
+	}
+	if cordoned, _, _ := unstructured.NestedBool(info.Unstructured.Object, "spec", "unschedulable"); cordoned {
+		return NotReadyStyle()
+	}
+	return info.BaseStyle
 }
 
 // registerHealthStylers colors the rows of every resource that has a

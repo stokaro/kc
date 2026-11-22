@@ -13,13 +13,20 @@ import (
 
 var podGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 
+// ForNodePods derives Deps whose cluster watches only the pods on node
+// (field selector spec.nodeName). The node's /pods folder and the drain
+// share this cluster, so neither starts a cluster-wide pod watch. The
+// caller owns the returned release and calls it when done with the Deps.
+func (d Deps) ForNodePods(nodeName string) (Deps, func()) {
+	return d.ForSelectorScope(map[schema.GroupVersionResource]crcache.ByObject{
+		podGVR: {Field: fields.OneTermEqualSelector("spec.nodeName", nodeName)},
+	})
+}
+
 // NewNodePodsFolder lists pods scheduled on a specific node using a
 // selector-scoped cluster. The folder holds that cluster until Close.
 func NewNodePodsFolder(deps Deps, path []string, nodeName string) *ObjectsFolder {
-	selectors := map[schema.GroupVersionResource]crcache.ByObject{
-		podGVR: {Field: fields.OneTermEqualSelector("spec.nodeName", nodeName)},
-	}
-	scoped, release := deps.ForSelectorScope(selectors)
+	scoped, release := deps.ForNodePods(nodeName)
 	folder := NewObjectsFolder(scoped, podGVR, "", path, nil)
 	folder.release = release
 	folder.kubectlArgs = []string{"--field-selector", "spec.nodeName=" + nodeName}
