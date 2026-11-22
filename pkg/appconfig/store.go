@@ -117,6 +117,9 @@ func (s *Store) read() (*Config, map[string]any, error) {
 		return nil, nil, &LoadError{Path: s.path, Err: err}
 	}
 	normalizeLoaded(cfg)
+	if err := cfg.Layout.Validate(); err != nil {
+		return nil, nil, &LoadError{Path: s.path, Err: err}
+	}
 	return cfg, raw, nil
 }
 

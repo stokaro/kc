@@ -265,7 +265,7 @@ Each row has a value and a state, colored like rows of object lists: normal is o
 
 The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. While it is open it lists NodeMetrics and PodMetrics every 15 seconds and reads `/api/v1/nodes/<node>/proxy/stats/summary` once a minute, at most five nodes at a time; that needs get on `nodes/proxy` and is skipped on clusters with more than `overview.statsMaxNodes` nodes. Thresholds are set under `overview:` in the configuration.
 
-The Info panel mode (`C-1` / `C-2`, or Info in the `F9` panel menu) is mc's Info panel for kc: it shows bars for CPU, memory, pods and disk of the other panel's namespace scope, or of one node when the other panel's cursor is on a node, a sparkline of the measured CPU and memory usage while it is open, and the five pods that use the most memory. When the other panel's cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob, the bars are about that workload's pods instead: CPU and memory usage of their limits (of their requests when a pod has no limit, `near-limit` and `under-req` flag the extremes), ready pods of the desired replicas, and its pods by memory. Pods are grouped by their controller owner references (a Deployment's pods through its ReplicaSets), not by label selectors. It reads the same data as `/overview` and stops when the panel leaves the mode.
+The Info panel mode (`C-1` / `C-2`, or Info in the `F9` panel menu) is mc's Info panel for kc: it shows bars for CPU, memory, pods and disk of the other panel's namespace scope, or of one node when the other panel's cursor is on a node, a sparkline of the measured CPU and memory usage while it is open, and the five pods that use the most memory. When the other panel's cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob, the bars are about that workload's pods instead: CPU and memory usage of their limits (of their requests when a pod has no limit, `near-limit` and `under-req` flag the extremes), ready pods of the desired replicas, and its pods by memory. Pods are grouped by their controller owner references (a Deployment's pods through its ReplicaSets), not by label selectors. It reads the same data as `/overview` and stops when the panel leaves the mode. The right panel starts in Info mode; `layout.rightPanelMode: list` restores two lists (see [Configuration](#configuration)).
 
 ## Read-only mode
 
@@ -388,6 +388,7 @@ Read-only mode refuses `M-n` before the menu opens.
 `~/.kc/config.yaml` stores all user preferences. Key sections:
 
 - `layout.menuBarVisible` – keep the menu bar titles on the top row (default `true`, as in mc); see [Menu Bar](#menu-bar).
+- `layout.leftPanelMode`, `layout.rightPanelMode` – the mode each panel starts in: `list`, `describe`, `manifest`, `logs` or `info` (default left `list`, right `info`). One panel must start in `list`. kc does not save panel modes between runs, so these apply on every start; start targets such as `kc overview` or `kc get pods` open in the left panel, and `kc get TYPE NAME -o yaml` still puts the right panel in Manifest mode.
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer and a Logs panel open with. `F2` in the viewer or the panel changes them there; `C-s` saves them as the defaults.
 - `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot.
@@ -442,6 +443,11 @@ layout:
   # Keep the menu bar titles on the top row, as in mc. false gives the row
   # to the panels; F9 still opens the bar.
   menuBarVisible: true
+  # Modes the panels start in: list, describe, manifest, logs or info.
+  # One panel must start in list mode. Panel modes are not saved, so these
+  # apply on every start; C-1 / C-2 switch them as usual.
+  leftPanelMode: list
+  rightPanelMode: info
 
 viewer:
   theme: dracula
