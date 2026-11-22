@@ -1,6 +1,6 @@
 # 0071. Format and filter JSON logs in the logs viewer
 
-- Status: Accepted
+- Status: Accepted; retention (the Log keeps every line) superseded by 0179
 - Date: 2026-11-22
 - Issue: #71
 

@@ -35,7 +35,7 @@ func (v *LogsViewer) handleLogViewKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	if isCopyOriginalsKey(msg) {
-		return viewerCopyRequest(strings.Join(v.log.Originals(), "\n"), "original records"), true
+		return viewerCopyRequest(strings.Join(v.log.Originals(), "\n"), v.copyWhatNote("original records")), true
 	}
 	switch msg.String() {
 	case logsToggleRawKey:
@@ -52,28 +52,68 @@ func (v *LogsViewer) handleLogViewKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case copyAllKey:
-		return viewerCopyRequest(v.inner.PlainText(), "shown lines"), true
+		return viewerCopyRequest(v.inner.PlainText(), v.copyWhatNote("shown lines")), true
 	}
 	return nil, false
 }
 
 // appendRecords keeps lines as records and shows those that pass the filter.
 // In a merged log each line's prefix becomes its source.
+// The log keeps only its recent records (docs/adr/0179-bounded-log-retention.md):
+// the display lines of dropped records leave the widget too.
 func (v *LogsViewer) appendRecords(lines []string) bool {
 	var shown []string
+	dropped := 0
 	if v.merged {
 		for _, line := range lines {
 			src, text := mergedLineSource(line)
-			shown = append(shown, v.log.Append(src, text)...)
+			s, d := v.log.Append(src, text)
+			shown = append(shown, s...)
+			dropped += d
 		}
 	} else {
-		shown = v.log.Append(logview.Source{}, lines...)
+		shown, dropped = v.log.Append(logview.Source{}, lines...)
 	}
-	if len(shown) == 0 {
-		return false
+	if len(shown) > 0 {
+		v.inner.AppendLines(shown)
 	}
-	v.inner.AppendLines(shown)
-	return true
+	v.dropLines(dropped)
+	return len(shown) > 0
+}
+
+// dropLines removes the n oldest display lines. When the user reads older
+// lines and the top one goes, the view moves to the oldest kept line and
+// the footer says so until the next scroll.
+func (v *LogsViewer) dropLines(n int) {
+	if n > 0 && v.inner.DropFirstLines(n) && !v.autoFollow {
+		v.lostPlace = true
+	}
+}
+
+// SetLimits sets how many records the viewer keeps.
+func (v *LogsViewer) SetLimits(limits logview.Limits) {
+	v.dropLines(v.log.SetLimits(limits))
+}
+
+// historyNote describes what the kept records lack, for the footer and the
+// copy messages: "" when nothing was dropped or truncated.
+func (v *LogsViewer) historyNote() string {
+	var parts []string
+	if n := v.log.Dropped(); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d older dropped", n))
+	}
+	if n := v.log.Truncated(); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d truncated", n))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// copyWhatNote names copied log text and says what it lacks.
+func (v *LogsViewer) copyWhatNote(what string) string {
+	if note := v.historyNote(); note != "" {
+		return what + " (" + note + ")"
+	}
+	return what
 }
 
 // refreshDisplay rebuilds the shown lines from the kept records. The stream
@@ -123,6 +163,12 @@ func (v *LogsViewer) logViewStatus() string {
 		text += fmt.Sprintf(", %d of %d lines", v.log.Shown(), v.log.Len())
 	} else {
 		text += fmt.Sprintf(", %d lines", v.log.Len())
+	}
+	if note := v.historyNote(); note != "" {
+		text += " (" + note + ")"
+	}
+	if v.lostPlace {
+		text += ", view moved: its lines were dropped"
 	}
 	if q := v.log.Query().String(); q != "" {
 		text += ", filter: " + q
