@@ -79,11 +79,18 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
 | `M-a`      | In viewers: copy the whole content.                                             |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
+| `M-e`      | Explain: browse the field documentation of the selected object or resource type, read from the cluster's OpenAPI v3 schema for exactly that group and version (CRDs included). See [Field documentation](#field-documentation). `Esc e` does the same. |
 | `C-c`      | Quit.                                                                           |
 
 Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
+
+## Field documentation
+
+`M-e` on an object row or a resource type row opens the type's schema in the same panel, at `/explain/<group>/<version>/<kind>`. The rows are the fields with their type (`string`, `[]Container`, `map[string]string`, ...), whether they are required, and the first sentence of their description. `Enter` on a `/field` row lists its nested fields; arrays and maps are crossed to their items, as in `kubectl explain`. `F3` on a field shows its full description with enum values, default, format and list type. `..` goes back, and at the top returns to the row you started from. The command line shows the matching `kubectl explain <resource>.<field> --api-version=<group>/<version>`; `M-c` copies it.
+
+The schema comes from the connected cluster (`/openapi/v3`, the source `kubectl explain` uses) and matches the version the panel lists, so a kind that exists in two API groups shows the right one. kc keeps the last 16 group-version documents in memory; every `M-e` reads the small `/openapi/v3` index, whose hashes change with the schema, so CRD updates and other contexts show up without a restart. When the cluster publishes no schema for the type, the panel says "No documentation"; when the request fails, it says "Schema request failed" in red with the error.
 
 ## Context and Namespace
 
