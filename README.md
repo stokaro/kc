@@ -144,6 +144,8 @@ Shell and attach run kubectl with the panel's kubeconfig, context and impersonat
 
 Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
 
+In every menu and list dialog (the user menu `F2`, node actions, the hotlist and panel history, the context and namespace pickers, the panel and view options, the access view), the mouse wheel moves the selection up or down while the pointer is over the dialog, as in mc. A list longer than its window scrolls to keep the selection in view. The wheel never runs the selected entry or changes an option, and a wheel turned outside the dialog is ignored.
+
 Each panel keeps its own history of the last 50 locations. A location is the context, the panel's namespace scope and the rows entered from the panel root, so going back can switch the namespace scope or, for an entry from another context, the context; a context switch puts the other panel at its root, as the context picker does. When a list is still loading, kc waits up to ten seconds for the row it needs.
 
 The compare viewer heads the diff with both identities (context, group/version/resource, namespace, name) and the fields it left out. By default it shows the configuration view: it omits `metadata.uid`, `resourceVersion`, `generation`, `creationTimestamp`, `managedFields`, `selfLink` and `status`, and never reorders lists. `r` switches to the raw view and back, `s` adds or removes `status`, `n`/`Space`/`Enter` go to the next change and `p`/`Backspace` to the previous one (search continues with `Shift-F7`), and `C-r` reads both objects again; until then the diff stays as it was read. The last line shows the matching `diff -u <(kubectl get ...) <(kubectl get ...)` command.
@@ -191,7 +193,7 @@ Options > Menu bar visible (or `layout.menuBarVisible: false` in the config) hid
 - **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
 - **Options**: panel width, the options of each panel, and whether the menu bar stays visible.
 
-`Left`/`Right` move between menus, `Up`/`Down` between entries, `Enter` runs the entry and `Esc` closes the bar. The highlighted letter of a title opens that menu; the highlighted letter of an entry runs it (`M-<letter>` always picks a title). Entries that do not apply to the current selection are dim. With the mouse, click a title to open its menu, click an entry to run it, click anywhere else to close the bar.
+`Left`/`Right` move between menus, `Up`/`Down` between entries, `Enter` runs the entry and `Esc` closes the bar. The highlighted letter of a title opens that menu; the highlighted letter of an entry runs it (`M-<letter>` always picks a title). Entries that do not apply to the current selection are dim. With the mouse, click a title to open its menu, click an entry to run it, click anywhere else to close the bar. The mouse wheel over an open menu moves the highlight up or down, skipping separators and dim entries; it stops at the first and last entry and never runs one.
 
 The colors are mc's default skin. While no menu is open, the titles are black on cyan with no hotkey letters. An open bar has white titles and entries on cyan with yellow hotkey letters, a white frame and separators, white on black for the open title and the selected entry, and gray for entries that do not apply.
 

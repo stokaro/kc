@@ -97,6 +97,10 @@ func (m *ResourcesOptionsModel) optionAtFocus() int {
 
 //nolint:gocognit // one short case per key and option
 func (m *ResourcesOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if step := wheelStep(msg); step != 0 {
+		m.focus = max(0, min(len(m.options)-1, m.focus+step))
+		return m, nil
+	}
 	t, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil

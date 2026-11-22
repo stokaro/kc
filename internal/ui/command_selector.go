@@ -106,6 +106,10 @@ func (m *CommandSelectorModel) TargetNamespace() string { return m.targetNamespa
 func (m *CommandSelectorModel) TargetLeft() bool { return m.targetLeft }
 
 func (m *CommandSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if step := wheelStep(msg); step != 0 {
+		m.moveSelection(step)
+		return m, nil
+	}
 	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.String() {
 		case "esc":

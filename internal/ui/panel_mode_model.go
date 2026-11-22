@@ -39,6 +39,10 @@ func NewPanelModeModel(panelIdx int, modes []PanelViewMode, active PanelViewMode
 func (m *PanelModeModel) Init() tea.Cmd { return nil }
 
 func (m *PanelModeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if step := wheelStep(msg); step != 0 {
+		m.cursor = max(0, min(len(m.modes)-1, m.cursor+step))
+		return m, nil
+	}
 	if t, ok := msg.(tea.KeyMsg); ok {
 		switch t.String() {
 		case "up", "k":

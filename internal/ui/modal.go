@@ -41,6 +41,9 @@ type Modal struct {
 	windowHasPos   bool
 	contentOffsetX int
 	contentOffsetY int
+	// drawn is where the last View put the window, frame included; zero
+	// when the modal is not windowed.
+	drawn          ModalWindow
 	footerHotspots []footerHotspot
 	footerCursor   *tea.Cursor
 	mode           ModalMode
@@ -280,6 +283,9 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.MouseMsg:
+		if m.wheelOutsideWindow(msg) {
+			return m, nil
+		}
 		if model, cmd, handled := m.handleFooterMouse(msg); handled {
 			return model, cmd
 		}
@@ -341,6 +347,7 @@ func (m *Modal) View() tea.View {
 	}
 	m.contentOffsetX = 0
 	m.contentOffsetY = 0
+	m.drawn = ModalWindow{}
 
 	if m.windowed {
 		// Render background (use provided base or blank)
@@ -398,6 +405,7 @@ func (m *Modal) View() tea.View {
 		windowOffsetY = clampInt(windowOffsetY, padY, max(padY, availableHeight-winH-padY))
 		m.contentOffsetX = windowOffsetX + 1
 		m.contentOffsetY = windowOffsetY + 1
+		m.drawn = ModalWindow{X: windowOffsetX, Y: windowOffsetY, Width: winW, Height: winH}
 		if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
 			setter.SetDimensions(innerW, innerH)
 		}
@@ -601,6 +609,19 @@ func viewWithCursor(content string, cursor *tea.Cursor) tea.View {
 
 func viewString(view tea.View) string {
 	return view.Content
+}
+
+// wheelOutsideWindow reports whether msg is a wheel event away from the
+// window of a windowed modal. Such events are dropped, so a list dialog
+// scrolls only while the pointer is over it, as in mc, and the wheel never
+// reaches the panels under the dialog. Fullscreen modals take every wheel
+// event.
+func (m *Modal) wheelOutsideWindow(msg tea.MouseMsg) bool {
+	if _, ok := msg.(tea.MouseWheelMsg); !ok || !m.windowed {
+		return false
+	}
+	p, w := msg.Mouse(), m.drawn
+	return p.X < w.X || p.X >= w.X+w.Width || p.Y < w.Y || p.Y >= w.Y+w.Height
 }
 
 func shiftMouseMsg(msg tea.MouseMsg, dx, dy int) tea.MouseMsg {

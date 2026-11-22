@@ -119,12 +119,7 @@ func (m *ScopePickerModel) move(d int) {
 func (m *ScopePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch mm := msg.(type) {
 	case tea.MouseWheelMsg:
-		switch mm.Mouse().Button {
-		case tea.MouseWheelUp:
-			m.move(-1)
-		case tea.MouseWheelDown:
-			m.move(1)
-		}
+		m.move(wheelStep(mm))
 		return m, nil
 	case tea.MouseReleaseMsg:
 		return m, m.clickRow(mm.Mouse())

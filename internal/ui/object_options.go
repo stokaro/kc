@@ -60,20 +60,25 @@ type ObjectOptionsChangedMsg struct {
 	SaveDefault  bool
 }
 
+// moveFocus moves the focus by delta rows, stopping at the first and last.
+func (m *ObjectOptionsModel) moveFocus(delta int) {
+	m.focus = max(0, min(2, m.focus+delta))
+}
+
 func (m *ObjectOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if step := wheelStep(msg); step != 0 {
+		m.moveFocus(step)
+		return m, nil
+	}
 	t, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
 	}
 	switch t.String() {
 	case "up", "k":
-		if m.focus > 0 {
-			m.focus--
-		}
+		m.moveFocus(-1)
 	case "down", "j":
-		if m.focus < 2 {
-			m.focus++
-		}
+		m.moveFocus(1)
 	case "left", "right", " ", "space":
 		switch m.focus {
 		case 0: // mode
