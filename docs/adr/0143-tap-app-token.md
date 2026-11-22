@@ -1,8 +1,8 @@
-# 0140. Write the Homebrew tap with the organization's GitHub App
+# 0143. Write the Homebrew tap with the organization's GitHub App
 
 - Status: Accepted
 - Date: 2026-11-22
-- Issue: none; introduced by the pull request that adds it (ADR 0119, decision 3, is amended by this record)
+- Issue: none; introduced by PR #143 (ADR 0119, decision 3, is amended by this record)
 
 ## Context
 ADR 0119 made the release job require a repository secret `HOMEBREW_TAP_GITHUB_TOKEN`, a personal access token with write access to `stokaro/homebrew-kc`. A personal token belongs to one person and expires on a date somebody picked. The `stokaro` organization already has the `ptah-publish` GitHub App, installed on all its repositories with contents write access, and ptah writes its own tap (`stokaro/homebrew-ptah`) with it.
