@@ -245,6 +245,7 @@ type App struct {
 	mainViewCache         cachedView
 	terminalAreaCache     cachedView
 	activeCommandSelector *CommandSelectorModel
+	commandKeys           commandHotkeys // hotkeys of custom commands; see command_hotkeys.go
 	functionBar           *functionBar
 	// Namespace auto-navigation state
 	// panelScope is each panel's namespace scope (models.AllNamespaces for
@@ -343,6 +344,7 @@ func (a *App) Init() tea.Cmd {
 	a.leftConfig = cloneConfig(cfg)
 	a.rightConfig = cloneConfig(cfg)
 	return tea.Batch(
+		a.loadCommandHotkeys(),
 		a.leftPanel.Init(),
 		a.rightPanel.Init(),
 		a.terminal.Init(),
@@ -3769,7 +3771,7 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 		targetLeft = true
 	}
 
-	selector := NewCommandSelectorModel(available, targetPanel, targetNamespace, targetLeft, func(cmd appconfig.CommandConfig) tea.Cmd {
+	selector := NewCommandSelectorModel(available, targetPanel, targetNamespace, targetLeft, a.guardCommand(item, targetNamespace, func(cmd appconfig.CommandConfig) tea.Cmd {
 		a.hideModal()
 		// Get items (handle multi-selection if supported)
 		var items []models.Item
@@ -3824,7 +3826,7 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			}
 		}
 		return tea.Batch(start, sched)
-	}, func() tea.Cmd {
+	}), func() tea.Cmd {
 		a.hideModal()
 		return nil
 	})

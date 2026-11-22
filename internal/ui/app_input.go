@@ -48,6 +48,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			}
 		}
 	}
+	// Hotkeys of custom commands; they never shadow the keys below.
+	if cmd, ok := a.handleCommandHotkey(press); ok {
+		return a, cmd
+	}
 	// Handle global shortcuts first
 	switch press.String() {
 	case "alt+f1":
@@ -234,6 +238,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		default:
 			// Not a number, cancel escape sequence
 			a.escPressed = false
+			if cmd, ok := a.commandHotkeyAfterEsc(press); ok {
+				return a, cmd
+			}
 			// Continue with normal key handling
 		}
 	}

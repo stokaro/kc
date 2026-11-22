@@ -81,6 +81,11 @@ commands:
 *   Uses `text/template`.
 *   Context derived from `models.Item` (specifically `models.ObjectItem`).
 
+### Hotkeys, prompts and confirmation (#46, ADR 0046)
+*   `hotkey`, `prompts` and `confirm` live on `CommandConfig`; `appconfig.ValidateCommands` checks them once at startup (`App.loadCommandHotkeys`) and builds the hotkey table without changing the loaded configuration.
+*   A hotkey opens the commands menu of the active panel and picks its entry (`CommandSelectorModel.selectCommand`), so the applicability rules and the target are the same as for Enter in the menu. `C-x` chords use a small prefix state in `commandHotkeys`.
+*   The menu callback is wrapped by `App.guardCommand` (`command_guard.go`): prompt dialog (`CommandPromptModel`), then the red `ConfirmModel`, then the start. `cmdtemplate.Bind` substitutes the answers into the template text, so the bound command is what the panel stores and restarts.
+
 ### Future Considerations
 *   **Background Color**: Configurable panel background (blue/black).
 *   **Stop on Mode Change**: Option to stop commands when switching panel modes.
