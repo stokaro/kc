@@ -26,7 +26,7 @@ func (viewableStub) Details() string { return "" }
 
 func (v viewableStub) Path() []string { return v.path }
 
-func (v viewableStub) ViewContent() (string, string, string, string, string, error) {
+func (v viewableStub) ViewContent() (title, body, lang, mime, filename string, err error) {
 	return "Manifest", strings.Join(v.body, "\n"), "yaml", "text/yaml", "stub.yaml", nil
 }
 
@@ -94,7 +94,7 @@ type countingViewable struct {
 	calls *int
 }
 
-func (c countingViewable) ViewContent() (string, string, string, string, string, error) {
+func (c countingViewable) ViewContent() (title, body, lang, mime, filename string, err error) {
 	*c.calls++
 	return "Manifest", *c.body, "yaml", "text/yaml", "stub.yaml", nil
 }

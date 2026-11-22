@@ -48,7 +48,8 @@ func (e *EnterableItem) WithViewContent(fn models.ViewContentFunc) *EnterableIte
 	return e
 }
 
-func (e *EnterableItem) ViewContent() (string, string, string, string, string, error) {
+//revive:disable-next-line:function-result-limit the signature is the models.Viewable interface
+func (e *EnterableItem) ViewContent() (title, body, lang, mime, filename string, err error) {
 	if e.viewFn == nil {
 		return "", "", "", "", "", models.ErrNoViewContent
 	}

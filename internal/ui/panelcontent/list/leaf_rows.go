@@ -84,6 +84,7 @@ type leafRow struct {
 
 var leafStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(uistyles.ColorGrey))
 
+//revive:disable-next-line:function-result-limit the signature is the table.Row interface
 func (r leafRow) Columns() (string, []string, []*lipgloss.Style, bool) {
 	id, cells, styles, ok := r.Row.Columns()
 	if len(cells) == 0 {

@@ -38,6 +38,7 @@ type SimpleRow struct {
 	Styles []*lipgloss.Style
 }
 
+//revive:disable-next-line:function-result-limit the signature is the Row interface
 func (r SimpleRow) Columns() (string, []string, []*lipgloss.Style, bool) {
 	return r.ID, r.Cells, r.Styles, true
 }
