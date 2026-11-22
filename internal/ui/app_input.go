@@ -316,6 +316,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		// If user typed in the 2-line terminal, Enter and C-c must be SENT to the terminal,
 		// then reset typed state to return focus to the panels.
 		if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() && !a.interactiveCommandActive() {
+			if msg.String() == "enter" {
+				if cmd, ok := a.interceptShellCd(); ok {
+					return a, cmd
+				}
+			}
 			cmd := a.updateTerminal(msg, "panel forwarded to terminal")
 			a.terminal.ClearTyped() // reset typed; next keys route to panels
 			return a, cmd
