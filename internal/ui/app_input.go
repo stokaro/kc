@@ -10,6 +10,7 @@ import (
 	"github.com/stokaro/kc/internal/models"
 )
 
+//nolint:funlen,gocognit,gocyclo,nestif // the app-wide key dispatch, one branch per key binding; splitting it is a larger refactor than the lint baseline (#128)
 func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, tea.Cmd) {
 	cmds := currentCmds
 	press, isPress := msg.(tea.KeyPressMsg)

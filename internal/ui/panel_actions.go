@@ -94,6 +94,8 @@ func (p *Panel) InvokeAction(action PanelAction) tea.Cmd {
 }
 
 // Capabilities reports the current action capabilities for the panel.
+//
+//nolint:gocognit,gocyclo,nestif // one capability check per item interface
 func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 	var caps PanelCapabilities
 	if p == nil {

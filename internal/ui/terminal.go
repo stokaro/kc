@@ -128,6 +128,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Always update bubbleterm first to check process status
+	//nolint:nestif // paste, mouse and key input to the PTY differ only in small steps
 	if t.terminal != nil {
 		if paste, ok := msg.(tea.PasteMsg); ok {
 			if t.showPanels {
@@ -142,14 +143,11 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// mouse escape sequences into the PTY (which shows up as garbage
 		// in the 2-line terminal view). In fullscreen terminal mode, let
 		// mouse events pass through to bubbleterm only if the app requested it.
-		if mm, ok := msg.(tea.MouseMsg); ok {
-			if t.showPanels {
-				// Panels visible → ignore mouse for PTY; panels handle mouse themselves
-				_ = mm
-				return t, nil
-			}
-			// Fullscreen terminal: forward Bubble Tea mouse events to bubbleterm;
-			// bubbleterm and the underlying app decide whether to act on them.
+		// In fullscreen mode bubbleterm and the app in the terminal decide
+		// whether to act on mouse events.
+		if _, ok := msg.(tea.MouseMsg); ok && t.showPanels {
+			// Panels visible → ignore mouse for PTY; panels handle mouse themselves
+			return t, nil
 		}
 		model, cmd := t.terminal.Update(translateKeyForTerminal(msg))
 		t.terminal = updatedModel(t.terminal, model)

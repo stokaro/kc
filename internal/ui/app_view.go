@@ -37,6 +37,7 @@ func (a *App) View() tea.View {
 	mainView, mainCursor := a.renderMainView()
 
 	// Overlay modal if visible
+	//nolint:nestif // draws the command menu arrow over the modal; the cases depend on each other
 	if a.modalManager.IsModalVisible() {
 		modalView := a.modalManager.View()
 		modalCursor := modalView.Cursor
@@ -315,6 +316,8 @@ func (a *App) functionBarState() functionBarState {
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
+//
+//nolint:gocyclo // one short case per function key
 func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 	if a.toastActive && !a.toastOnCommandLine() {
 		return nil

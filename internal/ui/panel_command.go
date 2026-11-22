@@ -107,6 +107,7 @@ func (w *CommandWidget) Teardown(ctx context.Context) {
 	}
 }
 
+//nolint:gocognit,gocyclo,nestif // the command widget message switch, one case per message type; splitting it is a larger refactor than the lint baseline (#128)
 func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	if m, ok := msg.(tea.WindowSizeMsg); ok {
 		w.lastSize = panelcontent.Size{Width: m.Width, Height: m.Height}

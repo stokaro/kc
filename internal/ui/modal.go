@@ -212,6 +212,8 @@ func escAltKey(msg tea.KeyMsg) (tea.KeyPressMsg, bool) {
 }
 
 // Update handles messages and updates the modal state
+//
+//nolint:gocognit,gocyclo // the modal key and mouse switch, one case per message type; splitting it is a larger refactor than the lint baseline (#128)
 func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !m.visible {
 		return m, nil
@@ -315,6 +317,8 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the modal and optionally returns a cursor when the content
 // exposes one (e.g., viewer search input).
+//
+//nolint:gocognit,gocyclo,nestif // renders the modal modes (windowed, fullscreen, danger) in one pass; splitting it is a larger refactor than the lint baseline (#128)
 func (m *Modal) View() tea.View {
 	if !m.visible {
 		return tea.NewView("")
@@ -712,6 +716,33 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 	return m.renderFooterSlots(keys, hotkeys, numbered)
 }
 
+// footerStatus returns the content's footer status and the width it
+// takes, or "" and 0 when the content has none. naturalTotal is the width
+// the keys need.
+func (m *Modal) footerStatus(naturalTotal int, numbered bool) (status string, width int) {
+	statusProvider, ok := m.content.(ModalFooterStatus)
+	if !ok {
+		return "", 0
+	}
+	if numbered {
+		// Give the status only the room its text needs (up to a third of
+		// the line) so the numbered slots stay readable.
+		width = m.width / 3
+		if probe := statusProvider.FooterStatus(width); probe != "" {
+			width = min(width, lipgloss.Width(strings.TrimRight(ansi.Strip(probe), " "))+1)
+		}
+	} else {
+		width = m.width - naturalTotal - 1
+	}
+	if width > 0 {
+		status = statusProvider.FooterStatus(width)
+	}
+	if strings.TrimSpace(ansi.Strip(status)) == "" {
+		return "", 0
+	}
+	return status, width
+}
+
 func (m *Modal) renderFooterSlots(keys []functionKey, hotkeys []string, numbered bool) string {
 	natural := make([]int, len(keys))
 	naturalTotal := 0
@@ -720,26 +751,7 @@ func (m *Modal) renderFooterSlots(keys []functionKey, hotkeys []string, numbered
 		naturalTotal += natural[i]
 	}
 
-	status := ""
-	statusWidth := 0
-	if statusProvider, ok := m.content.(ModalFooterStatus); ok {
-		if numbered {
-			// Give the status only the room its text needs (up to a third of
-			// the line) so the numbered slots stay readable.
-			statusWidth = m.width / 3
-			if probe := statusProvider.FooterStatus(statusWidth); probe != "" {
-				statusWidth = min(statusWidth, lipgloss.Width(strings.TrimRight(ansi.Strip(probe), " "))+1)
-			}
-		} else {
-			statusWidth = m.width - naturalTotal - 1
-		}
-		if statusWidth > 0 {
-			status = statusProvider.FooterStatus(statusWidth)
-		}
-		if strings.TrimSpace(ansi.Strip(status)) == "" {
-			status, statusWidth = "", 0
-		}
-	}
+	status, statusWidth := m.footerStatus(naturalTotal, numbered)
 
 	barWidth := m.width
 	var starts []int
@@ -808,6 +820,29 @@ func clampInt(v, minVal, maxVal int) int {
 	return v
 }
 
+// keyModsForLabels returns the modifiers named in a key label such as
+// "ctrl+alt+x"; unknown names are ignored.
+func keyModsForLabels(names []string) tea.KeyMod {
+	mod := tea.KeyMod(0)
+	for _, name := range names {
+		switch strings.ToLower(name) {
+		case "ctrl", "control":
+			mod |= tea.ModCtrl
+		case "alt":
+			mod |= tea.ModAlt
+		case "shift":
+			mod |= tea.ModShift
+		case "meta":
+			mod |= tea.ModMeta
+		case "super":
+			mod |= tea.ModSuper
+		case "hyper":
+			mod |= tea.ModHyper
+		}
+	}
+	return mod
+}
+
 func keyMsgForLabel(label string) (tea.KeyMsg, bool) {
 	if label == "" {
 		return nil, false
@@ -833,23 +868,7 @@ func keyMsgForLabel(label string) (tea.KeyMsg, bool) {
 		if len(parts) < 2 {
 			return nil, false
 		}
-		mod := tea.KeyMod(0)
-		for i := 0; i < len(parts)-1; i++ {
-			switch strings.ToLower(parts[i]) {
-			case "ctrl", "control":
-				mod |= tea.ModCtrl
-			case "alt":
-				mod |= tea.ModAlt
-			case "shift":
-				mod |= tea.ModShift
-			case "meta":
-				mod |= tea.ModMeta
-			case "super":
-				mod |= tea.ModSuper
-			case "hyper":
-				mod |= tea.ModHyper
-			}
-		}
+		mod := keyModsForLabels(parts[:len(parts)-1])
 		finalPart := parts[len(parts)-1]
 		finalLower := strings.ToLower(finalPart)
 		switch finalLower {
@@ -924,59 +943,19 @@ func (m *Modal) contentCursorForView(cur *tea.Cursor) *tea.Cursor {
 	return c
 }
 
+// functionKeyCodes are the codes of F1 to F24, in order.
+var functionKeyCodes = [...]rune{
+	tea.KeyF1, tea.KeyF2, tea.KeyF3, tea.KeyF4, tea.KeyF5, tea.KeyF6,
+	tea.KeyF7, tea.KeyF8, tea.KeyF9, tea.KeyF10, tea.KeyF11, tea.KeyF12,
+	tea.KeyF13, tea.KeyF14, tea.KeyF15, tea.KeyF16, tea.KeyF17, tea.KeyF18,
+	tea.KeyF19, tea.KeyF20, tea.KeyF21, tea.KeyF22, tea.KeyF23, tea.KeyF24,
+}
+
 func functionKeyConstant(n int) (rune, bool) {
-	switch n {
-	case 1:
-		return tea.KeyF1, true
-	case 2:
-		return tea.KeyF2, true
-	case 3:
-		return tea.KeyF3, true
-	case 4:
-		return tea.KeyF4, true
-	case 5:
-		return tea.KeyF5, true
-	case 6:
-		return tea.KeyF6, true
-	case 7:
-		return tea.KeyF7, true
-	case 8:
-		return tea.KeyF8, true
-	case 9:
-		return tea.KeyF9, true
-	case 10:
-		return tea.KeyF10, true
-	case 11:
-		return tea.KeyF11, true
-	case 12:
-		return tea.KeyF12, true
-	case 13:
-		return tea.KeyF13, true
-	case 14:
-		return tea.KeyF14, true
-	case 15:
-		return tea.KeyF15, true
-	case 16:
-		return tea.KeyF16, true
-	case 17:
-		return tea.KeyF17, true
-	case 18:
-		return tea.KeyF18, true
-	case 19:
-		return tea.KeyF19, true
-	case 20:
-		return tea.KeyF20, true
-	case 21:
-		return tea.KeyF21, true
-	case 22:
-		return tea.KeyF22, true
-	case 23:
-		return tea.KeyF23, true
-	case 24:
-		return tea.KeyF24, true
-	default:
+	if n < 1 || n > len(functionKeyCodes) {
 		return 0, false
 	}
+	return functionKeyCodes[n-1], true
 }
 
 // ModalManager manages multiple modals

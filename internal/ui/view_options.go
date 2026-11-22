@@ -349,6 +349,8 @@ type ViewOptionsModel struct {
 }
 
 // NewViewOptionsModel constructs a sectioned view options dialog model.
+//
+//nolint:gocognit,gocyclo // builds each dialog section from its optional config in order
 func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 	model := &ViewOptionsModel{
 		panelIdx:     cfg.PanelIndex,
@@ -789,6 +791,7 @@ func (m *ViewOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+//nolint:gocognit,gocyclo // one case per option, each cycling its own value list
 func (m *ViewOptionsModel) adjustCurrent(delta int) {
 	entry, ok := m.currentEntry()
 	if !ok || entry.kind != viewOptionEntryOption {
@@ -1007,6 +1010,7 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 	return msg
 }
 
+//nolint:gocyclo // one short case per option
 func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (label, value string) {
 	switch opt {
 	case viewOptionPanelMode:

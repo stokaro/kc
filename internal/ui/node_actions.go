@@ -162,6 +162,7 @@ func (a *App) openNodeActions() (tea.Cmd, bool) {
 	return nil, true
 }
 
+//nolint:gocyclo // the node action message switch, one short case per message type
 func (a *App) handleNodeActionMsg(msg nodeActionMsg) tea.Cmd {
 	switch m := msg.(type) {
 	case nodeMenuChosenMsg:

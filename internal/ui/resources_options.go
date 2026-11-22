@@ -95,72 +95,75 @@ func (m *ResourcesOptionsModel) optionAtFocus() int {
 	return m.options[m.focus]
 }
 
+//nolint:gocognit // one short case per key and option
 func (m *ResourcesOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if t, ok := msg.(tea.KeyMsg); ok {
-		switch t.String() {
-		case "up", "k":
-			if m.focus > 0 {
-				m.focus--
-			}
-		case "down", "j":
-			if m.focus < len(m.options)-1 {
-				m.focus++
-			}
-		case "left", "right", " ", "space":
-			switch m.optionAtFocus() {
-			case optInclude:
-				m.includeEmpty = !m.includeEmpty
-			case optOrder:
-				if t.String() == "left" {
-					if m.orderIdx > 0 {
-						m.orderIdx--
-					} else {
-						m.orderIdx = len(orderKeys) - 1
-					}
+	t, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch t.String() {
+	case "up", "k":
+		if m.focus > 0 {
+			m.focus--
+		}
+	case "down", "j":
+		if m.focus < len(m.options)-1 {
+			m.focus++
+		}
+	case "left", "right", " ", "space":
+		switch m.optionAtFocus() {
+		case optInclude:
+			m.includeEmpty = !m.includeEmpty
+		case optOrder:
+			if t.String() == "left" {
+				if m.orderIdx > 0 {
+					m.orderIdx--
 				} else {
-					if m.orderIdx < len(orderKeys)-1 {
-						m.orderIdx++
-					} else {
-						m.orderIdx = 0
-					}
+					m.orderIdx = len(orderKeys) - 1
 				}
-			case optTableMode:
-				if t.String() == "left" {
-					if m.tableIdx > 0 {
-						m.tableIdx--
-					} else {
-						m.tableIdx = len(tableModeKeys) - 1
-					}
+			} else {
+				if m.orderIdx < len(orderKeys)-1 {
+					m.orderIdx++
 				} else {
-					if m.tableIdx < len(tableModeKeys)-1 {
-						m.tableIdx++
-					} else {
-						m.tableIdx = 0
-					}
+					m.orderIdx = 0
 				}
 			}
-		case "ctrl+s":
-			return m, func() tea.Msg {
-				return ResourcesOptionsChangedMsg{
-					ShowNonEmptyOnly: !m.includeEmpty,
-					Order:            orderKeys[m.orderIdx],
-					TableMode:        tableModeKeys[m.tableIdx],
-					HasInclude:       m.hasOption(optInclude),
-					HasOrder:         m.hasOption(optOrder),
-					SaveDefault:      true,
+		case optTableMode:
+			if t.String() == "left" {
+				if m.tableIdx > 0 {
+					m.tableIdx--
+				} else {
+					m.tableIdx = len(tableModeKeys) - 1
+				}
+			} else {
+				if m.tableIdx < len(tableModeKeys)-1 {
+					m.tableIdx++
+				} else {
+					m.tableIdx = 0
 				}
 			}
-		case "enter":
-			return m, func() tea.Msg {
-				return ResourcesOptionsChangedMsg{
-					ShowNonEmptyOnly: !m.includeEmpty,
-					Order:            orderKeys[m.orderIdx],
-					TableMode:        tableModeKeys[m.tableIdx],
-					HasInclude:       m.hasOption(optInclude),
-					HasOrder:         m.hasOption(optOrder),
-					Accept:           true,
-					Close:            true,
-				}
+		}
+	case "ctrl+s":
+		return m, func() tea.Msg {
+			return ResourcesOptionsChangedMsg{
+				ShowNonEmptyOnly: !m.includeEmpty,
+				Order:            orderKeys[m.orderIdx],
+				TableMode:        tableModeKeys[m.tableIdx],
+				HasInclude:       m.hasOption(optInclude),
+				HasOrder:         m.hasOption(optOrder),
+				SaveDefault:      true,
+			}
+		}
+	case "enter":
+		return m, func() tea.Msg {
+			return ResourcesOptionsChangedMsg{
+				ShowNonEmptyOnly: !m.includeEmpty,
+				Order:            orderKeys[m.orderIdx],
+				TableMode:        tableModeKeys[m.tableIdx],
+				HasInclude:       m.hasOption(optInclude),
+				HasOrder:         m.hasOption(optOrder),
+				Accept:           true,
+				Close:            true,
 			}
 		}
 	}

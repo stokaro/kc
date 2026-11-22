@@ -202,6 +202,8 @@ func transferTick(gen int) tea.Cmd {
 }
 
 // handleTransferMsg runs the copy dialog's state machine.
+//
+//nolint:gocyclo // the transfer flow message switch, one short case per message type
 func (a *App) handleTransferMsg(msg tea.Msg) tea.Cmd {
 	job := a.transfer
 	switch msg := msg.(type) {

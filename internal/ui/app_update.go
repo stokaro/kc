@@ -38,6 +38,8 @@ func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 }
 
 // Update handles messages and updates the application state
+//
+//nolint:funlen,gocognit,gocyclo,nestif // the app-wide Bubble Tea message switch, one case per message type; splitting it is a larger refactor than the lint baseline (#128)
 func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	a.syncActivity()
 	defer a.syncActivity()
@@ -147,15 +149,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			a.invalidateFunctionBar("window resize")
 			a.invalidateTerminalArea("window resize")
 
-			// Ensure active modal scales with terminal size
-			if a.modalManager != nil && a.modalManager.IsModalVisible() {
-				if m := a.modalManager.GetActiveModal(); m != nil {
-					m.SetDimensions(a.width, a.height)
-					if vm, ok := m.content.(*ViewOptionsModel); ok {
-						a.layoutViewOptionsModal(m, vm, vm.PanelIndex(), "")
-					}
-				}
-			}
+			a.resizeActiveModal()
 		}
 
 		if a.terminal != nil {
@@ -598,19 +592,11 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			return a, nil
 		}
 		a.enqueueCmd(a.ShowToast(fmt.Sprintf("Namespace %s created", msg.name), 3*time.Second))
-		if a.namespaceCreatePanel == 0 || a.namespaceCreatePanel == 1 {
-			a.refreshPanelAfterEdit(a.namespaceCreatePanel)
-			other := 1 - a.namespaceCreatePanel
-			if other == 0 || other == 1 {
-				var otherPanel *Panel
-				if other == 0 {
-					otherPanel = a.leftPanel
-				} else {
-					otherPanel = a.rightPanel
-				}
-				if otherPanel != nil && otherPanel.GetCurrentPath() == "/namespaces" {
-					a.refreshPanelAfterEdit(other)
-				}
+		if idx := a.namespaceCreatePanel; idx == 0 || idx == 1 {
+			a.refreshPanelAfterEdit(idx)
+			other := 1 - idx
+			if otherPanel := a.panelByIndex(other); otherPanel != nil && otherPanel.GetCurrentPath() == "/namespaces" {
+				a.refreshPanelAfterEdit(other)
 			}
 		} else {
 			a.refreshPanelAfterEdit(0)
@@ -991,6 +977,21 @@ type panelMouseDispatch struct {
 
 // dispatchPanelMouse routes a mouse event to the panel under it. It
 // reports false when no panel took the event.
+// resizeActiveModal scales the open modal with the terminal size.
+func (a *App) resizeActiveModal() {
+	if a.modalManager == nil || !a.modalManager.IsModalVisible() {
+		return
+	}
+	m := a.modalManager.GetActiveModal()
+	if m == nil {
+		return
+	}
+	m.SetDimensions(a.width, a.height)
+	if vm, ok := m.content.(*ViewOptionsModel); ok {
+		a.layoutViewOptionsModal(m, vm, vm.PanelIndex(), "")
+	}
+}
+
 func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (panelMouseDispatch, bool) {
 	leftPanelWidth, rightPanelWidth := a.panelWidths()
 	panelHeight := a.panelsHeight()

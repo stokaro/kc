@@ -1643,25 +1643,7 @@ func (a *App) applyViewerSettings(msg ViewOptionsCommittedMsg) (restart tea.Cmd,
 		} else {
 			a.cfg.Viewer.Mode = appconfig.ViewerModeScroll
 		}
-		if lt, ok := target.(logOptionsTarget); ok && msg.Logs != nil {
-			opts := LogOptions{
-				TailLines:    msg.Logs.TailLines,
-				SinceSeconds: msg.Logs.SinceSeconds,
-				Timestamps:   msg.Logs.Timestamps,
-				Previous:     msg.Logs.Previous,
-				Container:    msg.Logs.Container,
-			}
-			restart = lt.SetLogOptions(opts)
-			if msg.SaveDefault {
-				// Previous belongs to one container's history, not a default.
-				a.cfg.Viewer.Logs = appconfig.LogsViewerConfig{
-					Tail:       opts.TailLines,
-					Since:      metav1.Duration{Duration: time.Duration(opts.SinceSeconds) * time.Second},
-					Timestamps: opts.Timestamps,
-				}
-				saveLogs = true
-			}
-		}
+		restart, saveLogs = a.applyLogOptions(target, msg)
 	}
 	if !msg.SaveDefault {
 		return restart, nil
@@ -1674,6 +1656,34 @@ func (a *App) applyViewerSettings(msg ViewOptionsCommittedMsg) (restart tea.Cmd,
 			c.Viewer.Logs = logs
 		}
 	}
+}
+
+// applyLogOptions applies the dialog's log options to a logs viewer. With
+// Save as defaults it also stores them in the session configuration and
+// reports saveLogs.
+func (a *App) applyLogOptions(target viewerOptionsTarget, msg ViewOptionsCommittedMsg) (restart tea.Cmd, saveLogs bool) {
+	lt, ok := target.(logOptionsTarget)
+	if !ok || msg.Logs == nil {
+		return nil, false
+	}
+	opts := LogOptions{
+		TailLines:    msg.Logs.TailLines,
+		SinceSeconds: msg.Logs.SinceSeconds,
+		Timestamps:   msg.Logs.Timestamps,
+		Previous:     msg.Logs.Previous,
+		Container:    msg.Logs.Container,
+	}
+	restart = lt.SetLogOptions(opts)
+	if !msg.SaveDefault {
+		return restart, false
+	}
+	// Previous belongs to one container's history, not a default.
+	a.cfg.Viewer.Logs = appconfig.LogsViewerConfig{
+		Tail:       opts.TailLines,
+		Since:      metav1.Duration{Duration: time.Duration(opts.SinceSeconds) * time.Second},
+		Timestamps: opts.Timestamps,
+	}
+	return restart, true
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
@@ -2694,6 +2704,7 @@ func (a *App) renameMoveItem() tea.Cmd {
 	return nil
 }
 
+//nolint:gocyclo // a chain of early returns, one per reason the item cannot be copied
 func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 	if panel == nil {
 		panel = a.activePanelRef()
@@ -3040,6 +3051,8 @@ func Run(ctx context.Context, cfg RunConfig) error {
 }
 
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
+//
+//nolint:gocognit,gocyclo // startup steps in order, each with its own error and fallback
 func (a *App) initData(ctx context.Context) error {
 	log := ctrllog.FromContext(ctx).WithName("init")
 	// Kubeconfig manager and discovery
@@ -3715,6 +3728,7 @@ func (a *App) maybeRestartNamespaceCommand(panelIdx int, namespace string) tea.C
 	return a.startNamespaceCommand(panelIdx, *cfg, namespace)
 }
 
+//nolint:gocognit,gocyclo // resolves the target namespace through a chain of fallbacks and logs each
 func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()

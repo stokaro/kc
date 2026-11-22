@@ -43,6 +43,8 @@ func (a *App) newPanelLogsWidget(p *Panel) PanelWidget {
 
 // panelLogsSource captures the cluster on the UI goroutine; the returned
 // Open runs in a tea.Cmd and does the requests.
+//
+//nolint:gocognit // the stream opener runs in two nested closures; each branch is one way to open the logs (all containers, the default container, one container)
 func (a *App) panelLogsSource() logswidget.Source {
 	return func(req logswidget.Request) logswidget.Open {
 		cl, root := a.cl, a.ctx
