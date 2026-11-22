@@ -1,8 +1,9 @@
 # 0167. Idle menu bar colors
 
-Status: Accepted
-
-Supersedes the idle-bar part of decision 6 of ADR 0162.
+- Status: Accepted
+- Date: 2026-11-22
+- PR: #167
+- Supersedes: the idle-bar colors of decision 6 of ADR 0162
 
 ## Context
 
