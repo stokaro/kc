@@ -893,7 +893,7 @@ func (m *ViewOptionsModel) FooterHints() []FooterHint {
 	return []FooterHint{
 		{Key: "Up/Down", Label: "Move", Enabled: true},
 		{Key: "Left/Right/Space", Label: "Toggle", Enabled: true},
-		{Key: "Ctrl+S", Label: "Save as defaults", Enabled: true},
+		{Key: "C-s", Label: "Save as defaults", Enabled: true},
 		{Key: "Enter", Label: "Apply & Close", Enabled: true},
 		{Key: "Esc", Label: "Cancel", Enabled: true},
 	}

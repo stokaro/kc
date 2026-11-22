@@ -238,9 +238,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 	}
 
-	// In terminal mode, all input goes to terminal except Ctrl-O to return
+	// In terminal mode, all input goes to terminal except C-o to return
 	if a.showTerminal {
-		// Only handle Ctrl-O to return to panel mode
+		// Only handle C-o to return to panel mode
 		if msg.String() == "ctrl+o" {
 			a.showTerminal = false
 			a.invalidateView("ctrl+o exit terminal")
@@ -257,7 +257,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 	} else {
 		// In panel mode, use smart key routing based on terminal state
-		// If user typed in the 2-line terminal, Enter and Ctrl+C must be SENT to the terminal,
+		// If user typed in the 2-line terminal, Enter and C-c must be SENT to the terminal,
 		// then reset typed state to return focus to the panels.
 		if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() && !a.interactiveCommandActive() {
 			cmd := a.updateTerminal(msg, "panel forwarded to terminal")

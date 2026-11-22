@@ -15,11 +15,11 @@ This note captures the mouse handling that exists today so future changes can bu
 - **Right click**: Right clicks inside a panel trigger `App.showContextMenu()`, which is currently a stub (no visible UI yet).
 - **Double click**: Double-click detection is confined to folder-backed panels. If the same row ID on the same panel is clicked twice within `cfg.Input.Mouse.DoubleClickTimeout` (default 300 ms) the app invokes `Panel.enterItem()` for the selected row; otherwise it only updates the stored click metadata.
 - **Two-line terminal strip**: Clicks on the two-line terminal preview are ignored. Mouse interaction with the embedded shell is keyboard-only while panels are visible.
-- **Function key bar**: Clicks on the footer bar are acted upon when the button is released. The bar recomputes the rendered labels and maps the x coordinate to the corresponding function key. Disabled actions (e.g. F5/F6 today) swallow the click; enabled ones dispatch the same commands as their keyboard counterparts. The trailing `Ctrl+O` button switches to fullscreen terminal mode.
+- **Function key bar**: Clicks on the footer bar are acted upon when the button is released. The bar recomputes the rendered labels and maps the x coordinate to the corresponding function key. Disabled actions (e.g. F5/F6 today) swallow the click; enabled ones dispatch the same commands as their keyboard counterparts. The trailing `C-o` button switches to fullscreen terminal mode.
 
 ## Fullscreen Terminal Mode
 
-- The bottom line renders a "Ctrl+O - Return to panels" toggle. Left-button release on that line switches back to panel mode and re-enables panel rendering.
+- The bottom line renders a "C-o - Return to panels" toggle. Left-button release on that line switches back to panel mode and re-enables panel rendering.
 - All other mouse events are forwarded to Bubbleterm. The terminal component does not yet inspect escape sequences (`SetPTYWantsMouse` is unused), so forwarding is unconditional while in fullscreen.
 - When returning to panel mode the app re-enables the panel layout immediately; any mouse messages that arrive afterwards are still routed through panel-mode handlers (there is currently no suppression grace period).
 
