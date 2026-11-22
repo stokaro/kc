@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/sttts/kc/internal/access"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/portforward"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
@@ -73,8 +74,13 @@ func (a *App) portForwardForPanel(panel *Panel) tea.Cmd {
 	if !ok || item == nil {
 		return nil
 	}
-	if _, ok := models.PortForwardTargetFor(item); !ok {
+	target, ok := models.PortForwardTargetFor(item)
+	if !ok {
 		return a.ShowToast("Port forward works on pods, containers and services", 3*time.Second)
+	}
+	// A service resolves to a pod later; read-only mode needs no name.
+	if cmd := a.refuseReadOnly("Port forward", access.PortForwardChecks(target.Namespace, "")...); cmd != nil {
+		return cmd
 	}
 	folder := panel.Folder()
 	root := a.ctx

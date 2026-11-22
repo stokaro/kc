@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/access"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/nodeshell"
 	"github.com/sttts/kc/internal/podexec"
@@ -63,6 +64,12 @@ var newNodeShellClient = func(cfg *rest.Config) (nodeShellClient, error) {
 // startNodeShell creates the pod in the background; nodeShellStartedMsg
 // follows.
 func (a *App) startNodeShell(req models.NodeShellRequest) tea.Cmd {
+	// The confirmation already refuses in read-only mode; this catches a
+	// request that was on its way when the context became read-only.
+	createPod := access.Check{Resource: corev1.SchemeGroupVersion.WithResource("pods"), Verb: "create", Namespace: req.Namespace}
+	if cmd := a.refuseReadOnly("Node shell", createPod); cmd != nil {
+		return cmd
+	}
 	switch {
 	case a.nodeShell != nil || a.nodeShellStarting:
 		return a.ShowToast("A node shell is already open", 3*time.Second)

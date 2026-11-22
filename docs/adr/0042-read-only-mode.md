@@ -65,7 +65,7 @@ The bottom border shows a red ` RO ` before the context label (`─ RO  prod : d
 
 ## Consequences
 
-- Follow-ups, one gate call each when they land: #80 (Run now: `create jobs`; Suspend/Resume: `patch cronjobs`) through `refuseReadOnly` and `PanelEnvironment.Permit`, or as `ConfirmedAction` rows, which are refused already; #91 port-forward (`access.PortForwardChecks`); #96 node shell (creates a pod: a `create pods` check); #105 copy from a container (exec, read; decide there whether a copy *to* a container exists, which needs the gate); #88 exec context for custom commands (the `dangerous` check already runs before a command starts).
+- Gates added when the features merged: #80's Run now and Suspend/Resume are cluster actions behind the same confirmation, which refuses them; #91 port-forward (`access.PortForwardChecks`) in `portForwardForPanel`; #96 node shell through its confirmation and a `create pods` check in `startNodeShell`; #88 keeps `refuseCommand` on the command start path. #105 copies only out of a container (exec, a read), so it needs no gate until a copy into a container exists. Open: whether `M-x`/`M-t` (#106, `kubectl exec -it`/`attach`) should be refused; `App.execGate` is the place, but this ADR keeps exec for reading allowed, so it needs a decision.
 - With #102 merged, a denied RBAC answer and read-only mode share `Permits`; the handler refusal keeps calling `Permits(nil, ...)` so its message stays about read-only.
 - A command that already runs in a panel keeps running after a switch to a read-only context; only new starts and namespace restarts are refused.
 - Users must mark their own writing commands `dangerous: true`; the README says so.
