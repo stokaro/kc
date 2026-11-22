@@ -107,7 +107,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 	o.SetColumns(cols)
 	ageCols := ageColumnIndices(cols)
 
-	idxs := orderRowIndices(rl.Items, order)
+	idxs := orderRowIndices(rl.Items, order, namespaced)
 	rows := make([]table.Row, 0, len(idxs))
 	var hooks []*ageCellHook
 	gvStr := o.gvr.GroupVersion().String()
@@ -304,7 +304,10 @@ func visibleColumns(cols []metav1.TableColumnDefinition, mode string) []int {
 	return vis
 }
 
-func orderRowIndices(items []tablecache.Row, order string) []int {
+// orderRowIndices sorts the rows by order. Across namespaces
+// (byNamespace) the rows are grouped by namespace first, as kubectl get -A
+// prints them, and order applies inside each namespace.
+func orderRowIndices(items []tablecache.Row, order string, byNamespace bool) []int {
 	idxs := make([]int, len(items))
 	for i := range items {
 		idxs[i] = i
@@ -334,6 +337,11 @@ func orderRowIndices(items []tablecache.Row, order string) []int {
 		})
 	default:
 		sort.Slice(idxs, func(i, j int) bool { return nameOf(&items[idxs[i]]) < nameOf(&items[idxs[j]]) })
+	}
+	if byNamespace {
+		sort.SliceStable(idxs, func(i, j int) bool {
+			return items[idxs[i]].ObjectMeta.Namespace < items[idxs[j]].ObjectMeta.Namespace
+		})
 	}
 	return idxs
 }
