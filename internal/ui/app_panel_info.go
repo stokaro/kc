@@ -3,9 +3,10 @@ package ui
 import (
 	"context"
 
-	models "github.com/sttts/kc/internal/models"
-	infowidget "github.com/sttts/kc/internal/ui/panelcontent/info"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	models "github.com/stokaro/kc/internal/models"
+	infowidget "github.com/stokaro/kc/internal/ui/panelcontent/info"
 )
 
 var infoNodesGVR = schema.GroupVersionResource{Version: "v1", Resource: "nodes"}

@@ -5,13 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/workloadaction"
 	appsv1 "k8s.io/api/apps/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/stokaro/kc/internal/workloadaction"
 )
 
 // replicaSet is a ReplicaSet of revision rev, controlled by the owner with

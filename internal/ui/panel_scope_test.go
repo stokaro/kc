@@ -6,7 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/models"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 func TestRenderScopeLabel(t *testing.T) {

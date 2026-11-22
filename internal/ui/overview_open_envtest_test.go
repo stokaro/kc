@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 // leftOverviewScope returns the namespace scope of the overview the left

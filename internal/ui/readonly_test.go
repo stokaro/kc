@@ -6,11 +6,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	models "github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
-	"github.com/sttts/kc/pkg/kubeconfig"
 	"k8s.io/apimachinery/pkg/types"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 func TestResolveReadOnly(t *testing.T) {

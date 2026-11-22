@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/kubeconfig"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 const startupKubeconfig = `apiVersion: v1

@@ -10,7 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/pkg/appconfig"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestHotkeyOf(t *testing.T) {

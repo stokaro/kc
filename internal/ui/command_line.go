@@ -9,8 +9,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/ui/viewer"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/viewer"
 )
 
 // copyCommandKey copies the kubectl command of the active panel. M-c is

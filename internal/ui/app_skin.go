@@ -3,9 +3,9 @@ package ui
 import (
 	"errors"
 
-	"github.com/sttts/kc/internal/ui/skin"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/internal/ui/skin"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // applyLook applies the configured panel skin and the per-context frame

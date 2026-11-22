@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
+	"github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // Request is what an action row sends to the UI on Enter.

@@ -8,8 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sttts/kc/internal/hotlist"
-	navui "github.com/sttts/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/hotlist"
+	navui "github.com/stokaro/kc/internal/navigation"
 )
 
 const (

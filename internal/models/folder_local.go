@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	table "github.com/sttts/kc/internal/table"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // LocalPathPrefix starts the panel path of a local directory, so it never

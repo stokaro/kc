@@ -9,13 +9,14 @@ import (
 	"testing/synctest"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	table "github.com/sttts/kc/internal/table"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // fakeOverviewConn serves a fake client as the cache and lets the test fire

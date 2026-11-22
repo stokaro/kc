@@ -8,14 +8,15 @@ import (
 	"sync"
 	"time"
 
-	table "github.com/sttts/kc/internal/table"
-	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/printers"
 	"k8s.io/client-go/util/jsonpath"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // customColumns is the column-merge step for one object list load: it hides

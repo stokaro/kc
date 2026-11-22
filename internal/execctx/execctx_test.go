@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/sttts/kc/internal/execctx"
+	"github.com/stokaro/kc/internal/execctx"
 )
 
 func TestKubectlArgs(t *testing.T) {

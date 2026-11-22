@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
+
+	"github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 type namesFolder struct{ rows []table.Row }

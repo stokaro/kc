@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/logview"
+	"github.com/stokaro/kc/internal/logview"
 )
 
 func mustPath(t *testing.T, s string) logview.Path {

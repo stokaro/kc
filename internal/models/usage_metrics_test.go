@@ -8,7 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
+	kccluster "github.com/stokaro/kc/internal/cluster"
 )
 
 // fakeUsage counts polls and returns a served snapshot.

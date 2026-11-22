@@ -5,9 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	table "github.com/sttts/kc/internal/table"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 func TestNewLiveKeyRowSourceRefresh(t *testing.T) {

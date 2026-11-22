@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/portforward"
 	"k8s.io/client-go/rest"
+
+	"github.com/stokaro/kc/internal/portforward"
 )
 
 // TestClientRunnerRefusedBeforeReady checks that a refused upgrade (RBAC,

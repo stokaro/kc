@@ -5,9 +5,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/access"
-	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/access"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // ReadOnlyOverride is what the command line says about read-only mode.

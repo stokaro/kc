@@ -5,10 +5,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
-	modeltesting "github.com/sttts/kc/internal/models/testing"
-	"github.com/sttts/kc/internal/navigation"
-	"github.com/sttts/kc/internal/table"
+	"github.com/stokaro/kc/internal/models"
+	modeltesting "github.com/stokaro/kc/internal/models/testing"
+	"github.com/stokaro/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/table"
 )
 
 // tree builds root -> a -> b, each reached through an enterable row.

@@ -7,11 +7,12 @@ import (
 	"runtime/debug"
 
 	"github.com/alecthomas/kong"
-	"github.com/sttts/kc"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc"
 )
 
 type serverVersionGetter interface {

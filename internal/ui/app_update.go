@@ -8,12 +8,13 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	"github.com/sttts/kc/internal/ui/viewer"
-	"github.com/sttts/kc/internal/workloadaction"
-	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	models "github.com/stokaro/kc/internal/models"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	"github.com/stokaro/kc/internal/ui/viewer"
+	"github.com/stokaro/kc/internal/workloadaction"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // enqueueCmd appends a command to be executed on the next Update cycle.

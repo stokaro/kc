@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // ChildResourceTypesFolder lists the child resource types of a parent object (e.g., /replicasets under a Deployment).

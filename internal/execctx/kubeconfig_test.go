@@ -12,7 +12,7 @@ import (
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	"github.com/sttts/kc/internal/execctx"
+	"github.com/stokaro/kc/internal/execctx"
 )
 
 const fileA = `apiVersion: v1

@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/explain"
-	"github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/explain"
+	"github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 const explainDoc = `{"components":{"schemas":{

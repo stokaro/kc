@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/models"
-	modeltesting "github.com/sttts/kc/internal/models/testing"
-	navui "github.com/sttts/kc/internal/navigation"
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
+	modeltesting "github.com/stokaro/kc/internal/models/testing"
+	navui "github.com/stokaro/kc/internal/navigation"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // lateFolder is a folder whose rows arrive after it is shown, as with an

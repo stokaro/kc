@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+
+	models "github.com/stokaro/kc/internal/models"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 )
 
 // contentSpyWidget stands in for a Describe or Manifest widget: it records

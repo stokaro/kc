@@ -6,8 +6,9 @@ import (
 	textinput "charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
-	"github.com/sttts/kc/pkg/appconfig"
+
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // commandPromptModal is the modal name of the prompt dialog.

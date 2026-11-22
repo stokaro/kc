@@ -8,10 +8,11 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	"github.com/sttts/kc/internal/ui/panelcontent/reload"
-	"github.com/sttts/kc/internal/ui/viewer"
+
+	models "github.com/stokaro/kc/internal/models"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	"github.com/stokaro/kc/internal/ui/panelcontent/reload"
+	"github.com/stokaro/kc/internal/ui/viewer"
 )
 
 // Widget renders resource manifests using the shared viewer widget. The

@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/testing/kcenvtest"
-
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -22,6 +20,8 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
 )
 
 func TestReaderListPodsEnvtest(t *testing.T) {

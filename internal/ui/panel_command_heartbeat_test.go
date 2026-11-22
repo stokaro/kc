@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/ui/panelcontent"
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/internal/ui/panelcontent"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestCommandWidgetHeartbeatStatus(t *testing.T) {

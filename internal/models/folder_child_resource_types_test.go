@@ -5,9 +5,10 @@ import (
 	"reflect"
 	"testing"
 
-	table "github.com/sttts/kc/internal/table"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestChildResourceTypesFolderListsEntries(t *testing.T) {

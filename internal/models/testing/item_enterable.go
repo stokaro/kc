@@ -4,7 +4,8 @@ import (
 	"strings"
 
 	lipgloss "charm.land/lipgloss/v2"
-	models "github.com/sttts/kc/internal/models"
+
+	models "github.com/stokaro/kc/internal/models"
 )
 
 // EnterableItem is a reusable Item that is also Enterable via a provided function.

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path"
 
-	"github.com/sttts/kc/internal/podfs"
+	"github.com/stokaro/kc/internal/podfs"
 )
 
 // FSEntryItem is a container filesystem row that can be copied.

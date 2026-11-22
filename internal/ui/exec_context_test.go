@@ -14,11 +14,11 @@ import (
 	"k8s.io/client-go/rest"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 
-	"github.com/sttts/kc/internal/execctx"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/ui/panelcontent"
-	"github.com/sttts/kc/pkg/appconfig"
-	"github.com/sttts/kc/pkg/kubeconfig"
+	"github.com/stokaro/kc/internal/execctx"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/panelcontent"
+	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 const execTestConfigA = `apiVersion: v1

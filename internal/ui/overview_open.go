@@ -2,8 +2,9 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 // overviewKey opens /overview for the namespace the active panel lists.

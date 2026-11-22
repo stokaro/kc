@@ -6,8 +6,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/workloadaction"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +15,9 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/workloadaction"
 )
 
 const ns = "shop"

@@ -6,9 +6,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/logmux"
-	"github.com/sttts/kc/internal/logview"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+
+	"github.com/stokaro/kc/internal/logmux"
+	"github.com/stokaro/kc/internal/logview"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // Keys of the logs viewer for JSON logs (see docs/adr/0071-json-logs.md).

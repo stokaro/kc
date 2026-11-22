@@ -3,12 +3,12 @@ package ui
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/testing/kcenvtest"
-
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestFooterShowsGroupVersionForPods(t *testing.T) {
@@ -31,7 +31,7 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 		Cl:         cl,
 		Ctx:        ctx,
 		CtxName:    "env",
-		KubeConfig: clientcmdapi.Config{CurrentContext: "env", Contexts: map[string]*clientcmdapi.Context{"env": &clientcmdapi.Context{}}},
+		KubeConfig: clientcmdapi.Config{CurrentContext: "env", Contexts: map[string]*clientcmdapi.Context{"env": {}}},
 		AppConfig:  cfg,
 	}
 	folder := models.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})

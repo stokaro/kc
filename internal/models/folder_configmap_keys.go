@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"sort"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // Values of the Type column in a ConfigMap data folder. They name the

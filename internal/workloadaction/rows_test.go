@@ -4,9 +4,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/workloadaction"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/workloadaction"
 )
 
 func TestRowsPerWorkloadKind(t *testing.T) {

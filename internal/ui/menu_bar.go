@@ -5,9 +5,10 @@ import (
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/overlay"
-	"github.com/sttts/kc/internal/ui/menubar"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/overlay"
+	"github.com/stokaro/kc/internal/ui/menubar"
 )
 
 // Menu bar indexes, in the order mc shows them.

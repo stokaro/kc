@@ -3,8 +3,9 @@ package access_test
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/access"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/access"
 )
 
 var deploy = access.Target{

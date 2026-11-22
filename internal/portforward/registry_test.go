@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/portforward"
+	"github.com/stokaro/kc/internal/portforward"
 )
 
 // fakeRunner stands in for the API server stream. It reports ready with

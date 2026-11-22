@@ -6,7 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/models"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 // Keys of the row filter (#30) and the faults toggle (#38).

@@ -8,10 +8,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/logmux"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -19,6 +15,11 @@ import (
 	"k8s.io/client-go/rest"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/logmux"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // workloadLogsStartTimeout bounds reading the workload and getting the pod

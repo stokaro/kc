@@ -13,7 +13,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/sttts/kc/internal/podfs"
+	"github.com/stokaro/kc/internal/podfs"
 )
 
 // Destination writes into a container filesystem. The pod filesystem

@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	yaml "sigs.k8s.io/yaml"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestParseColumnsKey(t *testing.T) {

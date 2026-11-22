@@ -5,8 +5,9 @@ import (
 	"regexp"
 	"strings"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/labels"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // RowFilter hides rows of an object list. The text works like k9s' filter:

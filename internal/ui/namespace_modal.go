@@ -6,8 +6,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/util/validation"
+
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // NamespaceCreateResultMsg signals the outcome of the namespace creation dialog.

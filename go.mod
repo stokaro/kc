@@ -1,4 +1,4 @@
-module github.com/sttts/kc
+module github.com/stokaro/kc
 
 go 1.27.0
 

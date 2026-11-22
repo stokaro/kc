@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/workloadaction"
 	appsv1 "k8s.io/api/apps/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/stokaro/kc/internal/workloadaction"
 )
 
 var restartClock = time.Date(2026, 11, 22, 10, 30, 0, 0, time.UTC)

@@ -5,8 +5,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // flattenCmd runs a tea.Cmd and flattens BatchMsg into individual messages.

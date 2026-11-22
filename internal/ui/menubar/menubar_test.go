@@ -7,7 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/sttts/kc/internal/ui/menubar"
+	"github.com/stokaro/kc/internal/ui/menubar"
 )
 
 // recorder builds menus whose items record the label they ran.

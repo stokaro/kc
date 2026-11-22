@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/ui/skin"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+
+	"github.com/stokaro/kc/internal/ui/skin"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 func sameColor(a, b color.Color) bool {

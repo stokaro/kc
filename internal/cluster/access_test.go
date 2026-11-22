@@ -6,12 +6,13 @@ import (
 	"sync"
 	"testing"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
 )
 
 // reviewServer answers SelfSubjectAccessReviews from a set of allowed

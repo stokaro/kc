@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/pkg/kubeconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 // Demonstrates kccluster.Pool (controller-runtime cluster per context) and a

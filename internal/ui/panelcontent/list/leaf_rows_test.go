@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	models "github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
+
+	models "github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 func TestDecorateRowMarksLeaves(t *testing.T) {

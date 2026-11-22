@@ -4,11 +4,12 @@ import (
 	"slices"
 	"testing"
 
-	models "github.com/sttts/kc/internal/models"
-	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	models "github.com/stokaro/kc/internal/models"
+	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 )
 
 var (

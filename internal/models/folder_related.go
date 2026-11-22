@@ -7,9 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // RelatedKind selects what a related-objects folder lists.

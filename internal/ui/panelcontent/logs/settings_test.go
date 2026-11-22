@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 )
 
 func (s *fakeSource) lastRequest(t *testing.T) logswidget.Request {

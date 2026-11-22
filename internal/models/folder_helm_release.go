@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sttts/kc/internal/helm"
-	table "github.com/sttts/kc/internal/table"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/helm"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // HelmReleaseFolder shows one stored revision of a release: values,

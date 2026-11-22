@@ -8,9 +8,10 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/ui/skin"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
-	"github.com/sttts/kc/pkg/appconfig"
+
+	"github.com/stokaro/kc/internal/ui/skin"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func contextColors(t *testing.T, rules ...appconfig.ContextColorConfig) skin.ContextColors {

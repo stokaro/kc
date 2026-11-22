@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/textdiff"
+	"github.com/stokaro/kc/internal/textdiff"
 )
 
 func TestUnifiedDiff(t *testing.T) {

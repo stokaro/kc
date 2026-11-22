@@ -7,11 +7,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/access"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/portforward"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/access"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/portforward"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // portForwardKey opens the port forward dialog on a pod, container or

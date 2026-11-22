@@ -7,7 +7,7 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/sttts/kc/internal/cmdtemplate"
+	"github.com/stokaro/kc/internal/cmdtemplate"
 )
 
 func TestInputRefs(t *testing.T) {

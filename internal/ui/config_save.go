@@ -8,7 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // configSavedMsg reports the outcome of a "Save as defaults".

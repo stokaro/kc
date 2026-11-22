@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/podfs"
+	"github.com/stokaro/kc/internal/podfs"
 )
 
 // consentFactory needs a helper and refuses to add one without consent.

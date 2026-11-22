@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sttts/kc/internal/atomicfile"
+	"github.com/stokaro/kc/internal/atomicfile"
 )
 
 // FileModeMask keeps the owner permission bits of the source and drops the

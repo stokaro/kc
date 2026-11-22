@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/sttts/kc/internal/models"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 // Patches for spec.unschedulable. They name the value, so sending one twice

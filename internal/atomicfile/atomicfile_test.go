@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/atomicfile"
+	"github.com/stokaro/kc/internal/atomicfile"
 )
 
 var errBroken = errors.New("stream broken")

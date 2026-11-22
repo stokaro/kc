@@ -4,9 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/helm"
-	"github.com/sttts/kc/internal/helm/helmtest"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/stokaro/kc/internal/helm"
+	"github.com/stokaro/kc/internal/helm/helmtest"
 )
 
 func TestRecordFromSecret(t *testing.T) {

@@ -9,8 +9,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/workloadaction"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/workloadaction"
 )
 
 // fakeWorkloadChange counts its runs. With ask set it asks for a number,
