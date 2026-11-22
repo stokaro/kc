@@ -89,6 +89,14 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
 
+## Cluster Overview
+
+The first row of every panel root is `/overview`: one row per finding about the panel's context and namespace scope, in four sections. Capacity compares the CPU and memory requests and limits of the pods on each node with its allocatable, and the pods per node with allocatable pods (`use n/a` until measured usage from metrics.k8s.io is wired in). Health lists nodes that are not ready, under pressure or cordoned; pods that are not ready, pending, crash looping, failing to pull images or to start, OOMKilled or restarting; workloads that are unavailable or rolling out; failed Jobs and CronJobs; Pending or Lost claims and Released or Failed volumes. Risks lists PodDisruptionBudgets that allow no eviction, pods without requests or without a memory limit, single-replica workloads without a PDB, ResourceQuotas near their limit, and HPAs at their maximum or without metrics. Activity lists warning events and pod restarts inside the window.
+
+Each row has a value and a state: white is ok, yellow a warning, red failed, and dim when kc cannot read the source (the reason is in `F3`). `Enter` lists exactly the objects behind a row, with the reason for each, and `/..` returns. `F3` explains how the value is computed and shows the kubectl commands that show the same inputs. Capacity rows always cover every node and every pod on it; the other rows follow the namespace scope.
+
+The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. Thresholds are set under `overview:` in the configuration.
+
 ## Custom Commands
 
 You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F9** menu. Commands run in a terminal panel and can use templates to reference the selected item.
@@ -142,6 +150,7 @@ Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `
 - `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
+- `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, pods per node, and ResourceQuota use.
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -192,6 +201,21 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+
+overview:
+  # How far back warning events and container restarts count.
+  window: 1h
+  # Restarts (the last one inside window) that make a pod "restarting".
+  restartThreshold: 3
+  # CPU and memory requests on a node, in percent of allocatable.
+  requestsWarnPercent: 80
+  requestsFailPercent: 95
+  # Limits above this percent of allocatable mark a node overcommitted.
+  limitsWarnPercent: 100
+  # Pods on a node, in percent of allocatable pods.
+  podsWarnPercent: 90
+  # A ResourceQuota is flagged when any used value reaches this percent.
+  quotaWarnPercent: 80
 ```
 
 ## Contributing / Source
