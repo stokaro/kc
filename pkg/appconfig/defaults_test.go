@@ -91,6 +91,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Viewer.Mode != b.Viewer.Mode {
 		t.Fatalf("viewer.mode mismatch: yaml=%q code=%q", a.Viewer.Mode, b.Viewer.Mode)
 	}
+	if a.Viewer.Logs != b.Viewer.Logs {
+		t.Fatalf("viewer.logs mismatch: yaml=%+v code=%+v", a.Viewer.Logs, b.Viewer.Logs)
+	}
 	if a.Panel.Scrolling.Horizontal.Step != b.Panel.Scrolling.Horizontal.Step {
 		t.Fatalf("panel.scrolling.horizontal.step mismatch: yaml=%d code=%d", a.Panel.Scrolling.Horizontal.Step, b.Panel.Scrolling.Horizontal.Step)
 	}

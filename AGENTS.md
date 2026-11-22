@@ -55,6 +55,10 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 - Run examples: `go run examples/handler/main.go`
 - Headless TUI driver: `go run ./cmd/bubbleheadless -- go run ./cmd/kc`
 - All tests (verbose): `go test ./... -v`
+- Envtest suites need control-plane binaries: `export KUBEBUILDER_ASSETS="$(setup-envtest use -p path 1.37.x)"`.
+- Run everything as CI does (an envtest startup failure fails the run): `KC_REQUIRE_ENVTEST=1 go test ./...`
+- Run only the tests that do not need envtest: `KC_SKIP_ENVTEST=1 go test ./...`
+- With neither variable, envtest tests skip when the control plane cannot start. New envtest tests start it through `internal/testing/kcenvtest` (`kcenvtest.Main` in `TestMain` plus `kcenvtest.Require`, or `kcenvtest.Start` per test), never by calling `envtest.Environment.Start` directly. See `docs/adr/0060-require-envtest-in-ci.md`.
 - With coverage: `go test ./... -cover`
 - Static checks: `go vet ./...`
 - Tidy modules (after dep changes): `go mod tidy`

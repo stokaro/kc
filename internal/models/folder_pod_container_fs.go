@@ -51,12 +51,14 @@ func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, conta
 		Kind:       kind,
 		session:    handle,
 	}
-	base.SetPopulate(folder.buildRows)
+	// The pod's status decides whether a previous log exists, so the rows
+	// follow the pod like the container list does.
+	base.SetRowSource(newPodContainerRowSource(deps, namespace, pod, kind, folder.buildRows, base.markDirtyFromSource))
 	return folder
 }
 
-func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, error) {
-	rows := make([]table.Row, 0, 2)
+func (f *PodContainerDetailFolder) buildRows(ctx context.Context) ([]table.Row, error) {
+	rows := make([]table.Row, 0, 3)
 	logSpec := LogsSpec{
 		Namespace: f.Namespace,
 		Pod:       f.Pod,
@@ -65,10 +67,18 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 		TailLines: DefaultLogsTailLines,
 	}
 	logPath := append(append([]string{}, f.Path()...), "logs", "latest")
-	logItem := NewContainerLogItem("logs_latest", []string{"logs"}, logPath, logSpec)
+	logItem := NewContainerLogItem(f.Deps, "logs_latest", []string{"logs"}, logPath, logSpec)
 	logItem.RowItem.details = "Stream container logs"
-	logItem.SetViewCommand(logsCommand(f.Deps, logSpec))
 	rows = append(rows, logItem)
+
+	if restarts := f.restartCount(ctx); restarts > 0 {
+		prevSpec := logSpec
+		prevSpec.Previous = true
+		prevPath := append(append([]string{}, f.Path()...), "logs", "previous")
+		prevItem := NewContainerLogItem(f.Deps, "logs_previous", []string{"logs (previous)"}, prevPath, prevSpec)
+		prevItem.RowItem.details = fmt.Sprintf("Logs of the previous instance (%d restarts)", restarts)
+		rows = append(rows, prevItem)
+	}
 
 	rootPath := append(append([]string{}, f.Path()...), "root")
 	if f.session == nil {
@@ -87,6 +97,43 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 	}
 	rows = append(rows, rootItem)
 	return rows, nil
+}
+
+// restartCount returns the container's restart count from the pod status.
+// It returns 0 when the pod cannot be read: the previous log row is an
+// extra, and the other rows do not depend on the pod.
+func (f *PodContainerDetailFolder) restartCount(ctx context.Context) int32 {
+	if f.Deps.Cl == nil {
+		return 0
+	}
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	obj, err := f.Deps.Cl.GetByGVR(ctx, gvr, f.Namespace, f.Pod)
+	if err != nil || obj == nil {
+		return 0
+	}
+	var pod corev1.Pod
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil {
+		return 0
+	}
+	return containerRestartCount(&pod, f.Container, f.Kind)
+}
+
+// containerRestartCount returns the restart count of the named container in
+// the status list that matches kind.
+func containerRestartCount(pod *corev1.Pod, name string, kind containerKind) int32 {
+	statuses := pod.Status.ContainerStatuses
+	switch kind {
+	case containerKindInit:
+		statuses = pod.Status.InitContainerStatuses
+	case containerKindEphemeral:
+		statuses = pod.Status.EphemeralContainerStatuses
+	}
+	for i := range statuses {
+		if statuses[i].Name == name {
+			return statuses[i].RestartCount
+		}
+	}
+	return 0
 }
 
 // PodContainerFSFolder lists filesystem entries for a container under a given directory.

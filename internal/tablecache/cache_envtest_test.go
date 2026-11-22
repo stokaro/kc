@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -14,11 +16,9 @@ import (
 )
 
 func TestCacheReturnsRows(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 
-	ctx, cancel := context.WithCancel(testCtx)
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	cacheOpts := cache.Options{Scheme: testScheme}
