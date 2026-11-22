@@ -151,6 +151,17 @@ commands:
 Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `{{.Version}}`, `{{.Resource}}`.
 The execution context is available as `{{.Context}}`, `{{.As}}`, `{{.AsUID}}` and `{{.AsGroups}}` (a list), for tools that do not read `KUBECONFIG`. Commands already run with `KUBECONFIG` set to kc's selected context and the namespace of the selected item (else the panel's), so `kubectl` needs no extra flags. Commands without a selected item are run as written, without template expansion.
 
+A command acts on the marked rows when any are marked, otherwise on the highlighted row. `.Items` lists them in panel order, each with its own `Name`, `Namespace`, `Group`, `Version` and `Resource`; the top-level variables repeat the first item. Commands with `supportsMultiSelection: true` are offered for several marked rows; other commands are hidden from the F9 menu then.
+
+```yaml
+  - name: "Describe marked pods"
+    command: "{{range .Items}}kubectl describe {{.Resource}} {{.Name}} -n {{.Namespace}}; {{end}}"
+    type: "sticky"
+    supportsMultiSelection: true
+    showFor:
+      resources: ["pods"]
+```
+
 ## Configuration
 
 `~/.kc/config.yaml` stores all user preferences. Key sections:

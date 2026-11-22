@@ -69,8 +69,9 @@ func (a *App) hasApplicableCommands(panel *Panel) bool {
 	item, _ := panel.SelectedNavItem(ctx)
 	selected := panel.GetSelectedItems()
 	activeNamespace := deriveNamespace(item, selected, panel.namespace(ctx))
+	targets := commandTargets(item, selected)
 	for _, cmd := range a.cfg.Commands {
-		if isCommandApplicable(cmd, item, len(selected), activeNamespace) {
+		if isCommandApplicableToTargets(cmd, targets, activeNamespace) {
 			return true
 		}
 	}
@@ -3678,10 +3679,13 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 		namespaceForApplicability = activeNamespace
 	}
 
+	// Marked rows win over the highlighted row; see docs/adr/0063.
+	targets := commandTargets(item, selectedItems)
+
 	// Filter commands
 	var available []appconfig.CommandConfig
 	for _, cmd := range a.cfg.Commands {
-		if isCommandApplicable(cmd, item, len(selectedItems), namespaceForApplicability) {
+		if isCommandApplicableToTargets(cmd, targets, namespaceForApplicability) {
 			available = append(available, cmd)
 		}
 	}
@@ -3701,23 +3705,14 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 
 	selector := NewCommandSelectorModel(available, targetPanel, targetNamespace, targetLeft, func(cmd appconfig.CommandConfig) tea.Cmd {
 		a.hideModal()
-		// Get items (handle multi-selection if supported)
-		var items []models.Item
-		if cmd.SupportsMultiSelection {
-			// TODO: Get selected items from panel if multiple selected
-			if item != nil {
-				items = []models.Item{item}
-			}
-		} else {
-			if item != nil {
-				items = []models.Item{item}
-			}
-		}
+		// The menu only offers commands that accept len(targets) rows.
+		items := targets
 
-		// Resolve GVR
+		// Fallback GVR for items that carry none; each object item
+		// renders with its own GVR.
 		var gvr schema.GroupVersionResource
-		if item != nil {
-			if obj, ok := item.(models.ObjectItem); ok {
+		if len(items) > 0 {
+			if obj, ok := items[0].(models.ObjectItem); ok {
 				gvr = obj.GVR()
 			}
 		}

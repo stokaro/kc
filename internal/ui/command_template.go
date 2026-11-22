@@ -41,7 +41,10 @@ type CommandItemContext struct {
 	Resource  string
 }
 
-// RenderCommand renders a command template with the given context
+// RenderCommand renders a command template with the given items. Each
+// object item keeps its own name, namespace and GVR, so marked rows from
+// several namespaces or resources stay distinct in .Items. resourceInfo
+// is the GVR for items that carry none.
 func RenderCommand(tmplStr string, items []models.Item, resourceInfo schema.GroupVersionResource) (string, error) {
 	return RenderCommandIn(tmplStr, items, resourceInfo, execctx.Context{})
 }
@@ -54,50 +57,16 @@ func RenderCommandIn(tmplStr string, items []models.Item, resourceInfo schema.Gr
 		return tmplStr, nil
 	}
 
-	// Prepare context
-	ctx := CommandContext{
-		Items: make([]CommandItemContext, len(items)),
-	}
+	ctx := CommandContext{Items: commandItemContexts(items, resourceInfo)}
 
-	// Populate items
-	for i, item := range items {
-		var name, namespace, kind string
-		if obj, ok := item.(models.ObjectItem); ok {
-			name = obj.Name()
-			namespace = obj.Namespace()
-			// Kind is not on ObjectItem interface directly in the snippet I saw,
-			// but usually it is. Let's check if ObjectItem has Kind().
-			// The snippet showed: GVR(), Namespace(), Name(), SupportsVerb().
-			// It inherits Item. Item has Details(), Path().
-			// Wait, where is Kind()?
-			// Maybe it's not available?
-			// If not, I might need to rely on GVR or something else.
-			// But usually objects have Kind.
-			// Let's assume for now I can get it from GVR or maybe I missed it.
-			// Actually, let's look at `item_object.go` if possible, or just use what I have.
-			// If Kind is missing, I'll leave it empty or use Resource.
-		}
-
-		ctx.Items[i] = CommandItemContext{
-			Name:      name,
-			Namespace: namespace,
-			Kind:      kind,
-			Group:     resourceInfo.Group,
-			Version:   resourceInfo.Version,
-			Resource:  resourceInfo.Resource,
-		}
-	}
-
-	// Populate top-level fields from the first item for convenience
-	if len(items) > 0 {
-		first := ctx.Items[0]
-		ctx.Name = first.Name
-		ctx.Namespace = first.Namespace
-		ctx.Kind = first.Kind
-		ctx.Group = first.Group
-		ctx.Version = first.Version
-		ctx.Resource = first.Resource
-	}
+	// Top-level fields mirror the first item for single-item templates.
+	first := ctx.Items[0]
+	ctx.Name = first.Name
+	ctx.Namespace = first.Namespace
+	ctx.Kind = first.Kind
+	ctx.Group = first.Group
+	ctx.Version = first.Version
+	ctx.Resource = first.Resource
 
 	ctx.setExec(exec)
 
@@ -113,6 +82,28 @@ func RenderCommandIn(tmplStr string, items []models.Item, resourceInfo schema.Gr
 	}
 
 	return buf.String(), nil
+}
+
+// commandItemContexts builds the template data for items in their order.
+// Kind stays empty: object items do not expose it yet.
+func commandItemContexts(items []models.Item, fallback schema.GroupVersionResource) []CommandItemContext {
+	out := make([]CommandItemContext, len(items))
+	for i, item := range items {
+		gvr := fallback
+		var c CommandItemContext
+		if obj, ok := item.(models.ObjectItem); ok {
+			c.Name = obj.Name()
+			c.Namespace = obj.Namespace()
+			if g := obj.GVR(); !g.Empty() {
+				gvr = g
+			}
+		}
+		c.Group = gvr.Group
+		c.Version = gvr.Version
+		c.Resource = gvr.Resource
+		out[i] = c
+	}
+	return out
 }
 
 func (c *CommandContext) setExec(exec execctx.Context) {
