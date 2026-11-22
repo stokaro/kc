@@ -17,6 +17,7 @@ const (
 	sgrSel      = "97;40" // white on black: the selected title and entry
 	sgrSelHot   = "93;40" // yellow on black: the hotkey of the selection
 	sgrDisabled = "90;46" // gray on cyan: entries that cannot be chosen
+	sgrIdle     = "30;46" // black on cyan: the closed bar, no hotkeys
 )
 
 // cell is one printed character of a rendered line and the SGR parameters
@@ -91,10 +92,10 @@ func TestRenderTitlesColors(t *testing.T) {
 	tests := []struct {
 		name, text, want string
 	}{
-		{name: "title text", text: "eft", want: sgrText},
-		{name: "title hotkey", text: "L", want: sgrHot},
-		{name: "second title hotkey", text: "F", want: sgrHot},
-		{name: "bar padding", text: " ", want: sgrText},
+		{name: "title text", text: "eft", want: sgrIdle},
+		{name: "title hotkey", text: "L", want: sgrIdle},
+		{name: "second title hotkey", text: "F", want: sgrIdle},
+		{name: "bar padding", text: " ", want: sgrIdle},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
