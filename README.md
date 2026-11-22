@@ -91,6 +91,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `M-j`      | Owners: opens `<object>/owners` with the owner references of the selected object, the controller first with the cursor on it. Owners that no longer exist or whose kind the cluster does not serve are listed dim with the reason. `Esc j` does the same. |
 | `M-b`      | Used by: opens `<object>/used-by` with the objects that use the selected one, read from the watch cache: pods using a ConfigMap, Secret, PersistentVolumeClaim or ServiceAccount (volumes, env, envFrom, imagePullSecrets, serviceAccountName), Services selecting a Pod, Ingresses routing to a Service, the claim bound to a PersistentVolume. `Esc b` does the same. |
 | `C-x C-d`  | Compare the objects under the cursors of the two panels, as mc's "Compare files". Opens a read-only unified diff of the two YAML manifests. |
+| `M-e`      | Explain: browse the field documentation of the selected object or resource type, read from the cluster's OpenAPI v3 schema for exactly that group and version (CRDs included). See [Field documentation](#field-documentation). `Esc e` does the same. |
 | `C-c`      | Quit.                                                                           |
 
 Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
@@ -103,12 +104,18 @@ Rows in `/owners` and `/used-by` behave like the same object in its own list: `E
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
 
+## Field documentation
+
+`M-e` on an object row or a resource type row opens the type's schema in the same panel, at `/explain/<group>/<version>/<kind>`. The rows are the fields with their type (`string`, `[]Container`, `map[string]string`, ...), whether they are required, and the first sentence of their description. `Enter` on a `/field` row lists its nested fields; arrays and maps are crossed to their items, as in `kubectl explain`. `F3` on a field shows its full description with enum values, default, format and list type. `..` goes back, and at the top returns to the row you started from. The command line shows the matching `kubectl explain <resource>.<field> --api-version=<group>/<version>`; `M-c` copies it.
+
+The schema comes from the connected cluster (`/openapi/v3`, the source `kubectl explain` uses) and matches the version the panel lists, so a kind that exists in two API groups shows the right one. kc keeps the last 16 group-version documents in memory; every `M-e` reads the small `/openapi/v3` index, whose hashes change with the schema, so CRD updates and other contexts show up without a restart. When the cluster publishes no schema for the type, the panel says "No documentation"; when the request fails, it says "Schema request failed" in red with the error.
+
 ## Menu Bar
 
 `F9` (or `Esc 9`, or a click on `9 PullDn`) opens a menu bar on the top row, as in mc. Every entry runs an action that also has a key, and shows that key on the right, so the menus double as a key reference.
 
 - **Left** / **Right**: listing mode (List, Describe, Manifest; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
-- **File**: view, edit, copy, create namespace, delete, port forward, owners and used by, marking and selecting rows, quick search, exit.
+- **File**: view, edit, copy, create namespace, delete, port forward, owners and used by, explain, marking and selecting rows, quick search, exit.
 - **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
 - **Options**: panel width and the options of each panel.
 

@@ -21,6 +21,7 @@ import (
 	"github.com/sttts/kc/internal/atomicfile"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/execctx"
+	"github.com/sttts/kc/internal/explain"
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/objectaction"
@@ -298,6 +299,7 @@ type App struct {
 	// prevLocation is where each panel was before its last NavigatePanel
 	// call; cd - goes there.
 	prevLocation [2]*PanelPath
+	explainDocs  *explain.Loader // OpenAPI v3 documents for M-e, per cluster and group-version
 }
 
 const (

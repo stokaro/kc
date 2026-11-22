@@ -486,6 +486,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Re-dispatch the original message for normal handling
 		return a, func() tea.Msg { return msg.msg }
+	case explainLoadedMsg:
+		return a, a.handleExplainLoaded(msg)
 	case configSavedMsg:
 		return a, a.handleConfigSaved(msg)
 	case showToastMsg:

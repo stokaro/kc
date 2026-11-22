@@ -124,6 +124,11 @@ func (n *Navigator) Path(ctx context.Context) string {
 	if len(n.stack) == 0 {
 		return "/"
 	}
+	// A folder that is not below the row it was opened from (the explain
+	// tree) names its whole path itself.
+	if cur, ok := n.Current().(interface{ StandalonePath() bool }); ok && cur.StandalonePath() {
+		return "/" + strings.Join(n.Current().Path(), "/")
+	}
 	segments := make([]string, 0, len(n.stack))
 	for i := 0; i < len(n.stack)-1; i++ {
 		fr := n.stack[i]
