@@ -766,6 +766,10 @@ func (m *ViewOptionsModel) moveFocus(delta int) {
 
 // Update handles key navigation and edits.
 func (m *ViewOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if step := wheelStep(msg); step != 0 {
+		m.moveFocus(step)
+		return m, nil
+	}
 	if t, ok := msg.(tea.KeyMsg); ok {
 		switch t.String() {
 		case "up", "k":

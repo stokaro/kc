@@ -270,12 +270,16 @@ func (b *Bar) run(i int) tea.Cmd {
 // HandleMouse processes a mouse event while the bar is open. Every event is
 // consumed: a click on a title drops that menu down, a click on an item runs
 // it when the button is released over it, and a click anywhere else closes
-// the bar.
+// the bar. The wheel over the drop-down moves the highlight (see wheel).
 func (b *Bar) HandleMouse(msg tea.MouseMsg) tea.Cmd {
 	if !b.open {
 		return nil
 	}
 	m := msg.Mouse()
+	if _, wheel := msg.(tea.MouseWheelMsg); wheel {
+		b.wheel(m)
+		return nil
+	}
 	if m.Button != tea.MouseLeft {
 		return nil
 	}
@@ -314,6 +318,36 @@ func (b *Bar) HandleMouse(msg tea.MouseMsg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// wheel moves the highlight of the dropped-down menu one selectable item up
+// or down, skipping separators and disabled items, as Up and Down do. It
+// stops at the first and last item instead of wrapping, so spinning the
+// wheel does not cycle the menu. Only the pointer over the drop-down counts;
+// the wheel never runs an item, and it drops a pending press so that the
+// release that follows does not run the item the highlight left.
+func (b *Bar) wheel(m tea.Mouse) {
+	var dir int
+	switch m.Button {
+	case tea.MouseWheelUp:
+		dir = -1
+	case tea.MouseWheelDown:
+		dir = 1
+	default:
+		return
+	}
+	x, y, w, h := b.DropdownBounds()
+	if !b.Dropped() || m.X < x || m.X >= x+w || m.Y < y || m.Y >= y+h {
+		return
+	}
+	b.pressed = -1
+	items := b.items()
+	for i := b.sel + dir; i >= 0 && i < len(items); i += dir {
+		if items[i].Selectable() {
+			b.sel = i
+			return
+		}
+	}
 }
 
 // Layout of the bar, as in mc: titles start at column 1, each drawn as

@@ -54,6 +54,10 @@ func newAccessViewModel(target access.Target, id access.Identity, policy access.
 func (m *accessViewModel) Init() tea.Cmd { return nil }
 
 func (m *accessViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if step := wheelStep(msg); step != 0 {
+		m.move(step)
+		return m, nil
+	}
 	switch msg := msg.(type) {
 	case copyResultMsg:
 		m.status = msg.text
