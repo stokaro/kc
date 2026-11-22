@@ -4,9 +4,11 @@ import (
 	"context"
 
 	"charm.land/lipgloss/v2"
+	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // Item matches the navigation item contract. Navigation will alias to this type.
@@ -44,6 +46,21 @@ type ObjectItem interface {
 	SupportsVerb(string) bool
 }
 
+// ObjectOrigin names the cluster connection an object row was read from.
+type ObjectOrigin struct {
+	Cluster *kccluster.Cluster
+	Context string // kubeconfig context name shown to the user
+}
+
+// InstanceItem is an ObjectItem that knows which object instance it shows:
+// the UID the row was read with and the cluster it came from. A name alone
+// also matches an object that was deleted and recreated after the read.
+type InstanceItem interface {
+	ObjectItem
+	UID() types.UID
+	Origin() ObjectOrigin
+}
+
 // Folder describes a navigable collection of rows.
 type Folder interface {
 	table.List
@@ -62,18 +79,6 @@ type Enterable interface {
 type Viewable interface {
 	ViewContent() (title, body, lang, mime, filename string, err error)
 }
-
-// LogsSpec describes a container log stream.
-type LogsSpec struct {
-	Namespace string
-	Pod       string
-	Container string
-	Follow    bool
-	TailLines int64
-}
-
-// DefaultLogsTailLines controls how many lines to fetch before following.
-const DefaultLogsTailLines int64 = 200
 
 // LogsProvider identifies rows that can open a streaming logs viewer.
 type LogsProvider interface {

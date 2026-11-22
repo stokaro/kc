@@ -28,12 +28,12 @@
 - Every level shows `..` to navigate back.
 
 ## Selection & Bulk Actions
-- Toggle selection with `Ctrl+T` or `Insert`; multiple selections allowed.
+- Toggle selection with `C-t` or `Insert`; multiple selections allowed.
 - Actions operate on selection when non-empty, otherwise on the focused item.
 
 ## Actions & Keys
 - `F3` View YAML; `F4` Edit; `F7` Create; `F8` Delete with confirmation.
-- `Ctrl+O` toggles full-screen terminal; `M-i` syncs panel locations.
+- `C-o` toggles full-screen terminal; `M-i` syncs panel locations.
 
 ## Terminal Integration
 - Terminal follows kubeconfig, context, and namespace changes.
@@ -86,17 +86,17 @@
   - Implementations may stream/live-update; IDs keep cursor stable across changes.
 - Selector line: visible when focused; moves only when previously selected row disappears, then clamps to next (or previous if no next).
 - Dynamic content: optimized for frequent updates; diff minimally and preserve scroll/cursor.
-- Selection: toggle with `Ctrl+T` or `Insert`; selected rows render with selection style.
+- Selection: toggle with `C-t` or `Insert`; selected rows render with selection style.
 - Reusability: component is self-contained under `internal/table` with a clear public API.
 - Styling: highly customizable borders and header (including none and vertical column separators) using Bubble Tea v2 + lipgloss; sensible defaults fully overridable.
 
 ## Viewer Search
-- Start a search with `F7`, `Ctrl+F`, or `/`; `F2` finds next.
+- Start a search with `F7`, `C-f`, or `/`; `F2` finds next.
 - Highlight all matches and scroll current match into view.
 
 ## Filtering & Find in Panels
 - Panel object views include filtering via menu.
-- `Ctrl+F` finds in the current listing; highlight and support “find next”.
+- `C-f` finds in the current listing; highlight and support “find next”.
 
 ## Selection by Pattern
 - `+` opens a pattern dialog when the terminal has no input:

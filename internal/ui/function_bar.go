@@ -59,12 +59,12 @@ func (f *functionBar) Render(state functionBarState) string {
 // a panel command has keyboard focus.
 func compactFunctionKeys(state functionBarState) []functionKey {
 	if state.ShowTerminal {
-		return []functionKey{{Key: " Ctrl+O", Label: "Return to panels", Enabled: true}}
+		return []functionKey{{Key: " C-o", Label: "Return to panels", Enabled: true}}
 	}
 	return []functionKey{
 		{Key: " Esc Esc", Label: "Drop focus", Enabled: true},
 		{Key: "10", Label: "Quit", Enabled: true},
-		{Key: " Ctrl+O", Label: "Fullscreen", Enabled: true},
+		{Key: " C-o", Label: "Fullscreen", Enabled: true},
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/sttts/kc/internal/models"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 )
@@ -25,6 +26,7 @@ type ViewOptionsCommittedMsg struct {
 	Objects           *ViewOptionsObjectsPayload
 	Command           *ViewOptionsCommandPayload
 	Viewer            *ViewOptionsViewerPayload
+	Logs              *ViewOptionsLogsPayload
 	SaveDefault       bool
 	Accept            bool
 	Close             bool
@@ -57,6 +59,14 @@ type ViewOptionsViewerPayload struct {
 	WrapMode string
 }
 
+// ViewOptionsLogsPayload carries the logs viewer stream options.
+type ViewOptionsLogsPayload struct {
+	TailLines    int64
+	SinceSeconds int64
+	Timestamps   bool
+	Previous     bool
+}
+
 // ViewOptionsConfig seeds the sectioned view options model.
 type ViewOptionsConfig struct {
 	PanelIndex       int
@@ -72,6 +82,16 @@ type ViewOptionsConfig struct {
 	Objects   *ViewOptionsObjectsConfig
 	Command   *ViewOptionsCommandConfig
 	Viewer    *ViewOptionsViewerConfig
+	Logs      *ViewOptionsLogsConfig
+}
+
+// ViewOptionsLogsConfig configures the Logs section. TailLines -1 means the
+// whole log, SinceSeconds 0 no limit.
+type ViewOptionsLogsConfig struct {
+	TailLines    int64
+	SinceSeconds int64
+	Timestamps   bool
+	Previous     bool
 }
 
 // ViewOptionsResourcesConfig configures the Resources section.
@@ -140,6 +160,63 @@ var commandWatchLabels = []string{
 	"1m",
 }
 
+// logsTailChoices are the tail options; -1 fetches the whole log.
+var logsTailChoices = []int64{50, 100, 200, 500, 1000, 5000, -1}
+
+// logsSinceChoices are the since windows in seconds; 0 means no limit.
+var logsSinceChoices = []int64{0, 60, 300, 900, 1800, 3600}
+
+// withChoice returns choices with current added in order when it is
+// missing, so a configured value outside the list shows and survives a
+// commit. Negative values sort last.
+func withChoice(choices []int64, current int64) ([]int64, int) {
+	for i, c := range choices {
+		if c == current {
+			return choices, i
+		}
+	}
+	less := func(a, b int64) bool {
+		if a < 0 {
+			return false
+		}
+		if b < 0 {
+			return true
+		}
+		return a < b
+	}
+	out := make([]int64, 0, len(choices)+1)
+	idx := -1
+	for _, c := range choices {
+		if idx < 0 && less(current, c) {
+			idx = len(out)
+			out = append(out, current)
+		}
+		out = append(out, c)
+	}
+	if idx < 0 {
+		idx = len(out)
+		out = append(out, current)
+	}
+	return out, idx
+}
+
+func cycleIndex(idx, n, delta int) int {
+	if n == 0 {
+		return 0
+	}
+	if delta < 0 {
+		return (idx - 1 + n) % n
+	}
+	return (idx + 1) % n
+}
+
+func onOff(on bool) string {
+	if on {
+		return "On"
+	}
+	return "Off"
+}
+
 type viewOptionEntryKind int
 
 const (
@@ -162,6 +239,10 @@ const (
 	viewOptionCommandWatch
 	viewOptionViewerTheme
 	viewOptionViewerWrapMode
+	viewOptionLogsTail
+	viewOptionLogsSince
+	viewOptionLogsTimestamps
+	viewOptionLogsPrevious
 )
 
 type viewOptionEntry struct {
@@ -216,6 +297,16 @@ type ViewOptionsModel struct {
 	command struct {
 		enabled  bool
 		watchIdx int
+	}
+
+	logs struct {
+		enabled    bool
+		tails      []int64
+		tailIdx    int
+		sinces     []int64
+		sinceIdx   int
+		timestamps bool
+		previous   bool
 	}
 }
 
@@ -345,6 +436,26 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 			kind:   viewOptionEntryOption,
 			option: viewOptionViewerWrapMode,
 		})
+	}
+
+	if cfg.Logs != nil {
+		model.logs.enabled = true
+		tail := cfg.Logs.TailLines
+		if tail < 0 {
+			tail = -1
+		}
+		model.logs.tails, model.logs.tailIdx = withChoice(logsTailChoices, tail)
+		model.logs.sinces, model.logs.sinceIdx = withChoice(logsSinceChoices, nonNegative(cfg.Logs.SinceSeconds))
+		model.logs.timestamps = cfg.Logs.Timestamps
+		model.logs.previous = cfg.Logs.Previous
+		model.appendSectionSpacerIfNeeded()
+		model.entries = append(model.entries,
+			viewOptionEntry{kind: viewOptionEntrySection, title: "Logs:"},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsTail},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsSince},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsTimestamps},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsPrevious},
+		)
 	}
 
 	if len(model.entries) == 0 {
@@ -686,6 +797,14 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		} else {
 			m.viewer.wrapMode = appconfig.ViewerModeWrap
 		}
+	case viewOptionLogsTail:
+		m.logs.tailIdx = cycleIndex(m.logs.tailIdx, len(m.logs.tails), delta)
+	case viewOptionLogsSince:
+		m.logs.sinceIdx = cycleIndex(m.logs.sinceIdx, len(m.logs.sinces), delta)
+	case viewOptionLogsTimestamps:
+		m.logs.timestamps = !m.logs.timestamps
+	case viewOptionLogsPrevious:
+		m.logs.previous = !m.logs.previous
 	case viewOptionCommandWatch:
 		if len(commandWatchDurations) == 0 {
 			return
@@ -765,6 +884,14 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 			WrapMode: mode,
 		}
 	}
+	if m.logs.enabled {
+		msg.Logs = &ViewOptionsLogsPayload{
+			TailLines:    m.logs.tails[m.logs.tailIdx],
+			SinceSeconds: m.logs.sinces[m.logs.sinceIdx],
+			Timestamps:   m.logs.timestamps,
+			Previous:     m.logs.previous,
+		}
+	}
 	if m.command.enabled {
 		interval := time.Duration(0)
 		if len(commandWatchDurations) > 0 && m.command.watchIdx >= 0 && m.command.watchIdx < len(commandWatchDurations) {
@@ -817,6 +944,20 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 			val = "Wrap"
 		}
 		return "Line mode", val
+	case viewOptionLogsTail:
+		if tail := m.logs.tails[m.logs.tailIdx]; tail > 0 {
+			return "Tail lines", fmt.Sprintf("%d", tail)
+		}
+		return "Tail lines", "All"
+	case viewOptionLogsSince:
+		if since := models.FormatLogsSince(m.logs.sinces[m.logs.sinceIdx]); since != "" {
+			return "Since", since
+		}
+		return "Since", "Off"
+	case viewOptionLogsTimestamps:
+		return "Timestamps", onOff(m.logs.timestamps)
+	case viewOptionLogsPrevious:
+		return "Previous", onOff(m.logs.previous)
 	default:
 		return "", ""
 	}
@@ -893,7 +1034,7 @@ func (m *ViewOptionsModel) FooterHints() []FooterHint {
 	return []FooterHint{
 		{Key: "Up/Down", Label: "Move", Enabled: true},
 		{Key: "Left/Right/Space", Label: "Toggle", Enabled: true},
-		{Key: "Ctrl+S", Label: "Save as defaults", Enabled: true},
+		{Key: "C-s", Label: "Save as defaults", Enabled: true},
 		{Key: "Enter", Label: "Apply & Close", Enabled: true},
 		{Key: "Esc", Label: "Cancel", Enabled: true},
 	}

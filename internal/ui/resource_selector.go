@@ -174,7 +174,7 @@ func (rs *ResourceSelector) renderContent() string {
 
 // renderFooter renders the footer with help
 func (rs *ResourceSelector) renderFooter() string {
-	help := "Tab: Switch view | Enter: Select | Ctrl+A: Add custom | Ctrl+D: Delete | Ctrl+E: Edit | Esc: Cancel"
+	help := "Tab: Switch view | Enter: Select | C-a: Add custom | C-d: Delete | C-e: Edit | Esc: Cancel"
 	return uistyles.ResourceSelectorFooterStyle.
 		Width(rs.width).
 		Height(1).

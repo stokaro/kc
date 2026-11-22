@@ -5,7 +5,7 @@ First things first: kc is intentionally 100 % vibe coded. Every line so far ca
 ## Dev Environment
 
 - Go 1.27+ (module toolchain is pinned in `go.mod`).
-- A working Kubernetes control-plane for envtests (`kubebuilder` assets in `/usr/local/kubebuilder`), or skip those suites if you cannot run envtest locally.
+- Control-plane binaries for the envtest suites: `export KUBEBUILDER_ASSETS="$(setup-envtest use -p path 1.37.x)"` (install with `go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest`). `KC_REQUIRE_ENVTEST=1 go test ./...` runs them as CI does and fails if envtest cannot start. If you cannot run envtest, `KC_SKIP_ENVTEST=1 go test ./...` runs only the other tests.
 
 Handy commands:
 
@@ -21,7 +21,7 @@ go build ./cmd/kc
 - Imports for Bubble Tea/Bubbles must use the v2 paths (e.g. `charm.land/bubbletea/v2`).
 - Read `AGENTS.md` for logging rules, naming conventions, module boundaries, and UI guidelines. Contributions should follow those instructions unless you propose an intentional refactor.
 - The UI is driven by controller-runtime caches; avoid touching live clusters in tests. Envtests cover navigation and resource hierarchy behavior.
-- Always add or update tests when you change non-trivial logic. The envtest suites live under `internal/models` and `internal/navigation`.
+- Always add or update tests when you change non-trivial logic. The envtest suites live under `internal/cluster`, `internal/models`, `internal/navigation`, `internal/tablecache` and `internal/ui`.
 
 ## Opening Changes
 

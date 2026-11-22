@@ -100,6 +100,10 @@ func New(theme string) *Widget {
 
 // SetContent replaces the text body and metadata, re-running syntax highlighting.
 func (w *Widget) SetContent(text string, meta Metadata) {
+	if meta.MimeType == BinaryMIME {
+		text = BinaryPreview([]byte(text))
+		meta.Language = "plaintext"
+	}
 	w.raw = text
 	w.metadata = meta
 	w.rawLines = strings.Split(text, "\n")
