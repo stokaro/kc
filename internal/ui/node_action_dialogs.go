@@ -87,6 +87,11 @@ func (m *nodeActionMenuModel) PreferredSize(maxW, maxH int) (width, height int) 
 }
 
 func (m *nodeActionMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if step := wheelStep(msg); step != 0 {
+		// Up and Down wrap around; the wheel stops at the ends.
+		m.selected = max(0, min(len(nodeActionLabels)-1, m.selected+step))
+		return m, nil
+	}
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil

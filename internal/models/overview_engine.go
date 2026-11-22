@@ -117,7 +117,7 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 	}
 	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps) }
 	e.measure = func() *overviewMeasured {
-		return measuredUsage(deps, namespace, e, func() { e.dirty.Store(true) })
+		return measuredUsage(deps, namespace, false, e, func() { e.dirty.Store(true) })
 	}
 	e.statsEvery = overviewStatsEvery
 	var once sync.Once

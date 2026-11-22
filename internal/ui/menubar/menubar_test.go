@@ -467,3 +467,84 @@ func TestClosedBarIgnoresInput(t *testing.T) {
 		t.Fatal("closed bar reported an item")
 	}
 }
+
+func wheel(button tea.MouseButton, x, y int) tea.MouseWheelMsg {
+	return tea.MouseWheelMsg{X: x, Y: y, Button: button}
+}
+
+func TestMouseWheel(t *testing.T) {
+	t.Parallel()
+	down, up := tea.MouseWheelDown, tea.MouseWheelUp
+	tests := []struct {
+		name  string
+		menu  int
+		wheel []tea.MouseButton
+		want  int
+	}{
+		{name: "down moves to the next item", menu: 0, wheel: []tea.MouseButton{down}, want: 1},
+		{name: "down skips a separator", menu: 0, wheel: []tea.MouseButton{down, down}, want: 3},
+		{name: "down stops at the last item", menu: 0, wheel: []tea.MouseButton{down, down, down, down}, want: 3},
+		{name: "up comes back over the separator", menu: 0, wheel: []tea.MouseButton{down, down, up}, want: 1},
+		{name: "up stops at the first item", menu: 0, wheel: []tea.MouseButton{up}, want: 0},
+		{name: "up does not reach a disabled item", menu: 1, wheel: []tea.MouseButton{up}, want: 1},
+		{name: "down skips an item without an action", menu: 1, wheel: []tea.MouseButton{down}, want: 3},
+		{name: "a horizontal wheel does nothing", menu: 0, wheel: []tea.MouseButton{tea.MouseWheelRight}, want: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := &recorder{}
+			var b menubar.Bar
+			b.OpenAt(r.menus(), 80, tc.menu)
+			x, y, _, _ := b.DropdownBounds()
+			for _, btn := range tc.wheel {
+				if cmd := b.HandleMouse(wheel(btn, x+2, y+1)); cmd != nil {
+					t.Fatal("the wheel returned a command")
+				}
+			}
+			if b.Selected() != tc.want {
+				t.Fatalf("selected %d, want %d", b.Selected(), tc.want)
+			}
+			if len(r.ran) != 0 || !b.Dropped() {
+				t.Fatalf("ran %v dropped=%t; the wheel must only move the highlight", r.ran, b.Dropped())
+			}
+		})
+	}
+}
+
+func TestMouseWheelOutsideTheDropdown(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	var b menubar.Bar
+	b.OpenAt(r.menus(), 80, 0)
+	b.HandleMouse(wheel(tea.MouseWheelDown, 70, 15))
+	b.HandleMouse(wheel(tea.MouseWheelDown, 2, 0))
+	if b.Selected() != 0 || !b.Dropped() {
+		t.Fatalf("selected %d dropped=%t; the wheel away from the drop-down must be ignored", b.Selected(), b.Dropped())
+	}
+}
+
+func TestMouseWheelWithoutDropdown(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	var b menubar.Bar
+	b.Open(r.menus(), 80)
+	b.HandleMouse(wheel(tea.MouseWheelDown, 2, 2))
+	if !b.IsOpen() || b.Dropped() || b.Selected() != 0 {
+		t.Fatalf("open=%t dropped=%t selected=%d; the wheel must not drop a menu down", b.IsOpen(), b.Dropped(), b.Selected())
+	}
+}
+
+func TestMouseWheelCancelsPress(t *testing.T) {
+	t.Parallel()
+	r := &recorder{}
+	var b menubar.Bar
+	b.OpenAt(r.menus(), 80, 0)
+	x, y, _, _ := b.DropdownBounds()
+	b.HandleMouse(click(x+2, y+1))
+	b.HandleMouse(wheel(tea.MouseWheelDown, x+2, y+1))
+	b.HandleMouse(release(x+2, y+1))
+	if len(r.ran) != 0 || b.Selected() != 1 {
+		t.Fatalf("ran %v selected=%d; a release after the wheel must not run the pressed item", r.ran, b.Selected())
+	}
+}

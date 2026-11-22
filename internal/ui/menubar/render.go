@@ -10,8 +10,10 @@ import (
 // Colors follow mc's default skin ([menu] in default.ini): white on cyan
 // for titles, entries, shortcuts, the frame and the separators; yellow
 // hotkey letters; a black highlight bar with white text; gray for entries
-// that cannot be chosen.
+// that cannot be chosen. While the bar is closed, mc draws the titles in
+// black on cyan with no hotkey letters, so the idle bar stays quiet.
 var (
+	idleStyle     = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.Black)
 	normalStyle   = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.BrightWhite)
 	hotStyle      = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.BrightYellow)
 	selStyle      = lipgloss.NewStyle().Background(lipgloss.Black).Foreground(lipgloss.BrightWhite)
@@ -44,7 +46,11 @@ func (b *Bar) RenderBar(width int) string {
 	col := 0
 	pad := func(to int) {
 		if to > col {
-			out.WriteString(normalStyle.Render(strings.Repeat(" ", to-col)))
+			fill := normalStyle
+			if !b.open {
+				fill = idleStyle
+			}
+			out.WriteString(fill.Render(strings.Repeat(" ", to-col)))
 			col = to
 		}
 	}
@@ -55,6 +61,9 @@ func (b *Bar) RenderBar(width int) string {
 		}
 		pad(start)
 		base, hot := normalStyle, hotStyle
+		if !b.open {
+			base, hot = idleStyle, idleStyle
+		}
 		if b.open && i == b.cur {
 			base, hot = selStyle, selHotStyle
 		}
