@@ -209,7 +209,7 @@ func (d *logsFilterDialog) Init() tea.Cmd             { return d.input.FocusInpu
 func (d *logsFilterDialog) SetDimensions(w, h int)    { d.input.SetDimensions(w, h) }
 func (d *logsFilterDialog) View() tea.View            { return d.input.View() }
 func (d *logsFilterDialog) FooterHints() []FooterHint { return d.input.FooterHints() }
-func (d *logsFilterDialog) PreferredSize(maxW, maxH int) (int, int) {
+func (d *logsFilterDialog) PreferredSize(maxW, maxH int) (width, height int) {
 	return d.input.PreferredSize(maxW, maxH)
 }
 

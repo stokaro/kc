@@ -81,7 +81,7 @@ func (m *nodeActionMenuModel) lines() []string {
 	return out
 }
 
-func (m *nodeActionMenuModel) PreferredSize(maxW, maxH int) (int, int) {
+func (m *nodeActionMenuModel) PreferredSize(maxW, maxH int) (width, height int) {
 	return min(max(linesWidth(m.lines())+2, 28), maxW), min(len(m.lines()), maxH)
 }
 
@@ -290,7 +290,7 @@ func (m *drainOptionsModel) lines() (out []string, focusLine int) {
 	return out, focusLine
 }
 
-func (m *drainOptionsModel) PreferredSize(maxW, maxH int) (int, int) {
+func (m *drainOptionsModel) PreferredSize(maxW, maxH int) (width, height int) {
 	lines, _ := m.lines()
 	return min(max(linesWidth(lines)+12, 50), maxW), min(len(lines)+2, maxH)
 }
@@ -447,7 +447,7 @@ func (m *drainProgressModel) lines() []string {
 	return out
 }
 
-func (m *drainProgressModel) PreferredSize(maxW, maxH int) (int, int) {
+func (m *drainProgressModel) PreferredSize(maxW, maxH int) (width, height int) {
 	// Room for the blocked list, so the window does not grow while the
 	// drain runs.
 	h := 2 + len(m.nodes) + 1 + 1 + maxBlockedLines + 2 + 1 + 2

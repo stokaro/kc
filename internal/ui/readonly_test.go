@@ -134,7 +134,7 @@ func TestReadOnlyCapabilitiesAndFunctionBar(t *testing.T) {
 			if caps.CanEdit != writable || caps.CanDelete != writable || caps.CanCreateNS != writable {
 				t.Fatalf("edit/delete/create namespace = %v/%v/%v, want %v", caps.CanEdit, caps.CanDelete, caps.CanCreateNS, writable)
 			}
-			enabled := map[functionKeyID]bool{}
+			enabled := make(map[functionKeyID]bool)
 			for _, k := range panelFunctionKeys(app.functionBarState()) {
 				enabled[k.ID] = k.Enabled
 			}

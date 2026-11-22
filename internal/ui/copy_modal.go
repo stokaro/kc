@@ -61,7 +61,7 @@ func NewCopyToLocalModel() *CopyToLocalModel {
 
 func (m *CopyToLocalModel) Init() tea.Cmd          { return m.modal.Init() }
 func (m *CopyToLocalModel) SetDimensions(w, h int) { m.modal.SetDimensions(w, h) }
-func (m *CopyToLocalModel) PreferredSize(maxW, maxH int) (int, int) {
+func (m *CopyToLocalModel) PreferredSize(maxW, maxH int) (width, height int) {
 	return m.modal.PreferredSize(maxW, maxH)
 }
 func (m *CopyToLocalModel) FooterHints() []FooterHint { return m.modal.FooterHints() }

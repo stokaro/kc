@@ -113,13 +113,13 @@ func (m *TextInputModal) SetDimensions(w, h int) {
 }
 
 // PreferredSize implements ModalSizer.
-func (m *TextInputModal) PreferredSize(maxContentWidth, maxContentHeight int) (int, int) {
-	width := m.clampWidth(m.desiredWidth())
+func (m *TextInputModal) PreferredSize(maxContentWidth, maxContentHeight int) (width, height int) {
+	width = m.clampWidth(m.desiredWidth())
 	if maxContentWidth > 0 && width > maxContentWidth {
 		width = maxContentWidth
 	}
 	content, _ := m.render(width)
-	height := lipgloss.Height(content)
+	height = lipgloss.Height(content)
 	height = m.clampHeight(height)
 	if maxContentHeight > 0 && height > maxContentHeight {
 		height = maxContentHeight
@@ -419,7 +419,7 @@ func (m *TextInputModal) renderButtonsRow(width int) (string, []buttonRect) {
 	return row, rects
 }
 
-func (m *TextInputModal) renderButton(label string, focused bool, confirm bool) string {
+func (m *TextInputModal) renderButton(label string, focused, confirm bool) string {
 	if strings.TrimSpace(label) == "" {
 		label = " "
 	}
@@ -529,11 +529,11 @@ func (m *TextInputModal) validateAndSubmit() tea.Cmd {
 	return m.emitResult(true, true)
 }
 
-func (m *TextInputModal) emitResult(confirm, close bool) tea.Cmd {
+func (m *TextInputModal) emitResult(confirm, closeModal bool) tea.Cmd {
 	result := TextInputModalResult{
 		Value:   strings.TrimSpace(m.input.Value()),
 		Confirm: confirm,
-		Close:   close,
+		Close:   closeModal,
 	}
 	builder := m.cfg.ResultMsg
 	if builder == nil {

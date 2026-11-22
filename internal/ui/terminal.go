@@ -121,7 +121,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.height = msg.Height
 		if t.terminal != nil {
 			model, cmd := t.terminal.Update(msg)
-			t.terminal = model.(*bubbleterm.Model)
+			t.terminal = updatedModel(t.terminal, model)
 			return t, cmd
 		}
 		return t, nil
@@ -152,7 +152,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// bubbleterm and the underlying app decide whether to act on them.
 		}
 		model, cmd := t.terminal.Update(translateKeyForTerminal(msg))
-		t.terminal = model.(*bubbleterm.Model)
+		t.terminal = updatedModel(t.terminal, model)
 		if _, isKey := msg.(tea.KeyMsg); isKey {
 			t.trackTyped(msg)
 			return t, writeNow(cmd)

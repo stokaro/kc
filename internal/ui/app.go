@@ -710,13 +710,19 @@ func (a *App) inlineTerminalHeight() int {
 	return inlineTerminalLines
 }
 
-func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int, headerOffset int) {
+// panelHeaderOffset is the number of rows above the panels: the menu bar.
+const panelHeaderOffset = 1
+
+// panelsHeight returns the height of the panel area.
+func (a *App) panelsHeight() int {
 	// A toast replaces the function key bar; it takes no row of its own.
 	reserved := 1 + a.inlineTerminalHeight() + a.commandLineHeight()
-	panelHeight = max(a.height-reserved, 0)
-	leftWidth, rightWidth = a.panelWidthsFor(a.width)
-	headerOffset = 1
-	return leftWidth, rightWidth, panelHeight, headerOffset
+	return max(a.height-reserved, 0)
+}
+
+// panelWidths returns the widths of the left and right panels.
+func (a *App) panelWidths() (left, right int) {
+	return a.panelWidthsFor(a.width)
 }
 
 func (a *App) panelWidthPercentFor(panelIdx int) int {
@@ -726,7 +732,7 @@ func (a *App) panelWidthPercentFor(panelIdx int) int {
 	return clampPercent(a.leftPanelWidthPercent)
 }
 
-func (a *App) panelWidthsFor(total int) (int, int) {
+func (a *App) panelWidthsFor(total int) (leftWidth, rightWidth int) {
 	if total <= 0 {
 		return 0, 0
 	}
@@ -752,7 +758,7 @@ func (a *App) panelWidthsFor(total int) (int, int) {
 	return left, total - left
 }
 
-func (a *App) setPanelWidthPercent(panelIdx int, percent int) []tea.Cmd {
+func (a *App) setPanelWidthPercent(panelIdx, percent int) []tea.Cmd {
 	percent = clampPercent(percent)
 	switch panelIdx {
 	case 1:
@@ -786,7 +792,8 @@ func (a *App) resizePanelsForCurrentLayout() []tea.Cmd {
 	if a == nil {
 		return nil
 	}
-	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	leftWidth, rightWidth := a.panelWidths()
+	panelHeight := a.panelsHeight()
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	log := ctrllog.FromContext(ctx).WithName("ui").WithName("panelResize")
@@ -794,7 +801,7 @@ func (a *App) resizePanelsForCurrentLayout() []tea.Cmd {
 	if a.leftPanel != nil {
 		model, cmd := a.leftPanel.Update(tea.WindowSizeMsg{Width: leftWidth, Height: panelHeight})
 		if model != nil {
-			a.leftPanel = model.(*Panel)
+			a.leftPanel = updatedModel(a.leftPanel, model)
 		}
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -803,7 +810,7 @@ func (a *App) resizePanelsForCurrentLayout() []tea.Cmd {
 	if a.rightPanel != nil {
 		model, cmd := a.rightPanel.Update(tea.WindowSizeMsg{Width: rightWidth, Height: panelHeight})
 		if model != nil {
-			a.rightPanel = model.(*Panel)
+			a.rightPanel = updatedModel(a.rightPanel, model)
 		}
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -836,7 +843,7 @@ func (a *App) cyclePanelWidth(panelIdx int) []tea.Cmd {
 	return a.setPanelWidthPercent(panelIdx, next)
 }
 
-func normalizePanelWidthPercents(left, right int) (int, int) {
+func normalizePanelWidthPercents(left, right int) (leftPercent, rightPercent int) {
 	left = clampPercent(left)
 	right = clampPercent(right)
 	switch {
@@ -1332,7 +1339,7 @@ func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {
 	if a.leftPanel != nil {
 		model, cmd := a.leftPanel.Update(msg)
 		if model != nil {
-			a.leftPanel = model.(*Panel)
+			a.leftPanel = updatedModel(a.leftPanel, model)
 		}
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1341,7 +1348,7 @@ func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {
 	if a.rightPanel != nil {
 		model, cmd := a.rightPanel.Update(msg)
 		if model != nil {
-			a.rightPanel = model.(*Panel)
+			a.rightPanel = updatedModel(a.rightPanel, model)
 		}
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1362,7 +1369,7 @@ func (a *App) cyclePanelMode(idx int) tea.Cmd {
 }
 
 func (a *App) cyclePanelModeIfVisible(idx int) tea.Cmd {
-	leftWidth, rightWidth, _, _ := a.panelAreaMetrics()
+	leftWidth, rightWidth := a.panelWidths()
 	// Only cycle when both panels are visible to avoid acting on hidden panes.
 	if leftWidth <= 0 || rightWidth <= 0 {
 		return nil
@@ -1670,7 +1677,7 @@ func (a *App) applyViewerSettings(msg ViewOptionsCommittedMsg) (restart tea.Cmd,
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
-	leftPanelWidth, rightPanelWidth, _, _ := a.panelAreaMetrics()
+	leftPanelWidth, rightPanelWidth := a.panelWidths()
 	panelWidth := leftPanelWidth
 	if panelIdx == 1 {
 		panelWidth = rightPanelWidth
@@ -1683,8 +1690,11 @@ func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, pa
 	a.configureModalWindow(modal, content, panelIdx, background, fallbackWidth, fallbackHeight)
 }
 
-func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelHeight, headerOffset, panelOffset int, centered bool) {
-	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+// modalPanelMetrics returns the width and the left offset of the panel a
+// modal belongs to, or of the whole screen for a centered modal
+// (panelIdx < 0).
+func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelOffset int, centered bool) {
+	leftWidth, rightWidth := a.panelWidths()
 	panelOffset = 0
 	panelWidth = leftWidth
 	centered = panelIdx < 0
@@ -1699,11 +1709,13 @@ func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelHeight, headerOf
 		panelWidth = max(24, max(a.width/2, a.width))
 		panelOffset = 0
 	}
-	return panelWidth, panelHeight, headerOffset, panelOffset, centered
+	return panelWidth, panelOffset, centered
 }
 
 func (a *App) configureModalWindow(modal *Modal, content any, panelIdx int, background string, fallbackWinW, fallbackWinH int) {
-	panelWidth, panelHeight, headerOffset, panelOffset, centered := a.modalPanelMetrics(panelIdx)
+	panelWidth, panelOffset, centered := a.modalPanelMetrics(panelIdx)
+	panelHeight := a.panelsHeight()
+	headerOffset := panelHeaderOffset
 	maxFrameWidth := max(min(panelWidth-2, a.width-4), 6)
 	maxFrameHeight := max(min(panelHeight-2, a.height-4), 6)
 	maxContentWidth := max(1, maxFrameWidth-2)
@@ -1802,11 +1814,11 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 		return nil
 	}
 	if a.namespaceInput == nil {
-		if model, ok := modal.content.(*NamespaceCreateModel); ok {
-			a.namespaceInput = model
-		} else {
+		model, ok := modal.content.(*NamespaceCreateModel)
+		if !ok {
 			return nil
 		}
+		a.namespaceInput = model
 	}
 	a.namespaceInput.Reset()
 	modal.SetContent(a.namespaceInput)
@@ -1855,11 +1867,11 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 		return nil
 	}
 	if a.deleteConfirm == nil {
-		if model, ok := modal.content.(*DeleteConfirmModel); ok {
-			a.deleteConfirm = model
-		} else {
+		model, ok := modal.content.(*DeleteConfirmModel)
+		if !ok {
 			return nil
 		}
+		a.deleteConfirm = model
 	}
 	resourceLabel := kubectlResourceRef(target.gvr, target.name)
 	a.deleteConfirm.Configure(resourceLabel, target.namespace, target.context)
@@ -1989,11 +2001,11 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 		type vc interface {
 			ViewContent() (string, string, string, string, string, error)
 		}
-		if alt, okAlt := item.(vc); okAlt {
-			viewable = alt
-		} else {
+		alt, okAlt := item.(vc)
+		if !okAlt {
 			return nil
 		}
+		viewable = alt
 	}
 	title, body, lang, mime, filename, err := viewable.ViewContent()
 	if err != nil {
@@ -2741,11 +2753,11 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 		type viewContentProvider interface {
 			ViewContent() (string, string, string, string, string, error)
 		}
-		if alt, ok := item.(viewContentProvider); ok {
-			viewable = alt
-		} else {
+		alt, ok := item.(viewContentProvider)
+		if !ok {
 			return nil
 		}
+		viewable = alt
 	}
 	title, body, _, _, filename, err := viewable.ViewContent()
 	if err != nil {
@@ -3490,8 +3502,8 @@ func (c *cachedView) invalidate() { c.valid = false }
 func (c *cachedView) set(view string, cursor *tea.Cursor) {
 	c.view = view
 	if cursor != nil {
-		copy := *cursor
-		c.cursor = &copy
+		cursorCopy := *cursor
+		c.cursor = &cursorCopy
 	} else {
 		c.cursor = nil
 	}
@@ -3504,8 +3516,8 @@ func (c *cachedView) get() (string, *tea.Cursor, bool) {
 	}
 	var cursorCopy *tea.Cursor
 	if c.cursor != nil {
-		copy := *c.cursor
-		cursorCopy = &copy
+		cursorValue := *c.cursor
+		cursorCopy = &cursorValue
 	}
 	return c.view, cursorCopy, true
 }
@@ -3597,9 +3609,18 @@ func (a *App) swapPanels() {
 	a.activePanel = (a.activePanel + 1) % 2
 }
 
-func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) (models.Item, []Item, string, string) {
+// panelNamespaces is a panel's selection and the namespaces it implies.
+type panelNamespaces struct {
+	item     models.Item
+	selected []Item
+	// folder is the namespace of the panel's folder; active is the one
+	// the selection implies, falling back to folder.
+	folder, active string
+}
+
+func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) panelNamespaces {
 	if p == nil {
-		return nil, nil, "", ""
+		return panelNamespaces{}
 	}
 
 	item, _ := p.SelectedNavItem(ctx)
@@ -3607,7 +3628,7 @@ func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) (models.Item,
 	folderNamespace := p.namespace(ctx)
 	activeNamespace := deriveNamespace(item, selectedItems, folderNamespace)
 
-	return item, selectedItems, folderNamespace, activeNamespace
+	return panelNamespaces{item: item, selected: selectedItems, folder: folderNamespace, active: activeNamespace}
 }
 
 func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, namespace string) tea.Cmd {
@@ -3623,7 +3644,8 @@ func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, n
 
 	panel.InvalidateRenderCache()
 
-	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	leftWidth, rightWidth := a.panelWidths()
+	panelHeight := a.panelsHeight()
 	frameWidth := leftWidth
 	if panelIdx == 1 {
 		frameWidth = rightWidth
@@ -3697,7 +3719,8 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 
-	item, selectedItems, folderNamespace, activeNamespace := a.panelNamespaceContext(ctx, p)
+	cur := a.panelNamespaceContext(ctx, p)
+	item, selectedItems, folderNamespace, activeNamespace := cur.item, cur.selected, cur.folder, cur.active
 
 	var otherPanel *Panel
 	if a.panelIndex(p) == 0 {
@@ -3705,7 +3728,8 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	} else {
 		otherPanel = a.leftPanel
 	}
-	_, _, otherFolderNamespace, otherActiveNamespace := a.panelNamespaceContext(ctx, otherPanel)
+	other := a.panelNamespaceContext(ctx, otherPanel)
+	otherFolderNamespace, otherActiveNamespace := other.folder, other.active
 
 	targetNamespace := otherActiveNamespace
 	if targetNamespace == "" {
@@ -3796,7 +3820,8 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			return a.startNamespaceCommand(runPanelIdx, cmd, ns)
 		}
 
-		leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+		leftWidth, rightWidth := a.panelWidths()
+		panelHeight := a.panelsHeight()
 		frameWidth := leftWidth
 		if idx := a.panelIndex(runPanel); idx == 1 {
 			frameWidth = rightWidth
@@ -3840,6 +3865,7 @@ type namespaceCommandItem struct {
 	namespace string
 }
 
+//revive:disable-next-line:function-result-limit models.Item defines this signature.
 func (n namespaceCommandItem) Columns() (string, []string, []*lipgloss.Style, bool) {
 	return "namespace-placeholder", nil, nil, true
 }

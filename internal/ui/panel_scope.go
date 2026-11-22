@@ -307,7 +307,8 @@ func (a *App) handleScopeClick(m tea.Mouse) (tea.Cmd, bool) {
 // scopeHitAt returns the panel and the scope label ("context",
 // "namespace", "filter" or "") under the mouse.
 func (a *App) scopeHitAt(m tea.Mouse) (int, string) {
-	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	leftWidth, rightWidth := a.panelWidths()
+	panelHeight := a.panelsHeight()
 	if m.Y != panelHeight-1 {
 		return 0, ""
 	}

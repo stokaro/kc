@@ -84,7 +84,7 @@ func TestPanelCapabilities_BackItem(t *testing.T) {
 	// Case 2: Back item
 	// When hasBack=true, the list widget injects a back item.
 	// We simulate selecting it by selecting index 0 or ID "__back__"
-	emptyFolder := &mockFolder{items: []models.Item{}}
+	emptyFolder := &mockFolder{items: make([]models.Item, 0)}
 	p.SetFolder(ctx, emptyFolder, true)
 	p.RefreshFolder(ctx)
 	p.ResetSelectionTop(ctx) // Should select ".."

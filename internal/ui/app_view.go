@@ -44,7 +44,8 @@ func (a *App) View() tea.View {
 
 		// If command menu is active, draw an external arrow toward the target panel namespace.
 		if a.activeCommandSelector != nil && a.modalManager.GetActiveModal() != nil {
-			if winX, winY, winW, _, ok := a.modalManager.GetActiveModal().WindowPosition(); ok {
+			if win, ok := a.modalManager.GetActiveModal().WindowPosition(); ok {
+				winX, winY, winW := win.X, win.Y, win.Width
 				if a.activeCommandSelector.SelectedIsNamespaced() {
 					row := a.activeCommandSelector.SelectedRow()
 					leftArrow := "\u25c0"  // ◀

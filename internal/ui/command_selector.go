@@ -226,7 +226,7 @@ func (m *CommandSelectorModel) moveSelection(delta int) {
 }
 
 func buildCommandEntries(commands []appconfig.CommandConfig) []commandSelectorEntry {
-	grouped := map[appconfig.CommandType][]appconfig.CommandConfig{}
+	grouped := make(map[appconfig.CommandType][]appconfig.CommandConfig)
 	for _, c := range commands {
 		grouped[c.Type] = append(grouped[c.Type], c)
 	}
@@ -279,7 +279,7 @@ func firstSelectable(entries []commandSelectorEntry) int {
 }
 
 // PreferredSize implements ModalSizer to suggest a compact size.
-func (m *CommandSelectorModel) PreferredSize(maxContentWidth, maxContentHeight int) (int, int) {
+func (m *CommandSelectorModel) PreferredSize(maxContentWidth, maxContentHeight int) (width, height int) {
 	maxLen := 0
 	for _, e := range m.entries {
 		if e.header != "" {
@@ -296,8 +296,8 @@ func (m *CommandSelectorModel) PreferredSize(maxContentWidth, maxContentHeight i
 			}
 		}
 	}
-	width := min(maxContentWidth, maxLen+2)
-	height := min(maxContentHeight, max(len(m.entries), 6))
+	width = min(maxContentWidth, maxLen+2)
+	height = min(maxContentHeight, max(len(m.entries), 6))
 	return width, height
 }
 

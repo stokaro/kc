@@ -172,12 +172,18 @@ func (m *Modal) SetWindowOffset(offsetX, offsetY int) {
 	m.windowHasPos = true
 }
 
+// ModalWindow is the position and size of a windowed modal.
+type ModalWindow struct {
+	X, Y          int
+	Width, Height int
+}
+
 // WindowPosition returns the configured window offset and size when windowed.
-func (m *Modal) WindowPosition() (winX, winY, winW, winH int, ok bool) {
+func (m *Modal) WindowPosition() (ModalWindow, bool) {
 	if !m.windowed {
-		return 0, 0, 0, 0, false
+		return ModalWindow{}, false
 	}
-	return m.windowOffsetX, m.windowOffsetY, m.winWidth, m.winHeight, true
+	return ModalWindow{X: m.windowOffsetX, Y: m.windowOffsetY, Width: m.winWidth, Height: m.winHeight}, true
 }
 
 // SetDanger draws the dialog in red, for confirming changes to the cluster.
@@ -642,7 +648,7 @@ func (m *Modal) handleFooterMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	if km, ok := keyMsgForLabel(key); ok {
 		model, cmd := m.Update(km)
-		return model.(*Modal), cmd, true
+		return updatedModel(m, model), cmd, true
 	}
 	return m, nil, true
 }
@@ -992,7 +998,7 @@ func NewModalManager(cfg *appconfig.Config) *ModalManager {
 	}
 	return &ModalManager{
 		modals: make(map[string]*Modal),
-		stack:  []string{},
+		stack:  make([]string, 0),
 		cfg:    cfg,
 	}
 }
@@ -1086,7 +1092,7 @@ func (mm *ModalManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		name := mm.stack[len(mm.stack)-1]
 		if modal, exists := mm.modals[name]; exists {
 			model, cmd := modal.Update(msg)
-			mm.modals[name] = model.(*Modal)
+			mm.modals[name] = updatedModel(mm.modals[name], model)
 			// If the modal was closed externally, pop it safely
 			if !modal.IsVisible() && len(mm.stack) > 0 && mm.stack[len(mm.stack)-1] == name {
 				mm.stack = mm.stack[:len(mm.stack)-1]

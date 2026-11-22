@@ -17,7 +17,7 @@ type placeholderWidget struct {
 	crumb   string
 }
 
-func newPlaceholderWidget(panel *Panel, msg string, breadcrumb string) panelcontent.Widget {
+func newPlaceholderWidget(panel *Panel, msg, breadcrumb string) panelcontent.Widget {
 	return &placeholderWidget{panel: panel, message: msg, crumb: breadcrumb}
 }
 

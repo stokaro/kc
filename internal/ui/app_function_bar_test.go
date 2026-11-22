@@ -55,7 +55,7 @@ func (m mockItemFB) Details() string { return "Item" }
 func (m mockItemFB) Path() []string  { return []string{m.id} }
 
 // Implement Viewable to enable F3
-func (m mockItemFB) ViewContent() (string, string, string, string, string, error) {
+func (m mockItemFB) ViewContent() (title, body, lang, mime, filename string, err error) {
 	return "title", "content", "txt", "text/plain", "file.txt", nil
 }
 
@@ -100,7 +100,7 @@ func TestAppFunctionBarUpdate(t *testing.T) {
 	}
 
 	// 2. Now simulate entering a new folder (empty with back)
-	emptyFolder := &mockFolderFB{items: []models.Item{}}
+	emptyFolder := &mockFolderFB{items: make([]models.Item, 0)}
 	app.rightPanel.SetFolder(ctx, emptyFolder, true) // hasBack=true
 	app.rightPanel.ResetSelectionTop(ctx)
 

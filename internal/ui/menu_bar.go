@@ -221,7 +221,7 @@ func textKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: str
 
 // panelVisible reports whether panel idx has room on screen.
 func (a *App) panelVisible(idx int) bool {
-	left, right, _, _ := a.panelAreaMetrics()
+	left, right := a.panelWidths()
 	if idx == 0 {
 		return left > 0
 	}

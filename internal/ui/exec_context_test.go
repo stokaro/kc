@@ -74,7 +74,7 @@ type execTestEnv struct {
 func newExecTestApp(t *testing.T, mode appconfig.TerminalMode) execTestEnv {
 	t.Helper()
 	dir := t.TempDir()
-	env := execTestEnv{pathA: filepath.Join(dir, "a.yaml"), pathB: filepath.Join(dir, "b.yaml"), before: map[string][]byte{}}
+	env := execTestEnv{pathA: filepath.Join(dir, "a.yaml"), pathB: filepath.Join(dir, "b.yaml"), before: make(map[string][]byte)}
 	for p, content := range map[string]string{env.pathA: execTestConfigA, env.pathB: execTestConfigB} {
 		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 			t.Fatal(err)

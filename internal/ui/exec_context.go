@@ -136,7 +136,7 @@ func (a *App) overlaySources() []execctx.Source {
 	if a.kubeMgr == nil {
 		return nil
 	}
-	loaded := map[string]*kubeconfig.Kubeconfig{}
+	loaded := make(map[string]*kubeconfig.Kubeconfig)
 	for _, kc := range a.kubeMgr.GetKubeconfigs() {
 		loaded[filepath.Clean(kc.Path)] = kc
 	}
@@ -185,9 +185,9 @@ func (a *App) updateTermContextNamespace(ns string) {
 	}
 	files, err := a.kubeconfigFiles()
 	if err == nil {
-		var kubeconfig string
-		if kubeconfig, err = files.Write(shellSlot, ec); err == nil {
-			a.terminal.SetEnv(execctx.ProcessEnv(kubeconfig))
+		var kubeconfigPath string
+		if kubeconfigPath, err = files.Write(shellSlot, ec); err == nil {
+			a.terminal.SetEnv(execctx.ProcessEnv(kubeconfigPath))
 			ctrllog.FromContext(a.ctx).WithName("termctx").Info("updated terminal kubeconfig",
 				"path", files.Path(shellSlot), "context", ec.Context, "namespace", ec.Namespace)
 			return
@@ -216,11 +216,11 @@ func (s panelCommandExec) CommandExec(slot, namespace string) (CommandExec, erro
 	if err != nil {
 		return CommandExec{}, err
 	}
-	kubeconfig, err := files.Write(slot, ec)
+	kubeconfigPath, err := files.Write(slot, ec)
 	if err != nil {
 		return CommandExec{}, err
 	}
-	return CommandExec{Context: ec, Env: execctx.ProcessEnv(kubeconfig)}, nil
+	return CommandExec{Context: ec, Env: execctx.ProcessEnv(kubeconfigPath)}, nil
 }
 
 func (s panelCommandExec) ReleaseCommandExec(slot string) {

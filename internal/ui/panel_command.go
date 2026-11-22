@@ -398,7 +398,7 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 	w.err = nil
 	w.exitKnown = false
 
-	envVars := []string{}
+	envVars := make([]string, 0)
 	for _, kv := range w.cmd.Env {
 		if strings.HasPrefix(kv, "KUBECONFIG=") {
 			envVars = append(envVars, "KUBECONFIG")

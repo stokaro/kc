@@ -416,8 +416,9 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		model.objects.enabled = true
 		model.objects.showTable = cfg.Objects.ShowTableMode
 		model.objects.columnsIdx = objectColumnsIndexFor(cfg.Objects.Columns)
-		model.objects.sortKeys, model.objects.sortTitles, model.objects.sortIdx, model.objects.reverse =
-			objectSortChoices(cfg.Objects.SortKeys, cfg.Objects.SortTitles, cfg.Objects.Order)
+		choice := objectSortChoices(cfg.Objects.SortKeys, cfg.Objects.SortTitles, cfg.Objects.Order)
+		model.objects.sortKeys, model.objects.sortTitles = choice.keys, choice.labels
+		model.objects.sortIdx, model.objects.reverse = choice.idx, choice.desc
 		model.objects.hasFaults = cfg.Objects.ShowFaultsOnly
 		model.objects.faults = cfg.Objects.FaultsOnly
 
@@ -459,7 +460,7 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 
 	if cfg.Viewer != nil {
 		model.viewer.enabled = true
-		model.viewer.themeNames = append([]string{}, cfg.Viewer.ThemeNames...)
+		model.viewer.themeNames = append(make([]string, 0), cfg.Viewer.ThemeNames...)
 		if len(model.viewer.themeNames) == 0 {
 			model.viewer.themeNames = []string{cfg.Viewer.Theme}
 		}
@@ -625,7 +626,7 @@ func objectColumnsIndexFor(columns string) int {
 // dialog with its Reverse box. A key the columns lack (a wide column in
 // normal mode) is kept as an extra choice, so the dialog does not change
 // the order unasked.
-func objectSortChoices(keys, titles []string, order string) ([]string, []string, int, bool) {
+func objectSortChoices(keys, titles []string, order string) objectSortChoice {
 	order = appconfig.NormalizeObjectsOrder(order)
 	desc := strings.HasPrefix(order, "-")
 	key := strings.TrimPrefix(order, "-")
@@ -649,7 +650,16 @@ func objectSortChoices(keys, titles []string, order string) ([]string, []string,
 		labels = append(labels, key)
 		idx = len(keys) - 1
 	}
-	return keys, labels, idx, desc
+	return objectSortChoice{keys: keys, labels: labels, idx: idx, desc: desc}
+}
+
+// objectSortChoice is what objectSortChoices returns: the sort keys and
+// their labels, the index of the current key, and whether the order is
+// descending.
+type objectSortChoice struct {
+	keys, labels []string
+	idx          int
+	desc         bool
 }
 
 // objectOrder composes the order the Objects section selects.
@@ -997,7 +1007,7 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 	return msg
 }
 
-func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, string) {
+func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (label, value string) {
 	switch opt {
 	case viewOptionPanelMode:
 		return "Panel mode", modeLabel(m.panelModes[m.panelModeIndex])

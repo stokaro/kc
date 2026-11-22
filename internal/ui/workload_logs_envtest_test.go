@@ -35,7 +35,7 @@ func (r *recordingOpener) open(ctx context.Context, t logmux.Target, opts *corev
 	r.mu.Lock()
 	r.opened = append(r.opened, t.Name())
 	if r.ctxs == nil {
-		r.ctxs = map[string]context.Context{}
+		r.ctxs = make(map[string]context.Context)
 	}
 	r.ctxs[t.Name()] = ctx
 	r.mu.Unlock()
@@ -101,7 +101,7 @@ func runningPod(t *testing.T, cli crclient.Client, ns, name string, lbls map[str
 // it saw after the deadline.
 func readUntil(t *testing.T, lines <-chan string, want ...string) {
 	t.Helper()
-	missing := map[string]bool{}
+	missing := make(map[string]bool)
 	for _, w := range want {
 		missing[w] = true
 	}

@@ -154,7 +154,7 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 }
 
 // ShowCommandPlaceholder renders a non-interactive placeholder instead of launching a command widget.
-func (p *Panel) ShowCommandPlaceholder(ctx context.Context, config appconfig.CommandConfig, message string, breadcrumb string, frameWidth, frameHeight int) tea.Cmd {
+func (p *Panel) ShowCommandPlaceholder(ctx context.Context, config appconfig.CommandConfig, message, breadcrumb string, frameWidth, frameHeight int) tea.Cmd {
 	if existing := p.commandWidget(ctx); existing != nil {
 		existing.Teardown(ctx)
 	}
@@ -1009,11 +1009,10 @@ func (p *Panel) ellipsizePath(path string, width int) string {
 	acc := ""
 	for _, f := range slices.Backward(filtered) {
 		candidate := "/" + f + acc
-		if len(candidate)+3 <= width {
-			acc = candidate
-		} else {
+		if len(candidate)+3 > width {
 			break
 		}
+		acc = candidate
 	}
 	if acc == "" {
 		return "..."
@@ -1165,7 +1164,7 @@ func (p *Panel) forwardSizeToWidget(ctx context.Context, size panelcontent.Size)
 	return nil
 }
 
-func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title string, width, height int, focused bool, hasFooter bool) string {
+func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title string, width, height int, focused, hasFooter bool) string {
 	if title == "" {
 		title = "/"
 	}
@@ -1339,7 +1338,7 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	return left + filler + renderedText + connector + indicator + right
 }
 
-func indicatorGlyph(indicator string, fallback string) string {
+func indicatorGlyph(indicator, fallback string) string {
 	switch strings.TrimSpace(indicator) {
 	case "^":
 		return "▲"
@@ -1373,11 +1372,10 @@ func (p *Panel) ellipsizeBreadcrumbTitle(labelStyle lipgloss.Style, title string
 	for _, seg := range slices.Backward(segs) {
 		candidate := "/" + seg + acc
 		test := "..." + candidate
-		if lipgloss.Width(labelStyle.Render(test)) <= maxWidth {
-			acc = candidate
-		} else {
+		if lipgloss.Width(labelStyle.Render(test)) > maxWidth {
 			break
 		}
+		acc = candidate
 	}
 	if acc == "" {
 		return "..."

@@ -67,7 +67,7 @@ func validateRowFilter(text string) error {
 
 func (m *RowFilterModel) Init() tea.Cmd          { return m.modal.Init() }
 func (m *RowFilterModel) SetDimensions(w, h int) { m.modal.SetDimensions(w, h) }
-func (m *RowFilterModel) PreferredSize(maxW, maxH int) (int, int) {
+func (m *RowFilterModel) PreferredSize(maxW, maxH int) (width, height int) {
 	return m.modal.PreferredSize(maxW, maxH)
 }
 func (m *RowFilterModel) FooterHints() []FooterHint { return m.modal.FooterHints() }

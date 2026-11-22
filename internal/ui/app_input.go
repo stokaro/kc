@@ -27,11 +27,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	if a.interactiveCommandActive() {
 		if a.activePanel == 0 {
 			model, cmd := a.leftPanel.Update(msg)
-			a.leftPanel = model.(*Panel)
+			a.leftPanel = updatedModel(a.leftPanel, model)
 			cmds = append(cmds, cmd)
 		} else {
 			model, cmd := a.rightPanel.Update(msg)
-			a.rightPanel = model.(*Panel)
+			a.rightPanel = updatedModel(a.rightPanel, model)
 			cmds = append(cmds, cmd)
 		}
 		return a, tea.Batch(cmds...)
@@ -68,13 +68,13 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	// Handle global shortcuts first
 	switch press.String() {
 	case "alt+f1":
-		leftWidth, _, _, _ := a.panelAreaMetrics()
+		leftWidth, _ := a.panelWidths()
 		if leftWidth <= 0 {
 			return a, nil
 		}
 		return a, a.showViewOptionsModalForPanel(a.panelByIndex(0))
 	case "alt+f2":
-		_, rightWidth, _, _ := a.panelAreaMetrics()
+		_, rightWidth := a.panelWidths()
 		if rightWidth <= 0 {
 			return a, nil
 		}
@@ -153,7 +153,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		if a.interactiveCommandActive() {
 			break
 		}
-		leftWidth, rightWidth, _, _ := a.panelAreaMetrics()
+		leftWidth, rightWidth := a.panelWidths()
 		if leftWidth <= 0 && rightWidth <= 0 {
 			return a, nil
 		}
@@ -405,11 +405,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// Route all keys to the active panel/command widget when it holds focus.
 			if a.activePanel == 0 {
 				model, cmd := a.leftPanel.Update(msg)
-				a.leftPanel = model.(*Panel)
+				a.leftPanel = updatedModel(a.leftPanel, model)
 				cmds = append(cmds, cmd)
 			} else {
 				model, cmd := a.rightPanel.Update(msg)
-				a.rightPanel = model.(*Panel)
+				a.rightPanel = updatedModel(a.rightPanel, model)
 				cmds = append(cmds, cmd)
 			}
 			return a, tea.Batch(cmds...)
@@ -448,11 +448,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// Handle panel-specific keys
 			if a.activePanel == 0 {
 				model, cmd := a.leftPanel.Update(msg)
-				a.leftPanel = model.(*Panel)
+				a.leftPanel = updatedModel(a.leftPanel, model)
 				cmds = append(cmds, cmd)
 			} else {
 				model, cmd := a.rightPanel.Update(msg)
-				a.rightPanel = model.(*Panel)
+				a.rightPanel = updatedModel(a.rightPanel, model)
 				cmds = append(cmds, cmd)
 			}
 		} else {

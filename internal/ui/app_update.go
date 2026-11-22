@@ -31,7 +31,7 @@ func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 		return nil
 	}
 	model, cmd := a.terminal.Update(msg)
-	a.terminal = model.(*Terminal)
+	a.terminal = updatedModel(a.terminal, model)
 	a.invalidateView(reason)
 	a.invalidateTerminalArea(reason)
 	return cmd
@@ -448,7 +448,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 				return a, tea.Batch(cmds...)
 			}
 			model, cmd := a.modalManager.Update(msg)
-			a.modalManager = model.(*ModalManager)
+			a.modalManager = updatedModel(a.modalManager, model)
 			cmds = append(cmds, cmd)
 			// The dialog may have changed (a key moved the selection); the
 			// cached screen must not outlive that, or the change shows only
@@ -520,15 +520,14 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, tea.Batch(cmds...)
 	case toastTickMsg:
 		if a.toastActive {
-			if time.Now().After(a.toastUntil) {
-				a.toastActive = false
-				a.invalidateView("toast hide")
-				a.invalidateFunctionBar("toast hide")
-				if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
-					return a, tea.Batch(resizeCmds...)
-				}
-			} else {
+			if !time.Now().After(a.toastUntil) {
 				return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
+			}
+			a.toastActive = false
+			a.invalidateView("toast hide")
+			a.invalidateFunctionBar("toast hide")
+			if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
+				return a, tea.Batch(resizeCmds...)
 			}
 		}
 		return a, nil
@@ -837,9 +836,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			model, cmd := panel.Update(msg)
 			if idx, ok := a.panelIndexFor(panel); ok {
 				if idx == 0 {
-					a.leftPanel = model.(*Panel)
+					a.leftPanel = updatedModel(a.leftPanel, model)
 				} else {
-					a.rightPanel = model.(*Panel)
+					a.rightPanel = updatedModel(a.rightPanel, model)
 				}
 			}
 			return a, tea.Batch(append(cmds, cmd)...)
@@ -917,9 +916,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 					if panelIdx, ok := a.panelIndexFor(panel); ok {
 						switch panelIdx {
 						case 0:
-							a.leftPanel = model.(*Panel)
+							a.leftPanel = updatedModel(a.leftPanel, model)
 						case 1:
-							a.rightPanel = model.(*Panel)
+							a.rightPanel = updatedModel(a.rightPanel, model)
 						}
 					}
 					if cmd != nil {
@@ -928,7 +927,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 					return a, tea.Batch(cmds...)
 				}
 			}
-			if cmd, panel, panelMsg, panelIdx, handled := a.dispatchPanelMouse(mm); handled {
+			if d, handled := a.dispatchPanelMouse(mm); handled {
+				cmd, panel, panelMsg, panelIdx := d.cmd, d.panel, d.msg, d.panelIdx
 				if cmd != nil {
 					cmds = append(cmds, cmd)
 				}
@@ -981,11 +981,23 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 
 // shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
 
-func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseMsg, int, bool) {
-	leftPanelWidth, rightPanelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+// panelMouseDispatch is what dispatchPanelMouse did with a mouse event.
+type panelMouseDispatch struct {
+	cmd      tea.Cmd
+	panel    *Panel
+	msg      PanelMouseMsg
+	panelIdx int
+}
+
+// dispatchPanelMouse routes a mouse event to the panel under it. It
+// reports false when no panel took the event.
+func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (panelMouseDispatch, bool) {
+	leftPanelWidth, rightPanelWidth := a.panelWidths()
+	panelHeight := a.panelsHeight()
+	headerOffset := panelHeaderOffset
 	m := msg.Mouse()
 	if m.Y >= panelHeight {
-		return nil, nil, PanelMouseMsg{}, 0, false
+		return panelMouseDispatch{}, false
 	}
 	panelIdx := 0
 	if leftPanelWidth <= 0 && rightPanelWidth > 0 {
@@ -995,7 +1007,7 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseM
 	}
 	panel := a.panelByIndex(panelIdx)
 	if panel == nil {
-		return nil, nil, PanelMouseMsg{}, panelIdx, false
+		return panelMouseDispatch{panelIdx: panelIdx}, false
 	}
 	relRow := max(m.Y-headerOffset, 0)
 	var panelMsg PanelMouseMsg
@@ -1008,7 +1020,7 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseM
 		case tea.MouseWheelDown:
 			delta = 1
 		default:
-			return nil, nil, PanelMouseMsg{}, panelIdx, false
+			return panelMouseDispatch{panelIdx: panelIdx}, false
 		}
 		panelMsg = PanelMouseMsg{
 			Intent: PanelMouseWheel,
@@ -1021,7 +1033,7 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseM
 			Button: mm.Button,
 		}
 	default:
-		return nil, nil, PanelMouseMsg{}, panelIdx, false
+		return panelMouseDispatch{panelIdx: panelIdx}, false
 	}
 	if panelIdx != a.activePanel {
 		a.setActivePanel(panelIdx, "panel mouse focus")
@@ -1029,12 +1041,12 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseM
 	model, cmd := panel.Update(panelMsg)
 	if model != nil {
 		if panelIdx == 0 {
-			a.leftPanel = model.(*Panel)
+			a.leftPanel = updatedModel(a.leftPanel, model)
 		} else {
-			a.rightPanel = model.(*Panel)
+			a.rightPanel = updatedModel(a.rightPanel, model)
 		}
 	}
-	return cmd, panel, panelMsg, panelIdx, true
+	return panelMouseDispatch{cmd: cmd, panel: panel, msg: panelMsg, panelIdx: panelIdx}, true
 }
 
 func (a *App) handleCommandWatchTick(msg commandWatchTickMsg) (tea.Model, tea.Cmd) {
