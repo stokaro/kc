@@ -30,12 +30,12 @@ Expose `/nodes/<node>/pods` so users can drill into the pods scheduled on a node
 ### Cluster Pool Key Extension
 - Extend `cluster.Pool` key to include a selector signature per GVR (e.g., `SelectorKey string` where we hash/normalize `gvr+fieldSelector+labelSelector`).
 - For the node pods view, the key would be `(kubeconfig, context, namespace="", selectorKey=pods|field:spec.nodeName=<node>)`.
-- Pool returns a distinct `Cluster` for that selector scope; TTL eviction continues to apply.
+- Pool returns a distinct `Cluster` for that selector scope. The folder holds it with a lease (`Pool.Acquire`) until the folder is closed; TTL eviction applies only after the last lease is released (see `docs/adr/0062-cache-ownership.md`).
 
 ### Pool Integration
 - Extend `cluster.Key` with `SelectorKey` (a deterministic signature of the selector plus target GVR).
 - Add a helper to build `SelectorKey` from `(gvr, selector)` to keep pooling consistent.
-- `Pool.Get(ctx, key)` remains the entrypoint; when `SelectorKey` is non-empty, it invokes `cluster.New` with `WithSelectorScope(...)` for the desired selectors (pods → nodeName field selector). When empty, behavior is unchanged.
+- `Pool.Acquire(ctx, key, selectors)` is the entrypoint; when `SelectorKey` is non-empty, it invokes `cluster.New` with `WithSelectorScope(...)` for the desired selectors (pods → nodeName field selector). When empty, behavior is unchanged.
 - Namespaced/cluster-scoped views keep `SelectorKey` empty; the node pods folder populates it to get a selector-scoped Cluster instance.
 
 ### Cluster Wiring for Selector Scope
@@ -57,7 +57,7 @@ Expose `/nodes/<node>/pods` so users can drill into the pods scheduled on a node
   - No count column override; rely on server table columns. If the table path fails, set columns to `Namespace`, `Name`, `Age` to keep namespace first.
   - Apply a defensive filter (`spec.nodeName` match) to rows in case a wider list leaks through.
 - Register a child for `core/v1/nodes` in `registry.go` that builds `NodePodsFolder`.
-- Watch TTL from `watchDuration` still applies; when it fires or the folder drops, the selector-scoped Cluster can be evicted via pool TTL.
+- Watch TTL from `watchDuration` still applies to the folder's row watch. The selector-scoped Cluster stays running while the folder is open; when the navigator drops the folder, `Close` releases its lease and the pool evicts the Cluster after the pool TTL.
 
 ## Trade-offs
 

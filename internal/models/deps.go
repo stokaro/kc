@@ -14,8 +14,14 @@ import (
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// NamespaceClusterFactory provides namespace-scoped clusters on demand.
-type NamespaceClusterFactory func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, error)
+// NamespaceClusterFactory provides namespace- or selector-scoped clusters on
+// demand. The cluster keeps running until release is called, so the caller
+// owns release and must call it exactly when it stops using the cluster
+// (calling it more than once is safe). See docs/adr/0062-cache-ownership.md.
+type NamespaceClusterFactory func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (cl *kccluster.Cluster, release func(), err error)
+
+// noRelease is the release of a Deps that holds no scoped cluster.
+func noRelease() {}
 
 // Deps contains the inputs required by navigation folders.
 // Invariants:
@@ -44,6 +50,8 @@ type Deps struct {
 	ReportError func(error)
 	// Activity pauses background count refreshes; nil never pauses.
 	Activity *Activity
+	// Usage adds CPU and memory columns to pod and node lists; nil adds none.
+	Usage *UsageMetrics
 }
 
 // reportReadError reports that reading what failed.
@@ -54,44 +62,50 @@ func (d Deps) reportReadError(what string, err error) {
 	d.ReportError(fmt.Errorf("could not read %s: %w", what, err))
 }
 
-// ForNamespace derives a copy of Deps using a namespace-scoped cluster when available.
-func (d Deps) ForNamespace(namespace string) Deps {
+// ForNamespace derives a copy of Deps using a namespace-scoped cluster when
+// available. The returned release gives up that cluster; the caller owns it
+// and calls it when the folder built from the Deps is closed. release is never
+// nil.
+func (d Deps) ForNamespace(namespace string) (Deps, func()) {
 	ns := strings.TrimSpace(namespace)
 	if ns == "" || d.NamespaceFactory == nil {
 		d.ClusterKey.Namespace = ns
-		return d
+		return d, noRelease
 	}
 	ctx := d.Ctx
 	key := d.ClusterKey
 	key.Namespace = ns
-	cl, err := d.NamespaceFactory(ctx, key, nil)
+	cl, release, err := d.NamespaceFactory(ctx, key, nil)
 	if err != nil {
 		crlog.FromContext(ctx).Error(err, "namespace cluster acquisition failed", "namespace", ns)
-		return d
+		return d, noRelease
 	}
 	d.Cl = cl
 	d.ClusterKey = key
-	return d
+	return d, release
 }
 
-// ForSelectorScope derives a copy of Deps using a selector-scoped cluster when available.
-func (d Deps) ForSelectorScope(selectors map[schema.GroupVersionResource]crcache.ByObject) Deps {
+// ForSelectorScope derives a copy of Deps using a selector-scoped cluster when
+// available. The returned release gives up that cluster; the caller owns it
+// and calls it when the folder built from the Deps is closed. release is never
+// nil.
+func (d Deps) ForSelectorScope(selectors map[schema.GroupVersionResource]crcache.ByObject) (Deps, func()) {
 	if len(selectors) == 0 {
-		return d
+		return d, noRelease
 	}
 	key := d.ClusterKey
 	key.SelectorKey = kccluster.SelectorKeyForScopes(selectors)
 	if d.NamespaceFactory == nil {
 		d.ClusterKey = key
-		return d
+		return d, noRelease
 	}
-	cl, err := d.NamespaceFactory(d.Ctx, key, selectors)
+	cl, release, err := d.NamespaceFactory(d.Ctx, key, selectors)
 	if err != nil {
 		crlog.FromContext(d.Ctx).Error(err, "selector-scoped cluster acquisition failed", "selectorKey", key.SelectorKey)
 		d.ClusterKey = key
-		return d
+		return d, noRelease
 	}
 	d.Cl = cl
 	d.ClusterKey = key
-	return d
+	return d, release
 }
