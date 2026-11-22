@@ -508,7 +508,7 @@ type containerSessionHandle struct {
 	allowHelper bool
 }
 
-// approveHelper lets later sessions add a debug helper.
+// approveHelper lets the next session add a debug helper.
 func (h *containerSessionHandle) approveHelper() {
 	h.mu.Lock()
 	h.allowHelper = true
@@ -557,6 +557,9 @@ func (h *containerSessionHandle) Session(ctx context.Context) (podfs.ExecSession
 	if err != nil {
 		return nil, err
 	}
+	// The consent covers starting one helper. Once it exits after going
+	// idle, starting the next one asks again.
+	h.allowHelper = false
 	if usage, ok := session.(podfs.HelperUsage); ok {
 		h.helper = usage.HelperUsed()
 	} else {
@@ -753,8 +756,8 @@ func (i *helperStartItem) Confirmation() Confirmation {
 			"Adds an ephemeral busybox container with",
 			"CAP_SYS_PTRACE to the pod. It exits after a",
 			"minute without use but stays in the pod spec",
-			"until the pod is recreated. Browsing again",
-			"later adds another one.",
+			"until the pod is recreated. kc asks again",
+			"before it adds another one.",
 		},
 		Action: "Start",
 	}

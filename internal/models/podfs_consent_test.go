@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -70,4 +71,12 @@ func TestPodFSAsksBeforeAddingHelper(t *testing.T) {
 	if last := factory.specs[len(factory.specs)-1]; !last.AllowHelper {
 		t.Fatalf("the session after consent must allow the helper")
 	}
+	factory.mu.Unlock()
+	// The helper exits when idle; the next session must not add another
+	// one without asking.
+	handle.Invalidate()
+	if _, err := handle.Session(t.Context()); !errors.Is(err, podfs.ErrHelperNeeded) {
+		t.Fatalf("second session err = %v, want ErrHelperNeeded", err)
+	}
+	factory.mu.Lock()
 }

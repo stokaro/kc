@@ -2,6 +2,7 @@ package podfs
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -139,3 +140,38 @@ func TestHelperScriptExitsWhenIdle(t *testing.T) {
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
+
+// Without consent ensureHelper reuses a running helper, of either kind, but
+// never adds one: an exited helper means asking again.
+func TestEnsureHelperNeedsConsentForNewHelper(t *testing.T) {
+	helperPod := func(name string, state corev1.ContainerState) *corev1.Pod {
+		p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"}}
+		p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: name}}}
+		p.Status.EphemeralContainerStatuses = []corev1.ContainerStatus{{Name: name, State: state}}
+		return p
+	}
+	running := corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}
+	done := corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed"}}
+	spec := SessionSpec{Namespace: "ns", Pod: "p", Container: "app"}
+
+	for _, name := range []string{"kc-fs-ptrace-app-0", "kc-fs-helper-app-0"} {
+		t.Run("reuses "+name, func(t *testing.T) {
+			m := newHelperManager(fake.NewClientset(helperPod(name, running)))
+			got, err := m.ensureHelper(t.Context(), spec)
+			if err != nil || got.Container != name {
+				t.Fatalf("ensureHelper = %q, %v; want %q", got.Container, err, name)
+			}
+		})
+	}
+	t.Run("exited helper asks again", func(t *testing.T) {
+		client := fake.NewClientset(helperPod("kc-fs-ptrace-app-0", done))
+		m := newHelperManager(client)
+		if _, err := m.ensureHelper(t.Context(), spec); !errors.Is(err, ErrHelperNeeded) {
+			t.Fatalf("err = %v, want ErrHelperNeeded", err)
+		}
+		got, _ := client.CoreV1().Pods("ns").Get(t.Context(), "p", metav1.GetOptions{})
+		if n := len(got.Spec.EphemeralContainers); n != 1 {
+			t.Fatalf("pod has %d helpers, want the old one only", n)
+		}
+	})
+}
