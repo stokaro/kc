@@ -10,7 +10,7 @@ import (
 	"github.com/sttts/kc/internal/objectaction"
 )
 
-// objectActionTarget is the object the F9 menu offers built-in actions for.
+// objectActionTarget is the object the F2 user menu offers built-in actions for.
 type objectActionTarget struct {
 	actions  []objectaction.Action
 	env      models.ActionEnv

@@ -76,7 +76,7 @@ func TestF9DoesNothingInFullscreenTerminal(t *testing.T) {
 
 func TestMenuBarTable(t *testing.T) {
 	app := newMenuTestApp(t)
-	shortcut := regexp.MustCompile(`^(F[0-9]+|[CM]-(F[0-9]+|.)|[+*-])$`)
+	shortcut := regexp.MustCompile(`^(F[0-9]+|(C-x )?[CM]-(F[0-9]+|.)|[+*-])$`)
 	menus := app.menuBarMenus()
 	titles := map[rune]string{}
 	for _, m := range menus {

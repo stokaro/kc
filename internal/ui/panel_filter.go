@@ -133,7 +133,7 @@ func (a *App) toggleFaultsOnly() tea.Cmd {
 	return nil
 }
 
-// setPanelFaultsOnly sets "faults only" for a panel (from F2 Options).
+// setPanelFaultsOnly sets "faults only" for a panel (from the panel options, M-F1/M-F2).
 func (a *App) setPanelFaultsOnly(p *Panel, on bool) {
 	if p == nil {
 		return

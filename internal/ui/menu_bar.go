@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/overlay"
 	"github.com/sttts/kc/internal/ui/menubar"
 )
@@ -54,6 +55,16 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 		}},
 		{Label: "&Columns normal/wide", Shortcut: "C-w", Disabled: !list, Run: a.panelKey(idx, ctrlKey('w'))},
 		{Label: "&Reread", Shortcut: "C-r", Disabled: !list, Run: a.panelKey(idx, ctrlKey('r'))},
+		{Label: "&Sort by next column", Shortcut: "M-o", Disabled: !list, Run: a.onPanel(idx, func() tea.Cmd {
+			a.changeObjectSort(nextSortOrder)
+			return nil
+		})},
+		{Label: "Re&verse sort", Shortcut: "M-r", Disabled: !list, Run: a.onPanel(idx, func() tea.Cmd {
+			a.changeObjectSort(reverseSortOrder)
+			return nil
+		})},
+		{Label: "&Filter...", Shortcut: "M-f", Disabled: !list, Run: a.onPanel(idx, a.showRowFilterDialog)},
+		{Label: "Faults onl&y", Shortcut: "C-z", Disabled: !list, Run: a.onPanel(idx, a.toggleFaultsOnly)},
 		menubar.Separator(),
 		{Label: "&Namespace...", Disabled: !visible || a.cl == nil || panel == nil, Run: func() tea.Cmd {
 			a.setActivePanel(idx, "menu namespace")
@@ -78,6 +89,9 @@ func (a *App) fileMenuItems() []menubar.Item {
 		{Label: "&Copy", Shortcut: "F5", Disabled: !caps.CanCopy, Run: a.panelAction(PanelActionCopy)},
 		{Label: "Create &namespace", Shortcut: "F7", Disabled: !caps.CanCreateNS, Run: a.panelAction(PanelActionCreateNamespace)},
 		{Label: "&Delete", Shortcut: "F8", Disabled: !caps.CanDelete, Run: a.panelAction(PanelActionDelete)},
+		{Label: "Port &forward...", Shortcut: "M-p", Run: func() tea.Cmd { return a.portForwardForPanel(a.activePanelRef()) }},
+		{Label: "&Owners", Shortcut: "M-j", Run: func() tea.Cmd { return a.openRelated(models.RelatedOwners) }},
+		{Label: "Used &by", Shortcut: "M-b", Run: func() tea.Cmd { return a.openRelated(models.RelatedUsedBy) }},
 		menubar.Separator(),
 		{Label: "&Toggle mark", Shortcut: "C-t", Disabled: !list, Run: a.panelKey(idx, ctrlKey('t'))},
 		{Label: "&Select group", Shortcut: "+", Disabled: !list, Run: a.panelKey(idx, textKey('+'))},
@@ -107,6 +121,12 @@ func (a *App) commandMenuItems() []menubar.Item {
 		}},
 		{Label: "Switch panels &on/off", Shortcut: "C-o", Run: a.toggleTerminal},
 		{Label: "Copy &command", Shortcut: "M-c", Run: a.copyPanelCommand},
+		{Label: "Compare ob&jects", Shortcut: "C-x C-d", Run: a.compareSelectedObjects},
+		menubar.Separator(),
+		{Label: "Hot&list", Shortcut: "C-\\", Run: a.showHotlist},
+		{Label: "History &back", Shortcut: "M-y", Run: a.historyBack},
+		{Label: "History &forward", Shortcut: "M-u", Run: a.historyForward},
+		{Label: "History l&ist", Shortcut: "M-H", Run: a.showHistoryList},
 		menubar.Separator(),
 		{Label: "&Help", Shortcut: "F1", Disabled: !caps.HasHelp, Run: a.panelAction(PanelActionHelp)},
 	}
@@ -145,6 +165,15 @@ func (a *App) panelModeItem(idx int, label string, mode PanelViewMode) menubar.I
 			defer cancel()
 			return a.setPanelMode(ctx, p, mode, "menu panel mode")
 		},
+	}
+}
+
+// onPanel makes panel idx the active panel and runs fn, for Left and Right
+// entries whose action works on the active panel.
+func (a *App) onPanel(idx int, fn func() tea.Cmd) func() tea.Cmd {
+	return func() tea.Cmd {
+		a.setActivePanel(idx, "menu panel entry")
+		return fn()
 	}
 }
 
