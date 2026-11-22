@@ -67,6 +67,14 @@ type ResourceGroupItem struct {
 	stop       chan struct{}
 	informer   crcache.Informer
 	handlerReg toolscache.ResourceEventHandlerRegistration
+
+	// The cache that counts this type: the shared one, or one limited to
+	// the namespace when the user may not list the type cluster-wide. See
+	// listDeps.
+	scopeKnown   bool
+	scope        listScope
+	scopedDeps   Deps
+	scopeRelease func()
 }
 
 // Close stops background work for the item. It is safe to call twice.
@@ -80,11 +88,13 @@ func (r *ResourceGroupItem) Close() {
 	close(r.stop)
 	informer, reg := r.informer, r.handlerReg
 	r.informer, r.handlerReg = nil, nil
+	release := r.releaseScopeLocked()
 	r.mu.Unlock()
 	r.deps.Activity.forget(r)
 	if informer != nil && reg != nil {
 		_ = informer.RemoveEventHandler(reg)
 	}
+	release()
 }
 
 func (r *ResourceGroupItem) isClosed() bool {
@@ -171,6 +181,11 @@ func (r *ResourceGroupItem) Count() int {
 	case informerUnsupported:
 		r.watchable = false
 		count, ok = 0, true
+	case informerForbidden:
+		// Hide the type like a forbidden peek does, without waiting for an
+		// informer that can never sync.
+		r.blockPeeksLocked(nil)
+		return 0
 	case informerSynced:
 		count, ok = r.countFromInformerLocked(informer)
 	}
@@ -263,6 +278,9 @@ const (
 	informerFailed informerStatus = iota
 	informerSynced
 	informerUnsupported
+	// informerForbidden: the user may not list and watch the type where
+	// the item counts it, so an informer would never sync.
+	informerForbidden
 )
 
 // syncedInformer returns the informer for the resource once it has synced,
@@ -282,11 +300,16 @@ func (r *ResourceGroupItem) syncedInformer() (crcache.Informer, informerStatus) 
 	gvk := r.gvk
 	r.mu.Unlock()
 
+	deps, scope := r.listDeps()
+	if scope == scopeDenied {
+		crlog.FromContext(r.deps.Ctx).Info("not starting informer: list and watch not allowed", "gvr", r.gvr.String())
+		return nil, informerForbidden
+	}
 	ctx, cancel := context.WithTimeout(r.deps.Ctx, informerSyncTimeout)
 	defer cancel()
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
-	informer, err := r.deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(false))
+	informer, err := deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(false))
 	if err != nil {
 		if apierrors.IsMethodNotSupported(err) {
 			crlog.FromContext(r.deps.Ctx).Info("resource watch not supported; skipping informer", "gvr", r.gvr.String(), "namespace", r.namespace)
@@ -321,6 +344,13 @@ func (r *ResourceGroupItem) countFromInformerLocked(informer crcache.Informer) (
 	case indexerInformer:
 		return r.countObjects(inf.GetIndexer().List()), true
 	default:
+		// A namespace-scoped cache's informer spans namespaces and has no
+		// single store; it has synced, so count through the cache.
+		if deps, _ := r.listDepsLocked(); deps.Cl != nil && deps.Cl.Namespace() != "" {
+			ctx, cancel := context.WithTimeout(r.deps.Ctx, r.peekTimeout())
+			defer cancel()
+			return r.countViaClient(ctx)
+		}
 		// Fallback to a lightweight client peek if informer/store not available.
 		ctx, cancel := context.WithTimeout(r.deps.Ctx, r.peekTimeout())
 		defer cancel()
@@ -365,7 +395,8 @@ func (r *ResourceGroupItem) countObjects(items []interface{}) int {
 }
 
 func (r *ResourceGroupItem) countViaClient(ctx context.Context) (int, bool) {
-	list, err := r.deps.Cl.ListByGVR(ctx, r.gvr, r.namespace)
+	deps, _ := r.listDepsLocked()
+	list, err := deps.Cl.ListByGVR(ctx, r.gvr, r.namespace)
 	if err != nil || list == nil {
 		if err != nil {
 			crlog.FromContext(r.deps.Ctx).Error(err, "list fallback failed", "gvr", r.gvr.String(), "namespace", r.namespace)
@@ -532,6 +563,14 @@ func (r *ResourceGroupItem) applySpec(spec resourceGroupSpec, deps Deps, created
 	// lock. The folder re-applies the same spec on every rebuild, so write
 	// these only when they actually change.
 	if created || r.deps.Cl != deps.Cl || r.deps.AppConfig != deps.AppConfig {
+		r.mu.Lock()
+		release := noScopeRelease
+		if !created && r.deps.Cl != deps.Cl {
+			// Another cluster: decide its scope again.
+			release = r.releaseScopeLocked()
+		}
+		r.mu.Unlock()
+		release()
 		r.deps = deps
 	}
 	if r.gvr != spec.gvr {

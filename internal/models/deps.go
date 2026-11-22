@@ -44,6 +44,10 @@ type Deps struct {
 	ReportError func(error)
 	// Activity pauses background count refreshes; nil never pauses.
 	Activity *Activity
+	// HoldScope keeps the pool entry for key running until the returned
+	// release is called. Nil holds nothing. It goes away with #85, whose
+	// NamespaceFactory returns the release itself.
+	HoldScope func(key kccluster.Key) (release func())
 }
 
 // reportReadError reports that reading what failed.
