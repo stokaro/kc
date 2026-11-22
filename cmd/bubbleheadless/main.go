@@ -228,7 +228,7 @@ func (s *session) terminate() error {
 func printWelcome(command []string, cols, rows int) {
 	fmt.Printf("bubbleheadless ready (cols=%d rows=%d)\n", cols, rows)
 	fmt.Printf("running command: %s\n", strings.Join(command, " "))
-	fmt.Println("commands: help, key <token>, text <value>, enter, screen [ansi|plain], snapshot <file>, mouse <button> <x> <y> <press|release|motion>, resize <cols> <rows>, wait, exit")
+	fmt.Println("commands: help, key <token>, text <value>, enter, screen [ansi|plain], snapshot <file> [color], mouse <button> <x> <y> <press|release|motion>, resize <cols> <rows>, wait, exit")
 }
 
 func parseKeyToken(token string) (string, error) {
@@ -462,16 +462,21 @@ func (s *session) cmdScreen(parts []string) {
 }
 
 func (s *session) cmdSnapshot(parts []string) {
-	if len(parts) < 2 {
-		fmt.Println("usage: snapshot <path>")
+	if len(parts) < 2 || len(parts) > 3 || (len(parts) == 3 && parts[2] != "color") {
+		fmt.Println("usage: snapshot <path> [color]")
 		return
 	}
 	path := parts[1]
 	if !strings.Contains(path, string(os.PathSeparator)) {
 		path = filepath.Join("snapshots", path)
 	}
-	frame := s.emu.GetScreen()
-	if err := snapshotToPNG(frame, path); err != nil {
+	var err error
+	if len(parts) == 3 {
+		err = colorSnapshotToPNG(s.emu.GetCells(), path)
+	} else {
+		err = snapshotToPNG(s.emu.GetScreen(), path)
+	}
+	if err != nil {
 		fmt.Printf("error: %v\n", err)
 	} else {
 		fmt.Printf("saved snapshot: %s\n", path)
