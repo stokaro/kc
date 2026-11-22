@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -21,27 +19,16 @@ const tarStderrLimit = 2048
 // tar (missing binary, unreadable file) surfaces as the error of the last
 // Read, with the tail of tar's error output. Close stops the exec.
 //
-// Only a session in the target container offers it: the debug helper
-// exits after a minute without a command, which a long tar does not send.
+// A session with a heartbeat (the debug helper) runs tar under a script
+// that touches the heartbeat file while tar runs, so the helper does not
+// exit after its idle timeout during a long stream.
 func (s *nativeSession) TarStream(ctx context.Context, dir, name string) (io.ReadCloser, error) {
-	if s.cfg == nil || s.client == nil {
+	if !s.execAvailable() {
 		return nil, fmt.Errorf("podfs: tar stream unavailable")
 	}
 	command := []string{"tar", "cf", "-", "-C", dir, "./" + name}
-	req := s.client.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Name(s.spec.Pod).
-		Namespace(s.spec.Namespace).
-		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Container: s.spec.Container,
-			Command:   command,
-			Stdout:    true,
-			Stderr:    true,
-		}, scheme.ParameterCodec)
-	exec, err := remotecommand.NewSPDYExecutor(s.cfg, "POST", req.URL())
-	if err != nil {
-		return nil, fmt.Errorf("podfs: executor: %w", err)
+	if s.spec.Heartbeat != "" {
+		command = []string{"sh", "-c", tarCreateScript, "kc-copy", s.spec.Heartbeat, dir, name}
 	}
 	ctrllog.FromContext(ctx).WithName("podfs").Info("exec tar",
 		"namespace", s.spec.Namespace, "pod", s.spec.Pod, "container", s.spec.Container, "dir", dir, "name", name)
@@ -49,7 +36,7 @@ func (s *nativeSession) TarStream(ctx context.Context, dir, name string) (io.Rea
 	pr, pw := io.Pipe()
 	stderr := &tailBuffer{limit: tarStderrLimit}
 	go func() {
-		err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{Stdout: pw, Stderr: stderr})
+		err := s.runExec(ctx, s.spec.Container, command, remotecommand.StreamOptions{Stdout: pw, Stderr: stderr})
 		if err != nil {
 			if msg := strings.TrimSpace(stderr.String()); msg != "" {
 				err = fmt.Errorf("tar: %w: %s", err, msg)
@@ -60,6 +47,27 @@ func (s *nativeSession) TarStream(ctx context.Context, dir, name string) (io.Rea
 		pw.CloseWithError(err)
 	}()
 	return &tarReader{PipeReader: pr, cancel: cancel}, nil
+}
+
+// tarCreateScript runs tar cf - and keeps a heartbeat file fresh while it
+// runs. Arguments: heartbeat file, directory, name.
+const tarCreateScript = `hb=$1 dir=$2 name=$3
+( while kill -0 $$ 2>/dev/null; do touch "$hb" 2>/dev/null; sleep 10; done ) </dev/null >/dev/null 2>&1 &
+hbpid=$!
+tar -cf - -C "$dir" "./$name"
+rc=$?
+kill "$hbpid" 2>/dev/null
+exit $rc
+`
+
+// TarStream streams tar from the target container through the helper,
+// which sees the target's files under HelperRoot.
+func (h *helperAwareSession) TarStream(ctx context.Context, dir, name string) (io.ReadCloser, error) {
+	inner, ok := h.ExecSession.(*nativeSession)
+	if !ok {
+		return nil, fmt.Errorf("podfs: tar stream unavailable")
+	}
+	return inner.TarStream(ctx, HelperPath(dir), name)
 }
 
 type tarReader struct {

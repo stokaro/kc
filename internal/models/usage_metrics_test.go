@@ -18,7 +18,7 @@ type fakeUsage struct {
 	scope []string
 }
 
-func (f *fakeUsage) fetch(_ context.Context, _ Deps, kind usageKind, namespace string) *usageSnapshot {
+func (f *fakeUsage) fetch(_ context.Context, _ Deps, kind usageKind, namespace string, _ bool) *usageSnapshot {
 	f.polls.Add(1)
 	f.mu.Lock()
 	f.scope = append(f.scope, kind.String()+":"+namespace)

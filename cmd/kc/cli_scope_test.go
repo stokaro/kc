@@ -68,6 +68,15 @@ func TestStartupScopeFlags(t *testing.T) {
 			name: "logs with context", args: []string{"--context", "x", "logs", "web", "-n", "ns"},
 			context: "x", namespace: "ns", verb: ui.KubectlVerbLogs, intentNs: "ns",
 		},
+		{name: "overview", args: []string{"overview"}, verb: ui.KubectlVerbOverview},
+		{
+			name: "overview in a namespace", args: []string{"-n", "shop", "overview"},
+			namespace: "shop", verb: ui.KubectlVerbOverview, intentNs: "shop",
+		},
+		{
+			name: "overview of all namespaces", args: []string{"overview", "-A", "--context", "x"},
+			context: "x", all: true, verb: ui.KubectlVerbOverview,
+		},
 		{name: "get name across namespaces", args: []string{"-A", "get", "pods", "web"}, wantErr: "across all namespaces"},
 		{name: "get type/name across namespaces", args: []string{"get", "pod/web", "-A"}, wantErr: "across all namespaces"},
 		{name: "logs across namespaces", args: []string{"-A", "logs", "web"}, wantErr: "kc logs does not accept -A"},

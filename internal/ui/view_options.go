@@ -68,6 +68,9 @@ type ViewOptionsLogsPayload struct {
 	SinceSeconds int64
 	Timestamps   bool
 	Previous     bool
+	// Container is the chosen value of the Container row, or the
+	// configured Container when the dialog has no such row.
+	Container string
 }
 
 // ViewOptionsConfig seeds the sectioned view options model.
@@ -95,6 +98,16 @@ type ViewOptionsLogsConfig struct {
 	SinceSeconds int64
 	Timestamps   bool
 	Previous     bool
+	// Containers are the choices of the Container row; the row is shown
+	// when there are two or more. Container is the current value.
+	Containers []ViewOptionsChoice
+	Container  string
+}
+
+// ViewOptionsChoice is one value of a choice row and its label.
+type ViewOptionsChoice struct {
+	Value string
+	Label string
 }
 
 // ViewOptionsResourcesConfig configures the Resources section.
@@ -256,6 +269,7 @@ const (
 	viewOptionLogsSince
 	viewOptionLogsTimestamps
 	viewOptionLogsPrevious
+	viewOptionLogsContainer
 	viewOptionObjectFaultsOnly
 )
 
@@ -326,6 +340,10 @@ type ViewOptionsModel struct {
 		sinceIdx   int
 		timestamps bool
 		previous   bool
+		containers []ViewOptionsChoice
+		// containerIdx indexes containers; container is used without them.
+		containerIdx int
+		container    string
 	}
 }
 
@@ -474,9 +492,19 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		model.logs.sinces, model.logs.sinceIdx = withChoice(logsSinceChoices, nonNegative(cfg.Logs.SinceSeconds))
 		model.logs.timestamps = cfg.Logs.Timestamps
 		model.logs.previous = cfg.Logs.Previous
+		model.logs.container = cfg.Logs.Container
 		model.appendSectionSpacerIfNeeded()
+		model.entries = append(model.entries, viewOptionEntry{kind: viewOptionEntrySection, title: "Logs:"})
+		if len(cfg.Logs.Containers) > 1 {
+			model.logs.containers = append([]ViewOptionsChoice(nil), cfg.Logs.Containers...)
+			for i, c := range model.logs.containers {
+				if c.Value == cfg.Logs.Container {
+					model.logs.containerIdx = i
+				}
+			}
+			model.entries = append(model.entries, viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsContainer})
+		}
 		model.entries = append(model.entries,
-			viewOptionEntry{kind: viewOptionEntrySection, title: "Logs:"},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsTail},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsSince},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsTimestamps},
@@ -865,6 +893,8 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		m.logs.timestamps = !m.logs.timestamps
 	case viewOptionLogsPrevious:
 		m.logs.previous = !m.logs.previous
+	case viewOptionLogsContainer:
+		m.logs.containerIdx = cycleIndex(m.logs.containerIdx, len(m.logs.containers), delta)
 	case viewOptionCommandWatch:
 		if len(commandWatchDurations) == 0 {
 			return
@@ -952,6 +982,10 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 			SinceSeconds: m.logs.sinces[m.logs.sinceIdx],
 			Timestamps:   m.logs.timestamps,
 			Previous:     m.logs.previous,
+			Container:    m.logs.container,
+		}
+		if len(m.logs.containers) > 0 {
+			msg.Logs.Container = m.logs.containers[m.logs.containerIdx].Value
 		}
 	}
 	if m.command.enabled {
@@ -1031,6 +1065,11 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 		return "Timestamps", onOff(m.logs.timestamps)
 	case viewOptionLogsPrevious:
 		return "Previous", onOff(m.logs.previous)
+	case viewOptionLogsContainer:
+		if len(m.logs.containers) == 0 {
+			return "Container", "-"
+		}
+		return "Container", m.logs.containers[m.logs.containerIdx].Label
 	default:
 		return "", ""
 	}

@@ -123,19 +123,25 @@ func cordonedNodeStyle(info RowStyleInfo) *lipgloss.Style {
 // health rule (see row_health.go).
 func registerHealthStylers() {
 	styler := rowStylerFunc(func(info RowStyleInfo) *lipgloss.Style {
-		switch ClassifyRowHealth(info.GVR, info.Unstructured) {
-		case RowHealthNotReady:
-			return NotReadyStyle()
-		case RowHealthFailed:
-			return JobFailedStyle()
-		case RowHealthSucceeded:
-			return JobSuccessStyle()
-		}
-		return info.BaseStyle
+		return RowHealthStyle(ClassifyRowHealth(info.GVR, info.Unstructured), info.BaseStyle)
 	})
 	for gvr := range healthRules {
 		RegisterRowStylerForGVR(gvr, styler)
 	}
+}
+
+// RowHealthStyle returns the style of a row in state h: the colors object
+// lists use, and base for a state without a color (ok, unknown).
+func RowHealthStyle(h RowHealth, base *lipgloss.Style) *lipgloss.Style {
+	switch h {
+	case RowHealthNotReady:
+		return NotReadyStyle()
+	case RowHealthFailed:
+		return JobFailedStyle()
+	case RowHealthSucceeded:
+		return JobSuccessStyle()
+	}
+	return base
 }
 
 type conditionState string

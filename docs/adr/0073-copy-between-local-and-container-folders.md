@@ -22,6 +22,12 @@ It left open: how a local directory gets into a panel, how the bytes travel,
 what happens to existing local files, symbolic links and permissions, and how
 progress and cancellation look.
 
+Stage 2 (local to container) adds more open points: how the bytes get into
+the container and what happens when the image has no `tar`; whether the debug
+helper can write; how a write into the cluster is confirmed and how it fits
+the read-only mode of #42 (`docs/adr/0042-read-only-mode.md`); what "no partial
+output" means on the container side; and which permissions the copies get.
+
 ## Decision
 
 1. **Entering a local directory: `M-l`.** It opens the directory of the last
@@ -40,8 +46,11 @@ progress and cancellation look.
    stream fails before its first entry (no `tar` in the image), kc copies the
    entry through the existing session instead: it walks directories with the
    session's listing and reads files with its `cat` command. A session that
-   runs in the debug helper always uses the walk, because the helper exits
-   after a minute without a session command, which a long `tar` would not send.
+   runs in the debug helper streams busybox `tar` from `/proc/1/root/<dir>`
+   under a small script that touches the helper's heartbeat file every 10 s
+   while `tar` runs, because the helper exits after a minute without a session
+   command (stage 2; stage 1 always used the walk there). It falls back to the
+   walk the same way.
    The copy reuses the panel's session, so consent given for the helper is
    reused and a copy never adds a helper itself; when one is needed and not yet
    agreed to, the copy refuses and says to open the folder and start it.
@@ -60,9 +69,11 @@ progress and cancellation look.
    - an existing local symbolic link at a path the copy would write is refused
      with an error, never followed and never replaced.
 
-3. **Direction: container to local only.** Rows of a local panel offer no
-   `F5`, so nothing is copied into a container yet. Upload needs a write path in `podfs` (`tar xf -` or a write command) and has
-   to respect the read-only mode of #42, which is not on `main` yet.
+3. **Direction: both.** `F5` in a container folder with a local panel on the
+   other side downloads; `F5` in a local panel with a container folder on the
+   other side uploads (decisions 8 to 12). With any other pair `F5` keeps its
+   export behavior, and on a local row it says to open a container folder in
+   the other panel.
 
 4. **Existing files.** The dialog counts the marked entries that exist in the
    destination. Without conflicts it offers `Copy` and `Cancel`. With conflicts
@@ -77,8 +88,8 @@ progress and cancellation look.
 
 5. **No partial output that looks finished.** Each file is written to a
    private temporary file (`.<name>.kc-*.tmp`, 0600, `O_EXCL`) next to its
-   destination, synced, and renamed over it only when complete; this is the
-   approach of PR #75 (`internal/atomicfile`). A directory entry is assembled in
+   destination, synced, and renamed over it only when complete, through
+   `atomicfile.WriteIn`, the `os.Root` variant of `atomicfile.Write` (#75). A directory entry is assembled in
    a private staging directory `.<name>.kc-partial-*` next to the destination
    and renamed into place (or merged, for `Overwrite`) only when the whole tree
    arrived. A failure or a cancel removes the staging directory. Any error in a
@@ -101,6 +112,71 @@ progress and cancellation look.
    canceled) and the left-out names under it; `Enter` or `Esc` closes it and the
    local panel is refreshed.
 
+8. **Upload mechanism: a tar stream kc builds, unpacked by a script.** For
+   each marked top-level entry kc builds a tar stream from the local tree and
+   runs `sh -c <script> kc-copy <dir> <name> <staging> new|replace <heartbeat>`
+   in a second exec stream with that archive on stdin. The script unpacks it
+   with `tar -xf -` into a private staging directory `.<name>.kc-partial-*`
+   next to the target and only then moves the entry into place: `mv` for a new
+   entry or a replaced file, and `tar -cf - | tar -xf -` from the staging
+   directory to merge into an existing directory. The last archive member is a
+   marker file (`.kc-upload-complete`) beside the entry; the script moves
+   nothing without it, because a stream cut between two members looks like a
+   complete archive to `tar`. An exit of the script (failure, cut stream,
+   signal) removes the staging directory.
+
+   The archive side follows the download rules: everything is read through an
+   `os.Root` on the local directory, no symbolic link is followed (a file is
+   opened and compared with its `Lstat` result, so a file swapped for a link
+   is refused), links, devices, pipes and sockets are left out and listed,
+   names are single path elements, and member names are `<name>` and
+   `<name>/...`, never absolute and never with `..`. A file that shrinks while
+   it is read fails its entry.
+
+   Existing entries are decided from a fresh listing of the container
+   directory when the copy starts, not from the dialog: `Skip existing` leaves
+   them alone, `Overwrite` replaces a file and merges a directory, and an
+   existing symbolic link, a non-regular file or a file/directory mismatch
+   fails the entry. The script checks again before it moves anything.
+
+9. **No `tar` in the image: the copy fails.** The script checks `command -v
+   tar` first and the entry fails with "the container has no tar; copying
+   into it needs tar in the image, as kubectl cp does". The remaining entries
+   fail with the same message without another exec. kc does not fall back to
+   writing through the session's line protocol, and does not add a debug
+   helper for a container that has a shell.
+
+10. **Through the debug helper: busybox `tar` under `/proc/1/root`, with a
+    heartbeat.** When the folder's session runs in the helper (a container
+    without a shell, after the user agreed for browsing), the same script runs
+    in the helper with the target directory spelled `/proc/1/root/<dir>`. A
+    background loop touches the helper's heartbeat file every 10 s while the
+    script runs, so the helper does not exit after its 60 s idle timeout during
+    a long copy; the loop stops with the script. A copy never adds a helper
+    (decision 2).
+
+11. **Confirmation and read-only mode.** An upload changes the cluster, so its
+    dialog is red, like `models.Confirmation` dialogs, and `Cancel` has the
+    focus: Enter alone writes nothing. It names the source directory and
+    entries, the context, pod, container (with "through the debug helper") and
+    target directory, and shows the equivalent `kubectl cp <local> <ns>/<pod>:<dir>/<name> -c <container>`
+    for the first two entries (through the helper: the helper container and the
+    `/proc/1/root` path). The skip and overwrite buttons are those of decision 4.
+    Read-only mode refuses the upload through `refuseReadOnly` with the pod's
+    exec check (exec is a write for `access.Policy`), for the current context
+    and for the context the container folder belongs to; the check runs when
+    `F5` is pressed and again when the user confirms, so a context that turned
+    read-only while the dialog was open writes nothing. `F5` stays enabled on
+    local rows in read-only mode, so the key explains the refusal.
+
+12. **Permissions in the container.** Copies keep the permission bits of the
+    local file (0644 stays 0644, 0755 stays 0755) without setuid, setgid and
+    sticky. Headers carry uid and gid 0 without names: `tar` running as root
+    creates root-owned files, as any root process would, and `tar` running as
+    another user creates files as that user. Programs in the container read
+    the files under their own user, so dropping group and other bits, as the
+    download does for the local machine, would break them.
+
 ## Alternatives considered
 
 - **A `/local` row in the panel root.** Discoverable, but the root is the list
@@ -116,9 +192,11 @@ progress and cancellation look.
   images that have a shell.
 - **Only tar, as `kubectl cp` does.** Fails for distroless images and for
   containers that need the helper, which kc can already browse.
-- **`tar` inside the debug helper.** It works with a background loop that
-  touches the heartbeat file during the stream, but it adds a script that runs
-  with `CAP_SYS_PTRACE` in someone else's pod. Left for later.
+- **Only the walk through the debug helper (stage 1).** No script with
+  `CAP_SYS_PTRACE` in someone else's pod, but one file that takes longer than
+  the helper's idle timeout could not be copied, and the helper already runs
+  kc's session script with the same rights. Stage 2 streams `tar` there with a
+  heartbeat loop.
 - **Keep the source mode (as `kubectl cp` does).** Group- and other-readable
   copies of container files (keys, tokens, configs) on a shared machine. The
   user can `chmod` a copy; a leak cannot be undone.
@@ -131,6 +209,21 @@ progress and cancellation look.
   user can copy the readable subdirectories one by one.
 - **Write directly into an existing directory on `Overwrite`.** Simpler, but a
   failure in the middle would leave a mix of old and new files.
+- **Upload by plain `tar -xf - -C <dir>`, as `kubectl cp` does.** Simplest,
+  but a canceled or failed copy leaves half a tree that looks finished, the
+  rule download keeps locally.
+- **Upload through the session's line protocol (`base64 -d` per file).** Works
+  without `tar`, but needs a write command in the session script, a shell loop
+  per line for large files and a second protocol to keep in step. Images with a
+  shell and without `tar` are rare; the message names the gap.
+- **Add the debug helper for a container that has a shell but no `tar`.** It
+  changes the pod for good and adds `SYS_PTRACE`; asking for that to copy a
+  file is out of proportion. The user can use `kubectl cp` with an image that
+  has `tar`.
+- **Keep the local owner (`kubectl cp` sends the local uid and gid).** `tar`
+  as root then chowns the copies to a uid that means nothing in the container.
+- **Drop group and other bits on upload too.** Consistent with download, but a
+  web server that reads its files as another user would fail.
 - **A progress line on the command line instead of a dialog.** Leaves the
   panels usable during the copy, but there is no place for the per-entry result
   and the shell line belongs to the terminal. A dialog that can be hidden is a
@@ -138,16 +231,30 @@ progress and cancellation look.
 
 ## Consequences
 
-- `internal/filexfer` is the place for the stage 2 upload: the same name
-  rules apply to an archive built from a local tree, and `podfs` needs a write
-  path (`tar xf -` in the container, or a helper command).
-- The temporary-file logic duplicates the core of `internal/atomicfile` from
-  PR #75, which is not on `main`. Once #75 merges, `writeFile` should call it
-  (through an `os.Root` variant, since `atomicfile.Write` takes a path).
-- A copy through the debug helper is cut when reading a single file takes
-  longer than the helper's idle timeout (60 s); the entry then fails and leaves
-  nothing. Large files are better copied from a container that has a shell and
-  `tar`.
+- `internal/filexfer` holds both directions; `podfs` has two extra exec
+  streams next to the session's shell (`TarStream` for download, `ExtractTar`
+  for upload), both through one `execFunc` that tests replace with a fake
+  stream. The extract script is tested by running it with the local `sh` and
+  `tar`; a container's busybox or GNU `tar` is not exercised by unit tests.
+- An upload needs `sh`, `tar`, `mkdir`, `mv` and `rm` in the image (or the
+  helper). The merge into an existing directory follows the container's
+  `tar` rules: a read-only file there is replaced when its directory is
+  writable, and symbolic links inside the existing directory are handled as
+  that `tar` handles them. Inside the container, writes cannot reach the
+  local machine; the container's own filesystem is the limit.
+- Through the debug helper an absolute symbolic link inside the target's tree
+  resolves in the helper's filesystem, not the target's, as for browsing. An
+  existing top-level link is refused; deeper links in a merged directory can
+  send files into the helper, which exits with them.
+- If the container runtime kills the script without a signal it can trap
+  (for example the pod is deleted), a hidden `.<name>.kc-partial-*` directory
+  can stay behind in the target directory.
+- The upload's progress counts the bytes kc sent; the container may still be
+  writing the last of them when the counter stops.
+- A download through the debug helper that falls back to the walk (its `tar`
+  stream failed before the first entry) is still cut when reading a single
+  file takes longer than the helper's idle timeout (60 s); the entry then fails
+  and leaves nothing.
 - A session closed under the copy (the helper exited, the pod restarted) fails
   the remaining entries; the next listing of the folder opens a new session.
 - The dialog blocks the panels while the copy runs. The copy itself does not

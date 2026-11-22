@@ -1,13 +1,18 @@
-// Package filexfer copies files and directory trees from a container into a
-// local directory.
+// Package filexfer copies files and directory trees between a container
+// and a local directory.
 //
-// Two producers feed the same writer: a tar stream (Extract), as kubectl cp
-// reads it from `tar cf -` in the container, and a walk over a pod
-// filesystem session (Walk), for images without tar and for the debug
+// Download: two producers feed the same writer: a tar stream (Extract), as
+// kubectl cp reads it from `tar cf -` in the container, and a walk over a
+// pod filesystem session (Walk), for images without tar and for the debug
 // helper. The writer owns every safety rule, so both paths refuse the same
 // names: absolute paths, "..", entries outside the copied top-level name,
 // and writes through symbolic links. It never creates a symbolic link or a
-// device. See docs/adr/0073-copy-between-local-and-container-folders.md.
+// device.
+//
+// Upload: an archiver builds the tar stream from the local tree through an
+// os.Root, never following a symbolic link, and a podfs session unpacks it
+// in the container. See
+// docs/adr/0073-copy-between-local-and-container-folders.md.
 package filexfer
 
 import (
@@ -23,6 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sttts/kc/internal/atomicfile"
 )
 
 // FileModeMask keeps the owner permission bits of the source and drops the
@@ -37,14 +44,14 @@ var (
 	// ErrUnsafePath is returned for an entry name that would leave the
 	// destination: absolute, with "..", or outside the copied entry.
 	ErrUnsafePath = errors.New("unsafe path")
-	// ErrSymlink is returned when a local path to be written is a symbolic link.
-	ErrSymlink = errors.New("destination is a symbolic link")
-	// ErrNotRegular is returned when a local path to be replaced is not a
-	// regular file.
-	ErrNotRegular = errors.New("destination is not a regular file")
+	// ErrSymlink is returned when a path to be written is a symbolic link.
+	ErrSymlink = atomicfile.ErrSymlink
+	// ErrNotRegular is returned when a path to be replaced is not a regular
+	// file.
+	ErrNotRegular = atomicfile.ErrNotRegular
 	// ErrReadOnly is returned when a local file to be replaced has no owner
 	// write permission.
-	ErrReadOnly = errors.New("destination is read-only")
+	ErrReadOnly = atomicfile.ErrReadOnly
 )
 
 // writer places the entries of one copied top-level name under root.
@@ -177,51 +184,13 @@ func (w *writer) ensureParent(local string) error {
 	return w.root.MkdirAll(parent, DirMode)
 }
 
-// writeFile writes r to name under root through a temporary file and a rename.
-func writeFile(ctx context.Context, root *os.Root, name string, mode fs.FileMode, mtime time.Time, r io.Reader, counter *Counter) (err error) {
-	if err := ctx.Err(); err != nil {
+// writeFile writes r to name under root through atomicfile: a private
+// temporary file next to the destination that replaces it only when the
+// whole content arrived.
+func writeFile(ctx context.Context, root *os.Root, name string, mode fs.FileMode, mtime time.Time, r io.Reader, counter *Counter) error {
+	if err := atomicfile.WriteIn(ctx, root, name, mode.Perm()&FileModeMask, countingReader(ctx, r, counter)); err != nil {
 		return err
 	}
-	if err := checkReplaceable(root, name); err != nil {
-		return err
-	}
-	dir, base := filepath.Split(name)
-	tmpName := filepath.Join(dir, "."+base+".kc-"+randomSuffix()+".tmp")
-	// O_EXCL with 0600: the partial content is private from the first byte
-	// and never lands on a file someone placed there.
-	tmp, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("creating temporary file: %w", err)
-	}
-	committed := false
-	defer func() {
-		if committed {
-			return
-		}
-		_ = tmp.Close()
-		if rmErr := root.Remove(tmpName); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-			err = errors.Join(err, fmt.Errorf("removing temporary file: %w", rmErr))
-		}
-	}()
-	if _, err := io.Copy(tmp, countingReader(ctx, r, counter)); err != nil {
-		return err
-	}
-	if err := tmp.Chmod(mode.Perm() & FileModeMask); err != nil {
-		return fmt.Errorf("setting permissions: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("syncing temporary file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temporary file: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := root.Rename(tmpName, name); err != nil {
-		return fmt.Errorf("replacing destination: %w", err)
-	}
-	committed = true
 	if !mtime.IsZero() {
 		_ = root.Chtimes(name, mtime, mtime)
 	}
@@ -231,20 +200,7 @@ func writeFile(ctx context.Context, root *os.Root, name string, mode fs.FileMode
 // checkReplaceable refuses to replace a symbolic link, a non-regular file
 // or a read-only file.
 func checkReplaceable(root *os.Root, name string) error {
-	info, err := root.Lstat(name)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return nil
-	case err != nil:
-		return err
-	case info.Mode()&fs.ModeSymlink != 0:
-		return fmt.Errorf("%s: %w", name, ErrSymlink)
-	case !info.Mode().IsRegular():
-		return fmt.Errorf("%s: %w", name, ErrNotRegular)
-	case info.Mode().Perm()&0o200 == 0:
-		return fmt.Errorf("%s: %w", name, ErrReadOnly)
-	}
-	return nil
+	return atomicfile.CheckReplaceable(root, name)
 }
 
 func randomSuffix() string {

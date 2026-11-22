@@ -7,11 +7,13 @@ import (
 
 	"charm.land/lipgloss/v2"
 	table "github.com/sttts/kc/internal/table"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// overviewRowID is the ID of the /overview row in the panel root.
-const overviewRowID = "__overview__"
+// OverviewRowID is the ID of the /overview row in the panel root.
+const OverviewRowID = "__overview__"
 
 // OverviewFolder is /overview: one row per finding, grouped in sections.
 // Its rows only read the engine's latest report; the engine recomputes in
@@ -229,11 +231,58 @@ func (f *OverviewTargetsFolder) targetRow(t overviewTarget, verbs []string) tabl
 	}
 	obj.SetViewCommand(kubectlCommand(f.Deps, append(args, "-o", "yaml")...))
 	obj.SetDetails(objectDetails(t.namespace, t.name, "", t.gvr.GroupVersion().String()))
+	if t.involved != nil {
+		ref, missing := involvedObjectRef(f.Deps, *t.involved, t.namespace)
+		return &OverviewEventItem{ObjectRow: obj, ref: ref, missing: missing}
+	}
 	if hasChild && ctor != nil {
 		deps, ns, name := f.Deps, t.namespace, t.name
 		return NewObjectWithChildItem(obj, func() (Folder, error) { return ctor(deps, ns, name, path), nil })
 	}
 	return obj
+}
+
+// OverviewEventItem is a warning event in the overview. Enter opens the
+// object the event is about in the other panel; F3 and F8 act on the event.
+type OverviewEventItem struct {
+	*ObjectRow
+	ref     ObjectRef
+	missing string
+}
+
+var _ ObjectLink = (*OverviewEventItem)(nil)
+
+// LinkTarget returns the involved object.
+func (i *OverviewEventItem) LinkTarget() (ObjectRef, string) { return i.ref, i.missing }
+
+// involvedObjectRef maps an event's involved object to a GVR with the
+// RESTMapper (cached discovery, no request). An object without a namespace
+// of its own is in the event's namespace when its kind is namespaced.
+func involvedObjectRef(deps Deps, o corev1.ObjectReference, eventNamespace string) (ObjectRef, string) {
+	if deps.Cl == nil {
+		return ObjectRef{}, "the cluster's API types are not known yet; try again"
+	}
+	gv, err := schema.ParseGroupVersion(o.APIVersion)
+	if err != nil || o.Kind == "" || o.Name == "" {
+		return ObjectRef{}, fmt.Sprintf("the event names no object kc can open (%s %s %s)", o.APIVersion, o.Kind, o.Name)
+	}
+	mapper := deps.Cl.RESTMapper()
+	if mapper == nil {
+		return ObjectRef{}, "the cluster's API types are not known yet; try again"
+	}
+	mapping, err := mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: o.Kind}, gv.Version)
+	if err != nil {
+		return ObjectRef{}, fmt.Sprintf("%s %s is not served by the cluster", o.APIVersion, o.Kind)
+	}
+	namespaced := mapping.Scope.Name() == meta.RESTScopeNameNamespace
+	ns := ""
+	if namespaced {
+		ns = o.Namespace
+		if ns == "" {
+			ns = eventNamespace
+		}
+	}
+	return ObjectRef{GVR: mapping.Resource, Namespaced: namespaced, Namespace: ns, Name: o.Name}, ""
 }
 
 // resourceVerbsByGVR returns the verbs discovery lists per resource, so the
@@ -275,33 +324,38 @@ func (s *readingRowSource) Len(ctx context.Context) int {
 	return s.rowSource.Len(ctx)
 }
 
-// Overview styles. Until the shared row health classification (#93) lands,
-// the overview keeps its own small mapping from severity to style.
-var (
-	overviewWarningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD75F"))
-	overviewSectionSty   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#5FD7FF"))
-)
+var overviewSectionSty = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#5FD7FF"))
 
 func overviewSectionStyle() *lipgloss.Style { return &overviewSectionSty }
 
-// overviewSeverityStyle maps a severity to a row style: normal, warning,
-// failed, and dim when the source is not available.
-func overviewSeverityStyle(s overviewSeverity) *lipgloss.Style {
+// RowHealth maps a severity to the row health of object lists, so a
+// warning in the overview has the color of a not-ready row in a list and a
+// failure that of a failed one.
+func (s overviewSeverity) RowHealth() RowHealth {
 	switch s {
-	case severityWarning:
-		return &overviewWarningStyle
-	case severityFailed:
-		return NotReadyStyle()
 	case severityOK:
-		return WhiteStyle()
+		return RowHealthOK
+	case severityWarning:
+		return RowHealthNotReady
+	case severityFailed:
+		return RowHealthFailed
 	}
-	return DimStyle()
+	return RowHealthUnknown
+}
+
+// overviewSeverityStyle returns the shared row health style of a severity
+// (RowHealthStyle), and dim when the source is not available.
+func overviewSeverityStyle(s overviewSeverity) *lipgloss.Style {
+	if s == severityUnknown {
+		return DimStyle()
+	}
+	return RowHealthStyle(s.RowHealth(), WhiteStyle())
 }
 
 // overviewRootItem is the /overview row of the panel root.
 func overviewRootItem(deps Deps, namespace string, parentPath []string) Item {
 	path := append(append([]string{}, parentPath...), "overview")
-	item := NewChildResourceItem(overviewRowID, []string{"/overview", "", ""}, path, func() (Folder, error) {
+	item := NewChildResourceItem(OverviewRowID, []string{"/overview", "", ""}, path, func() (Folder, error) {
 		return NewOverviewFolder(deps, namespace, path), nil
 	})
 	item.SetDetails("Cluster overview: capacity, health, risks, activity")

@@ -14,6 +14,9 @@ const (
 	PanelModeCommand
 	// PanelModeLogs streams the log of the other panel's selection.
 	PanelModeLogs
+	// PanelModeInfo shows bars for the load of the other panel's scope, like
+	// mc's Info panel.
+	PanelModeInfo
 )
 
 // PanelWidget abstracts panel content implementations.
@@ -22,7 +25,7 @@ type PanelWidget = panelcontent.Widget
 // PanelWidgetFactory constructs a widget bound to the provided panel shell.
 type PanelWidgetFactory func(*Panel) panelcontent.Widget
 
-var panelModeOrder = []PanelViewMode{PanelModeList, PanelModeDescribe, PanelModeManifest, PanelModeLogs, PanelModeCommand}
+var panelModeOrder = []PanelViewMode{PanelModeList, PanelModeDescribe, PanelModeManifest, PanelModeLogs, PanelModeInfo, PanelModeCommand}
 
 // PanelMouseType identifies mouse intents routed to widgets.
 type PanelMouseType = panelcontent.MouseIntent

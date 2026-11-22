@@ -16,8 +16,8 @@ func TestPanelModeOrderHasLogsAfterManifest(t *testing.T) {
 	if got := NextPanelMode(PanelModeManifest); got != PanelModeLogs {
 		t.Fatalf("NextPanelMode(Manifest) = %v, want Logs", got)
 	}
-	if got := NextPanelMode(PanelModeLogs); got != PanelModeCommand {
-		t.Fatalf("NextPanelMode(Logs) = %v, want Command", got)
+	if got := NextPanelMode(PanelModeLogs); got != PanelModeInfo {
+		t.Fatalf("NextPanelMode(Logs) = %v, want Info", got)
 	}
 	if got := modeLabel(PanelModeLogs); got != "Logs" {
 		t.Fatalf("modeLabel(Logs) = %q", got)
