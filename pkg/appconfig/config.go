@@ -1,22 +1,34 @@
 package appconfig
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	yaml "sigs.k8s.io/yaml"
 )
 
 type ViewerConfig struct {
-	Theme string `json:"theme"`
-	Mode  string `json:"mode"`
+	Theme string           `json:"theme"`
+	Mode  string           `json:"mode"`
+	Logs  LogsViewerConfig `json:"logs"`
 }
+
+// LogsViewerConfig holds the options a logs viewer opens with.
+type LogsViewerConfig struct {
+	// Tail is the number of recent lines fetched before following. -1
+	// fetches the whole log; 0 means the default of 200.
+	Tail int64 `json:"tail"`
+	// Since limits the log to lines newer than this. 0s means no limit.
+	Since metav1.Duration `json:"since"`
+	// Timestamps prefixes every line with its timestamp.
+	Timestamps bool `json:"timestamps"`
+}
+
+// DefaultLogsTail is the default for viewer.logs.tail.
+const DefaultLogsTail int64 = 200
 
 const (
 	ViewerModeScroll = "scroll"
@@ -35,6 +47,33 @@ const (
 	ObjectsOrderCreationDesc = "-creation"
 )
 
+// ObjectsOrderKey returns the objects order key of a table column: the title
+// in lower case with inner spaces replaced by dashes ("Nominated Node" gives
+// "nominated-node").
+func ObjectsOrderKey(title string) string {
+	return strings.ToLower(strings.Join(strings.Fields(title), "-"))
+}
+
+// NormalizeObjectsOrder returns the canonical form of an objects order: a
+// column key (see ObjectsOrderKey), or "creation", with a leading "-" for
+// descending order. Values that name no key become "name". A key that a
+// given table lacks is not an error here; that list falls back to name.
+func NormalizeObjectsOrder(order string) string {
+	order = strings.TrimSpace(order)
+	desc := strings.HasPrefix(order, "-")
+	if desc {
+		order = order[1:]
+	}
+	key := ObjectsOrderKey(order)
+	if key == "" || strings.HasPrefix(key, "-") {
+		return ObjectsOrderName
+	}
+	if desc {
+		return "-" + key
+	}
+	return key
+}
+
 type HorizontalConfig struct {
 	Step int `json:"step"`
 }
@@ -52,6 +91,21 @@ type PanelConfig struct {
 	Scrolling ScrollingConfig  `json:"scrolling"`
 	Table     TableConfig      `json:"table"`
 	Width     PanelWidthConfig `json:"width"`
+	// Skin names the panel skin: a built-in one ("mc", "dark") or
+	// ~/.kc/skins/<name>.yaml. Empty means "mc".
+	Skin string `json:"skin"`
+}
+
+// ContextColorConfig tints the panel frame and the context label of panels
+// whose kubeconfig context matches. Set exactly one of Match and Regex.
+type ContextColorConfig struct {
+	// Match is a context name or a glob: "*" matches any run of characters
+	// (including "/"), "?" one character, e.g. "*prod*".
+	Match string `json:"match,omitempty"`
+	// Regex is a Go regular expression matched against the context name.
+	Regex string `json:"regex,omitempty"`
+	// Color is an ANSI name, an ANSI 256 index or a hex value.
+	Color string `json:"color"`
 }
 
 type MouseConfig struct {
@@ -104,17 +158,150 @@ type ResourcesViewConfig struct {
 }
 
 type Config struct {
-	Viewer     ViewerConfig        `json:"viewer"`
-	Panel      PanelConfig         `json:"panel"`
-	Input      InputConfig         `json:"input"`
-	Kubernetes KubernetesConfig    `json:"kubernetes"`
-	Resources  ResourcesViewConfig `json:"resources"`
-	Objects    ObjectsConfig       `json:"objects"`
-	Terminal   TerminalConfig      `json:"terminal"`
-	Commands   []CommandConfig     `json:"commands"`
+	Viewer      ViewerConfig        `json:"viewer"`
+	Panel       PanelConfig         `json:"panel"`
+	Input       InputConfig         `json:"input"`
+	Kubernetes  KubernetesConfig    `json:"kubernetes"`
+	Resources   ResourcesViewConfig `json:"resources"`
+	Objects     ObjectsConfig       `json:"objects"`
+	Terminal    TerminalConfig      `json:"terminal"`
+	NodeShell   NodeShellConfig     `json:"nodeShell"`
+	PortForward PortForwardConfig   `json:"portForward"`
+	Commands    []CommandConfig     `json:"commands"`
+	// Contexts color panels per kubeconfig context; the first matching
+	// entry wins.
+	Contexts []ContextColorConfig `json:"contexts"`
+	// Columns adds and hides object list columns per resource type, keyed
+	// by group/version/resource (see ColumnsKey). Empty by default.
+	Columns  map[string][]CustomColumn `json:"columns,omitempty"`
+	Overview OverviewConfig            `json:"overview"`
 	// ReadOnly opens contexts in read-only mode; see ReadOnlyConfig.
 	ReadOnly ReadOnlyConfig `json:"readOnly"`
 }
+
+// OverviewConfig holds the thresholds of the /overview folder. A zero or
+// negative value means the default; Normalized fills it in.
+type OverviewConfig struct {
+	// Window is how far back warning events and container restarts count.
+	Window metav1.Duration `json:"window"`
+	// RestartThreshold is how many restarts make a pod "restarting" when its
+	// last restart is inside Window.
+	RestartThreshold int `json:"restartThreshold"`
+	// RequestsWarnPercent and RequestsFailPercent compare the CPU and memory
+	// requests on a node with its allocatable.
+	RequestsWarnPercent int `json:"requestsWarnPercent"`
+	RequestsFailPercent int `json:"requestsFailPercent"`
+	// LimitsWarnPercent marks a node overcommitted when the limits of its
+	// pods add up to more than this percent of allocatable.
+	LimitsWarnPercent int `json:"limitsWarnPercent"`
+	// PodsWarnPercent compares the pods on a node with allocatable pods.
+	PodsWarnPercent int `json:"podsWarnPercent"`
+	// QuotaWarnPercent flags a ResourceQuota when any used value reaches
+	// this percent of its hard limit.
+	QuotaWarnPercent int `json:"quotaWarnPercent"`
+}
+
+// DefaultOverview returns the default overview thresholds.
+func DefaultOverview() OverviewConfig {
+	return OverviewConfig{
+		Window:              metav1.Duration{Duration: time.Hour},
+		RestartThreshold:    3,
+		RequestsWarnPercent: 80,
+		RequestsFailPercent: 95,
+		LimitsWarnPercent:   100,
+		PodsWarnPercent:     90,
+		QuotaWarnPercent:    80,
+	}
+}
+
+// Normalized returns o with every unset or invalid value replaced by its
+// default.
+func (o OverviewConfig) Normalized() OverviewConfig {
+	d := DefaultOverview()
+	if o.Window.Duration <= 0 {
+		o.Window = d.Window
+	}
+	positive := func(v *int, def int) {
+		if *v <= 0 {
+			*v = def
+		}
+	}
+	positive(&o.RestartThreshold, d.RestartThreshold)
+	positive(&o.RequestsWarnPercent, d.RequestsWarnPercent)
+	positive(&o.RequestsFailPercent, d.RequestsFailPercent)
+	positive(&o.LimitsWarnPercent, d.LimitsWarnPercent)
+	positive(&o.PodsWarnPercent, d.PodsWarnPercent)
+	positive(&o.QuotaWarnPercent, d.QuotaWarnPercent)
+	if o.RequestsFailPercent < o.RequestsWarnPercent {
+		o.RequestsFailPercent = o.RequestsWarnPercent
+	}
+	return o
+}
+
+// NodeShellConfig controls the node shell: a privileged pod pinned to a
+// node that enters the host namespaces. It is off by default.
+type NodeShellConfig struct {
+	// Enabled turns the node shell on.
+	Enabled bool `json:"enabled"`
+	// Contexts limits the node shell to these kube contexts. Empty means
+	// every context while Enabled is true.
+	Contexts []string `json:"contexts,omitempty"`
+	// Image runs the shell pod. It needs sh and nsenter.
+	Image string `json:"image"`
+	// Namespace holds the shell pod. Pod security admission must allow
+	// privileged pods there.
+	Namespace string `json:"namespace"`
+	// MaxDuration is the pod's activeDeadlineSeconds: the pod is stopped
+	// after this time even while the shell is in use.
+	MaxDuration metav1.Duration `json:"maxDuration"`
+}
+
+// Default node shell values.
+const (
+	DefaultNodeShellImage       = "docker.io/library/busybox:1.36.1"
+	DefaultNodeShellNamespace   = "default"
+	DefaultNodeShellMaxDuration = 8 * time.Hour
+)
+
+// EnabledFor reports whether the node shell may run on context.
+func (c NodeShellConfig) EnabledFor(context string) bool {
+	if !c.Enabled {
+		return false
+	}
+	if len(c.Contexts) == 0 {
+		return true
+	}
+	for _, name := range c.Contexts {
+		if strings.TrimSpace(name) == context {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeNodeShell(c *NodeShellConfig) {
+	c.Image = strings.TrimSpace(c.Image)
+	if c.Image == "" {
+		c.Image = DefaultNodeShellImage
+	}
+	c.Namespace = strings.TrimSpace(c.Namespace)
+	if c.Namespace == "" {
+		c.Namespace = DefaultNodeShellNamespace
+	}
+	if c.MaxDuration.Duration <= 0 {
+		c.MaxDuration = metav1.Duration{Duration: DefaultNodeShellMaxDuration}
+	}
+}
+
+// PortForwardConfig controls port forwards started from kc.
+type PortForwardConfig struct {
+	// Address is the local address forwards listen on: an IP address or
+	// "localhost" (both loopback addresses, as kubectl does).
+	Address string `json:"address"`
+}
+
+// DefaultPortForwardAddress keeps forwards reachable from this machine only.
+const DefaultPortForwardAddress = "127.0.0.1"
 
 type CommandType string
 
@@ -163,7 +350,10 @@ type CommandConfig struct {
 
 // ObjectsConfig controls object-list specific options.
 type ObjectsConfig struct {
-	// Order controls ordering within object lists. Valid values conform to ObjectsOrder* constants (Name, NameDesc, Creation, CreationDesc).
+	// Order controls ordering within object lists: a column key (the column
+	// title in lower case, spaces as dashes, e.g. "name", "age", "restarts")
+	// or "creation", with a leading "-" for descending order. Lists without
+	// that column sort by name.
 	Order string `json:"order"`
 	// Columns controls which columns are shown. Valid values are ColumnsModeNormal and ColumnsModeWide.
 	Columns string `json:"columns"`
@@ -197,11 +387,16 @@ type TableConfig struct {
 
 func Default() *Config {
 	return &Config{
-		Viewer: ViewerConfig{Theme: "dracula", Mode: ViewerModeScroll},
+		Viewer: ViewerConfig{
+			Theme: "dracula",
+			Mode:  ViewerModeScroll,
+			Logs:  LogsViewerConfig{Tail: DefaultLogsTail},
+		},
 		Panel: PanelConfig{
 			Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}},
 			Table:     TableConfig{Mode: TableModeScroll},
 			Width:     PanelWidthConfig{LeftPercent: 50, RightPercent: 50},
+			Skin:      "mc",
 		},
 		Input: InputConfig{
 			Mouse:      MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}},
@@ -221,6 +416,14 @@ func Default() *Config {
 		},
 		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
 		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
+		NodeShell: NodeShellConfig{
+			Enabled:     false,
+			Image:       DefaultNodeShellImage,
+			Namespace:   DefaultNodeShellNamespace,
+			MaxDuration: metav1.Duration{Duration: DefaultNodeShellMaxDuration},
+		},
+		PortForward: PortForwardConfig{Address: DefaultPortForwardAddress},
+		Overview:    DefaultOverview(),
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
@@ -255,10 +458,11 @@ func Default() *Config {
 	}
 }
 
-func path() (string, error) {
+// DefaultPath returns the configuration file kc reads: ~/.kc/config.yaml.
+func DefaultPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("locating the home directory: %w", err)
 	}
 	return filepath.Join(home, ".kc", "config.yaml"), nil
 }
@@ -270,173 +474,15 @@ func shellEnv() string {
 	return "sh"
 }
 
-// Load reads ~/.kc/config.yaml if present, otherwise returns defaults.
-func Load() (*Config, error) {
-	cfg := Default()
-	p, err := path()
-	if err != nil {
-		return cfg, err
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return cfg, nil
-		}
-		return cfg, err
-	}
-	// First try strict unmarshal (lower-case tags)
-	if err := yaml.Unmarshal(data, cfg); err == nil {
-		if cfg.Viewer.Theme == "" {
-			cfg.Viewer.Theme = "dracula"
-		}
-		cfg.Viewer.Mode = strings.ToLower(cfg.Viewer.Mode)
-		if cfg.Viewer.Mode != ViewerModeWrap {
-			cfg.Viewer.Mode = ViewerModeScroll
-		}
-		if cfg.Panel.Scrolling.Horizontal.Step <= 0 {
-			cfg.Panel.Scrolling.Horizontal.Step = 4
-		}
-		if cfg.Panel.Table.Mode != TableModeFit && cfg.Panel.Table.Mode != TableModeScroll {
-			cfg.Panel.Table.Mode = TableModeScroll
-		}
-		normalizePanelWidth(&cfg.Panel.Width)
-		if !cfg.Terminal.Follow {
-			// leave as-is; default false means follow disabled
-		}
-		if cfg.Terminal.Mode != TerminalModeCopy && cfg.Terminal.Mode != TerminalModeOverlay {
-			cfg.Terminal.Mode = TerminalModeOverlay
-		}
-		if cfg.Kubernetes.Clusters.TTL.Duration == 0 {
-			cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute}
-		}
-		if cfg.Kubernetes.Discovery.Refresh.Duration == 0 {
-			cfg.Kubernetes.Discovery.Refresh = metav1.Duration{Duration: 30 * time.Second}
-		}
-		if cfg.Kubernetes.Discovery.Refresh.Duration == 0 {
-			cfg.Kubernetes.Discovery.Refresh = metav1.Duration{Duration: 30 * time.Second}
-		}
-		if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 {
-			cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond}
-		}
-		// Normalize resources settings
-		switch cfg.Resources.Order {
-		case OrderAlpha, OrderGroup, OrderFavorites:
-		default:
-			cfg.Resources.Order = OrderFavorites
-		}
-		if strings.EqualFold(cfg.Resources.Columns, ColumnsModeWide) {
-			cfg.Resources.Columns = ColumnsModeWide
-		} else {
-			cfg.Resources.Columns = ColumnsModeNormal
-		}
-		switch {
-		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderName):
-			cfg.Objects.Order = ObjectsOrderName
-		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderNameDesc):
-			cfg.Objects.Order = ObjectsOrderNameDesc
-		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreation):
-			cfg.Objects.Order = ObjectsOrderCreation
-		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreationDesc):
-			cfg.Objects.Order = ObjectsOrderCreationDesc
-		default:
-			cfg.Objects.Order = ObjectsOrderName
-		}
-		if strings.EqualFold(cfg.Objects.Columns, ColumnsModeWide) {
-			cfg.Objects.Columns = ColumnsModeWide
-		} else {
-			cfg.Objects.Columns = ColumnsModeNormal
-		}
-
-		// Normalize commands
-		for i := range cfg.Commands {
-			cmd := &cfg.Commands[i]
-			if cmd.Debounce.Duration == 0 {
-				cmd.Debounce = metav1.Duration{Duration: 500 * time.Millisecond}
-			}
-			if cmd.OnExit == "" {
-				cmd.OnExit = CommandExitKeepOpen
-			}
-			if cmd.Location == "" {
-				cmd.Location = CommandLocationPanel
-			}
-		}
-		return cfg, nil
-	}
-	// Fallback: tolerate legacy/mixed-case keys by normalizing
-	var raw map[string]any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return cfg, err
-	}
-	// Find "viewer" section case-insensitively
-	var viewer any
-	for k, v := range raw {
-		if strings.EqualFold(k, "viewer") {
-			viewer = v
-			break
-		}
-	}
-	if m, ok := viewer.(map[string]any); ok {
-		// Find viewer keys case-insensitively
-		for k, v := range m {
-			if strings.EqualFold(k, "theme") {
-				if s, ok := v.(string); ok && s != "" {
-					cfg.Viewer.Theme = strings.ToLower(s)
-				}
-			}
-			if strings.EqualFold(k, "mode") {
-				if s, ok := v.(string); ok && s != "" {
-					cfg.Viewer.Mode = strings.ToLower(s)
-				}
-			}
-		}
-	}
+// normalizeLoaded fills zero values and folds invalid values of a config
+// read from a file to the values kc uses.
+func normalizeLoaded(cfg *Config) {
 	if cfg.Viewer.Theme == "" {
 		cfg.Viewer.Theme = "dracula"
 	}
+	cfg.Viewer.Mode = strings.ToLower(cfg.Viewer.Mode)
 	if cfg.Viewer.Mode != ViewerModeWrap {
 		cfg.Viewer.Mode = ViewerModeScroll
-	}
-
-	// Try to read panel.scrolling.horizontal.step in a case-insensitive way
-	var panel any
-	for k, v := range raw {
-		if strings.EqualFold(k, "panel") {
-			panel = v
-			break
-		}
-	}
-	if pm, ok := panel.(map[string]any); ok {
-		var scrolling any
-		for k, v := range pm {
-			if strings.EqualFold(k, "scrolling") {
-				scrolling = v
-				break
-			}
-		}
-		if sm, ok := scrolling.(map[string]any); ok {
-			var horizontal any
-			for k, v := range sm {
-				if strings.EqualFold(k, "horizontal") {
-					horizontal = v
-					break
-				}
-			}
-			if hm, ok := horizontal.(map[string]any); ok {
-				for k, v := range hm {
-					if strings.EqualFold(k, "step") {
-						// Accept numbers as int/float
-						switch t := v.(type) {
-						case int:
-							cfg.Panel.Scrolling.Horizontal.Step = t
-						case int64:
-							cfg.Panel.Scrolling.Horizontal.Step = int(t)
-						case float64:
-							cfg.Panel.Scrolling.Horizontal.Step = int(t)
-						}
-					}
-				}
-			}
-		}
 	}
 	if cfg.Panel.Scrolling.Horizontal.Step <= 0 {
 		cfg.Panel.Scrolling.Horizontal.Step = 4
@@ -445,8 +491,14 @@ func Load() (*Config, error) {
 		cfg.Panel.Table.Mode = TableModeScroll
 	}
 	normalizePanelWidth(&cfg.Panel.Width)
+	if cfg.Terminal.Mode != TerminalModeCopy && cfg.Terminal.Mode != TerminalModeOverlay {
+		cfg.Terminal.Mode = TerminalModeOverlay
+	}
 	if cfg.Kubernetes.Clusters.TTL.Duration == 0 {
 		cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute}
+	}
+	if cfg.Kubernetes.Discovery.Refresh.Duration == 0 {
+		cfg.Kubernetes.Discovery.Refresh = metav1.Duration{Duration: 30 * time.Second}
 	}
 	if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 {
 		cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond}
@@ -462,79 +514,64 @@ func Load() (*Config, error) {
 	} else {
 		cfg.Resources.Columns = ColumnsModeNormal
 	}
-	switch {
-	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderName):
-		cfg.Objects.Order = ObjectsOrderName
-	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderNameDesc):
-		cfg.Objects.Order = ObjectsOrderNameDesc
-	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreation):
-		cfg.Objects.Order = ObjectsOrderCreation
-	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreationDesc):
-		cfg.Objects.Order = ObjectsOrderCreationDesc
-	default:
-		cfg.Objects.Order = ObjectsOrderName
-	}
+	cfg.Objects.Order = NormalizeObjectsOrder(cfg.Objects.Order)
 	if strings.EqualFold(cfg.Objects.Columns, ColumnsModeWide) {
 		cfg.Objects.Columns = ColumnsModeWide
 	} else {
 		cfg.Objects.Columns = ColumnsModeNormal
 	}
-	return cfg, nil
+	normalizeNodeShell(&cfg.NodeShell)
+	cfg.PortForward.Address = strings.TrimSpace(cfg.PortForward.Address)
+	if cfg.PortForward.Address == "" {
+		cfg.PortForward.Address = DefaultPortForwardAddress
+	}
+
+	// Normalize commands
+	for i := range cfg.Commands {
+		cmd := &cfg.Commands[i]
+		if cmd.Debounce.Duration == 0 {
+			cmd.Debounce = metav1.Duration{Duration: 500 * time.Millisecond}
+		}
+		if cmd.OnExit == "" {
+			cmd.OnExit = CommandExitKeepOpen
+		}
+		if cmd.Location == "" {
+			cmd.Location = CommandLocationPanel
+		}
+	}
 }
 
-// Save writes the config to ~/.kc/config.yaml, creating the directory if needed.
-func Save(cfg *Config) error {
-	p, err := path()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
+// normalizeForSave applies the canonical spelling of enumerated values
+// before cfg is written to a file.
+func normalizeForSave(cfg *Config) {
 	// Enforce lower-case style names for consistency
-	out := *cfg
-	out.Viewer.Theme = strings.ToLower(out.Viewer.Theme)
-	out.Viewer.Mode = strings.ToLower(out.Viewer.Mode)
-	if out.Viewer.Mode != ViewerModeWrap {
-		out.Viewer.Mode = ViewerModeScroll
+	cfg.Viewer.Theme = strings.ToLower(cfg.Viewer.Theme)
+	cfg.Viewer.Mode = strings.ToLower(cfg.Viewer.Mode)
+	if cfg.Viewer.Mode != ViewerModeWrap {
+		cfg.Viewer.Mode = ViewerModeScroll
 	}
 	// Normalize order value
-	switch out.Resources.Order {
+	switch cfg.Resources.Order {
 	case OrderAlpha, OrderGroup, OrderFavorites:
 	default:
-		out.Resources.Order = OrderFavorites
+		cfg.Resources.Order = OrderFavorites
 	}
-	if strings.EqualFold(out.Resources.Columns, ColumnsModeWide) {
-		out.Resources.Columns = ColumnsModeWide
+	if strings.EqualFold(cfg.Resources.Columns, ColumnsModeWide) {
+		cfg.Resources.Columns = ColumnsModeWide
 	} else {
-		out.Resources.Columns = ColumnsModeNormal
+		cfg.Resources.Columns = ColumnsModeNormal
 	}
-	if out.Resources.PeekInterval.Duration <= 0 {
-		out.Resources.PeekInterval = metav1.Duration{Duration: Default().Resources.PeekInterval.Duration}
+	if cfg.Resources.PeekInterval.Duration <= 0 {
+		cfg.Resources.PeekInterval = metav1.Duration{Duration: Default().Resources.PeekInterval.Duration}
 	}
-	switch {
-	case strings.EqualFold(out.Objects.Order, ObjectsOrderName):
-		out.Objects.Order = ObjectsOrderName
-	case strings.EqualFold(out.Objects.Order, ObjectsOrderNameDesc):
-		out.Objects.Order = ObjectsOrderNameDesc
-	case strings.EqualFold(out.Objects.Order, ObjectsOrderCreation):
-		out.Objects.Order = ObjectsOrderCreation
-	case strings.EqualFold(out.Objects.Order, ObjectsOrderCreationDesc):
-		out.Objects.Order = ObjectsOrderCreationDesc
-	default:
-		out.Objects.Order = ObjectsOrderName
-	}
-	if strings.EqualFold(out.Objects.Columns, ColumnsModeWide) {
-		out.Objects.Columns = ColumnsModeWide
+	cfg.Objects.Order = NormalizeObjectsOrder(cfg.Objects.Order)
+	if strings.EqualFold(cfg.Objects.Columns, ColumnsModeWide) {
+		cfg.Objects.Columns = ColumnsModeWide
 	} else {
-		out.Objects.Columns = ColumnsModeNormal
+		cfg.Objects.Columns = ColumnsModeNormal
 	}
-	normalizePanelWidth(&out.Panel.Width)
-	data, err := yaml.Marshal(&out)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(p, data, 0o644)
+	normalizePanelWidth(&cfg.Panel.Width)
+	normalizeNodeShell(&cfg.NodeShell)
 }
 
 func normalizePanelWidth(width *PanelWidthConfig) {

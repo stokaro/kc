@@ -30,6 +30,8 @@ const (
 
 type nativeSession struct {
 	spec    SessionSpec
+	cfg     *rest.Config
+	client  kubernetes.Interface
 	stdin   io.WriteCloser
 	lineCh  chan string
 	doneCh  chan struct{}
@@ -74,6 +76,8 @@ func newNativeSession(ctx context.Context, cfg *rest.Config, client kubernetes.I
 
 	session := &nativeSession{
 		spec:   spec,
+		cfg:    cfg,
+		client: client,
 		stdin:  stdinWriter,
 		lineCh: make(chan string, 256),
 		doneCh: make(chan struct{}),

@@ -74,6 +74,9 @@ func (m *ConfirmModel) lines() []string {
 			out = append(out, " "+n)
 		}
 	}
+	if m.c.Command != "" {
+		out = append(out, "", " Same as:", " "+m.c.Command)
+	}
 	return append(out, "")
 }
 
@@ -123,17 +126,35 @@ func (m *ConfirmModel) View() tea.View {
 	return tea.NewView(strings.Join(out, "\n"))
 }
 
+// pendingConfirmation is the change a red dialog waits to run: either a
+// row action, run in place, or a cluster action, run in the background.
+type pendingConfirmation struct {
+	row      models.ConfirmedAction
+	cluster  models.ClusterAction
+	panelIdx int // the panel the cluster action came from
+}
+
 // showConfirm opens a red dialog for action and remembers it until the
 // user answers.
 func (a *App) showConfirm(action models.ConfirmedAction) tea.Cmd {
+	return a.showConfirmation(action.Confirmation(), &pendingConfirmation{row: action})
+}
+
+// showClusterActionConfirm opens a red dialog for a cluster action that
+// came from panel panelIdx.
+func (a *App) showClusterActionConfirm(action models.ClusterAction, panelIdx int) tea.Cmd {
+	return a.showConfirmation(action.Confirmation(), &pendingConfirmation{cluster: action, panelIdx: panelIdx})
+}
+
+func (a *App) showConfirmation(c models.Confirmation, pending *pendingConfirmation) tea.Cmd {
+	model := NewConfirmModel(c)
 	// A confirmed action changes the cluster by definition.
 	if a.accessPolicy().ReadOnly {
-		return a.readOnlyRefusal(confirmedActionName(action))
+		return a.readOnlyRefusal(confirmationName(c))
 	}
-	model := NewConfirmModel(action.Confirmation())
 	modal := NewModal("Confirm", model)
 	modal.SetDanger(true)
-	a.pendingConfirm = action
+	a.pendingConfirm = pending
 	a.modalManager.Register("confirm_action", modal)
 	w, h := model.size()
 	a.configureModalWindow(modal, model, a.activePanel, "", min(w+2, max(30, a.width-6)), h+2)
@@ -144,18 +165,28 @@ func (a *App) showConfirm(action models.ConfirmedAction) tea.Cmd {
 
 // handleConfirmResult closes the dialog and runs the action when approved.
 func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
-	action := a.pendingConfirm
+	pending := a.pendingConfirm
 	a.pendingConfirm = nil
 	a.hideModalName("confirm_action")
-	if !msg.ok || action == nil {
+	if !msg.ok || pending == nil {
 		return nil
 	}
 	if a.accessPolicy().ReadOnly {
 		// The context became read-only while the dialog was open.
-		return a.readOnlyRefusal(confirmedActionName(action))
+		return a.readOnlyRefusal(pending.name())
 	}
-	if err := action.Confirm(); err != nil {
+	if pending.cluster != nil {
+		return a.runClusterAction(pending.cluster, pending.panelIdx)
+	}
+	if pending.row == nil {
+		return nil
+	}
+	if err := pending.row.Confirm(); err != nil {
 		return a.ShowToast("Failed: "+err.Error(), 5*time.Second)
+	}
+	if f, ok := pending.row.(models.ConfirmFollowUp); ok {
+		next := f.FollowUp()
+		return func() tea.Msg { return next }
 	}
 	return nil
 }
@@ -163,8 +194,25 @@ func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
 // confirmedActionName names a confirmed action in messages: its dialog
 // title without the question mark ("Start a debug helper").
 func confirmedActionName(action models.ConfirmedAction) string {
-	if name := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(action.Confirmation().Title), "?")); name != "" {
+	return confirmationName(action.Confirmation())
+}
+
+// confirmationName names the action a confirmation asks for, for the
+// read-only refusal.
+func confirmationName(c models.Confirmation) string {
+	if name := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(c.Title), "?")); name != "" {
 		return name
+	}
+	return "This action"
+}
+
+// name names the pending action, for the read-only refusal.
+func (p *pendingConfirmation) name() string {
+	switch {
+	case p.row != nil:
+		return confirmedActionName(p.row)
+	case p.cluster != nil:
+		return confirmationName(p.cluster.Confirmation())
 	}
 	return "This action"
 }

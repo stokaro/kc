@@ -53,6 +53,8 @@ Existing deleting-style logic becomes just another styler registered for `*/*/*`
 * When falling back to `unstructured.UnstructuredList`, we already have the full object to pass into the styler.
 * For table rows, we can pass `RowStyleInfo.TableObject interface{}` (the raw `tablecache.Row`). Stylers can check for `runtime.Unstructured` to get fields. Alternatively, expose a helper `ExtractStatus(obj interface{}, fields ...string)` to make this easier.
 
+Implemented: the built-in stylers derive their color from `ClassifyRowHealth` in `internal/models/row_health.go`, which the "faults only" filter uses too. See `docs/adr/0038-faults-only.md` for the rules per kind.
+
 ## Integration
 
 1. Build the registry and helpers in `internal/models/styling`.

@@ -1,13 +1,13 @@
-// Package access decides whether kc may run an action. Today the only input
-// is the read-only mode (issue #42): Policy.ReadOnly refuses every mutating
-// check. The access review work of issue #69 adds RBAC answers through the
-// decide function of Policy.Permits; the types and names here match it.
+// Package access answers "may the current identity do this?" with Kubernetes
+// SelfSubjectAccessReviews. Results are cached per identity and check for a
+// short time so the UI can gray out actions without blocking on the API.
 //
-// The answers are hints for the UI and a guard against accidental writes.
-// The API server still authorizes every real request.
+// The answers are hints for the UI. The API server still authorizes every
+// real request, so an Unknown result never blocks an action.
 package access
 
 import (
+	"sort"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -36,6 +36,29 @@ func (d Decision) String() string {
 	}
 }
 
+// Identity names who asks: the kubeconfig, the context and the impersonation
+// settings. Reviews are cached per identity, so a context or impersonation
+// change never reuses answers given to someone else.
+type Identity struct {
+	Kubeconfig string
+	Context    string
+	User       string
+	UID        string
+	Groups     []string
+	KubectlCtx string // context plain kubectl uses; --context is omitted when equal
+}
+
+func (i Identity) key() string {
+	groups := append([]string(nil), i.Groups...)
+	sort.Strings(groups)
+	return strings.Join([]string{i.Kubeconfig, i.Context, i.User, i.UID, strings.Join(groups, ",")}, "\x00")
+}
+
+// Impersonated reports whether requests run as another user or group.
+func (i Identity) Impersonated() bool {
+	return strings.TrimSpace(i.User) != "" || strings.TrimSpace(i.UID) != "" || len(i.Groups) > 0
+}
+
 // Check is one resource attribute set for a SelfSubjectAccessReview.
 type Check struct {
 	Resource    schema.GroupVersionResource
@@ -43,6 +66,26 @@ type Check struct {
 	Verb        string
 	Namespace   string
 	Name        string
+}
+
+// TypeLevel returns the check without the object name: "any object of this
+// type in this namespace".
+func (c Check) TypeLevel() Check {
+	c.Name = ""
+	return c
+}
+
+// ResourceString names the resource the way kubectl and RBAC rules do:
+// "pods", "pods/log", "deployments.apps/scale".
+func (c Check) ResourceString() string {
+	r := c.Resource.Resource
+	if c.Resource.Group != "" {
+		r += "." + c.Resource.Group
+	}
+	if c.Subresource != "" {
+		r += "/" + c.Subresource
+	}
+	return r
 }
 
 // Mutating reports whether the check asks for a write. Exec, attach and
@@ -57,7 +100,7 @@ func (c Check) Mutating() bool {
 	}
 }
 
-// Target is the object or resource type an action works on.
+// Target is the object or resource type the access view inspects.
 type Target struct {
 	Resource  schema.GroupVersionResource
 	Namespace string
@@ -76,9 +119,55 @@ func (t Target) SubCheck(subresource, verb string) Check {
 	return c
 }
 
+// StandardVerbs are the verbs the access view always lists.
+var StandardVerbs = []string{"get", "list", "watch", "create", "update", "patch", "delete"}
+
 var (
 	podsGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
 )
+
+// subresourceChecks lists the subresources kc acts on, per resource. The list
+// is static on purpose: it names what kc offers (logs, exec, port-forward,
+// scale), not everything discovery reports.
+func subresourceChecks(t Target) []Check {
+	gr := t.Resource.GroupResource()
+	switch gr {
+	case podsGVR.GroupResource():
+		return []Check{
+			t.SubCheck("log", "get"),
+			t.SubCheck("exec", "create"),
+			t.SubCheck("portforward", "create"),
+			t.SubCheck("attach", "create"),
+			t.SubCheck("eviction", "create"),
+			t.SubCheck("ephemeralcontainers", "patch"),
+		}
+	case schema.GroupResource{Group: "apps", Resource: "deployments"},
+		schema.GroupResource{Group: "apps", Resource: "statefulsets"},
+		schema.GroupResource{Group: "apps", Resource: "replicasets"},
+		schema.GroupResource{Resource: "replicationcontrollers"}:
+		return []Check{
+			t.SubCheck("scale", "get"),
+			t.SubCheck("scale", "update"),
+		}
+	}
+	return nil
+}
+
+// ViewChecks lists what the access view shows for a target: the standard
+// verbs, then the subresources kc uses for that resource. Verbs that only make
+// sense on a collection (list, watch, create) are checked without a name: a
+// named create or list is never what kubectl sends.
+func ViewChecks(t Target) []Check {
+	checks := make([]Check, 0, len(StandardVerbs)+6)
+	for _, verb := range StandardVerbs {
+		c := t.Check(verb)
+		if verb == "create" || verb == "list" {
+			c.Name = ""
+		}
+		checks = append(checks, c)
+	}
+	return append(checks, subresourceChecks(t)...)
+}
 
 // EditChecks are what F4 needs: kubectl edit reads the object and sends a
 // patch.
@@ -91,6 +180,11 @@ func DeleteChecks(t Target) []Check {
 	return []Check{t.Check("delete")}
 }
 
+// LogsChecks are what the logs viewer needs for a pod.
+func LogsChecks(namespace, pod string) []Check {
+	return []Check{{Resource: podsGVR, Subresource: "log", Verb: "get", Namespace: namespace, Name: pod}}
+}
+
 // ExecChecks are what a shell or a pod filesystem browser needs for a pod.
 func ExecChecks(namespace, pod string) []Check {
 	return []Check{{Resource: podsGVR, Subresource: "exec", Verb: "create", Namespace: namespace, Name: pod}}
@@ -101,8 +195,8 @@ func PortForwardChecks(namespace, pod string) []Check {
 	return []Check{{Resource: podsGVR, Subresource: "portforward", Verb: "create", Namespace: namespace, Name: pod}}
 }
 
-// Policy is the user's own restriction on actions, independent of RBAC.
-// ReadOnly comes from the --readonly flag and the readOnly config.
+// Policy is the user's own restriction on actions, independent of RBAC. The
+// read-only mode of issue #42 sets ReadOnly; until then it is always false.
 type Policy struct {
 	ReadOnly bool
 }

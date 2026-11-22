@@ -56,13 +56,6 @@ func (a *App) readOnlyFor(context string) bool {
 	return resolveReadOnly(a.readOnlyOverride, cfg, context)
 }
 
-func (a *App) currentContextName() string {
-	if a.currentCtx == nil {
-		return ""
-	}
-	return a.currentCtx.Name
-}
-
 // refuseReadOnly returns a command that tells the user read-only mode
 // refuses action, or nil when the policy permits the checks. Every mutating
 // handler calls it first, so a key that slips past the function bar still

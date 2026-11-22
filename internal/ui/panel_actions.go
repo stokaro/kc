@@ -35,7 +35,7 @@ type PanelEnvironment struct {
 	AllowDeleteObjects    bool
 	AllowCreateNamespaces bool
 	// Permit reports whether an action needing these access checks stays
-	// enabled (the read-only preference). Nil permits all.
+	// enabled (RBAC answers and the read-only preference). Nil permits all.
 	Permit func(checks ...access.Check) bool
 	// ReadOnly is set when the current context is read-only. A mutating key
 	// pressed then still reaches its handler, which refuses it with a
@@ -78,6 +78,10 @@ func (p *Panel) SetActionHandlers(h PanelActionHandlers) {
 // SetEnvironmentSupplier wires a supplier for environment-level capability hints.
 func (p *Panel) SetEnvironmentSupplier(s PanelEnvironmentSupplier) { p.envSupplier = s }
 
+// SetCommandExecSupplier sets where custom commands started in this panel
+// get their cluster and identity.
+func (p *Panel) SetCommandExecSupplier(s CommandExecSupplier) { p.commandExec = s }
+
 // InvokeAction runs the handler for the requested action when available.
 func (p *Panel) InvokeAction(action PanelAction) tea.Cmd {
 	if p == nil {
@@ -105,6 +109,20 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 		if _, isBack := item.(models.Back); !isBack {
 			if isViewableItem(item) {
 				caps.CanView = true
+				caps.CanCopy = true
+				if logs, ok := item.(models.LogsProvider); ok {
+					spec := logs.LogsSpec()
+					if !env.permits(access.LogsChecks(spec.Namespace, spec.Pod)...) {
+						caps.CanView = false
+						caps.CanCopy = false
+					}
+				}
+			}
+			if _, ok := item.(models.Stoppable); ok {
+				caps.CanDelete = true
+			}
+			if _, ok := item.(models.FSEntryItem); ok {
+				// Directories copy too, to a local panel.
 				caps.CanCopy = true
 			}
 			if obj, ok := item.(models.ObjectItem); ok {

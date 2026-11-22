@@ -10,6 +10,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestResolveReadOnly(t *testing.T) {
@@ -42,11 +43,21 @@ func TestResolveReadOnly(t *testing.T) {
 	}
 }
 
-var readOnlyTestObject = stubObject{
+// readOnlyTestObject knows its instance, as list rows do: delete asks for
+// the UID and the cluster the row was read from.
+var readOnlyTestObject = stubInstance{stubObject: stubObject{
 	id:        "group/v1/tests/foo",
 	namespace: "ns",
 	name:      "foo",
 	verbs:     []string{"get", "list", "update", "delete"},
+}}
+
+type stubInstance struct{ stubObject }
+
+func (stubInstance) UID() types.UID { return "uid-foo" }
+
+func (stubInstance) Origin() models.ObjectOrigin {
+	return models.ObjectOrigin{Cluster: &kccluster.Cluster{}, Context: "eu-prod"}
 }
 
 // readOnlyTestApp returns an app on context "eu-prod", which the config
@@ -303,7 +314,7 @@ func TestReadOnlyDangerousCommands(t *testing.T) {
 }
 
 func TestReadOnlyMarkerInFrame(t *testing.T) {
-	out, hits := renderScopeLabel(panelScopeLabel{Context: "mba", Namespace: "kube-system", ReadOnly: true}, "─", 1, 60)
+	out, hits := renderScopeLabel(panelScopeLabel{Context: "mba", Namespace: "kube-system", ReadOnly: true}, "─", 1, 60, nil)
 	if got := ansi.Strip(out); got != "─ RO  mba : kube-system " {
 		t.Fatalf("label = %q", got)
 	}
