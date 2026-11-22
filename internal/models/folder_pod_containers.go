@@ -113,13 +113,17 @@ func (f *PodContainerListFolder) buildRows(ctx context.Context) ([]table.Row, er
 		sectionPath := append(append([]string{}, f.Path()...), c.Name)
 		name := c.Name
 		kind := c.Kind
+		target := containerExecTarget(f.Deps, f.Namespace, f.Pod, name, kind, c.Stdin, c.TTY)
 		item := NewContainerItem(name, []string{c.Label}, sectionPath, nameStyle, containerViewContent(f.Deps, f.Namespace, f.Pod, name, kind), func() (Folder, error) {
-			return NewPodContainerDetailFolder(f.Deps, sectionPath, f.Namespace, f.Pod, name, kind), nil
+			detail := NewPodContainerDetailFolder(f.Deps, sectionPath, f.Namespace, f.Pod, name, kind)
+			detail.execTarget = &target
+			return detail, nil
 		})
 		item.RowItem.details = c.Detail
 		item.SetPod(f.Namespace, f.Pod)
 		item.SetViewCommand(kubectlCommand(f.Deps, "get", "pod", f.Pod, "-n", f.Namespace, "-o",
 			`jsonpath={.spec.`+containerField(kind)+`[?(@.name=="`+name+`")]}`))
+		item.SetExecTarget(target)
 		rows = append(rows, item)
 	}
 	return rows, nil
@@ -130,15 +134,15 @@ func (f *PodContainerListFolder) extractContainers(pod *corev1.Pod) []containerR
 	switch f.Kind {
 	case containerKindPrimary:
 		for _, c := range pod.Spec.Containers {
-			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: c.Image, Kind: containerKindPrimary})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: c.Image, Kind: containerKindPrimary, Stdin: c.Stdin, TTY: c.TTY})
 		}
 	case containerKindInit:
 		for _, c := range pod.Spec.InitContainers {
-			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "init", Kind: containerKindInit})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "init", Kind: containerKindInit, Stdin: c.Stdin, TTY: c.TTY})
 		}
 	case containerKindEphemeral:
 		for _, c := range pod.Spec.EphemeralContainers {
-			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "ephemeral", Kind: containerKindEphemeral})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "ephemeral", Kind: containerKindEphemeral, Stdin: c.Stdin, TTY: c.TTY})
 		}
 	}
 	return records
@@ -165,6 +169,8 @@ type containerRecord struct {
 	Label  string
 	Detail string
 	Kind   containerKind
+	Stdin  bool
+	TTY    bool
 }
 
 func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {

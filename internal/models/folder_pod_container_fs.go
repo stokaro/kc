@@ -38,6 +38,9 @@ type PodContainerDetailFolder struct {
 	Kind      containerKind
 
 	session *containerSessionHandle
+	// execTarget carries the container's stdin and tty settings from the
+	// list that opened the folder; nil builds a target without them.
+	execTarget *ExecTarget
 }
 
 func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, container string, kind containerKind) *PodContainerDetailFolder {
@@ -79,6 +82,14 @@ func (f *PodContainerDetailFolder) buildRows(ctx context.Context) ([]table.Row, 
 		prevItem.RowItem.details = fmt.Sprintf("Logs of the previous instance (%d restarts)", restarts)
 		rows = append(rows, prevItem)
 	}
+	shellTarget := containerExecTarget(f.Deps, f.Namespace, f.Pod, f.Container, f.Kind, false, false)
+	if f.execTarget != nil {
+		shellTarget = *f.execTarget
+	}
+	shellItem := NewContainerShellItem("shell", []string{"shell"}, append(append([]string{}, f.Path()...), "shell"), shellTarget)
+	shellItem.RowItem.details = "Open a shell (bash, else sh)"
+	shellItem.SetViewCommand(shellTarget.Command(ExecShell))
+	rows = append(rows, shellItem)
 
 	rootPath := append(append([]string{}, f.Path()...), "root")
 	if f.session == nil {

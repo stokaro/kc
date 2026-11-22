@@ -757,6 +757,15 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a.handleKeyMsg(msg, cmds)
 	case models.ConfirmRequest:
 		return a, a.showConfirm(msg.Action)
+	case models.ExecRequest:
+		if panel := a.activePanelRef(); panel != nil {
+			return a, a.resolveExecTarget(panel.Folder(), msg.Item, msg.Mode)
+		}
+		return a, nil
+	case execResolvedMsg:
+		return a, a.handleExecResolved(msg)
+	case execFinishedMsg:
+		return a, a.handleExecFinished(msg)
 	case models.OpenObjectRequest:
 		return a, a.openLinkedObject(msg.Link)
 	case linkSelectMsg:

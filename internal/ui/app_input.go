@@ -268,6 +268,14 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// send Alt by default).
 			a.escPressed = false
 			return a, a.copyPanelCommand()
+		case "x":
+			// Esc x is the fallback for M-x: shell in the selected container.
+			a.escPressed = false
+			return a, a.openContainerSession(models.ExecShell)
+		case "t":
+			// Esc t is the fallback for M-t: attach to the selected container.
+			a.escPressed = false
+			return a, a.openContainerSession(models.ExecAttach)
 		case "p":
 			// Esc p is the fallback for M-p (port forward).
 			a.escPressed = false
@@ -405,6 +413,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, a.openRelated(models.RelatedOwners)
 		case usedByKey:
 			return a, a.openRelated(models.RelatedUsedBy)
+		case containerShellKey:
+			return a, a.openContainerSession(models.ExecShell)
+		case containerAttachKey:
+			return a, a.openContainerSession(models.ExecAttach)
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys
