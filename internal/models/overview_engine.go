@@ -84,9 +84,13 @@ type overviewEngine struct {
 
 	// Kubelet stats: read every statsEvery for the nodes of the last
 	// recompute, in the background.
-	statsFetch  func() (statsFetcher, error)
-	statsEvery  time.Duration
-	statsBusy   bool
+	statsFetch func() (statsFetcher, error)
+	statsEvery time.Duration
+	statsBusy  bool
+	// statsDenied stops the stats rounds after one where every node said
+	// forbidden: the identity may not use nodes/proxy, and asking each
+	// node again every minute only adds 403s.
+	statsDenied bool
 	statsLast   time.Time
 	statsRes    *statsResult
 	lastNodes   []string
@@ -300,7 +304,7 @@ func (e *overviewEngine) refreshMeasured(ctx context.Context) {
 	}
 	e.mu.Lock()
 	e.lastMeasure = m
-	due := !e.statsBusy && e.statsFetch != nil && len(e.lastNodes) > 0 &&
+	due := !e.statsBusy && !e.statsDenied && e.statsFetch != nil && len(e.lastNodes) > 0 &&
 		(e.statsLast.IsZero() || e.now().Sub(e.statsLast) >= e.statsEvery)
 	if due && e.deps.Activity.Paused() {
 		due = false
@@ -328,6 +332,7 @@ func (e *overviewEngine) pollStats(ctx context.Context, nodes []string) {
 	}
 	e.mu.Lock()
 	e.statsRes = &res
+	e.statsDenied = res.denied
 	e.statsBusy = false
 	e.mu.Unlock()
 	e.dirty.Store(true)

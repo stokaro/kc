@@ -181,6 +181,12 @@ type LayoutConfig struct {
 	// default; the panels start one row lower. When false the top row
 	// belongs to the panels and the bar shows only while F9 has it open.
 	MenuBarVisible bool `json:"menuBarVisible"`
+	// LeftPanelMode and RightPanelMode are the modes the panels start in:
+	// list, describe, manifest, logs or info. At least one panel starts in
+	// list mode. Panel modes are not saved between runs, so these apply on
+	// every start.
+	LeftPanelMode  PanelStartMode `json:"leftPanelMode"`
+	RightPanelMode PanelStartMode `json:"rightPanelMode"`
 }
 
 type Config struct {
@@ -484,7 +490,11 @@ type TableConfig struct {
 
 func Default() *Config {
 	return &Config{
-		Layout: LayoutConfig{MenuBarVisible: true},
+		Layout: LayoutConfig{
+			MenuBarVisible: true,
+			LeftPanelMode:  PanelStartList,
+			RightPanelMode: PanelStartInfo,
+		},
 		Viewer: ViewerConfig{
 			Theme: "dracula",
 			Mode:  ViewerModeScroll,
@@ -575,6 +585,7 @@ func shellEnv() string {
 // normalizeLoaded fills zero values and folds invalid values of a config
 // read from a file to the values kc uses.
 func normalizeLoaded(cfg *Config) {
+	cfg.Layout.normalize()
 	if cfg.Viewer.Theme == "" {
 		cfg.Viewer.Theme = "dracula"
 	}
