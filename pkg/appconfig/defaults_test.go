@@ -124,4 +124,7 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Resources.PeekInterval.Duration != b.Resources.PeekInterval.Duration {
 		t.Fatalf("resources.peekInterval mismatch: yaml=%v code=%v", a.Resources.PeekInterval.Duration, b.Resources.PeekInterval.Duration)
 	}
+	if !reflect.DeepEqual(a.NodeShell, b.NodeShell) {
+		t.Fatalf("nodeShell mismatch: yaml=%+v code=%+v", a.NodeShell, b.NodeShell)
+	}
 }

@@ -111,7 +111,63 @@ type Config struct {
 	Resources  ResourcesViewConfig `json:"resources"`
 	Objects    ObjectsConfig       `json:"objects"`
 	Terminal   TerminalConfig      `json:"terminal"`
+	NodeShell  NodeShellConfig     `json:"nodeShell"`
 	Commands   []CommandConfig     `json:"commands"`
+}
+
+// NodeShellConfig controls the node shell: a privileged pod pinned to a
+// node that enters the host namespaces. It is off by default.
+type NodeShellConfig struct {
+	// Enabled turns the node shell on.
+	Enabled bool `json:"enabled"`
+	// Contexts limits the node shell to these kube contexts. Empty means
+	// every context while Enabled is true.
+	Contexts []string `json:"contexts,omitempty"`
+	// Image runs the shell pod. It needs sh and nsenter.
+	Image string `json:"image"`
+	// Namespace holds the shell pod. Pod security admission must allow
+	// privileged pods there.
+	Namespace string `json:"namespace"`
+	// MaxDuration is the pod's activeDeadlineSeconds: the pod is stopped
+	// after this time even while the shell is in use.
+	MaxDuration metav1.Duration `json:"maxDuration"`
+}
+
+// Default node shell values.
+const (
+	DefaultNodeShellImage       = "docker.io/library/busybox:1.36.1"
+	DefaultNodeShellNamespace   = "default"
+	DefaultNodeShellMaxDuration = 8 * time.Hour
+)
+
+// EnabledFor reports whether the node shell may run on context.
+func (c NodeShellConfig) EnabledFor(context string) bool {
+	if !c.Enabled {
+		return false
+	}
+	if len(c.Contexts) == 0 {
+		return true
+	}
+	for _, name := range c.Contexts {
+		if strings.TrimSpace(name) == context {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeNodeShell(c *NodeShellConfig) {
+	c.Image = strings.TrimSpace(c.Image)
+	if c.Image == "" {
+		c.Image = DefaultNodeShellImage
+	}
+	c.Namespace = strings.TrimSpace(c.Namespace)
+	if c.Namespace == "" {
+		c.Namespace = DefaultNodeShellNamespace
+	}
+	if c.MaxDuration.Duration <= 0 {
+		c.MaxDuration = metav1.Duration{Duration: DefaultNodeShellMaxDuration}
+	}
 }
 
 type CommandType string
@@ -216,6 +272,12 @@ func Default() *Config {
 		},
 		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
 		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
+		NodeShell: NodeShellConfig{
+			Enabled:     false,
+			Image:       DefaultNodeShellImage,
+			Namespace:   DefaultNodeShellNamespace,
+			MaxDuration: metav1.Duration{Duration: DefaultNodeShellMaxDuration},
+		},
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
@@ -342,6 +404,7 @@ func Load() (*Config, error) {
 			cfg.Objects.Columns = ColumnsModeNormal
 		}
 
+		normalizeNodeShell(&cfg.NodeShell)
 		// Normalize commands
 		for i := range cfg.Commands {
 			cmd := &cfg.Commands[i]
@@ -525,6 +588,7 @@ func Save(cfg *Config) error {
 		out.Objects.Columns = ColumnsModeNormal
 	}
 	normalizePanelWidth(&out.Panel.Width)
+	normalizeNodeShell(&out.NodeShell)
 	data, err := yaml.Marshal(&out)
 	if err != nil {
 		return err
