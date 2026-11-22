@@ -45,20 +45,23 @@ var ErrHelperConsentNeeded = errors.New("this container needs a debug helper; op
 
 // TransferSession returns the folder's filesystem session for a copy. It
 // reuses the session the listing opened, including a debug helper the
-// user agreed to, and never adds a helper without that consent.
-func (f *PodContainerFSFolder) TransferSession(ctx context.Context) (podfs.ExecSession, error) {
+// user agreed to, and never adds a helper without that consent. The copy
+// holds the session until it calls release, so the session does not close
+// for being idle in the middle of a long copy. release is a no-op when err
+// is set.
+func (f *PodContainerFSFolder) TransferSession(ctx context.Context) (sess podfs.ExecSession, release func(), err error) {
 	if f.session == nil {
-		return nil, fmt.Errorf("pod filesystem unavailable")
+		return nil, func() {}, fmt.Errorf("pod filesystem unavailable")
 	}
-	sess, err := f.session.Session(ctx)
+	sess, release, err = f.session.acquire(ctx)
 	switch {
 	case errors.Is(err, podfs.ErrHelperNeeded):
-		return nil, ErrHelperConsentNeeded
+		return nil, release, ErrHelperConsentNeeded
 	case err != nil:
 		// Name the missing tool (no shell, no stat) instead of a raw exec error.
-		return nil, errors.New(describeFSError("Open filesystem", err))
+		return nil, release, errors.New(describeFSError("Open filesystem", err))
 	}
-	return sess, nil
+	return sess, release, nil
 }
 
 // InvalidateSession drops the filesystem session, for example after a
