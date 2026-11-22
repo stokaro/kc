@@ -308,7 +308,7 @@ func TestAccessTargetForItem(t *testing.T) {
 	if tgt, ok := accessTargetForItem(obj); !ok || tgt.Name != "web" || tgt.Namespace != "ns" || tgt.Resource.Resource != "tests" {
 		t.Fatalf("object target = %+v ok=%v", tgt, ok)
 	}
-	logs := models.NewContainerLogItem("l", []string{"logs"}, nil, models.LogsSpec{Namespace: "ns", Pod: "p", Container: "c"})
+	logs := models.NewContainerLogItem(models.Deps{}, "l", []string{"logs"}, nil, models.LogsSpec{Namespace: "ns", Pod: "p", Container: "c"})
 	if tgt, ok := accessTargetForItem(logs); !ok || tgt.Resource != podsResource || tgt.Name != "p" {
 		t.Fatalf("logs target = %+v ok=%v", tgt, ok)
 	}
@@ -321,7 +321,7 @@ func TestAccessTargetForItem(t *testing.T) {
 }
 
 func TestAccessGatesLogsView(t *testing.T) {
-	logs := models.NewContainerLogItem("logs", []string{"logs"}, nil, models.LogsSpec{Namespace: "ns", Pod: "p", Container: "c"})
+	logs := models.NewContainerLogItem(models.Deps{}, "logs", []string{"logs"}, nil, models.LogsSpec{Namespace: "ns", Pod: "p", Container: "c"})
 	panel := NewPanel("logs")
 	cache := access.NewCache(0, nil)
 	id := access.Identity{Context: "dev"}

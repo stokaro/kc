@@ -39,7 +39,7 @@ func (a *App) accessState() *accessState {
 // impersonation settings the cluster client uses.
 func (a *App) accessIdentity() access.Identity {
 	key := a.currentClusterKey()
-	imp := a.impersonationSpec()
+	imp := a.impersonation()
 	return access.Identity{
 		Kubeconfig: key.KubeconfigPath,
 		Context:    key.ContextName,
