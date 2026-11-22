@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sttts/kc/internal/podexec"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,6 +21,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/podexec"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 const (

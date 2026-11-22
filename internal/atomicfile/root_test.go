@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/atomicfile"
+	"github.com/stokaro/kc/internal/atomicfile"
 )
 
 func TestWriteIn(t *testing.T) {

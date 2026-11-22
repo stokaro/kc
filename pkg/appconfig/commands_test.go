@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	yaml "sigs.k8s.io/yaml"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestParseHotkey(t *testing.T) {

@@ -7,9 +7,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/portforward"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/portforward"
 )
 
 func gvr(group, version, resource string) schema.GroupVersionResource {

@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func infoBar(t *testing.T, s InfoSummary, label string) InfoBar {

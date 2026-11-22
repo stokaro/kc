@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/sttts/kc/internal/filexfer"
-	"github.com/sttts/kc/internal/podfs"
+	"github.com/stokaro/kc/internal/filexfer"
+	"github.com/stokaro/kc/internal/podfs"
 )
 
 // member is one entry of an uploaded archive, as the container saw it.

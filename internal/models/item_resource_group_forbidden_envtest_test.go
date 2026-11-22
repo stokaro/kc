@@ -3,12 +3,12 @@ package models
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/testing/kcenvtest"
-
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // Verify that forbidden peeks mark the resource group as empty/blocked for a limited user.

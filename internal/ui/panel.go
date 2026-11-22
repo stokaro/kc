@@ -8,17 +8,18 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	models "github.com/sttts/kc/internal/models"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
-	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
-	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
-	"github.com/sttts/kc/internal/ui/skin"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	models "github.com/stokaro/kc/internal/models"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	describewidget "github.com/stokaro/kc/internal/ui/panelcontent/describe"
+	listwidget "github.com/stokaro/kc/internal/ui/panelcontent/list"
+	manifestwidget "github.com/stokaro/kc/internal/ui/panelcontent/manifest"
+	"github.com/stokaro/kc/internal/ui/skin"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // Panel represents a file/resource panel

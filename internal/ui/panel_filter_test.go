@@ -10,8 +10,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
+
+	"github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // filterFolder is a namesFolder that hides rows by name with a RowFilter.

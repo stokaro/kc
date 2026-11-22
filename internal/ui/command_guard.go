@@ -6,11 +6,12 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/cmdtemplate"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/cmdtemplate"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // commandConfirmModal is the modal name of the red dialog before a

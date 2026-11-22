@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	table "github.com/sttts/kc/internal/table"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 func backgroundSource(t *testing.T, populate func(context.Context) ([]table.Row, error), onDirty func()) *liveObjectRowSource {

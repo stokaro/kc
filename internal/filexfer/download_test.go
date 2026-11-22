@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/filexfer"
-	"github.com/sttts/kc/internal/podfs"
+	"github.com/stokaro/kc/internal/filexfer"
+	"github.com/stokaro/kc/internal/podfs"
 )
 
 // fakeFS is a container filesystem for the walker: directories map to their

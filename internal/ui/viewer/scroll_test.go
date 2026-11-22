@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/ui/viewer"
+	"github.com/stokaro/kc/internal/ui/viewer"
 )
 
 func TestScrollToLine(t *testing.T) {

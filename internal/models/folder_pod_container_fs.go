@@ -12,12 +12,13 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/podfs"
-	table "github.com/sttts/kc/internal/table"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/podfs"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 const (

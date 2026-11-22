@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sttts/kc/internal/portforward"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/portforward"
 )
 
 var (

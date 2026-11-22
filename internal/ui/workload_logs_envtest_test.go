@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/logmux"
-	"github.com/sttts/kc/internal/models"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/logmux"
+	"github.com/stokaro/kc/internal/models"
 )
 
 // recordingOpener serves one line per stream and then holds the stream open

@@ -9,8 +9,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/nodeaction"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,6 +16,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/nodeaction"
 )
 
 func createEnvtestObject(t *testing.T, cl *kccluster.Cluster, obj crclient.Object) {

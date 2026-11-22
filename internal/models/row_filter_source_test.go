@@ -8,9 +8,10 @@ import (
 	"context"
 	"testing"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 func factRow(name string, health RowHealth, lbls map[string]string) table.Row {

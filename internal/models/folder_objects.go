@@ -7,9 +7,6 @@ import (
 	"sync"
 	"time"
 
-	table "github.com/sttts/kc/internal/table"
-	"github.com/sttts/kc/internal/tablecache"
-	"github.com/sttts/kc/pkg/appconfig"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +15,10 @@ import (
 	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/internal/tablecache"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // ObjectsFolder provides shared scaffolding for object list folders.

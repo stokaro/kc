@@ -8,8 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/nodeaction"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+
+	"github.com/stokaro/kc/internal/nodeaction"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // greyLine renders one line of an mc-style grey dialog. A focused line is

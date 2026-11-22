@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/logmux"
-	"github.com/sttts/kc/internal/models"
+	"github.com/stokaro/kc/internal/logmux"
+	"github.com/stokaro/kc/internal/models"
 )
 
 // The widget test (viewer.TestAppendStyledLines) covers search and theme

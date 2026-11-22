@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/testing/kcenvtest"
-
-	kccluster "github.com/sttts/kc/internal/cluster"
-	models "github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 func TestGoToNamespaceEmptyStaysClusterScope(t *testing.T) {

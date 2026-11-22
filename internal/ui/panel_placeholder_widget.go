@@ -6,8 +6,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // placeholderWidget renders a static message for modes that aren't implemented yet.

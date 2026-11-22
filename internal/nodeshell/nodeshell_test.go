@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/nodeshell"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +16,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+
+	"github.com/stokaro/kc/internal/nodeshell"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 var podsGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}

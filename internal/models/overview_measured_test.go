@@ -14,8 +14,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -25,6 +23,9 @@ import (
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func measuredReport(t *testing.T, ns string, m *overviewMeasured, objs ...crclient.Object) *overviewReport {

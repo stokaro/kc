@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/navigation"
 )
 
 func loc(steps ...string) navigation.Location {

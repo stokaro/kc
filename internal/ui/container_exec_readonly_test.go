@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // Read-only mode refuses shell and attach: kc cannot see what is typed in

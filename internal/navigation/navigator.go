@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/sttts/kc/internal/models"
+	"github.com/stokaro/kc/internal/models"
 )
 
 // Navigator is a minimal, UI-agnostic helper to manage Folder navigation.

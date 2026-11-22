@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
 	corev1 "k8s.io/api/core/v1"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
 )
 
 // TestOverviewEventLinksToTheInvolvedObject maps involved objects with the

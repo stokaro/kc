@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/manifestdiff"
-	"github.com/sttts/kc/internal/ui/viewer"
+
+	"github.com/stokaro/kc/internal/manifestdiff"
+	"github.com/stokaro/kc/internal/ui/viewer"
 )
 
 // compareSnapshot holds the two manifests a comparison was computed from.

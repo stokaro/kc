@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
@@ -21,6 +20,8 @@ import (
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 var overviewTestNow = time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)

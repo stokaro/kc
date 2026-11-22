@@ -6,9 +6,10 @@ import (
 	"slices"
 	"strings"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/util/validation"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/models"
 )
 
 // namespaceScopes is the app's state for namespace scopes that is not a

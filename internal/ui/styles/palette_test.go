@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // TestApplyChangesPanelStyles is not parallel: Apply replaces package state.

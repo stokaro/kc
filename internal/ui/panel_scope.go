@@ -10,10 +10,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/models"
-	navui "github.com/sttts/kc/internal/navigation"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
+	navui "github.com/stokaro/kc/internal/navigation"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // newScopedNavigator returns a navigator whose root is scoped to the panel's

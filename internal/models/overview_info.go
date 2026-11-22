@@ -5,8 +5,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // overviewNodeSummary is the load of one node, kept in the report for the

@@ -7,7 +7,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"github.com/sttts/kc/internal/ui"
+	"github.com/stokaro/kc/internal/ui"
 )
 
 // parseRunConfig parses args as main does and returns the UI options.

@@ -7,13 +7,14 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/explain"
-	"github.com/sttts/kc/internal/models"
-	modeltesting "github.com/sttts/kc/internal/models/testing"
-	nav "github.com/sttts/kc/internal/navigation"
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/openapi"
+
+	"github.com/stokaro/kc/internal/explain"
+	"github.com/stokaro/kc/internal/models"
+	modeltesting "github.com/stokaro/kc/internal/models/testing"
+	nav "github.com/stokaro/kc/internal/navigation"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 var explainTestGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}

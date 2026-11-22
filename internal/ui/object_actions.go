@@ -6,8 +6,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/objectaction"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/objectaction"
 )
 
 // objectActionTarget is the object the F2 user menu offers built-in actions for.

@@ -1,7 +1,7 @@
 package ui
 
 import (
-	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
+	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 )
 
 // logsWidget returns the panel's Logs widget, nil before Logs mode was used.

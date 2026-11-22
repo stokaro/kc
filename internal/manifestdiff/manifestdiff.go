@@ -11,9 +11,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/sttts/kc/internal/textdiff"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/yaml"
+
+	"github.com/stokaro/kc/internal/textdiff"
 )
 
 // ContextLines is the number of unchanged lines shown around each change,

@@ -13,10 +13,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/filexfer"
-	"github.com/sttts/kc/internal/models"
-	nav "github.com/sttts/kc/internal/navigation"
-	"github.com/sttts/kc/internal/podfs"
+
+	"github.com/stokaro/kc/internal/filexfer"
+	"github.com/stokaro/kc/internal/models"
+	nav "github.com/stokaro/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/podfs"
 )
 
 // transferFS is a container filesystem session for the copy tests.

@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	models "github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	models "github.com/stokaro/kc/internal/models"
 )
 
 // namespaceObject is a minimal namespace item.

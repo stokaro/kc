@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/explain"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/openapi"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+
+	"github.com/stokaro/kc/internal/explain"
 )
 
 // fixtureCRD defines a kind named Deployment in another group, so the

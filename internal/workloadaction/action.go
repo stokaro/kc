@@ -12,10 +12,11 @@ import (
 	"context"
 	"strings"
 
-	"github.com/sttts/kc/internal/models"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 var (

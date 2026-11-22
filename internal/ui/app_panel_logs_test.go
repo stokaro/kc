@@ -6,10 +6,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	models "github.com/stokaro/kc/internal/models"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 )
 
 func TestPanelModeOrderHasLogsAfterManifest(t *testing.T) {

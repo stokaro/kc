@@ -3,8 +3,9 @@ package logs
 import (
 	"strings"
 
-	models "github.com/sttts/kc/internal/models"
 	corev1 "k8s.io/api/core/v1"
+
+	models "github.com/stokaro/kc/internal/models"
 )
 
 // DefaultContainerAnnotation names the container kubectl logs picks when a

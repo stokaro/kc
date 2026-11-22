@@ -11,8 +11,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/sttts/kc/internal/cmdtemplate"
 	yaml "sigs.k8s.io/yaml"
+
+	"github.com/stokaro/kc/internal/cmdtemplate"
 )
 
 // CommandPrompt is one named input of a custom command. The dialog shows

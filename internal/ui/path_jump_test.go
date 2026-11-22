@@ -12,11 +12,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sttts/kc/internal/hotlist"
-	"github.com/sttts/kc/internal/models"
-	modeltesting "github.com/sttts/kc/internal/models/testing"
-	navui "github.com/sttts/kc/internal/navigation"
-	"github.com/sttts/kc/internal/table"
+	"github.com/stokaro/kc/internal/hotlist"
+	"github.com/stokaro/kc/internal/models"
+	modeltesting "github.com/stokaro/kc/internal/models/testing"
+	navui "github.com/stokaro/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/table"
 )
 
 // jumpTree is root -> a -> b and root -> c. The rows of a appear only once

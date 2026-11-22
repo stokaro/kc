@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/logmux"
-	"github.com/sttts/kc/internal/logview"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/ui/viewer"
+
+	"github.com/stokaro/kc/internal/logmux"
+	"github.com/stokaro/kc/internal/logview"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/viewer"
 )
 
 // The ui tests are white-box (package ui); LogsViewer is driven through

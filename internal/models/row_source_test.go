@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	table "github.com/sttts/kc/internal/table"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 func TestSliceRowSourcePopulateWithDirtyDuringPopulate(t *testing.T) {

@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/testing/kcenvtest"
-
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestResourceGroupItemUpdatesCountOnInformerEvents(t *testing.T) {

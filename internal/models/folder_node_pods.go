@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 var podGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}

@@ -4,9 +4,10 @@ import (
 	"os"
 	"testing"
 
-	kctesting "github.com/sttts/kc/internal/testing"
-	"github.com/sttts/kc/internal/testing/kcenvtest"
 	"k8s.io/client-go/rest"
+
+	kctesting "github.com/stokaro/kc/internal/testing"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
 )
 
 // testCfg points at the package-wide envtest control plane. It is nil when

@@ -4,9 +4,10 @@ import (
 	"context"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
-	"github.com/sttts/kc/pkg/describe"
+
+	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/describe"
 )
 
 // Size describes the drawable rectangle granted to a widget.

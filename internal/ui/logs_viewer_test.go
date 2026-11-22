@@ -9,7 +9,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 // fakeLogStreams records the specs it is asked to open and hands out

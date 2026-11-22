@@ -7,8 +7,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/sttts/kc/internal/hotlist"
-	"github.com/sttts/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/hotlist"
+	"github.com/stokaro/kc/internal/navigation"
 )
 
 var (

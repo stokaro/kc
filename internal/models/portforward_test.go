@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/portforward"
-	table "github.com/sttts/kc/internal/table"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"github.com/stokaro/kc/internal/portforward"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 func TestPortForwardTargetFor(t *testing.T) {

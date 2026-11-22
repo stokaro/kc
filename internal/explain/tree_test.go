@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/explain"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/explain"
 )
 
 var (

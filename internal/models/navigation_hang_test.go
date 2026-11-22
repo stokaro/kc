@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // A slow apiserver peek must not block the UI thread: EmptyCached returns at

@@ -8,10 +8,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sttts/kc/internal/explain"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/openapi"
+
+	"github.com/stokaro/kc/internal/explain"
 )
 
 // fakeServer serves /openapi/v3 from fixture files and counts requests.

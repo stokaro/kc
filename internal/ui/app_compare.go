@@ -8,10 +8,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/manifestdiff"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/manifestdiff"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 const (

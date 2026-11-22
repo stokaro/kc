@@ -3,7 +3,7 @@ package logview_test
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/logview"
+	"github.com/stokaro/kc/internal/logview"
 )
 
 func TestLogKeepsRecordsAcrossFilters(t *testing.T) {

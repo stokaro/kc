@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	table "github.com/sttts/kc/internal/table"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // rowSource supplies row windows for a folder. Implementations may cache rows

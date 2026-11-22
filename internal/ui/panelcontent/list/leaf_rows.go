@@ -5,9 +5,10 @@ import (
 	"image/color"
 
 	"charm.land/lipgloss/v2"
-	models "github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+
+	models "github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // displayList decorates folder rows for display. Rows that cannot be entered

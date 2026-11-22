@@ -3,9 +3,10 @@ package navigation
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/explain"
-	"github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/explain"
+	"github.com/stokaro/kc/internal/models"
 )
 
 func TestNavigatorStandalonePath(t *testing.T) {

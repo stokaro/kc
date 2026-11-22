@@ -7,8 +7,9 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // commandChordPrefix starts the two-key hotkeys of custom commands, as

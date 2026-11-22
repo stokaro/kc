@@ -4,7 +4,8 @@ import (
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
-	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
+
+	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 )
 
 // panelLogsOptions adapts a Logs panel widget to the F2 viewer and log

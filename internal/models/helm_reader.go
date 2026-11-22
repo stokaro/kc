@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/sttts/kc/internal/helm"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -14,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/helm"
 )
 
 var secretsGVR = schema.GroupVersionResource{Version: "v1", Resource: "secrets"}

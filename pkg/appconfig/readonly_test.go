@@ -3,8 +3,9 @@ package appconfig_test
 import (
 	"testing"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	yaml "sigs.k8s.io/yaml"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestMatchContext(t *testing.T) {

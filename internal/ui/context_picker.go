@@ -8,9 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/podfs"
-	"github.com/sttts/kc/pkg/kubeconfig"
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/podfs"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 // contextChoices lists the kubeconfig contexts for the picker, the current

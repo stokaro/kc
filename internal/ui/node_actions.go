@@ -6,9 +6,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/access"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/nodeaction"
+
+	"github.com/stokaro/kc/internal/access"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/nodeaction"
 )
 
 // nodeActionKey opens the node actions (cordon, uncordon, drain) for the

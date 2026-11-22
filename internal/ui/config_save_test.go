@@ -12,7 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // runCmd runs cmd and every command a batch holds, and returns the messages.

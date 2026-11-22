@@ -16,7 +16,7 @@ An importable, high-performance table component built on Bubble Tea v2. It suppo
 - `List`: `Lines(top, num int) []Row`, `Above(rowID, num int) []Row`, `Below(rowID, num int) []Row`, `Len() int`, `Find(rowID string) (int, Row, bool)`
 
 ## Integrating
-- Import: `table "github.com/sttts/kc/internal/table"`
+- Import: `table "github.com/stokaro/kc/internal/table"`
 - Construct a provider and the table:
   ```go
   cols := []table.Column{{Title: "ID", Width: 12}, {Title: "Status", Width: 8}}

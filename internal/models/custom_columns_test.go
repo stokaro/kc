@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/tablecache"
-	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/tablecache"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func deployment(ns, name string, images ...string) unstructured.Unstructured {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/helm"
+	"github.com/stokaro/kc/internal/helm"
 )
 
 func TestSplitManifest(t *testing.T) {

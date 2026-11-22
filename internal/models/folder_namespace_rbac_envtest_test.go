@@ -9,9 +9,6 @@ import (
 	"testing"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	kctesting "github.com/sttts/kc/internal/testing"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +18,10 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // namespaceUserEnv is a user whose only grants are Roles on pods in some

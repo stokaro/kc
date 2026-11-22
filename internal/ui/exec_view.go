@@ -7,9 +7,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/podexec"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
 	bubbleterm "github.com/taigrr/bubbleterm"
+
+	"github.com/stokaro/kc/internal/podexec"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // execStreamFunc connects an interactive remote command to stdin and

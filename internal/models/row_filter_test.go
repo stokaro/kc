@@ -3,7 +3,7 @@ package models_test
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
+	"github.com/stokaro/kc/internal/models"
 )
 
 func TestParseRowFilter(t *testing.T) {

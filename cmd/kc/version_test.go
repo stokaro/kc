@@ -11,8 +11,9 @@ import (
 	"testing"
 
 	"github.com/alecthomas/kong"
-	"github.com/sttts/kc"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
+
+	"github.com/stokaro/kc"
 )
 
 type fakeDiscovery struct {

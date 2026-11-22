@@ -7,9 +7,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/sttts/kc/internal/models"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
+
+	models "github.com/stokaro/kc/internal/models"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 )
 
 // openedLogsWidget returns a Logs widget whose stream of item opened with

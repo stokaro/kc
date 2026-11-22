@@ -7,9 +7,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/table"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/table"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // Reusing mocks from panel_capabilities_test.go (copying here for self-containment)

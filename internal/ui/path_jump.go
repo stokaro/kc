@@ -9,8 +9,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	navui "github.com/sttts/kc/internal/navigation"
-	"github.com/sttts/kc/pkg/kubeconfig"
+	navui "github.com/stokaro/kc/internal/navigation"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 // A jump moves a panel to a saved location (a hotlist entry or a history

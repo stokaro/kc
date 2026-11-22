@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	table "github.com/sttts/kc/internal/table"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // PodContainersFolder lists high-level container categories for a pod (main/init/ephemeral).

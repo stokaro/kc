@@ -4,11 +4,12 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
-	modeltesting "github.com/sttts/kc/internal/models/testing"
-	nav "github.com/sttts/kc/internal/navigation"
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
+	modeltesting "github.com/stokaro/kc/internal/models/testing"
+	nav "github.com/stokaro/kc/internal/navigation"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 var podsGVRForTest = schema.GroupVersionResource{Version: "v1", Resource: "pods"}

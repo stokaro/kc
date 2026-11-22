@@ -9,9 +9,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	models "github.com/sttts/kc/internal/models"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
-	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
+
+	models "github.com/stokaro/kc/internal/models"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 )
 
 // chanBody is a log body whose lines the test feeds through a channel. Read

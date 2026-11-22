@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/sttts/kc/internal/logview"
+	"github.com/stokaro/kc/internal/logview"
 )
 
 func isValidUTF8(s string) bool { return utf8.ValidString(s) }

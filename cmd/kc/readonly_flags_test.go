@@ -4,7 +4,8 @@ import (
 	"testing"
 
 	"github.com/alecthomas/kong"
-	"github.com/sttts/kc/internal/ui"
+
+	"github.com/stokaro/kc/internal/ui"
 )
 
 func TestReadOnlyFlags(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
+	"github.com/stokaro/kc/internal/models"
 )
 
 // The gates below came with features that landed next to read-only mode:

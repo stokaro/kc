@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // ContextColors maps kubeconfig context names to a frame color. The zero

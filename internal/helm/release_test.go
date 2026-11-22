@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/helm"
+	"github.com/stokaro/kc/internal/helm"
 )
 
 // fixture is a release record the way Helm marshals it, including fields

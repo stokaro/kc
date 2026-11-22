@@ -5,19 +5,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/testing/kcenvtest"
-
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
-	kctesting "github.com/sttts/kc/internal/testing"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
+	kctesting "github.com/stokaro/kc/internal/testing"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
@@ -57,7 +57,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 			Cl:         cl,
 			Ctx:        ctx,
 			CtxName:    "envtest",
-			KubeConfig: clientcmdapi.Config{CurrentContext: "envtest", Contexts: map[string]*clientcmdapi.Context{"envtest": &clientcmdapi.Context{}}},
+			KubeConfig: clientcmdapi.Config{CurrentContext: "envtest", Contexts: map[string]*clientcmdapi.Context{"envtest": {}}},
 			AppConfig:  cfg,
 		}
 	}

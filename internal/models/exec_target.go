@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
 )
 
 // ExecMode selects what an exec session does in a container.

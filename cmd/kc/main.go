@@ -17,13 +17,14 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/go-logr/logr"
-	"github.com/sttts/kc/internal/ui"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/client-go/rest"
 	klog "k8s.io/klog/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/stokaro/kc/internal/ui"
 )
 
 var (

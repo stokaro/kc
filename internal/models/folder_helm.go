@@ -8,8 +8,9 @@ import (
 	"sync"
 
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/helm"
-	table "github.com/sttts/kc/internal/table"
+
+	"github.com/stokaro/kc/internal/helm"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // helmEntryID is the row ID of the /helm entry in resource listings.

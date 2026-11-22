@@ -5,7 +5,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/ui/panelcontent/reload"
+
+	"github.com/stokaro/kc/internal/ui/panelcontent/reload"
 )
 
 // harness drives a Loader with a fake clock. Ticks fire when their command
