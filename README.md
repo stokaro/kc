@@ -182,7 +182,7 @@ An action is hidden when the resource does not offer the API verb it needs (`pat
 
 ## Helm Releases
 
-`/helm`, the first row of the panel root and of `/namespaces/<name>`, lists the Helm releases of that scope: name, namespace, newest revision, status, chart, app version and last update. kc reads the release records Helm stores as Secrets (type `helm.sh/release.v1`) from its shared cache; it does not need the `helm` binary and never changes a release. `F3` on a release shows its stored status, like `helm status`.
+`/helm`, a row at the top of the panel root (after `/overview`) and the first row of `/namespaces/<name>`, lists the Helm releases of that scope: name, namespace, newest revision, status, chart, app version and last update. kc reads the release records Helm stores as Secrets (type `helm.sh/release.v1`) from its shared cache; it does not need the `helm` binary and never changes a release. `F3` on a release shows its stored status, like `helm status`.
 
 Enter a release for its newest revision:
 
@@ -191,6 +191,14 @@ Enter a release for its newest revision:
 - `/history` lists every stored revision; enter one to see its values, manifest and objects.
 
 kc needs get, list and watch on Secrets in all namespaces for this, because its cache watches Secrets cluster-wide. Without that access `/helm` shows a row that says what is missing and the `helm list` command to use instead. Releases stored with `HELM_DRIVER=configmap` or `sql` are not shown.
+
+## Cluster Overview
+
+The first row of every panel root is `/overview`: one row per finding about the panel's context and namespace scope, in four sections. Capacity compares the CPU and memory requests and limits of the pods on each node with its allocatable, and the pods per node with allocatable pods (`use n/a` until measured usage from metrics.k8s.io is wired in). Health lists nodes that are not ready, under pressure or cordoned; pods that are not ready, pending, crash looping, failing to pull images or to start, OOMKilled or restarting; workloads that are unavailable or rolling out; failed Jobs and CronJobs; Pending or Lost claims and Released or Failed volumes. Risks lists PodDisruptionBudgets that allow no eviction, pods without requests or without a memory limit, single-replica workloads without a PDB, ResourceQuotas near their limit, and HPAs at their maximum or without metrics. Activity lists warning events and pod restarts inside the window.
+
+Each row has a value and a state: white is ok, yellow a warning, red failed, and dim when kc cannot read the source (the reason is in `F3`). `Enter` lists exactly the objects behind a row, with the reason for each, and `/..` returns. `F3` explains how the value is computed and shows the kubectl commands that show the same inputs. Capacity rows always cover every node and every pod on it; the other rows follow the namespace scope.
+
+The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. Thresholds are set under `overview:` in the configuration.
 
 ## Custom Commands
 
@@ -262,6 +270,7 @@ A command acts on the marked rows when any are marked, otherwise on the highligh
 - `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
 - `panel.skin`, `contexts` – panel colors and per-context frame colors (see [Panel colors](#panel-colors)).
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
+- `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, pods per node, and ResourceQuota use.
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -385,6 +394,21 @@ portForward:
 # Columns per resource type, keyed by group/version/resource (v1/pods for
 # the core group). See "Custom Columns" above.
 columns: {}
+
+overview:
+  # How far back warning events and container restarts count.
+  window: 1h
+  # Restarts (the last one inside window) that make a pod "restarting".
+  restartThreshold: 3
+  # CPU and memory requests on a node, in percent of allocatable.
+  requestsWarnPercent: 80
+  requestsFailPercent: 95
+  # Limits above this percent of allocatable mark a node overcommitted.
+  limitsWarnPercent: 100
+  # Pods on a node, in percent of allocatable pods.
+  podsWarnPercent: 90
+  # A ResourceQuota is flagged when any used value reaches this percent.
+  quotaWarnPercent: 80
 ```
 
 ### Panel colors

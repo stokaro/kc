@@ -87,6 +87,21 @@ portForward:
 #       wide: true
 columns: {}
 
+overview:
+  # How far back warning events and container restarts count.
+  window: 1h
+  # Restarts (the last one inside window) that make a pod "restarting".
+  restartThreshold: 3
+  # CPU and memory requests on a node, in percent of allocatable.
+  requestsWarnPercent: 80
+  requestsFailPercent: 95
+  # Limits above this percent of allocatable mark a node overcommitted.
+  limitsWarnPercent: 100
+  # Pods on a node, in percent of allocatable pods.
+  podsWarnPercent: 90
+  # A ResourceQuota is flagged when any used value reaches this percent.
+  quotaWarnPercent: 80
+
 commands:
   - name: Top Nodes
     command: kubectl top nodes

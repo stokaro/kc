@@ -34,6 +34,8 @@ func (f *RootFolder) NamespaceScope() string { return f.namespace }
 
 func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, 64)
+	// The overview costs nothing until it is entered.
+	rows = append(rows, overviewRootItem(f.Deps, f.namespace, f.Path()))
 	nameStyle := WhiteStyle()
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
