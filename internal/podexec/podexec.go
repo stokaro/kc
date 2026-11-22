@@ -7,15 +7,16 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/streaming/pkg/httpstream"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -105,7 +106,19 @@ func (q *SizeQueue) Push(width, height int) {
 	case <-q.ch:
 	default:
 	}
-	q.ch <- remotecommand.TerminalSize{Width: uint16(width), Height: uint16(height)}
+	q.ch <- remotecommand.TerminalSize{Width: clampUint16(width), Height: clampUint16(height)}
+}
+
+// clampUint16 limits a terminal dimension to the uint16 range of a
+// TerminalSize.
+func clampUint16(n int) uint16 {
+	switch {
+	case n < 0:
+		return 0
+	case n > math.MaxUint16:
+		return math.MaxUint16
+	}
+	return uint16(n)
 }
 
 // Next blocks until a size arrives; nil ends the resize loop of the stream.

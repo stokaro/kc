@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,7 +41,7 @@ func running() corev1.ContainerState {
 
 func pod(name string, lbls map[string]string, restarts int32) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "web", Name: name, UID: types.UID("uid-" + name), Labels: lbls},
+		Namespace: "web", Name: name, UID: types.UID("uid-" + name), Labels: lbls,
 		Spec: corev1.PodSpec{
 			InitContainers: []corev1.Container{{Name: "init"}},
 			Containers:     []corev1.Container{{Name: "app"}, {Name: "sidecar"}},
@@ -69,7 +68,7 @@ func toUnstructured(t *testing.T, p *corev1.Pod) *unstructured.Unstructured {
 func TestPodTargets(t *testing.T) {
 	t.Parallel()
 	p := pod("api-1", nil, 2)
-	p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug"}}}
+	p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{Name: "debug"}}
 	p.Status.EphemeralContainerStatuses = []corev1.ContainerStatus{{Name: "debug", State: running()}}
 
 	got := logmux.PodTargets(p)
@@ -163,7 +162,7 @@ func TestWorkloadSelector(t *testing.T) {
 		u := &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "apps/v1", "kind": "Deployment",
 			"metadata": map[string]any{"name": "api", "namespace": "web"},
-			"spec":     map[string]any{},
+			"spec":     make(map[string]any),
 		}}
 		if selector != nil {
 			u.Object["spec"].(map[string]any)["selector"] = selector
@@ -185,7 +184,7 @@ func TestWorkloadSelector(t *testing.T) {
 			want: "tier in (a,b)",
 		},
 		{name: "missing", selector: nil, wantErr: logmux.ErrNoSelector},
-		{name: "empty", selector: map[string]any{}, wantErr: logmux.ErrNoSelector},
+		{name: "empty", selector: make(map[string]any), wantErr: logmux.ErrNoSelector},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

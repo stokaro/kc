@@ -46,12 +46,12 @@ func restartTargets() map[string]crclient.Object {
 	return map[string]crclient.Object{
 		"deployments": d,
 		"statefulsets": &appsv1.StatefulSet{
-			ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: ns},
-			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1), Selector: sel, Template: tmpl},
+			Name: "web", Namespace: ns,
+			Spec: appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1), Selector: sel, Template: tmpl},
 		},
 		"daemonsets": &appsv1.DaemonSet{
-			ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: ns},
-			Spec:       appsv1.DaemonSetSpec{Selector: sel, Template: tmpl},
+			Name: "web", Namespace: ns,
+			Spec: appsv1.DaemonSetSpec{Selector: sel, Template: tmpl},
 		},
 	}
 }

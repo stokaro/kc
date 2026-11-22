@@ -116,7 +116,7 @@ func New(deps panelcontent.WidgetDeps, opts Options) *Widget {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Widget{deps: deps, opts: opts, history: map[string]*history{}}
+	return &Widget{deps: deps, opts: opts, history: make(map[string]*history)}
 }
 
 // Init reads the summary at once and starts the ticks.
@@ -337,10 +337,7 @@ func barLine(b models.InfoBar, width int) string {
 	if b.Flag != "" && b.Flag != "ok" {
 		tail += " " + b.Flag
 	}
-	n := width - ansi.StringWidth(label) - ansi.StringWidth(tail)
-	if n < 4 {
-		n = 4
-	}
+	n := max(width-ansi.StringWidth(label)-ansi.StringWidth(tail), 4)
 	bar := renderBar(b.Percent, n)
 	style := models.RowHealthStyle(b.Health, nil)
 	if style != nil {

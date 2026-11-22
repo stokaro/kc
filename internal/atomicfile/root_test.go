@@ -14,7 +14,7 @@ import (
 func TestWriteIn(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "ro.txt"), []byte("ro"), 0o444); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "ro.txt"), []byte("ro"), 0o400); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("/etc/hosts", filepath.Join(dir, "link")); err != nil {

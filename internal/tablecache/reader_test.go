@@ -124,8 +124,8 @@ func TestRESTTableFetcherListUnknownGroupVersion(t *testing.T) {
 
 	requestCh := make(chan *http.Request, 1)
 	response := &metav1.Table{
-		TypeMeta: metav1.TypeMeta{APIVersion: "meta.k8s.io/v1", Kind: "Table"},
-		ListMeta: metav1.ListMeta{ResourceVersion: "123"},
+		APIVersion: "meta.k8s.io/v1", Kind: "Table",
+		ResourceVersion: "123",
 	}
 	payload, err := json.Marshal(response)
 	if err != nil {
@@ -262,45 +262,41 @@ func buildTestTable(t *testing.T) *metav1.Table {
 
 	pods := []corev1.Pod{
 		{
-			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "pod-a",
-				Namespace:       "default",
-				Labels:          map[string]string{"app": "demo"},
-				Annotations:     map[string]string{"anno": "value"},
-				Finalizers:      []string{"finalizer"},
-				ResourceVersion: "100",
-				UID:             "uid-a",
-				ManagedFields:   []metav1.ManagedFieldsEntry{{Manager: "manager"}},
-			},
+			APIVersion: "v1", Kind: "Pod",
+			Name:            "pod-a",
+			Namespace:       "default",
+			Labels:          map[string]string{"app": "demo"},
+			Annotations:     map[string]string{"anno": "value"},
+			Finalizers:      []string{"finalizer"},
+			ResourceVersion: "100",
+			UID:             "uid-a",
+			ManagedFields:   []metav1.ManagedFieldsEntry{{Manager: "manager"}},
 		},
 		{
-			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "pod-b",
-				Namespace:       "default",
-				ResourceVersion: "101",
-				UID:             "uid-b",
-			},
+			APIVersion: "v1", Kind: "Pod",
+			Name:            "pod-b",
+			Namespace:       "default",
+			ResourceVersion: "101",
+			UID:             "uid-b",
 		},
 	}
 
 	rows := make([]metav1.TableRow, len(pods))
 	for i := range pods {
-		meta := &metav1.PartialObjectMetadata{
+		objMeta := &metav1.PartialObjectMetadata{
 			TypeMeta:   pods[i].TypeMeta,
 			ObjectMeta: pods[i].ObjectMeta,
 		}
 		rows[i] = metav1.TableRow{
-			Cells:  []interface{}{pods[i].Name},
-			Object: runtime.RawExtension{Object: meta},
+			Cells:  []any{pods[i].Name},
+			Object: runtime.RawExtension{Object: objMeta},
 		}
 	}
 
 	return &metav1.Table{
 		ColumnDefinitions: []metav1.TableColumnDefinition{{Name: "Name", Type: "string"}},
 		Rows:              rows,
-		ListMeta:          metav1.ListMeta{ResourceVersion: "200"},
+		ResourceVersion:   "200",
 	}
 }
 
@@ -342,7 +338,7 @@ func (f *fakeFetcher) WatchObjects(ctx context.Context, mapping *meta.RESTMappin
 	return f.WatchTable(ctx, mapping, namespace, opts)
 }
 
-func (f *fakeFetcher) GetTable(context.Context, *meta.RESTMapping, string, string) (*metav1.Table, error) {
+func (f *fakeFetcher) GetTable(_ context.Context, _ *meta.RESTMapping, _, _ string) (*metav1.Table, error) {
 	if f.table == nil {
 		return nil, fmt.Errorf("no table configured")
 	}

@@ -3,6 +3,7 @@ package viewer
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -70,7 +71,6 @@ type Widget struct {
 	searchQuery      string
 	searchOpts       SearchOptions
 	searchRe         *regexp.Regexp
-	searchErr        string
 	searchMatches    []matchLocation
 	searchMatchIndex map[int][]int
 	activeMatch      int
@@ -115,7 +115,7 @@ func (w *Widget) SetContent(text string, meta Metadata) {
 	w.styled = nil
 	w.updateMaxLineWidth()
 	if w.plain {
-		w.lines = append([]string{}, w.rawLines...)
+		w.lines = append(make([]string, 0), w.rawLines...)
 	} else {
 		w.highlight()
 	}
@@ -135,7 +135,7 @@ func (w *Widget) UpdateContent(text string, meta Metadata) {
 	w.rawLines = strings.Split(text, "\n")
 	w.updateMaxLineWidth()
 	if w.plain {
-		w.lines = append([]string{}, w.rawLines...)
+		w.lines = append(make([]string, 0), w.rawLines...)
 	} else {
 		w.highlight()
 	}
@@ -330,7 +330,7 @@ func (w *Widget) View(frame Frame) string {
 	body := strings.Join(lines, "\n")
 	contentW := max(1, frame.Width)
 	contentH := max(1, frame.Height)
-	style := uistyles.PanelContentStyle.Copy().Height(contentH).MaxHeight(contentH)
+	style := uistyles.PanelContentStyle.Height(contentH).MaxHeight(contentH)
 	if w.wrapMode {
 		style = style.Width(contentW).MaxWidth(contentW)
 	}
@@ -366,15 +366,12 @@ func (w *Widget) Footer(width int) string {
 func (w *Widget) Metadata() Metadata { return w.metadata }
 
 // Position returns the one-based index of the last visible line and total lines.
-func (w *Widget) Position() (current int, total int) {
+func (w *Widget) Position() (current, total int) {
 	total = len(w.lines)
 	if total == 0 {
 		return 0, 0
 	}
-	end := w.offset + w.page()
-	if end > total {
-		end = total
-	}
+	end := min(w.offset+w.page(), total)
 	if end <= 0 {
 		end = 1
 	}
@@ -404,14 +401,11 @@ func (w *Widget) ScrollToEnd() {
 		w.offset = 0
 		return
 	}
-	w.offset = len(w.lines) - page
-	if w.offset < 0 {
-		w.offset = 0
-	}
+	w.offset = max(len(w.lines)-page, 0)
 }
 
 // ScrollIndicators reports whether additional content exists above or below.
-func (w *Widget) ScrollIndicators() (bool, bool) {
+func (w *Widget) ScrollIndicators() (above, below bool) {
 	if len(w.lines) == 0 {
 		return false, false
 	}
@@ -445,7 +439,7 @@ func (w *Widget) FooterStatusText(width int) string {
 		return ""
 	}
 	trimmed := trimToWidth(summary, width)
-	return searchInputStyle.Copy().Width(width).Render(trimmed)
+	return searchInputStyle.Width(width).Render(trimmed)
 }
 
 // FooterCursor returns nil: the search string is edited in the search dialog,
@@ -491,7 +485,7 @@ func (w *Widget) highlight() {
 	} else {
 		style := styles.Get(w.theme)
 		if style == nil {
-			style = styles.Monokai
+			style = styles.Get("monokai")
 		}
 		rendered = renderTokensWithStyle(style, iterator)
 	}
@@ -538,11 +532,8 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 		w.scrollBy(-w.page())
 	case "pgdown":
 		w.scrollBy(w.page())
-	case "ctrl+f":
-		if cmd := w.beginSearch(); cmd != nil {
-			return cmd, true
-		}
-		return nil, true
+	case "ctrl+f", "f7", "/":
+		return w.beginSearch(), true
 	case "home", "g":
 		w.offset = 0
 	case "end", "G":
@@ -552,22 +543,11 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 		w.clampHorizontalOffset()
 	case "ctrl+e":
 		w.hOffset = w.maxHorizontalOffset()
-	case "f7", "/":
-		if cmd := w.beginSearch(); cmd != nil {
-			return cmd, true
-		}
-		return nil, true
 	case "f2":
-		if w.onOptions != nil {
-			return w.onOptions(), true
-		}
-		return nil, false
-	case "f3":
+		return runCallback(w.onOptions)
+	case "f3", "f10":
 		// F3 toggles the viewer like in Midnight Commander: it closes it.
-		if w.onClose != nil {
-			return w.onClose(), true
-		}
-		return nil, false
+		return runCallback(w.onClose)
 	case "shift+f7", "n":
 		if w.nextMatch() {
 			return nil, true
@@ -577,19 +557,20 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 			return nil, true
 		}
 	case "f4":
-		if w.onEdit != nil {
-			return w.onEdit(), true
-		}
-		return nil, false
-	case "f10":
-		if w.onClose != nil {
-			return w.onClose(), true
-		}
-		return nil, false
+		return runCallback(w.onEdit)
 	default:
 		return nil, false
 	}
 	return nil, true
+}
+
+// runCallback runs an optional key callback. The key is handled only when
+// the callback is set.
+func runCallback(fn func() tea.Cmd) (tea.Cmd, bool) {
+	if fn == nil {
+		return nil, false
+	}
+	return fn(), true
 }
 
 func (w *Widget) handleSearchDialog(key tea.KeyMsg) tea.Cmd {
@@ -670,26 +651,6 @@ func (w *Widget) clearSearchState() {
 	}
 }
 
-func (w *Widget) hasSearchQuery() bool {
-	return w.searchRe != nil
-}
-
-func (w *Widget) alignToEnd() {
-	start := w.offset
-	end := min(len(w.rawLines), w.offset+w.page())
-	maxLen := 0
-	for i := start; i < end; i++ {
-		if length := runeWidth(w.rawLines[i]); length > maxLen {
-			maxLen = length
-		}
-	}
-	if maxLen > w.width {
-		w.hOffset = maxLen - w.width
-	} else {
-		w.hOffset = 0
-	}
-}
-
 func (w *Widget) adjustHorizontal(delta int) {
 	if delta == 0 || w.wrapMode {
 		w.hOffset = 0
@@ -767,8 +728,8 @@ func (w *Widget) updateSearchMatches() {
 func (w *Widget) firstMatchFromView() int {
 	if w.searchOpts.Backwards {
 		bottom := w.offset + w.page() - 1
-		for i := len(w.searchMatches) - 1; i >= 0; i-- {
-			if w.searchMatches[i].line <= bottom {
+		for i, v := range slices.Backward(w.searchMatches) {
+			if v.line <= bottom {
 				return i
 			}
 		}
@@ -853,18 +814,12 @@ func (w *Widget) scrollToMatch(matchIdx int) {
 	}
 	line := w.searchMatches[matchIdx].line
 	page := w.page()
-	target := line - page/2
-	if target < 0 {
-		target = 0
-	}
+	target := max(line-page/2, 0)
 	maxScroll := max(0, len(w.lines)-page)
 	if target > maxScroll {
 		target = maxScroll
 	}
-	w.offset = target
-	if w.offset < 0 {
-		w.offset = 0
-	}
+	w.offset = max(target, 0)
 	w.hOffset = 0
 }
 
@@ -1019,20 +974,6 @@ func runeWidth(s string) int {
 	return lipgloss.Width(s)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func applyPanelBackground(line string, width int) string {
 	return applyBackground(line, width, "\033[44m")
 }
@@ -1051,8 +992,8 @@ func applyBackground(line string, width int, bg string) string {
 func trimBackgroundPrefix(line string) string {
 	backgrounds := []string{"\033[44m", "\033[45m", "\033[43m"}
 	for _, bg := range backgrounds {
-		if strings.HasPrefix(line, bg) {
-			return strings.TrimPrefix(line, bg)
+		if after, ok := strings.CutPrefix(line, bg); ok {
+			return after
 		}
 	}
 	return line
@@ -1066,74 +1007,32 @@ func renderLineWithMatches(line string, width int, matches []displayMatch, hOffs
 	return applyHighlightedBackground(line, width, adjusted)
 }
 
+// Background codes of the viewer lines and their search matches.
+const (
+	lineBaseBg     = "\033[44m"
+	lineMatchBg    = "\033[45m"
+	lineActiveBg   = "\033[43m"
+	lineSelectedBg = "\033[46m"
+	lineResetCode  = "\033[0m"
+)
+
 func renderWrappedLine(line string, matches []displayMatch) string {
-	const (
-		baseBg    = "\033[44m"
-		matchBg   = "\033[45m"
-		activeBg  = "\033[43m"
-		resetCode = "\033[0m"
-	)
-	const selectedBg = "\033[46m"
-	line = trimBackgroundPrefix(strings.TrimSuffix(line, resetCode))
-	var b strings.Builder
-	b.WriteString(baseBg)
-	currentBg := baseBg
-	displayPos := 0
-	matchIdx := 0
-	for i := 0; i < len(line); {
-		if seq := ansiSequenceLength(line[i:]); seq > 0 {
-			b.WriteString(line[i : i+seq])
-			i += seq
-			continue
-		}
-		_, size := utf8.DecodeRuneInString(line[i:])
-		seg := line[i : i+size]
-		for matchIdx < len(matches) && displayPos >= matches[matchIdx].end {
-			if currentBg != baseBg {
-				b.WriteString(baseBg)
-				currentBg = baseBg
-			}
-			matchIdx++
-		}
-		if matchIdx < len(matches) && displayPos >= matches[matchIdx].start && displayPos < matches[matchIdx].end {
-			desired := matchBg
-			if matches[matchIdx].active {
-				desired = activeBg
-			}
-			if matches[matchIdx].selected {
-				desired = selectedBg
-			}
-			if desired != currentBg {
-				b.WriteString(desired)
-				currentBg = desired
-			}
-		} else if currentBg != baseBg {
-			b.WriteString(baseBg)
-			currentBg = baseBg
-		}
-		b.WriteString(seg)
-		displayPos += runeWidth(seg)
-		i += size
-	}
-	if currentBg != baseBg {
-		b.WriteString(baseBg)
-	}
-	b.WriteString(resetCode)
-	return b.String()
+	line = trimBackgroundPrefix(strings.TrimSuffix(line, lineResetCode))
+	return paintMatches(line, matches)
 }
+
 func applyHighlightedBackground(line string, width int, matches []displayMatch) string {
-	const (
-		baseBg    = "\033[44m"
-		matchBg   = "\033[45m"
-		activeBg  = "\033[43m"
-		resetCode = "\033[0m"
-	)
-	const selectedBg = "\033[46m"
-	line = trimBackgroundPrefix(strings.TrimSuffix(line, resetCode))
+	line = trimBackgroundPrefix(strings.TrimSuffix(line, lineResetCode))
 	line = padLine(line, width)
+	return paintMatches(line, matches)
+}
+
+// paintMatches puts line on the panel background and the matches, sorted
+// display column ranges, on their match backgrounds.
+func paintMatches(line string, matches []displayMatch) string {
 	var b strings.Builder
-	b.WriteString(baseBg)
-	currentBg := baseBg
+	b.WriteString(lineBaseBg)
+	currentBg := lineBaseBg
 	displayPos := 0
 	matchIdx := 0
 	for i := 0; i < len(line); {
@@ -1145,36 +1044,36 @@ func applyHighlightedBackground(line string, width int, matches []displayMatch) 
 		_, size := utf8.DecodeRuneInString(line[i:])
 		seg := line[i : i+size]
 		for matchIdx < len(matches) && displayPos >= matches[matchIdx].end {
-			if currentBg != baseBg {
-				b.WriteString(baseBg)
-				currentBg = baseBg
+			if currentBg != lineBaseBg {
+				b.WriteString(lineBaseBg)
+				currentBg = lineBaseBg
 			}
 			matchIdx++
 		}
 		if matchIdx < len(matches) && displayPos >= matches[matchIdx].start && displayPos < matches[matchIdx].end {
-			desired := matchBg
+			desired := lineMatchBg
 			if matches[matchIdx].active {
-				desired = activeBg
+				desired = lineActiveBg
 			}
 			if matches[matchIdx].selected {
-				desired = selectedBg
+				desired = lineSelectedBg
 			}
 			if desired != currentBg {
 				b.WriteString(desired)
 				currentBg = desired
 			}
-		} else if currentBg != baseBg {
-			b.WriteString(baseBg)
-			currentBg = baseBg
+		} else if currentBg != lineBaseBg {
+			b.WriteString(lineBaseBg)
+			currentBg = lineBaseBg
 		}
 		b.WriteString(seg)
 		displayPos += runeWidth(seg)
 		i += size
 	}
-	if currentBg != baseBg {
-		b.WriteString(baseBg)
+	if currentBg != lineBaseBg {
+		b.WriteString(lineBaseBg)
 	}
-	b.WriteString(resetCode)
+	b.WriteString(lineResetCode)
 	return b.String()
 }
 

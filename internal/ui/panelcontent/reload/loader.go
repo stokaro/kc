@@ -123,10 +123,7 @@ func (l *Loader) Refresh() tea.Cmd {
 		l.dirty = true
 		return nil
 	}
-	wait := Interval - l.now().Sub(l.started)
-	if wait < 0 {
-		wait = 0
-	}
+	wait := max(Interval-l.now().Sub(l.started), 0)
 	return l.tick(wait)
 }
 
@@ -160,6 +157,8 @@ func (l *Loader) start() tea.Cmd {
 // Update consumes the loader's own messages. When a result for the current
 // target arrived and changes what is shown, apply is true and res holds it.
 // handled is false for messages of other loaders.
+//
+//revive:disable-next-line:function-result-limit the named results are documented above; a struct would only wrap them
 func (l *Loader) Update(msg tea.Msg) (res Result, apply bool, cmd tea.Cmd, handled bool) {
 	switch m := msg.(type) {
 	case loadedMsg:

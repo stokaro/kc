@@ -54,7 +54,7 @@ func NewLoader(size int) *Loader {
 	if size <= 0 {
 		size = DefaultCacheSize
 	}
-	return &Loader{max: size, order: list.New(), entries: map[cacheKey]*list.Element{}}
+	return &Loader{max: size, order: list.New(), entries: make(map[cacheKey]*list.Element)}
 }
 
 // openapiPath is the key of a group-version in the /openapi/v3 index.
@@ -103,7 +103,7 @@ func (l *Loader) get(key cacheKey, url string) (*Document, bool) {
 	if !ok {
 		return nil, false
 	}
-	e := el.Value.(*cacheEntry)
+	e, _ := el.Value.(*cacheEntry) // the list holds only *cacheEntry
 	if e.url != url {
 		return nil, false
 	}
@@ -115,7 +115,7 @@ func (l *Loader) put(key cacheKey, url string, doc *Document) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if el, ok := l.entries[key]; ok {
-		e := el.Value.(*cacheEntry)
+		e, _ := el.Value.(*cacheEntry) // the list holds only *cacheEntry
 		e.url, e.doc = url, doc
 		l.order.MoveToFront(el)
 		return

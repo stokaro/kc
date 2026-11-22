@@ -1,7 +1,6 @@
 package manifest
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -27,7 +26,7 @@ func (viewableStub) Details() string { return "" }
 
 func (v viewableStub) Path() []string { return v.path }
 
-func (v viewableStub) ViewContent() (string, string, string, string, string, error) {
+func (v viewableStub) ViewContent() (title, body, lang, mime, filename string, err error) {
 	return "Manifest", strings.Join(v.body, "\n"), "yaml", "text/yaml", "stub.yaml", nil
 }
 
@@ -44,7 +43,7 @@ func (o objectViewableStub) Name() string                     { return o.nm }
 func (objectViewableStub) SupportsVerb(string) bool           { return false }
 
 func TestFrameInfoProvidesIndicatorsAndStatus(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	w := New(panelcontent.WidgetDeps{})
 	_, _ = w.Update(ctx, tea.WindowSizeMsg{Width: 40, Height: 5})
 
@@ -53,13 +52,11 @@ func TestFrameInfoProvidesIndicatorsAndStatus(t *testing.T) {
 		lines[i] = fmt.Sprintf("line %02d", i+1)
 	}
 	item := objectViewableStub{
-		viewableStub: viewableStub{
-			body: lines,
-			path: []string{"namespaces", "default", "pods", "stub"},
-		},
-		gvr: schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
-		ns:  "default",
-		nm:  "stub",
+		body: lines,
+		path: []string{"namespaces", "default", "pods", "stub"},
+		gvr:  schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		ns:   "default",
+		nm:   "stub",
 	}
 	w.SetFocus(ctx, true)
 	cmd := w.OnSelectionChanged(ctx, panelcontent.Selection{
@@ -97,7 +94,7 @@ type countingViewable struct {
 	calls *int
 }
 
-func (c countingViewable) ViewContent() (string, string, string, string, string, error) {
+func (c countingViewable) ViewContent() (title, body, lang, mime, filename string, err error) {
 	*c.calls++
 	return "Manifest", *c.body, "yaml", "text/yaml", "stub.yaml", nil
 }
@@ -118,7 +115,7 @@ func TestManifestLoadsInBackgroundAndRefreshKeepsScroll(t *testing.T) {
 	}
 	body := strings.Join(lines, "\n")
 	calls := 0
-	item := countingViewable{viewableStub: viewableStub{path: []string{"a"}}, body: &body, calls: &calls}
+	item := countingViewable{path: []string{"a"}, body: &body, calls: &calls}
 
 	cmd := w.OnSelectionChanged(ctx, panelcontent.Selection{Item: item})
 	if calls != 0 {

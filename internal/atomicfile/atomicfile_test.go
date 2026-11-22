@@ -92,7 +92,7 @@ func TestWrite(t *testing.T) {
 		{
 			name:     "empty content creates an empty file",
 			reader:   func(context.CancelFunc) io.Reader { return strings.NewReader("") },
-			wantData: []byte{},
+			wantData: make([]byte, 0),
 			wantMode: 0o600,
 		},
 		{

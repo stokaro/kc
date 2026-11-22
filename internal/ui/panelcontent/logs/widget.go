@@ -306,61 +306,11 @@ func (w *Widget) showHint() {
 func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	switch m := msg.(type) {
 	case debounceMsg:
-		if m.w != w {
-			return nil, false
-		}
-		if m.gen != w.gen {
-			return nil, true
-		}
-		if w.opts.Source == nil {
-			w.fail(errors.New("logs unavailable"))
-			return nil, true
-		}
-		open, gen := w.opts.Source(w.req), w.gen
-		return func() tea.Msg {
-			s, err := open()
-			return openedMsg{w: w, gen: gen, stream: s, err: err}
-		}, true
+		return w.onDebounce(m)
 	case openedMsg:
-		if m.w != w {
-			return nil, false
-		}
-		if m.gen != w.gen {
-			return closeStream(m.stream), true
-		}
-		if m.err != nil {
-			w.fail(m.err)
-			return nil, true
-		}
-		w.state, w.cancel = stateStreaming, m.stream.Cancel
-		if m.stream.Spec.Pod != "" {
-			w.spec = m.stream.Spec
-		}
-		if m.stream.Containers != nil {
-			w.containers, w.containersOf = m.stream.Containers, podKey(w.target.Spec)
-		}
-		w.viewer.SetContent("No log lines yet.", viewer.Metadata{Title: w.title()})
-		return read(w, w.gen, m.stream, bufio.NewReader(m.stream.Body)), true
+		return w.onOpened(m)
 	case chunkMsg:
-		if m.w != w {
-			return nil, false
-		}
-		if m.gen != w.gen {
-			return closeStream(m.stream), true
-		}
-		w.append(m.lines)
-		if m.err != nil {
-			w.cancel = nil
-			if errors.Is(m.err, io.EOF) {
-				w.state = stateEnded
-				w.append([]string{"[the log stream ended]"})
-			} else {
-				w.state, w.err = stateFailed, m.err
-				w.append([]string{fmt.Sprintf("[the log stream failed: %v]", m.err)})
-			}
-			return closeStream(m.stream), true
-		}
-		return read(w, w.gen, m.stream, m.reader), true
+		return w.onChunk(m)
 	case tea.KeyMsg:
 		if m.String() == "end" && !w.follow {
 			w.follow = true
@@ -373,6 +323,71 @@ func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		w.follow = w.viewer.AtEnd()
 	}
 	return cmd, handled
+}
+
+// onDebounce opens the stream once the target stopped changing.
+func (w *Widget) onDebounce(m debounceMsg) (tea.Cmd, bool) {
+	if m.w != w {
+		return nil, false
+	}
+	if m.gen != w.gen {
+		return nil, true
+	}
+	if w.opts.Source == nil {
+		w.fail(errors.New("logs unavailable"))
+		return nil, true
+	}
+	open, gen := w.opts.Source(w.req), w.gen
+	return func() tea.Msg {
+		s, err := open()
+		return openedMsg{w: w, gen: gen, stream: s, err: err}
+	}, true
+}
+
+// onOpened starts reading a stream that opened for the current target.
+func (w *Widget) onOpened(m openedMsg) (tea.Cmd, bool) {
+	if m.w != w {
+		return nil, false
+	}
+	if m.gen != w.gen {
+		return closeStream(m.stream), true
+	}
+	if m.err != nil {
+		w.fail(m.err)
+		return nil, true
+	}
+	w.state, w.cancel = stateStreaming, m.stream.Cancel
+	if m.stream.Spec.Pod != "" {
+		w.spec = m.stream.Spec
+	}
+	if m.stream.Containers != nil {
+		w.containers, w.containersOf = m.stream.Containers, podKey(w.target.Spec)
+	}
+	w.viewer.SetContent("No log lines yet.", viewer.Metadata{Title: w.title()})
+	return read(w, w.gen, m.stream, bufio.NewReader(m.stream.Body)), true
+}
+
+// onChunk appends read lines and reads on until the stream ends.
+func (w *Widget) onChunk(m chunkMsg) (tea.Cmd, bool) {
+	if m.w != w {
+		return nil, false
+	}
+	if m.gen != w.gen {
+		return closeStream(m.stream), true
+	}
+	w.append(m.lines)
+	if m.err == nil {
+		return read(w, w.gen, m.stream, m.reader), true
+	}
+	w.cancel = nil
+	if errors.Is(m.err, io.EOF) {
+		w.state = stateEnded
+		w.append([]string{"[the log stream ended]"})
+	} else {
+		w.state, w.err = stateFailed, m.err
+		w.append([]string{fmt.Sprintf("[the log stream failed: %v]", m.err)})
+	}
+	return closeStream(m.stream), true
 }
 
 func (w *Widget) fail(err error) {

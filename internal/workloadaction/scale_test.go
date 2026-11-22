@@ -19,12 +19,12 @@ func scaleTargets() map[string]crclient.Object {
 	return map[string]crclient.Object{
 		"deployments": deployment(3),
 		"statefulsets": &appsv1.StatefulSet{
-			ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: ns},
-			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](3), Selector: sel, Template: podTemplate("web:3", nil)},
+			Name: "web", Namespace: ns,
+			Spec: appsv1.StatefulSetSpec{Replicas: ptr.To[int32](3), Selector: sel, Template: podTemplate("web:3", nil)},
 		},
 		"replicasets": &appsv1.ReplicaSet{
-			ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: ns},
-			Spec:       appsv1.ReplicaSetSpec{Replicas: ptr.To[int32](3), Selector: sel, Template: podTemplate("web:3", nil)},
+			Name: "web", Namespace: ns,
+			Spec: appsv1.ReplicaSetSpec{Replicas: ptr.To[int32](3), Selector: sel, Template: podTemplate("web:3", nil)},
 		},
 	}
 }
@@ -129,7 +129,7 @@ func TestScaleAnswerRefusesBadCounts(t *testing.T) {
 func TestScaleControlledReplicaSetSaysTheOwnerScalesBack(t *testing.T) {
 	owned := scaleTargets()["replicasets"].(*appsv1.ReplicaSet)
 	owned.Name = "web-abc"
-	owned.OwnerReferences = []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: "web", UID: "uid-web", Controller: ptr.To(true)}}
+	owned.OwnerReferences = []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: "web", UID: "uid-web", Controller: new(true)}}
 	free := scaleTargets()["replicasets"].(*appsv1.ReplicaSet)
 	free.Name = "solo"
 	env, _, _ := newEnv(t, owned, free)

@@ -18,15 +18,17 @@ type TableTargetAccessor interface {
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type Row struct {
+	//revive:disable-next-line:struct-tag ",inline" is the Kubernetes API convention for embedded types
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitempty"` //nolint:modernize // Kubernetes API types keep omitempty on metadata, as apimachinery does; omitzero would change the output
 
 	// Columns reflects the column schema returned by the server for this row.
 	Columns []metav1.TableColumnDefinition `json:"columns,omitempty"`
 
+	//revive:disable-next-line:struct-tag ",inline" is the Kubernetes API convention for embedded types
 	metav1.TableRow `json:",inline"`
 
-	target schema.GroupVersionKind `json:"-"`
+	target schema.GroupVersionKind
 }
 
 // NewRow allocates a Row with metadata prepared for the table client API group.
@@ -57,15 +59,16 @@ func (r *Row) SetTableTarget(target schema.GroupVersionKind) {
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type RowList struct {
+	//revive:disable-next-line:struct-tag ",inline" is the Kubernetes API convention for embedded types
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitempty"` //nolint:modernize // Kubernetes API types keep omitempty on metadata, as apimachinery does; omitzero would change the output
 
 	// Columns reflects the table schema for the list.
 	Columns []metav1.TableColumnDefinition `json:"columns,omitempty"`
 
 	Items []Row `json:"items"`
 
-	target schema.GroupVersionKind `json:"-"`
+	target schema.GroupVersionKind
 }
 
 // NewRowList allocates a RowList with metadata prepared for the table client API group.

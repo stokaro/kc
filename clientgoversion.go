@@ -68,8 +68,8 @@ func parseModuleVersionLine(module, line string) (string, bool) {
 
 // client-go modules use v0.x.y while Kubernetes versions are v1.x.y; translate for display.
 func normalizeClientGoVersion(modVersion string) string {
-	if strings.HasPrefix(modVersion, "v0.") {
-		return "v1." + strings.TrimPrefix(modVersion, "v0.")
+	if after, ok := strings.CutPrefix(modVersion, "v0."); ok {
+		return "v1." + after
 	}
 	return modVersion
 }

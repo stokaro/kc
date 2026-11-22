@@ -182,35 +182,9 @@ func (w *Widget) Status() string {
 }
 
 func (w *Widget) Footer(ctx context.Context, width int) string {
-	footerText := ""
+	var footerText string
 	if current := w.CurrentItem(ctx); current != nil {
-		if w.useFolder && w.folder != nil {
-			rowCount := w.folderLen(ctx)
-			rows := w.folderLines(ctx, 0, rowCount)
-			if w.selected >= 0 && w.selected < len(rows) {
-				if id, _, _, ok := rows[w.selected].Columns(); ok && id != "__back__" {
-					if detailer, ok := rows[w.selected].(interface{ Details() string }); ok {
-						if d := detailer.Details(); d != "" {
-							footerText = d
-						}
-					}
-				}
-			}
-		}
-		if footerText == "" && current.Item != nil {
-			if d := current.Details(); d != "" {
-				footerText = d
-			}
-		}
-		if footerText == "" {
-			name := current.Name
-			if name == "" && current.Item != nil {
-				if _, cells, _, ok := current.Columns(); ok && len(cells) > 0 {
-					name = cells[0]
-				}
-			}
-			footerText = name
-		}
+		footerText = w.itemFooter(ctx, current)
 	} else {
 		selectedCount := 0
 		for _, item := range w.items {
@@ -220,16 +194,52 @@ func (w *Widget) Footer(ctx context.Context, width int) string {
 		}
 		footerText = fmt.Sprintf("%d/%d items", selectedCount, len(w.items))
 	}
-	if lipgloss.Width(footerText) > width {
-		if width >= 0 && width < len(footerText) {
-			footerText = footerText[:width]
-		}
+	if lipgloss.Width(footerText) > width && width >= 0 && width < len(footerText) {
+		footerText = footerText[:width]
 	}
 	return uistyles.PanelFooterStyle.
 		Width(width).
 		Height(1).
 		Align(lipgloss.Left).
 		Render(footerText)
+}
+
+// itemFooter is the footer text for the current item: the details of the
+// selected folder row, else the details of the item, else its name.
+func (w *Widget) itemFooter(ctx context.Context, current *Item) string {
+	if d := w.folderRowDetails(ctx); d != "" {
+		return d
+	}
+	if current.Item != nil {
+		if d := current.Details(); d != "" {
+			return d
+		}
+	}
+	name := current.Name
+	if name == "" && current.Item != nil {
+		if _, cells, _, ok := current.Columns(); ok && len(cells) > 0 {
+			name = cells[0]
+		}
+	}
+	return name
+}
+
+// folderRowDetails returns the details of the selected folder row, or "".
+func (w *Widget) folderRowDetails(ctx context.Context) string {
+	if !w.useFolder || w.folder == nil {
+		return ""
+	}
+	rows := w.folderLines(ctx, 0, w.folderLen(ctx))
+	if w.selected < 0 || w.selected >= len(rows) {
+		return ""
+	}
+	if id, _, _, ok := rows[w.selected].Columns(); !ok || id == "__back__" {
+		return ""
+	}
+	if detailer, ok := rows[w.selected].(interface{ Details() string }); ok {
+		return detailer.Details()
+	}
+	return ""
 }
 
 func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
@@ -257,10 +267,7 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 		current = ordinals[w.selected]
 	}
 	visibleStart := w.scroll
-	visibleEnd := w.scroll + w.visibleHeight()
-	if visibleEnd > len(ordinals) {
-		visibleEnd = len(ordinals)
-	}
+	visibleEnd := min(w.scroll+w.visibleHeight(), len(ordinals))
 	bottomOrdinal := current
 	for i := visibleStart; i < visibleEnd; i++ {
 		if ordinals[i] > bottomOrdinal {
@@ -269,16 +276,10 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	}
 	percent := 0
 	if totalReal > 0 {
-		percent = int(math.Round(float64(bottomOrdinal) * 100 / float64(totalReal)))
-		if percent < 0 {
-			percent = 0
-		}
-		if percent > 100 {
-			percent = 100
-		}
+		percent = min(max(int(math.Round(float64(bottomOrdinal)*100/float64(totalReal))), 0), 100)
 	}
 	topMore := false
-	for i := 0; i < visibleStart; i++ {
+	for i := range visibleStart {
 		if ordinals[i] > 0 {
 			topMore = true
 			break
@@ -324,8 +325,8 @@ func (w *Widget) SelectedNavItem(ctx context.Context) (models.Item, bool) {
 			if back, ok := current.Item.(models.Back); ok && back.IsBack() {
 				return nil, false
 			}
-			if navItem, ok := current.Item.(models.Item); ok {
-				return navItem, true
+			if current.Item != nil {
+				return current.Item, true
 			}
 		}
 		return nil, false
@@ -536,10 +537,7 @@ func (w *Widget) SelectByRowID(ctx context.Context, id string) {
 		w.ResetSelection(ctx)
 		return
 	}
-	sel := idx
-	if sel < 0 {
-		sel = 0
-	}
+	sel := max(idx, 0)
 	if sel >= len(w.items) {
 		sel = len(w.items) - 1
 	}
@@ -631,58 +629,51 @@ func (w *Widget) ResetSelection(ctx context.Context) {
 	w.selected = 0
 	w.scroll = 0
 	if w.useFolder && w.folder != nil && w.bt != nil {
-		if w.folderHasBack {
-			w.bt.Select(ctx, "__back__")
-		} else {
-			rows := w.folderLines(ctx, 0, 1)
-			if len(rows) > 0 {
-				if id, _, _, ok := rows[0].Columns(); ok {
-					w.bt.Select(ctx, id)
-				}
-			}
+		if id, ok := w.firstRowID(ctx); ok {
+			w.bt.Select(ctx, id)
 		}
 	}
 	w.saveCurrentPosition()
 }
 
+// firstRowID returns the ID of the first folder row: the back row when the
+// folder has one.
+func (w *Widget) firstRowID(ctx context.Context) (string, bool) {
+	if w.folderHasBack {
+		return "__back__", true
+	}
+	rows := w.folderLines(ctx, 0, 1)
+	if len(rows) == 0 {
+		return "", false
+	}
+	id, _, _, ok := rows[0].Columns()
+	return id, ok
+}
+
 func (w *Widget) RestorePosition() {
 	path := w.currentPath()
-	if path == "" {
+	pos, ok := w.positionMemory[path]
+	if path == "" || !ok {
 		w.selected = 0
 		w.scroll = 0
 		return
 	}
-	if pos, ok := w.positionMemory[path]; ok {
-		w.selected = pos.Selected
-		w.scroll = pos.ScrollTop
-		visible := w.visibleHeight()
-		if w.selected >= len(w.items) {
-			w.selected = len(w.items) - 1
-		}
-		if w.selected < 0 {
-			w.selected = 0
-		}
-		if w.scroll < 0 {
-			w.scroll = 0
-		}
-		maxScroll := 0
-		if len(w.items) > visible {
-			maxScroll = len(w.items) - visible
-		}
-		if w.scroll > maxScroll {
-			w.scroll = maxScroll
-		}
-		if w.selected < w.scroll {
-			w.scroll = w.selected
-		} else if w.selected >= w.scroll+visible {
-			w.scroll = w.selected - visible + 1
-			if w.scroll < 0 {
-				w.scroll = 0
-			}
-		}
-	} else {
-		w.selected = 0
-		w.scroll = 0
+	w.selected = pos.Selected
+	w.scroll = pos.ScrollTop
+	visible := w.visibleHeight()
+	if w.selected >= len(w.items) {
+		w.selected = len(w.items) - 1
+	}
+	w.selected = max(w.selected, 0)
+	maxScroll := 0
+	if len(w.items) > visible {
+		maxScroll = len(w.items) - visible
+	}
+	w.scroll = min(max(w.scroll, 0), maxScroll)
+	if w.selected < w.scroll {
+		w.scroll = w.selected
+	} else if w.selected >= w.scroll+visible {
+		w.scroll = max(w.selected-visible+1, 0)
 	}
 }
 
@@ -694,33 +685,29 @@ func (w *Widget) CurrentItems() []Item { return w.Items() }
 
 // --- input handling --------------------------------------------------------
 
+// functionKeyActions maps the function keys to the panel actions they invoke.
+// F2 is the user menu, as in mc; F9 opens the menu bar.
+var functionKeyActions = map[string]panelcontent.Action{
+	"f1": panelcontent.ActionHelp,
+	"f2": panelcontent.ActionMenu,
+	"f3": panelcontent.ActionView,
+	"f4": panelcontent.ActionEdit,
+	"f7": panelcontent.ActionCreate,
+	"f8": panelcontent.ActionDelete,
+}
+
 func (w *Widget) handleKey(ctx context.Context, m tea.KeyMsg) (tea.Cmd, bool) {
 	key := m.String()
-	if w.useFolder && w.folder != nil && w.bt != nil {
-		switch key {
-		case "up", "down", "left", "right", "home", "end", "pgup", "pgdown", "ctrl+t", "insert":
-			_, _ = w.bt.UpdateWithContext(ctx, m)
-			if id, ok := w.bt.CurrentID(ctx); ok {
-				if item, ok := w.folderItemByID(ctx, id); ok {
-					if back, ok := item.(models.Back); ok && back.IsBack() {
-						w.selected = 0
-						w.scroll = 0
-					} else {
-						w.SelectByRowID(ctx, id)
-					}
-				}
-			}
-			return nil, true
-		}
+	if w.handleTableKey(ctx, m, key) {
+		return nil, true
+	}
+	if action, ok := functionKeyActions[key]; ok {
+		return w.invoke(ctx, action), true
 	}
 	switch key {
-	case "up":
+	case "up", "left":
 		w.moveUp()
-	case "down":
-		w.moveDown()
-	case "left":
-		w.moveUp()
-	case "right":
+	case "down", "right":
 		w.moveDown()
 	case "home":
 		w.moveToTop()
@@ -747,24 +734,41 @@ func (w *Widget) handleKey(ctx context.Context, m tea.KeyMsg) (tea.Cmd, bool) {
 		w.invertSelection()
 	case "+", "-":
 		return w.showGlobPatternDialog(key), true
-	case "f1":
-		return w.invoke(ctx, panelcontent.ActionHelp), true
-	case "f2":
-		// F2 is the user menu, as in mc; F9 opens the menu bar.
-		return w.invoke(ctx, panelcontent.ActionMenu), true
-	case "f3":
-		return w.invoke(ctx, panelcontent.ActionView), true
-	case "f4":
-		return w.invoke(ctx, panelcontent.ActionEdit), true
-	case "f7":
-		return w.invoke(ctx, panelcontent.ActionCreate), true
-	case "f8":
-		return w.invoke(ctx, panelcontent.ActionDelete), true
 	default:
 		return nil, false
 	}
 	w.saveCurrentPosition()
 	return nil, true
+}
+
+// handleTableKey passes the navigation and mark keys to the BigTable of a
+// folder and moves the selection to its cursor. It reports whether it
+// handled the key.
+func (w *Widget) handleTableKey(ctx context.Context, m tea.KeyMsg, key string) bool {
+	if !w.useFolder || w.folder == nil || w.bt == nil {
+		return false
+	}
+	switch key {
+	case "up", "down", "left", "right", "home", "end", "pgup", "pgdown", "ctrl+t", "insert":
+	default:
+		return false
+	}
+	_, _ = w.bt.UpdateWithContext(ctx, m)
+	id, ok := w.bt.CurrentID(ctx)
+	if !ok {
+		return true
+	}
+	item, ok := w.folderItemByID(ctx, id)
+	if !ok {
+		return true
+	}
+	if back, ok := item.(models.Back); ok && back.IsBack() {
+		w.selected = 0
+		w.scroll = 0
+	} else {
+		w.SelectByRowID(ctx, id)
+	}
+	return true
 }
 
 func (w *Widget) handleMouse(ctx context.Context, msg panelcontent.MouseMsg) (tea.Cmd, bool) {
@@ -819,10 +823,7 @@ func (w *Widget) render(ctx context.Context, focused bool) string {
 
 	visibleHeight := max(0, w.height-1)
 	start := w.scroll
-	end := start + visibleHeight
-	if end > len(w.items) {
-		end = len(w.items)
-	}
+	end := min(start+visibleHeight, len(w.items))
 	lines := make([]string, 0, visibleHeight)
 	for i := start; i < end; i++ {
 		lines = append(lines, w.renderItem(w.items[i], i == w.selected && focused))
@@ -1032,10 +1033,7 @@ func (w *Widget) adjustScroll() {
 	if w.selected < w.scroll {
 		w.scroll = w.selected
 	} else if w.selected >= w.scroll+visible {
-		w.scroll = w.selected - visible + 1
-		if w.scroll < 0 {
-			w.scroll = 0
-		}
+		w.scroll = max(w.selected-visible+1, 0)
 	}
 }
 
@@ -1099,8 +1097,8 @@ func (w *Widget) syncFromFolder(ctx context.Context) {
 		displayName := ""
 		if len(rcells) > 0 {
 			displayName = rcells[0]
-			if strings.HasPrefix(displayName, "/") {
-				displayName = strings.TrimPrefix(displayName, "/")
+			if after, ok0 := strings.CutPrefix(displayName, "/"); ok0 {
+				displayName = after
 			}
 		}
 		items = append(items, Item{Item: itemRow, Name: displayName})
@@ -1246,20 +1244,6 @@ func columnsToTitles(cols []table.Column) []string {
 	return out
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func viewString(view tea.View) string {
 	return view.Content
 }
@@ -1281,7 +1265,7 @@ func (w *Widget) QuickSearch(ctx context.Context, prefix string, next bool) bool
 		start++
 	}
 	q := strings.ToLower(prefix)
-	for k := 0; k < n; k++ {
+	for k := range n {
 		it := w.items[(start+k)%n]
 		if it.Item == nil {
 			continue

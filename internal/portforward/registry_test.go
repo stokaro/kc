@@ -239,21 +239,19 @@ func TestRegistryConcurrentStarts(t *testing.T) {
 	reg := portforward.NewRegistry(t.Context())
 	const n = 20
 	var wg sync.WaitGroup
-	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := reg.Start(t.Context(), spec("p"), newFakeRunner(int32(i+1))); err != nil {
+	for i := range int32(n) {
+		wg.Go(func() {
+			if _, err := reg.Start(t.Context(), spec("p"), newFakeRunner(i+1)); err != nil {
 				t.Errorf("Start: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	list := reg.List()
 	if len(list) != n {
 		t.Fatalf("List has %d forwards, want %d", len(list), n)
 	}
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, f := range list {
 		if seen[f.ID] {
 			t.Fatalf("duplicate id %s", f.ID)

@@ -69,17 +69,17 @@ func tokenizeGetArgs(args []string) ([]ui.GetToken, error) {
 	return tokens, nil
 }
 
-func splitResourceName(value string) (string, string, error) {
+func splitResourceName(value string) (resource, name string, err error) {
 	parts := strings.SplitN(value, "/", 2)
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("invalid resource/name value %q", value)
 	}
-	res := strings.TrimSpace(parts[0])
-	name := strings.TrimSpace(parts[1])
-	if res == "" || name == "" {
+	resource = strings.TrimSpace(parts[0])
+	name = strings.TrimSpace(parts[1])
+	if resource == "" || name == "" {
 		return "", "", fmt.Errorf("invalid resource/name value %q", value)
 	}
-	return res, name, nil
+	return resource, name, nil
 }
 
 // errAllNamespacesLogs rejects kc logs -A: a pod name is only unique in one

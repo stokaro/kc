@@ -122,7 +122,7 @@ func TestContainerNames(t *testing.T) {
 	pod := &corev1.Pod{Spec: corev1.PodSpec{
 		InitContainers:      []corev1.Container{{Name: "init"}},
 		Containers:          []corev1.Container{{Name: "app"}, {Name: "sidecar"}},
-		EphemeralContainers: []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug"}}},
+		EphemeralContainers: []corev1.EphemeralContainer{{Name: "debug"}},
 	}}
 	got := logswidget.ContainerNames(pod)
 	want := []string{"init", "app", "sidecar", "debug"}

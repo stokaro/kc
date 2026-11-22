@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"time"
 )
@@ -92,7 +93,7 @@ func NewRecord(line string, src Source) Record {
 
 // splitTimestamp splits "<RFC 3339 time> <rest>" as kubectl --timestamps
 // writes it.
-func splitTimestamp(line string) (string, string, bool) {
+func splitTimestamp(line string) (ts, rest string, ok bool) {
 	i := strings.IndexByte(line, ' ')
 	if i < len("2006-01-02T15:04:05Z") || i > len(time.RFC3339Nano)+6 {
 		return "", "", false
@@ -112,8 +113,8 @@ type object struct {
 // get returns the value of key. With duplicate keys the last one wins, as in
 // encoding/json.
 func (o *object) get(key string) (any, bool) {
-	for i := len(o.keys) - 1; i >= 0; i-- {
-		if o.keys[i] == key {
+	for i, v := range slices.Backward(o.keys) {
+		if v == key {
 			return o.vals[i], true
 		}
 	}
@@ -191,7 +192,7 @@ func readArray(dec *json.Decoder, depth int) ([]any, error) {
 	if depth > maxDepth {
 		return nil, errTooDeep
 	}
-	items := []any{}
+	items := make([]any, 0)
 	for dec.More() {
 		tok, err := dec.Token()
 		if err != nil {

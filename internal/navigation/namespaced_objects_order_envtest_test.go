@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -31,11 +30,11 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-objtest"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: "ns-objtest"}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 	for _, n := range []string{"a", "b", "c"} {
-		if err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm-" + n, Namespace: "ns-objtest"}}); err != nil {
+		if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm-" + n, Namespace: "ns-objtest"}); err != nil {
 			t.Fatalf("create cm %s: %v", n, err)
 		}
 		time.Sleep(1100 * time.Millisecond) // kube timestamps are second precision; ensure unique creation times
@@ -72,7 +71,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	count := f1.Len(ctx)
 	rows := f1.Lines(ctx, 0, count)
 	got := normFirstCellsNS(rows)
-	if len(got) < 2 || !(got[0] == "cm-a" && got[1] == "cm-b") {
+	if len(got) < 2 || got[0] != "cm-a" || got[1] != "cm-b" {
 		t.Fatalf("name asc unexpected: %+v", got)
 	}
 	// Age column present and non-empty
@@ -104,7 +103,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	rows = f2.Lines(ctx, 0, count)
 	got = normFirstCellsNS(rows)
 	idxA, idxB, idxC := indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
-	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
+	if idxA < 0 || idxB < 0 || idxC < 0 || idxC >= idxB || idxB >= idxA {
 		t.Fatalf("name desc unexpected (cm-c>cm-b>cm-a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
 
@@ -115,7 +114,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	rows = f3.Lines(ctx, 0, count)
 	got = normFirstCellsNS(rows)
 	idxA, idxB, idxC = indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
-	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) {
+	if idxA < 0 || idxB < 0 || idxC < 0 || idxA >= idxB || idxB >= idxC {
 		t.Fatalf("creation asc unexpected (cm-a<cm-b<cm-c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
 
@@ -126,10 +125,9 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	rows = f4.Lines(ctx, 0, count)
 	got = normFirstCellsNS(rows)
 	idxA, idxB, idxC = indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
-	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
+	if idxA < 0 || idxB < 0 || idxC < 0 || idxC >= idxB || idxB >= idxA {
 		t.Fatalf("name desc unexpected (cm-c>cm-b>cm-a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
-
 }
 
 func normFirstCellsNS(rows []table.Row) []string {
@@ -140,11 +138,7 @@ func normFirstCellsNS(rows []table.Row) []string {
 			continue
 		}
 		if len(cells) > 0 {
-			v := cells[0]
-			if strings.HasPrefix(v, "/") {
-				v = v[1:]
-			}
-			out = append(out, v)
+			out = append(out, strings.TrimPrefix(cells[0], "/"))
 		}
 	}
 	return out

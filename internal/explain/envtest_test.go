@@ -7,7 +7,6 @@ import (
 	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/openapi"
@@ -23,7 +22,7 @@ func fixtureCRD() *apiextensionsv1.CustomResourceDefinition {
 		return apiextensionsv1.JSONSchemaProps{Type: "string", Description: desc}
 	}
 	return &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: "deployments.fixture.kc.dev"},
+		Name: "deployments.fixture.kc.dev",
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: "fixture.kc.dev",
 			Names: apiextensionsv1.CustomResourceDefinitionNames{Plural: "deployments", Singular: "deployment", Kind: "Deployment", ListKind: "DeploymentList"},
@@ -118,11 +117,11 @@ func TestAgainstAPIServer(t *testing.T) {
 	for {
 		crdDoc, err = loader.Load(ctx, "envtest", client, fixtureV1)
 		if err == nil {
-			if _, rerr := crdDoc.Root(fixtureDeployment); rerr == nil {
+			_, rerr := crdDoc.Root(fixtureDeployment)
+			if rerr == nil {
 				break
-			} else {
-				err = rerr
 			}
+			err = rerr
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("fixture CRD schema not published under /openapi/v3 within 30s; last error: %v", err)

@@ -51,7 +51,7 @@ func ParseQuery(s string) (*Query, error) {
 			neg = true
 			body = body[1:]
 			if body == "" {
-				return nil, fmt.Errorf("%q: nothing after !", term)
+				return nil, fmt.Errorf("%q: nothing after the ! negation", term)
 			}
 		}
 		if path, ok, err := extractTerm(body); err != nil {

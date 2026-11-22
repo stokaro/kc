@@ -53,6 +53,7 @@ func (m *model) Init() tea.Cmd {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
+	// #nosec G204 G702 -- the sample runs the user's own $SHELL.
 	cmd := exec.Command(shell)
 	cmd.Env = os.Environ()
 	return tea.Batch(
@@ -64,22 +65,19 @@ func (m *model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		usableHeight := msg.Height - 1
-		if usableHeight < 1 {
-			usableHeight = 1
-		}
+		usableHeight := max(msg.Height-1, 1)
 		m.width = msg.Width
 		m.height = msg.Height
 		msg.Height = usableHeight
 		model, cmd := m.term.Update(msg)
-		m.term = model.(*bubbleterm.Model)
+		m.term, _ = model.(*bubbleterm.Model)
 		if m.term.GetEmulator() != nil && m.term.GetEmulator().IsProcessExited() {
 			return m, tea.Quit
 		}
 		return m, cmd
 	default:
 		model, cmd := m.term.Update(msg)
-		m.term = model.(*bubbleterm.Model)
+		m.term, _ = model.(*bubbleterm.Model)
 		if m.term.GetEmulator() != nil && m.term.GetEmulator().IsProcessExited() {
 			return m, tea.Quit
 		}

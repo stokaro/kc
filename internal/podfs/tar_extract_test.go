@@ -24,6 +24,7 @@ func localExec(env []string, record *[]string) execFunc {
 		if record != nil {
 			*record = append([]string{container}, command...)
 		}
+		// #nosec G204 -- the fake runs the script the test hands to tar extraction.
 		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr, cmd.Env = streams.Stdin, streams.Stdout, streams.Stderr, env
 		return cmd.Run()
@@ -75,7 +76,7 @@ func buildArchive(t *testing.T, members []tarMember, marker bool) []byte {
 
 func readTree(t *testing.T, dir string) map[string]string {
 	t.Helper()
-	out := map[string]string{}
+	out := make(map[string]string)
 	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || p == dir {
 			return err
@@ -88,6 +89,7 @@ func readTree(t *testing.T, dir string) map[string]string {
 		case d.IsDir():
 			out[rel+"/"] = ""
 		default:
+			// #nosec G122 -- the test reads back a temporary tree it created.
 			data, err := os.ReadFile(p)
 			if err != nil {
 				return err
@@ -168,7 +170,7 @@ func TestExtractScript(t *testing.T) {
 			name: "archive without the marker", entry: "app",
 			archive: func(t *testing.T) []byte { return buildArchive(t, dirTree, false) },
 			wantErr: "incomplete",
-			want:    map[string]string{},
+			want:    make(map[string]string),
 		},
 		{
 			name: "archive cut between members", entry: "app",
@@ -179,13 +181,13 @@ func TestExtractScript(t *testing.T) {
 				return full[:3*512]
 			},
 			wantErr: "incomplete|extracting the archive failed",
-			want:    map[string]string{},
+			want:    make(map[string]string),
 		},
 		{
 			name: "archive cut inside a member", entry: "app",
 			archive: func(t *testing.T) []byte { return buildArchive(t, dirTree, true)[:512+100] },
 			wantErr: "incomplete|extracting the archive failed",
-			want:    map[string]string{},
+			want:    make(map[string]string),
 		},
 	}
 	for _, tc := range cases {
@@ -319,7 +321,7 @@ func writeFile(t *testing.T, p, data string) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -330,7 +332,7 @@ func errorMatches(err error, want string) bool {
 	if err == nil {
 		return false
 	}
-	for _, part := range strings.Split(want, "|") {
+	for part := range strings.SplitSeq(want, "|") {
 		if strings.Contains(err.Error(), part) {
 			return true
 		}

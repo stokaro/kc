@@ -52,7 +52,7 @@ type Pool struct {
 }
 
 func NewPool(ttl, refresh time.Duration) *Pool {
-	p := &Pool{ttl: ttl, refresh: refresh, closing: make(chan struct{}), items: map[Key]*entry{}, now: time.Now}
+	p := &Pool{ttl: ttl, refresh: refresh, closing: make(chan struct{}), items: make(map[Key]*entry), now: time.Now}
 	p.start = p.startCluster
 	return p
 }
@@ -167,7 +167,7 @@ func (p *Pool) startCluster(ctx context.Context, k Key, selectors map[schema.Gro
 	if err != nil {
 		return nil, nil, fmt.Errorf("client config: %w", err)
 	}
-	opts := []Option{}
+	opts := make([]Option, 0)
 	if p.refresh > 0 {
 		opts = append(opts, WithRefreshInterval(p.refresh))
 	}

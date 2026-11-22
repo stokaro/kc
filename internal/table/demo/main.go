@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"time"
@@ -21,25 +21,24 @@ type app struct {
 	focus   int // 0=left, 1=right
 	bstateL int
 	bstateR int
-	ticks   int
 }
 
 func newApp(provider string) app {
 	cols := make([]table.Column, 10)
-	for c := 0; c < 10; c++ {
+	for c := range 10 {
 		// No fixed widths in the demo; BigTable computes widths from visible data in ModeScroll.
 		cols[c] = table.Column{Title: fmt.Sprintf("Col%02d", c+1)}
 	}
 	// Build a demo List provider with ASCII cells and per-cell styles.
 	base := makeBaseRows(1000, 20) // ASCII text only
 	colStyles := []*lipgloss.Style{
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#93C5FD"))), // ID
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))), // Status (value-specific override below)
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA"))),
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA"))),
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))),
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#FBBF24"))),
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#F472B6"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#93C5FD"))), // ID
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))), // Status (value-specific override below)
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#FBBF24"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#F472B6"))),
 	}
 	rows := make([]table.Row, 0, len(base))
 	for i := range base {
@@ -54,11 +53,11 @@ func newApp(provider string) app {
 			if c == 1 { // status column override
 				switch cells[c] {
 				case "ERROR":
-					st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")))
+					st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")))
 				case "WARN":
-					st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")))
+					st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")))
 				case "OK":
-					st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")))
+					st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")))
 				}
 			}
 			if st == nil {
@@ -111,91 +110,8 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	ctx := context.Background()
 	switch v := msg.(type) {
 	case tea.KeyMsg:
-		switch v.String() {
-		case "q", "ctrl+c":
-			return a, tea.Quit
-		case "m":
-			cur := &a.left
-			if a.focus == 1 {
-				cur = &a.right
-			}
-			cur.ToggleMode(ctx)
-			return a, nil
-		case "i":
-			// Insert a new row after current
-			cur := &a.left
-			if a.focus == 1 {
-				cur = &a.right
-			}
-			if id, ok := cur.CurrentID(ctx); ok {
-				nr := table.SimpleRow{ID: fmt.Sprintf("id-%d", time.Now().UnixNano()%1_000_000_000)}
-				nr.SetColumn(0, nr.ID, nil)
-				nr.SetColumn(1, "OK", nil)
-				nr.SetColumn(2, "inserted row", nil)
-				switch l := cur.GetList().(type) {
-				case *table.SliceList:
-					l.InsertAfter(id, nr)
-					cur.SetList(ctx, l)
-				case *table.LinkedList:
-					l.InsertAfterID(id, nr)
-					cur.SetList(ctx, l)
-				}
-			}
-			return a, nil
-		case "d", "delete":
-			// Remove current row
-			cur := &a.left
-			if a.focus == 1 {
-				cur = &a.right
-			}
-			if id, ok := cur.CurrentID(ctx); ok {
-				switch l := cur.GetList().(type) {
-				case *table.SliceList:
-					l.RemoveIDs(id)
-					cur.SetList(ctx, l)
-				case *table.LinkedList:
-					l.RemoveIDs(id)
-					cur.SetList(ctx, l)
-				}
-			}
-			return a, nil
-		case "t":
-			// Toggle provider implementation
-			cur := &a.left
-			if a.focus == 1 {
-				cur = &a.right
-			}
-			list := cur.GetList()
-			src := table.LinesToRows(list.Lines(ctx, 0, list.Len(ctx)))
-			if _, isSlice := cur.GetList().(*table.SliceList); isSlice {
-				cur.SetList(ctx, table.NewLinkedList(src))
-			} else {
-				cur.SetList(ctx, table.NewSliceList(src))
-			}
-			return a, nil
-		case "b":
-			// Cycle inner border presets only (no outside frame, no underline)
-			// 0: none, 1: verticals
-			if a.focus == 0 {
-				a.bstateL = (a.bstateL + 1) % 2
-				a.left.BorderVertical(ctx, a.bstateL == 1)
-			} else {
-				a.bstateR = (a.bstateR + 1) % 2
-				a.right.BorderVertical(ctx, a.bstateR == 1)
-			}
-			return a, nil
-		case "tab":
-			// Switch focus between left and right tables (outer routes keys)
-			if a.focus == 0 {
-				a.focus = 1
-				a.left.Blur(ctx)
-				a.right.Focus(ctx)
-			} else {
-				a.focus = 0
-				a.right.Blur(ctx)
-				a.left.Focus(ctx)
-			}
-			return a, nil
+		if cmd, ok := a.handleKey(ctx, v.String()); ok {
+			return a, cmd
 		}
 	case tea.WindowSizeMsg:
 		// Reserve one line for the demo help header
@@ -230,6 +146,107 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
+// handleKey runs a demo key. It reports whether the key was one.
+func (a *app) handleKey(ctx context.Context, key string) (tea.Cmd, bool) {
+	cur := &a.left
+	if a.focus == 1 {
+		cur = &a.right
+	}
+	switch key {
+	case "q", "ctrl+c":
+		return tea.Quit, true
+	case "m":
+		cur.ToggleMode(ctx)
+	case "i":
+		insertRow(ctx, cur)
+	case "d", "delete":
+		removeRow(ctx, cur)
+	case "t":
+		toggleProvider(ctx, cur)
+	case "b":
+		a.cycleBorder(ctx)
+	case "tab":
+		a.switchFocus(ctx)
+	default:
+		return nil, false
+	}
+	return nil, true
+}
+
+// insertRow inserts a new row after the current one.
+func insertRow(ctx context.Context, cur *table.BigTable) {
+	id, ok := cur.CurrentID(ctx)
+	if !ok {
+		return
+	}
+	nr := table.SimpleRow{ID: fmt.Sprintf("id-%d", time.Now().UnixNano()%1_000_000_000)}
+	nr.SetColumn(0, nr.ID, nil)
+	nr.SetColumn(1, "OK", nil)
+	nr.SetColumn(2, "inserted row", nil)
+	switch l := cur.GetList().(type) {
+	case *table.SliceList:
+		l.InsertAfter(id, nr)
+		cur.SetList(ctx, l)
+	case *table.LinkedList:
+		l.InsertAfterID(id, nr)
+		cur.SetList(ctx, l)
+	}
+}
+
+// removeRow removes the current row.
+func removeRow(ctx context.Context, cur *table.BigTable) {
+	id, ok := cur.CurrentID(ctx)
+	if !ok {
+		return
+	}
+	switch l := cur.GetList().(type) {
+	case *table.SliceList:
+		l.RemoveIDs(id)
+		cur.SetList(ctx, l)
+	case *table.LinkedList:
+		l.RemoveIDs(id)
+		cur.SetList(ctx, l)
+	}
+}
+
+// toggleProvider switches the list between the slice and the linked list
+// implementation.
+func toggleProvider(ctx context.Context, cur *table.BigTable) {
+	list := cur.GetList()
+	src := table.LinesToRows(list.Lines(ctx, 0, list.Len(ctx)))
+	if _, isSlice := cur.GetList().(*table.SliceList); isSlice {
+		cur.SetList(ctx, table.NewLinkedList(src))
+	} else {
+		cur.SetList(ctx, table.NewSliceList(src))
+	}
+}
+
+// cycleBorder cycles the inner border presets of the focused table only (no
+// outside frame, no underline): 0 none, 1 verticals.
+func (a *app) cycleBorder(ctx context.Context) {
+	if a.focus == 0 {
+		a.bstateL = (a.bstateL + 1) % 2
+		a.left.BorderVertical(ctx, a.bstateL == 1)
+	} else {
+		a.bstateR = (a.bstateR + 1) % 2
+		a.right.BorderVertical(ctx, a.bstateR == 1)
+	}
+}
+
+// switchFocus moves the focus between the left and the right table; the
+// outer model routes the keys.
+func (a *app) switchFocus(ctx context.Context) {
+	if a.focus == 0 {
+		a.focus = 1
+		a.left.Blur(ctx)
+		a.right.Focus(ctx)
+	} else {
+		a.focus = 0
+		a.right.Blur(ctx)
+		a.left.Focus(ctx)
+	}
+}
+
 func (a app) View() tea.View {
 	modes := []string{"none", "verticals"}
 	cur := modes[a.bstateL]
@@ -252,12 +269,9 @@ func (a app) View() tea.View {
 func joinSideBySide(aStr, bStr, sep string) string {
 	aLines := strings.Split(strings.TrimRight(aStr, "\n"), "\n")
 	bLines := strings.Split(strings.TrimRight(bStr, "\n"), "\n")
-	n := len(aLines)
-	if len(bLines) > n {
-		n = len(bLines)
-	}
+	n := max(len(bLines), len(aLines))
 	out := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var l, r string
 		if i < len(aLines) {
 			l = aLines[i]
@@ -275,7 +289,6 @@ func viewString(view tea.View) string {
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
 	provider := ""
 	if len(os.Args) > 1 {
 		provider = os.Args[1]
@@ -295,28 +308,25 @@ func (a app) randomlyUpdateStatuses(bt *table.BigTable, p float64) {
 		bt.Refresh(ctx)
 		return
 	}
-	count := int(float64(n) * p)
-	if count < 1 {
-		count = 1
-	}
+	count := max(int(float64(n)*p), 1)
 	statuses := []string{"OK", "WARN", "ERROR"}
-	for i := 0; i < count; i++ {
-		idx := rand.Intn(n)
+	for range count {
+		idx := rand.IntN(n) // #nosec G404 -- demo data, not a secret
 		rows := list.Lines(ctx, idx, 1)
 		if len(rows) != 1 {
 			continue
 		}
 		if r, ok := rows[0].(*table.SimpleRow); ok {
-			val := statuses[rand.Intn(len(statuses))]
+			val := statuses[rand.IntN(len(statuses))] // #nosec G404 -- demo data, not a secret
 			// Optional: color-code style similar to initial demo setup
 			var st *lipgloss.Style
 			switch val {
 			case "ERROR":
-				st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")))
+				st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")))
 			case "WARN":
-				st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")))
+				st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")))
 			case "OK":
-				st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")))
+				st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")))
 			}
 			r.SetColumn(1, val, st)
 		}
@@ -326,9 +336,9 @@ func (a app) randomlyUpdateStatuses(bt *table.BigTable, p float64) {
 
 func makeBaseRows(nRows, nCols int) [][]string {
 	rows := make([][]string, nRows)
-	for r := 0; r < nRows; r++ {
+	for r := range nRows {
 		row := make([]string, nCols)
-		for c := 0; c < nCols; c++ {
+		for c := range nCols {
 			switch c {
 			case 0:
 				row[c] = fmt.Sprintf("id-%04d", r+1)
@@ -349,5 +359,3 @@ func makeBaseRows(nRows, nCols int) [][]string {
 	}
 	return rows
 }
-
-func ptrStyle(s lipgloss.Style) *lipgloss.Style { return &s }

@@ -91,7 +91,7 @@ func Parse(data []byte) (*Document, error) {
 		return nil, fmt.Errorf("decoding OpenAPI v3 document: %w", err)
 	}
 	if doc.Components.Schemas == nil {
-		doc.Components.Schemas = map[string]*Schema{}
+		doc.Components.Schemas = make(map[string]*Schema)
 	}
 	return &doc, nil
 }

@@ -41,8 +41,6 @@ func highlightFallback(it chroma.Iterator) string {
 	atLineStart := true
 	for token := it(); token != chroma.EOF; token = it() {
 		t := token.Type
-		ansi := "37"
-		bold := false
 		val := token.Value
 		hasNL := strings.Contains(val, "\n")
 
@@ -59,36 +57,18 @@ func highlightFallback(it chroma.Iterator) string {
 			continue
 		}
 
+		// A forced token is the value after a key's colon, or the first
+		// token of a line.
 		forced := false
-		if prevWasColon {
-			if strings.TrimSpace(val) != "" && t != chroma.Punctuation {
-				ansi, bold = "33", true
-				prevWasColon = false
-				forced = true
-			}
-		}
-
-		if !forced && atLineStart && !prevWasColon && strings.TrimSpace(val) != "" {
-			if !(t == chroma.Punctuation && strings.TrimSpace(val) != "-") {
-				ansi, bold = "36", true
-				forced = true
-			}
-		}
-
 		switch {
-		case t == chroma.NameTag || t.Category() == chroma.Name:
-			ansi, bold = "36", true
-		case !forced && (t == chroma.LiteralString || t.Category() == chroma.LiteralString):
-			ansi, bold = "33", true
-		case !forced && (t == chroma.LiteralNumber || t.Category() == chroma.LiteralNumber):
-			ansi, bold = "32", true
-		case !forced && (t == chroma.Punctuation || t == chroma.Operator):
-			ansi, bold = "35", true
-		case !forced && (t == chroma.Comment || t.Category() == chroma.Comment):
-			ansi = "34"
-		default:
-			ansi = "37"
+		case prevWasColon && strings.TrimSpace(val) != "" && t != chroma.Punctuation:
+			prevWasColon = false
+			forced = true
+		case atLineStart && !prevWasColon && strings.TrimSpace(val) != "" &&
+			(t != chroma.Punctuation || strings.TrimSpace(val) == "-"):
+			forced = true
 		}
+		ansi, bold := fallbackColor(t, forced)
 
 		if bold {
 			buf.WriteString("\033[1m")
@@ -105,6 +85,27 @@ func highlightFallback(it chroma.Iterator) string {
 	}
 	buf.WriteString("\033[0m")
 	return buf.String()
+}
+
+// fallbackColor picks the ANSI color of a token and whether it is bold. A
+// forced token is bold and keeps the default color unless it is a name.
+func fallbackColor(t chroma.TokenType, forced bool) (ansi string, bold bool) {
+	switch {
+	case t == chroma.NameTag || t.Category() == chroma.Name:
+		return "36", true
+	case forced:
+		return "37", true
+	case t == chroma.LiteralString || t.Category() == chroma.LiteralString:
+		return "33", true
+	case t == chroma.LiteralNumber || t.Category() == chroma.LiteralNumber:
+		return "32", true
+	case t == chroma.Punctuation || t == chroma.Operator:
+		return "35", true
+	case t == chroma.Comment || t.Category() == chroma.Comment:
+		return "34", false
+	default:
+		return "37", false
+	}
 }
 
 func renderTokensWithStyle(style *chroma.Style, it chroma.Iterator) string {

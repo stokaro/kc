@@ -1,7 +1,6 @@
 package navigation
 
 import (
-	"context"
 	"testing"
 
 	"charm.land/lipgloss/v2"
@@ -29,7 +28,7 @@ func (e *enterItem) Enter() (models.Folder, error) {
 }
 
 func TestGoTo(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	leaf := modeltesting.NewStaticFolder("resources", []table.Column{{Title: " Name"}}, nil)
 	nsFolder := modeltesting.NewStaticFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{
@@ -60,7 +59,7 @@ func TestGoTo(t *testing.T) {
 }
 
 func TestGoToMissingItem(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	root := modeltesting.NewStaticFolder("/", nil, nil)
 	nav := NewNavigator(root)
 	_, err := GoTo(ctx, nav, []GoToStep{

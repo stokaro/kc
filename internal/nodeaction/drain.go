@@ -342,7 +342,7 @@ func (a *DrainAction) drainNode(ctx context.Context, node string, np *NodeProgre
 		defer cancel()
 	}
 	np.Phase = PhaseEvicting
-	requested := map[types.UID]bool{} // accepted evictions, until the pod is gone
+	requested := make(map[types.UID]bool) // accepted evictions, until the pod is gone
 	for {
 		if err := ctx.Err(); err != nil {
 			return a.stopError(ctx, node, np)
@@ -357,16 +357,7 @@ func (a *DrainAction) drainNode(ctx context.Context, node string, np *NodeProgre
 		if len(sel.Blocked) > 0 {
 			return fmt.Errorf("drain node %s: %s", node, sel.Blocked[0])
 		}
-		present := make(map[types.UID]bool, len(sel.Evict))
-		for _, p := range sel.Evict {
-			present[p.UID] = true
-		}
-		for uid := range requested {
-			if !present[uid] {
-				np.Evicted++
-				delete(requested, uid)
-			}
-		}
+		countGone(np, requested, sel.Evict)
 		np.Remaining = len(sel.Evict)
 		if len(sel.Evict) == 0 {
 			np.Blocked = nil
@@ -375,34 +366,8 @@ func (a *DrainAction) drainNode(ctx context.Context, node string, np *NodeProgre
 			return nil
 		}
 
-		np.Blocked = nil
-		for i := range sel.Evict {
-			pod := &sel.Evict[i]
-			if requested[pod.UID] {
-				continue
-			}
-			if err := ctx.Err(); err != nil {
-				return a.stopError(ctx, node, np)
-			}
-			err := a.evict(ctx, pod)
-			switch {
-			case err == nil:
-				requested[pod.UID] = true
-			case apierrors.IsNotFound(err):
-				// Gone already; the next round counts it.
-				requested[pod.UID] = true
-			case apierrors.IsTooManyRequests(err):
-				np.Blocked = append(np.Blocked, PodNote{Namespace: pod.Namespace, Name: pod.Name, Message: evictionRefusal(err)})
-			case apierrors.IsForbidden(err) && apierrors.HasStatusCause(err, corev1.NamespaceTerminatingCause):
-				// The namespace is being deleted; the pod goes with it.
-				// kubectl retries as well.
-				np.Blocked = append(np.Blocked, PodNote{Namespace: pod.Namespace, Name: pod.Name, Message: "namespace is terminating"})
-			default:
-				if ctx.Err() != nil {
-					return a.stopError(ctx, node, np)
-				}
-				return fmt.Errorf("evicting pod %s/%s: %w", pod.Namespace, pod.Name, err)
-			}
+		if err := a.evictRound(ctx, node, np, sel.Evict, requested); err != nil {
+			return err
 		}
 		snapshot()
 
@@ -440,15 +405,65 @@ func (a *DrainAction) stopError(ctx context.Context, node string, np *NodeProgre
 
 // evict asks the API server to evict pod, which checks its
 // PodDisruptionBudgets.
+// countGone counts the pods with an accepted eviction that are no longer
+// among pods as evicted, and forgets them.
+func countGone(np *NodeProgress, requested map[types.UID]bool, pods []corev1.Pod) {
+	present := make(map[types.UID]bool, len(pods))
+	for _, p := range pods {
+		present[p.UID] = true
+	}
+	for uid := range requested {
+		if !present[uid] {
+			np.Evicted++
+			delete(requested, uid)
+		}
+	}
+}
+
+// evictRound asks to evict every pod without an accepted eviction. Pods the
+// API refuses to evict for now go to np.Blocked for the next round.
+func (a *DrainAction) evictRound(ctx context.Context, node string, np *NodeProgress, pods []corev1.Pod, requested map[types.UID]bool) error {
+	np.Blocked = nil
+	for i := range pods {
+		pod := &pods[i]
+		if requested[pod.UID] {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return a.stopError(ctx, node, np)
+		}
+		err := a.evict(ctx, pod)
+		switch {
+		case err == nil:
+			requested[pod.UID] = true
+		case apierrors.IsNotFound(err):
+			// Gone already; the next round counts it.
+			requested[pod.UID] = true
+		case apierrors.IsTooManyRequests(err):
+			np.Blocked = append(np.Blocked, PodNote{Namespace: pod.Namespace, Name: pod.Name, Message: evictionRefusal(err)})
+		case apierrors.IsForbidden(err) && apierrors.HasStatusCause(err, corev1.NamespaceTerminatingCause):
+			// The namespace is being deleted; the pod goes with it.
+			// kubectl retries as well.
+			np.Blocked = append(np.Blocked, PodNote{Namespace: pod.Namespace, Name: pod.Name, Message: "namespace is terminating"})
+		default:
+			if ctx.Err() != nil {
+				return a.stopError(ctx, node, np)
+			}
+			return fmt.Errorf("evicting pod %s/%s: %w", pod.Namespace, pod.Name, err)
+		}
+	}
+	return nil
+}
+
 func (a *DrainAction) evict(ctx context.Context, pod *corev1.Pod) error {
 	eviction := &policyv1.Eviction{
-		ObjectMeta: metav1.ObjectMeta{Namespace: pod.Namespace, Name: pod.Name},
+		Namespace: pod.Namespace, Name: pod.Name,
 	}
 	if a.opts.GracePeriodSeconds >= 0 {
 		grace := int64(a.opts.GracePeriodSeconds)
 		eviction.DeleteOptions = &metav1.DeleteOptions{GracePeriodSeconds: &grace}
 	}
-	target := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: pod.Namespace, Name: pod.Name}}
+	target := &corev1.Pod{Namespace: pod.Namespace, Name: pod.Name}
 	ctrllog.FromContext(ctx).WithName("nodeaction").Info("client create",
 		"gvr", "v1/pods/eviction", "namespace", pod.Namespace, "name", pod.Name, "node", pod.Spec.NodeName)
 	return a.env.Client.SubResource("eviction").Create(ctx, target, eviction)

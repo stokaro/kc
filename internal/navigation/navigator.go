@@ -130,24 +130,8 @@ func (n *Navigator) Path(ctx context.Context) string {
 		return "/" + strings.Join(n.Current().Path(), "/")
 	}
 	segments := make([]string, 0, len(n.stack))
-	for i := 0; i < len(n.stack)-1; i++ {
-		fr := n.stack[i]
-		if fr.selID == "" || fr.selID == "__back__" || fr.f == nil {
-			continue
-		}
-		_, row, ok := fr.f.Find(ctx, fr.selID)
-		if !ok || row == nil {
-			continue
-		}
-		_, cells, _, ok2 := row.Columns()
-		if !ok2 || len(cells) == 0 {
-			continue
-		}
-		seg := cells[0]
-		if len(seg) > 0 && seg[0] == '/' {
-			seg = seg[1:]
-		}
-		if seg != "" && seg != ".." {
+	for _, fr := range n.stack[:len(n.stack)-1] {
+		if seg := frameSegment(ctx, fr); seg != "" {
 			segments = append(segments, seg)
 		}
 	}
@@ -171,6 +155,28 @@ func (n *Navigator) Path(ctx context.Context) string {
 		return "/" + strings.Join(full, "/")
 	}
 	return "/" + strings.Join(segments, "/")
+}
+
+// frameSegment returns the path segment a stack frame was left through: the
+// first cell of its selected row without a leading slash, or "" when there
+// is none.
+func frameSegment(ctx context.Context, fr frame) string {
+	if fr.selID == "" || fr.selID == "__back__" || fr.f == nil {
+		return ""
+	}
+	_, row, ok := fr.f.Find(ctx, fr.selID)
+	if !ok || row == nil {
+		return ""
+	}
+	_, cells, _, ok := row.Columns()
+	if !ok || len(cells) == 0 {
+		return ""
+	}
+	seg := strings.TrimPrefix(cells[0], "/")
+	if seg == ".." {
+		return ""
+	}
+	return seg
 }
 
 func equalPrefix(path, prefix []string) bool {

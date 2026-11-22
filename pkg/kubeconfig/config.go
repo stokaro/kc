@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-logr/logr"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -57,38 +58,21 @@ func NewManager() *Manager {
 
 // DiscoverKubeconfigs discovers kubeconfigs from KUBECONFIG and ~/.kube
 func (m *Manager) DiscoverKubeconfigs() error {
-	log := ctrllog.Log.WithName("kubeconfig.manager")
+	// DiscoverKubeconfigs takes no context and its callers are in internal/ui.
+	log := ctrllog.Log.WithName("kubeconfig.manager") //nolint:forbidigo // no context here, see above
 	m.kubeconfigs = make([]*Kubeconfig, 0)
 
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	envVar := strings.TrimSpace(os.Getenv("KUBECONFIG"))
 
 	homeDir, homeErr := os.UserHomeDir()
 	log.Info("kubeconfig discovery start", "hasEnv", envVar != "", "homeDirAvailable", homeErr == nil)
 
 	if envVar != "" {
-		for _, rawPath := range filepath.SplitList(envVar) {
-			rawPath = strings.TrimSpace(rawPath)
-			if rawPath == "" {
-				continue
-			}
-
-			normalized, err := normalizeKubeconfigPath(rawPath, homeDir)
-			if err != nil {
-				return fmt.Errorf("resolving kubeconfig from KUBECONFIG %q: %w", rawPath, err)
-			}
-
-			if err := m.addKubeconfig(normalized, seen); err != nil {
-				return fmt.Errorf("loading kubeconfig from KUBECONFIG %q: %w", normalized, err)
-			}
-			log.Info("added kubeconfig from env", "path", normalized)
-		}
-
-		if err := m.buildContextsAndClusters(); err != nil {
+		if err := m.addFromEnv(log, envVar, homeDir, seen); err != nil {
 			return err
 		}
-		log.Info("kubeconfig discovery completed", "kubeconfigs", len(m.kubeconfigs), "contexts", len(m.contexts), "clusters", len(m.clusters))
-		return nil
+		return m.finishDiscovery(log)
 	}
 
 	if homeErr != nil {
@@ -112,6 +96,39 @@ func (m *Manager) DiscoverKubeconfigs() error {
 		return fmt.Errorf("failed to stat kube directory: %w", err)
 	}
 
+	candidates, err := kubeDirCandidates(kubeDir, mainConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to walk kube directory: %w", err)
+	}
+	m.addCandidates(log, candidates, seen)
+	return m.finishDiscovery(log)
+}
+
+// addFromEnv adds every kubeconfig of the KUBECONFIG list envVar.
+func (m *Manager) addFromEnv(log logr.Logger, envVar, homeDir string, seen map[string]struct{}) error {
+	for _, rawPath := range filepath.SplitList(envVar) {
+		rawPath = strings.TrimSpace(rawPath)
+		if rawPath == "" {
+			continue
+		}
+
+		normalized, err := normalizeKubeconfigPath(rawPath, homeDir)
+		if err != nil {
+			return fmt.Errorf("resolving kubeconfig from KUBECONFIG %q: %w", rawPath, err)
+		}
+
+		if err := m.addKubeconfig(normalized, seen); err != nil {
+			return fmt.Errorf("loading kubeconfig from KUBECONFIG %q: %w", normalized, err)
+		}
+		log.Info("added kubeconfig from env", "path", normalized)
+	}
+	return nil
+}
+
+// kubeDirCandidates lists the files under kubeDir that may be kubeconfigs:
+// it skips hidden entries, the cache directory, lock files and the main
+// config, which is loaded first.
+func kubeDirCandidates(kubeDir, mainConfigPath string) ([]string, error) {
 	candidates := make([]string, 0, 64)
 	err := filepath.Walk(kubeDir, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
@@ -136,19 +153,18 @@ func (m *Manager) DiscoverKubeconfigs() error {
 		candidates = append(candidates, path)
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("failed to walk kube directory: %w", err)
-	}
+	return candidates, err
+}
 
+// addCandidates loads the candidate files and keeps the ones that parse as
+// kubeconfigs.
+func (m *Manager) addCandidates(log logr.Logger, candidates []string, seen map[string]struct{}) {
 	var mu sync.Mutex
-	workerCount := runtime.NumCPU()
-	if workerCount < 2 {
-		workerCount = 2
-	}
+	workerCount := max(runtime.NumCPU(), 2)
 	jobs := make(chan string)
 	var wg sync.WaitGroup
 	wg.Add(workerCount)
-	for i := 0; i < workerCount; i++ {
+	for range workerCount {
 		go func() {
 			defer wg.Done()
 			for path := range jobs {
@@ -167,7 +183,11 @@ func (m *Manager) DiscoverKubeconfigs() error {
 	}
 	close(jobs)
 	wg.Wait()
+}
 
+// finishDiscovery builds the context and cluster lists from the loaded
+// kubeconfigs.
+func (m *Manager) finishDiscovery(log logr.Logger) error {
 	if err := m.buildContextsAndClusters(); err != nil {
 		return err
 	}

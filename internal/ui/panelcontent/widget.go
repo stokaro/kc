@@ -90,7 +90,7 @@ type SelectionProvider interface {
 
 // ItemProvider widgets expose selected row metadata.
 type ItemProvider interface {
-	CurrentItem(context.Context) (interface{}, bool)
+	CurrentItem(context.Context) (any, bool)
 }
 
 // FooterProvider widgets can render a footer row via the panel shell.

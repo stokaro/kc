@@ -57,7 +57,7 @@ func (c *fakeContainer) ExtractTar(ctx context.Context, req podfs.ExtractRequest
 	c.requests = append(c.requests, req)
 	c.mu.Unlock()
 	tr := tar.NewReader(archive)
-	got := map[string]member{}
+	got := make(map[string]member)
 	complete := false
 	first := true
 	for {
@@ -103,7 +103,7 @@ func (c *fakeContainer) ExtractTar(ctx context.Context, req podfs.ExtractRequest
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.placed == nil {
-		c.placed = map[string]map[string]member{}
+		c.placed = make(map[string]map[string]member)
 	}
 	c.placed[req.Name] = got
 	return nil
@@ -125,6 +125,7 @@ func localTree(t *testing.T, entries map[string]string) string {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
+		// #nosec G306 -- the test checks that the archive keeps the 0644 mode.
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -259,7 +260,7 @@ func TestUploadExistingEntries(t *testing.T) {
 		if !strings.Contains(results[4].Message, "not a directory") {
 			t.Errorf("isfile message = %q", results[4].Message)
 		}
-		replace := map[string]bool{}
+		replace := make(map[string]bool)
 		for _, r := range c.requests {
 			replace[r.Name] = r.Replace
 		}

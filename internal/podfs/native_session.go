@@ -392,10 +392,8 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 		case strings.HasPrefix(line, cmdPrefixError):
 			r.finish()
 			return 0, classifyError(parseScriptError(strings.TrimPrefix(line, cmdPrefixError+"|")))
-		case strings.HasPrefix(line, cmdPrefixCatMeta):
-			// already received meta; ignore duplicates
-			continue
 		default:
+			// Other lines, duplicate meta lines among them, are ignored.
 			continue
 		}
 	}

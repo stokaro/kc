@@ -113,7 +113,7 @@ func newFixture(t *testing.T) fixture {
 		}
 		return execctx.Source{Path: p, Config: cfg}
 	}
-	f := fixture{dir: dir, a: load(pa), b: load(pb), before: map[string][]byte{}}
+	f := fixture{dir: dir, a: load(pa), b: load(pb), before: make(map[string][]byte)}
 	f.sources = []execctx.Source{f.a, f.b}
 	for _, p := range []string{pa, pb} {
 		data, err := os.ReadFile(p)
@@ -145,7 +145,7 @@ func (f fixture) ctx(src execctx.Source, name, ns string, imp execctx.Impersonat
 
 // resolve loads a KUBECONFIG value the way kubectl does and returns the
 // client config and namespace kubectl would use.
-func resolve(t *testing.T, kubeconfig string) (*rest.Config, string, string) {
+func resolve(t *testing.T, kubeconfig string) (cfg *rest.Config, namespace, currentContext string) {
 	t.Helper()
 	rules := &clientcmd.ClientConfigLoadingRules{Precedence: filepath.SplitList(kubeconfig)}
 	cc := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{})

@@ -93,12 +93,11 @@ var keyAliases = map[string]string{
 }
 
 type session struct {
-	mu      sync.Mutex
-	emu     *emulator.Emulator
-	cmd     *exec.Cmd
-	exited  bool
-	exitErr error
-	exitCh  chan struct{}
+	mu     sync.Mutex
+	emu    *emulator.Emulator
+	cmd    *exec.Cmd
+	exited bool
+	exitCh chan struct{}
 }
 
 func newSession(cols, rows int) (*session, error) {
@@ -129,6 +128,7 @@ func (s *session) startCommand(command []string) error {
 		return errors.New("missing command to run")
 	}
 
+	// #nosec G204 -- the driver runs the command line it was started with.
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("COLUMNS=%d", s.emuWidth()), fmt.Sprintf("LINES=%d", s.emuHeight()), "TERM=xterm-256color")
 	if wd, err := os.Getwd(); err == nil {
@@ -240,7 +240,7 @@ func parseKeyToken(token string) (string, error) {
 		// Parse as 32 bits so the conversion to rune cannot overflow, then
 		// reject values that are not Unicode code points.
 		parsed, err := strconv.ParseUint(token[2:], 16, 32)
-		if err != nil || !utf8.ValidRune(rune(parsed)) {
+		if err != nil || parsed > utf8.MaxRune || !utf8.ValidRune(rune(parsed)) {
 			return "", fmt.Errorf("invalid hex token %q", token)
 		}
 		return string(rune(parsed)), nil
@@ -331,24 +331,30 @@ func main() {
 		os.Exit(2)
 	}
 
-	session, err := newSession(*cols, *rows)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "init session: %v\n", err)
+	if err := run(args, *cols, *rows); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+// run starts the command in an emulator of cols x rows and reads driver
+// commands from stdin until the input ends or an exit command arrives.
+func run(args []string, cols, rows int) error {
+	session, err := newSession(cols, rows)
+	if err != nil {
+		return fmt.Errorf("init session: %w", err)
 	}
 	defer session.emu.Close()
 
-	if err := session.resize(*cols, *rows); err != nil {
-		fmt.Fprintf(os.Stderr, "resize emulator: %v\n", err)
-		os.Exit(1)
+	if err := session.resize(cols, rows); err != nil {
+		return fmt.Errorf("resize emulator: %w", err)
 	}
 
 	if err := session.startCommand(args); err != nil {
-		fmt.Fprintf(os.Stderr, "start command: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("start command: %w", err)
 	}
 
-	printWelcome(args, *cols, *rows)
+	printWelcome(args, cols, rows)
 
 	input := bufio.NewScanner(os.Stdin)
 	for {
@@ -360,138 +366,168 @@ func main() {
 		if line == "" {
 			continue
 		}
-		parts := strings.Fields(line)
-		cmd := strings.ToLower(parts[0])
-
-		switch cmd {
-		case "help":
-			printWelcome(args, *cols, *rows)
-		case "key":
-			if len(parts) < 2 {
-				fmt.Println("usage: key <token>")
-				continue
-			}
-			keyInput, err := parseKeyToken(parts[1])
-			if err != nil {
-				fmt.Printf("error: %v\n", err)
-				continue
-			}
-			if err := session.sendKey(keyInput); err != nil {
-				fmt.Printf("error: %v\n", err)
-			}
-		case "text":
-			if len(parts) < 2 {
-				fmt.Println("usage: text <string>")
-				continue
-			}
-			payload := strings.TrimPrefix(line, parts[0]+" ")
-			if err := session.sendKey(payload); err != nil {
-				fmt.Printf("error: %v\n", err)
-			}
-		case "enter":
-			if err := session.sendKey("\r"); err != nil {
-				fmt.Printf("error: %v\n", err)
-			}
-		case "screen":
-			mode := "plain"
-			if len(parts) > 1 {
-				mode = strings.ToLower(parts[1])
-			}
-			frame := session.emu.GetScreen()
-			switch mode {
-			case "ansi":
-				for _, row := range frame.Rows {
-					fmt.Println(row)
-				}
-			default:
-				for _, row := range frame.Rows {
-					fmt.Println(ansi.Strip(row))
-				}
-			}
-		case "snapshot":
-			if len(parts) < 2 {
-				fmt.Println("usage: snapshot <path>")
-				continue
-			}
-			path := parts[1]
-			if !strings.Contains(path, string(os.PathSeparator)) {
-				path = filepath.Join("snapshots", path)
-			}
-			frame := session.emu.GetScreen()
-			if err := snapshotToPNG(frame, path); err != nil {
-				fmt.Printf("error: %v\n", err)
-			} else {
-				fmt.Printf("saved snapshot: %s\n", path)
-			}
-		case "mouse":
-			if len(parts) < 5 {
-				fmt.Println("usage: mouse <button> <x> <y> <press|release|motion>")
-				continue
-			}
-			button, err := strconv.Atoi(parts[1])
-			if err != nil {
-				fmt.Printf("invalid button: %v\n", err)
-				continue
-			}
-			x, err := strconv.Atoi(parts[2])
-			if err != nil {
-				fmt.Printf("invalid x: %v\n", err)
-				continue
-			}
-			y, err := strconv.Atoi(parts[3])
-			if err != nil {
-				fmt.Printf("invalid y: %v\n", err)
-				continue
-			}
-			state := strings.ToLower(parts[4])
-			pressed := state == "press"
-			motion := state == "motion"
-			if state != "press" && state != "release" && state != "motion" {
-				fmt.Println("state must be press, release, or motion")
-				continue
-			}
-			if err := session.sendMouse(button, x, y, pressed, motion); err != nil {
-				fmt.Printf("error: %v\n", err)
-			}
-		case "resize":
-			if len(parts) < 3 {
-				fmt.Println("usage: resize <cols> <rows>")
-				continue
-			}
-			colsVal, err := strconv.Atoi(parts[1])
-			if err != nil {
-				fmt.Printf("invalid cols: %v\n", err)
-				continue
-			}
-			rowsVal, err := strconv.Atoi(parts[2])
-			if err != nil {
-				fmt.Printf("invalid rows: %v\n", err)
-				continue
-			}
-			if err := session.resize(colsVal, rowsVal); err != nil {
-				fmt.Printf("error: %v\n", err)
-			} else {
-				fmt.Printf("resized to %dx%d\n", colsVal, rowsVal)
-			}
-		case "wait":
-			fmt.Println("waiting for process to exit...")
-			<-session.exitCh
-			fmt.Println("process exited")
-		case "exit", "quit":
-			if err := session.terminate(); err != nil {
-				fmt.Printf("error terminating command: %v\n", err)
-			}
-			select {
-			case <-session.exitCh:
-			case <-time.After(500 * time.Millisecond):
-			}
-			return
-		default:
-			fmt.Printf("unknown command %q (type 'help' for help)\n", cmd)
+		if session.handleLine(line, func() { printWelcome(args, cols, rows) }) {
+			return nil
 		}
 	}
 
 	if err := input.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "input error: %v\n", err)
+	}
+	return nil
+}
+
+// handleLine runs one driver command. It reports true when the driver
+// should stop.
+func (s *session) handleLine(line string, help func()) bool {
+	parts := strings.Fields(line)
+	cmd := strings.ToLower(parts[0])
+
+	switch cmd {
+	case "help":
+		help()
+	case "key":
+		s.cmdKey(parts)
+	case "text":
+		if len(parts) < 2 {
+			fmt.Println("usage: text <string>")
+			return false
+		}
+		payload := strings.TrimPrefix(line, parts[0]+" ")
+		if err := s.sendKey(payload); err != nil {
+			fmt.Printf("error: %v\n", err)
+		}
+	case "enter":
+		if err := s.sendKey("\r"); err != nil {
+			fmt.Printf("error: %v\n", err)
+		}
+	case "screen":
+		s.cmdScreen(parts)
+	case "snapshot":
+		s.cmdSnapshot(parts)
+	case "mouse":
+		s.cmdMouse(parts)
+	case "resize":
+		s.cmdResize(parts)
+	case "wait":
+		fmt.Println("waiting for process to exit...")
+		<-s.exitCh
+		fmt.Println("process exited")
+	case "exit", "quit":
+		if err := s.terminate(); err != nil {
+			fmt.Printf("error terminating command: %v\n", err)
+		}
+		select {
+		case <-s.exitCh:
+		case <-time.After(500 * time.Millisecond):
+		}
+		return true
+	default:
+		fmt.Printf("unknown command %q (type 'help' for help)\n", cmd)
+	}
+	return false
+}
+
+func (s *session) cmdKey(parts []string) {
+	if len(parts) < 2 {
+		fmt.Println("usage: key <token>")
+		return
+	}
+	keyInput, err := parseKeyToken(parts[1])
+	if err != nil {
+		fmt.Printf("error: %v\n", err)
+		return
+	}
+	if err := s.sendKey(keyInput); err != nil {
+		fmt.Printf("error: %v\n", err)
+	}
+}
+
+func (s *session) cmdScreen(parts []string) {
+	mode := "plain"
+	if len(parts) > 1 {
+		mode = strings.ToLower(parts[1])
+	}
+	frame := s.emu.GetScreen()
+	switch mode {
+	case "ansi":
+		for _, row := range frame.Rows {
+			fmt.Println(row)
+		}
+	default:
+		for _, row := range frame.Rows {
+			fmt.Println(ansi.Strip(row))
+		}
+	}
+}
+
+func (s *session) cmdSnapshot(parts []string) {
+	if len(parts) < 2 {
+		fmt.Println("usage: snapshot <path>")
+		return
+	}
+	path := parts[1]
+	if !strings.Contains(path, string(os.PathSeparator)) {
+		path = filepath.Join("snapshots", path)
+	}
+	frame := s.emu.GetScreen()
+	if err := snapshotToPNG(frame, path); err != nil {
+		fmt.Printf("error: %v\n", err)
+	} else {
+		fmt.Printf("saved snapshot: %s\n", path)
+	}
+}
+
+func (s *session) cmdMouse(parts []string) {
+	if len(parts) < 5 {
+		fmt.Println("usage: mouse <button> <x> <y> <press|release|motion>")
+		return
+	}
+	button, err := strconv.Atoi(parts[1])
+	if err != nil {
+		fmt.Printf("invalid button: %v\n", err)
+		return
+	}
+	x, err := strconv.Atoi(parts[2])
+	if err != nil {
+		fmt.Printf("invalid x: %v\n", err)
+		return
+	}
+	y, err := strconv.Atoi(parts[3])
+	if err != nil {
+		fmt.Printf("invalid y: %v\n", err)
+		return
+	}
+	state := strings.ToLower(parts[4])
+	pressed := state == "press"
+	motion := state == "motion"
+	if state != "press" && state != "release" && state != "motion" {
+		fmt.Println("state must be press, release, or motion")
+		return
+	}
+	if err := s.sendMouse(button, x, y, pressed, motion); err != nil {
+		fmt.Printf("error: %v\n", err)
+	}
+}
+
+func (s *session) cmdResize(parts []string) {
+	if len(parts) < 3 {
+		fmt.Println("usage: resize <cols> <rows>")
+		return
+	}
+	colsVal, err := strconv.Atoi(parts[1])
+	if err != nil {
+		fmt.Printf("invalid cols: %v\n", err)
+		return
+	}
+	rowsVal, err := strconv.Atoi(parts[2])
+	if err != nil {
+		fmt.Printf("invalid rows: %v\n", err)
+		return
+	}
+	if err := s.resize(colsVal, rowsVal); err != nil {
+		fmt.Printf("error: %v\n", err)
+	} else {
+		fmt.Printf("resized to %dx%d\n", colsVal, rowsVal)
 	}
 }

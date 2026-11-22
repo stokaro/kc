@@ -46,21 +46,12 @@ func ParsePath(s string) (Path, error) {
 			if end < 0 {
 				return Path{}, fmt.Errorf("path %q: missing ]", text)
 			}
-			inner := s[1:end]
-			s = s[end+1:]
-			if strings.HasPrefix(inner, `"`) {
-				key, err := strconv.Unquote(inner)
-				if err != nil {
-					return Path{}, fmt.Errorf("path %q: bad quoted key %s", text, inner)
-				}
-				steps = append(steps, step{key: key, isKey: true})
-			} else {
-				n, err := strconv.Atoi(inner)
-				if err != nil || n < 0 {
-					return Path{}, fmt.Errorf("path %q: index %q is not a number", text, inner)
-				}
-				steps = append(steps, step{index: n})
+			st, err := bracketStep(s[1:end], text)
+			if err != nil {
+				return Path{}, err
 			}
+			steps = append(steps, st)
+			s = s[end+1:]
 		case '.':
 			return Path{}, fmt.Errorf("path %q: empty name", text)
 		default:
@@ -85,6 +76,23 @@ func ParsePath(s string) (Path, error) {
 		}
 	}
 	return Path{steps: steps, text: text}, nil
+}
+
+// bracketStep parses the inside of a [...] step of path text: a quoted key
+// or an array index.
+func bracketStep(inner, text string) (step, error) {
+	if strings.HasPrefix(inner, `"`) {
+		key, err := strconv.Unquote(inner)
+		if err != nil {
+			return step{}, fmt.Errorf("path %q: bad quoted key %s", text, inner)
+		}
+		return step{key: key, isKey: true}, nil
+	}
+	n, err := strconv.Atoi(inner)
+	if err != nil || n < 0 {
+		return step{}, fmt.Errorf("path %q: index %q is not a number", text, inner)
+	}
+	return step{index: n}, nil
 }
 
 // closingBracket returns the index of the ] that ends the bracket at s[0],
@@ -124,11 +132,12 @@ func resolve(v any, steps []step) (any, bool) {
 			names++
 		}
 		for n := names; n >= 1; n-- {
-			key := steps[0].key
+			var key strings.Builder
+			key.WriteString(steps[0].key)
 			for _, s := range steps[1:n] {
-				key += "." + s.key
+				key.WriteString("." + s.key)
 			}
-			if child, ok := node.get(key); ok {
+			if child, ok := node.get(key.String()); ok {
 				if out, ok := resolve(child, steps[n:]); ok {
 					return out, true
 				}

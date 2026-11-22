@@ -33,7 +33,10 @@ import (
 	tablecache "github.com/stokaro/kc/internal/tablecache"
 )
 
-func init() {
+// init registers the table types in the client-go global scheme before any
+// goroutine decodes with it. A lazy registration in New would write to the
+// scheme while other clusters read it.
+func init() { //nolint:gochecknoinits // the global scheme must be complete before it is shared, see above
 	_ = tablecache.AddToScheme(scheme.Scheme)
 }
 
@@ -173,7 +176,9 @@ func (c *Cluster) ensureDiscovery() error {
 	if c.mapper != nil && c.baseMapper != nil && c.disco != nil && c.dyn != nil {
 		return nil
 	}
-	ctrllog.Log.WithName("cluster").Info("initializing discovery clients", "cluster", fmt.Sprintf("%p", c))
+	// New and the accessors that initialize discovery take no context, and
+	// their callers are in internal/ui, so this one line uses the global logger.
+	ctrllog.Log.WithName("cluster").Info("initializing discovery clients", "cluster", fmt.Sprintf("%p", c)) //nolint:forbidigo // no context here, see above
 	dc, err := discovery.NewDiscoveryClientForConfig(rest.CopyConfig(c.GetConfig()))
 	if err != nil {
 		return err
@@ -237,16 +242,20 @@ func (c *Cluster) DiscoveryClient() discovery.CachedDiscoveryInterface {
 }
 
 // RefreshDiscovery invalidates cached discovery information and notifies listeners.
+//
+// RefreshDiscovery takes no context, and callers in internal/models use it,
+// so this logger is global as well.
 func (c *Cluster) RefreshDiscovery() {
+	log := ctrllog.Log.WithName("discovery") //nolint:forbidigo // no context here, see above
 	if err := c.ensureDiscovery(); err != nil {
 		return
 	}
 	if c.disco != nil {
-		ctrllog.Log.WithName("discovery").V(1).Info("RefreshDiscovery invalidate", "cache", fmt.Sprintf("%p", c.disco))
+		log.V(1).Info("RefreshDiscovery invalidate", "cache", fmt.Sprintf("%p", c.disco))
 		c.disco.Invalidate()
 	}
 	if c.baseMapper != nil {
-		ctrllog.Log.WithName("discovery").V(1).Info("RefreshDiscovery reset mapper", "mapper", fmt.Sprintf("%p", c.baseMapper))
+		log.V(1).Info("RefreshDiscovery reset mapper", "mapper", fmt.Sprintf("%p", c.baseMapper))
 		c.baseMapper.Reset()
 	}
 	c.notifyDiscoveryListeners()
@@ -648,7 +657,7 @@ func (c *Cluster) fetchStorageMetrics(ctx context.Context) (map[schema.GroupReso
 			continue
 		}
 		labels := make(map[string]string)
-		for _, kv := range strings.Split(labelStr, ",") {
+		for kv := range strings.SplitSeq(labelStr, ",") {
 			parts := strings.SplitN(strings.TrimSpace(kv), "=", 2)
 			if len(parts) != 2 {
 				continue
@@ -689,9 +698,8 @@ func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
 		if _, ok := err.(*discovery.ErrGroupDiscoveryFailed); !ok {
 			return nil, err
 		}
-		// For partial failures, continue with the successful lists and clear the error so callers
+		// For partial failures, continue with the successful lists so callers
 		// can proceed (metrics server down should not block the UI).
-		err = nil
 	}
 	var out []ResourceInfo
 	for _, l := range lists {

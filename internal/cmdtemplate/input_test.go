@@ -149,7 +149,7 @@ func TestBind(t *testing.T) {
 
 func TestBindErrors(t *testing.T) {
 	t.Parallel()
-	if _, err := cmdtemplate.Bind("{{.Input.missing}}", map[string]string{}); err == nil || !strings.Contains(err.Error(), "no answer for .Input.missing") {
+	if _, err := cmdtemplate.Bind("{{.Input.missing}}", make(map[string]string)); err == nil || !strings.Contains(err.Error(), "no answer for .Input.missing") {
 		t.Fatalf("err = %v, want a missing answer error", err)
 	}
 	if _, err := cmdtemplate.Bind("{{.Input}}", nil); err == nil {

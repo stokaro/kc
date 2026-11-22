@@ -7,7 +7,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -42,7 +41,7 @@ func hierarchyConfig() *appconfig.Config {
 }
 
 func hierarchyDeps(cl *kccluster.Cluster, ctx context.Context, name string) models.Deps {
-	contexts := map[string]*clientcmdapi.Context{}
+	contexts := make(map[string]*clientcmdapi.Context)
 	if name != "" {
 		contexts[name] = &clientcmdapi.Context{}
 	}
@@ -68,18 +67,18 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 	ctx := t.Context()
 	// Namespace testns
-	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 	// ConfigMap and Secret in testns
-	if err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a": "A", "b": "B"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: "testns", Data: map[string]string{"a": "A", "b": "B"}}); err != nil {
 		t.Fatalf("create cm1: %v", err)
 	}
-	if err := cli.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sec1", Namespace: "testns"}, Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Secret{Name: "sec1", Namespace: "testns", Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}}); err != nil {
 		t.Fatalf("create sec1: %v", err)
 	}
 	// Node n1 (cluster-scoped)
-	if err := cli.Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n1"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Node{Name: "n1"}); err != nil {
 		t.Fatalf("create node: %v", err)
 	}
 
@@ -248,10 +247,10 @@ func TestContextNamespaceWalk(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
-	if err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a": "A", "b": "B"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: "testns", Data: map[string]string{"a": "A", "b": "B"}}); err != nil {
 		t.Fatalf("create cm1: %v", err)
 	}
 
@@ -350,7 +349,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len(ctx) >= 2 })
 	count = keys.Len(ctx)
 	rows = keys.Lines(ctx, 0, count)
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 {
@@ -376,7 +375,7 @@ func TestStartupSelectionRestore(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 
@@ -423,7 +422,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 
@@ -471,10 +470,10 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
-	if err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a": "A"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: "testns", Data: map[string]string{"a": "A"}}); err != nil {
 		t.Fatalf("create cm1: %v", err)
 	}
 

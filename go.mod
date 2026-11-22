@@ -13,7 +13,6 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/taigrr/bubbleterm v0.3.5
 	go.uber.org/zap v1.28.0
-	golang.org/x/exp v0.0.0-20261120182113-8801fbdfac81
 	golang.org/x/image v0.48.0
 	golang.org/x/sync v0.25.0
 	k8s.io/api v0.37.2
@@ -24,6 +23,7 @@ require (
 	k8s.io/component-helpers v0.37.2
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kubectl v0.37.2
+	k8s.io/streaming v0.37.2
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
 	sigs.k8s.io/controller-runtime v0.25.3
 	sigs.k8s.io/yaml v1.6.0
@@ -275,6 +275,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.5 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
+	golang.org/x/exp v0.0.0-20261120182113-8801fbdfac81 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260811152304-ee035b5b010f // indirect
 	golang.org/x/mod v0.43.0 // indirect
 	golang.org/x/net v0.63.0 // indirect
@@ -293,7 +294,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.8.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
-	k8s.io/streaming v0.37.2 // indirect
 	mvdan.cc/gofumpt v0.12.0 // indirect
 	mvdan.cc/unparam v0.0.0-20260823230713-2fa3d841b0c8 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect

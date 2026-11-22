@@ -1,6 +1,7 @@
 package workloadaction_test
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -9,7 +10,6 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/stokaro/kc/internal/workloadaction"
@@ -18,20 +18,16 @@ import (
 // replicaSet is a ReplicaSet of revision rev, controlled by the owner with
 // ownerUID, with the hash label the Deployment controller adds.
 func replicaSet(name, rev, image string, ownerUID types.UID, annotations map[string]string) *appsv1.ReplicaSet {
-	a := map[string]string{}
-	for k, v := range annotations {
-		a[k] = v
-	}
+	a := make(map[string]string)
+	maps.Copy(a, annotations)
 	if rev != "" {
 		a["deployment.kubernetes.io/revision"] = rev
 	}
 	tmpl := podTemplate(image, map[string]string{"note": "rev " + rev})
 	tmpl.Labels["pod-template-hash"] = "h" + rev
 	return &appsv1.ReplicaSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name, Namespace: ns, Annotations: a,
-			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: "web", UID: ownerUID, Controller: ptr.To(true)}},
-		},
+		Name: name, Namespace: ns, Annotations: a,
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: "web", UID: ownerUID, Controller: new(true)}},
 		Spec: appsv1.ReplicaSetSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
 			Template: tmpl,

@@ -324,8 +324,8 @@ const (
 )
 
 // titleCell returns the start column and width of the cell of title i.
-func (b *Bar) titleCell(i int) (int, int) {
-	x := barStartX
+func (b *Bar) titleCell(i int) (x, width int) {
+	x = barStartX
 	for j := range i {
 		x += titleWidth(b.menus[j].Title) + barGap
 	}
@@ -370,6 +370,8 @@ func (b *Bar) dropdownSize() (w, h, shortW int) {
 // DropdownBounds returns the screen rectangle of the drop-down, frame
 // included. The drop-down hangs under its title and is shifted left when it
 // would run past the right edge of the screen.
+//
+//revive:disable-next-line:function-result-limit a rectangle is four named coordinates
 func (b *Bar) DropdownBounds() (x, y, w, h int) {
 	if !b.Dropped() || len(b.menus) == 0 {
 		return 0, 0, 0, 0

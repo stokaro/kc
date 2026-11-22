@@ -100,7 +100,7 @@ func clientVersionInfo() versionInfo {
 // -ldflags when the binary was built without them. `go install ...@vX.Y.Z`
 // records the module version in the build info, and a build from a git
 // checkout records the commit and its time. Values from -ldflags win.
-func resolveBuildVersion(v, c, d string, bi *debug.BuildInfo) (string, string, string) {
+func resolveBuildVersion(v, c, d string, bi *debug.BuildInfo) (version, commit, date string) {
 	if bi == nil {
 		return v, c, d
 	}

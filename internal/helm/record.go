@@ -85,8 +85,8 @@ func revisionOf(label, secretName string) int {
 	if v, err := strconv.Atoi(label); err == nil {
 		return v
 	}
-	if i := strings.LastIndex(secretName, ".v"); i >= 0 {
-		if v, err := strconv.Atoi(secretName[i+2:]); err == nil {
+	if _, after, ok := strings.CutLast(secretName, ".v"); ok {
+		if v, err := strconv.Atoi(after); err == nil {
 			return v
 		}
 	}
@@ -128,7 +128,7 @@ func (h History) Revision(rev int) (Record, bool) {
 
 // Group groups records by release, sorted by namespace and name.
 func Group(records []Record) []History {
-	byKey := map[string]*History{}
+	byKey := make(map[string]*History)
 	for _, r := range records {
 		key := r.Namespace + "/" + r.Release
 		h, ok := byKey[key]

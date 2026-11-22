@@ -143,7 +143,7 @@ func TestLoadUsesHomeDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := filepath.Join(home, ".kc", "config.yaml")
-	if err := os.WriteFile(p, []byte("viewer: [\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("viewer: [\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := appconfig.Load()
@@ -189,7 +189,7 @@ func TestUpdateAfterRepair(t *testing.T) {
 	if _, err := s.Load(); err == nil {
 		t.Fatal("Load succeeded on a broken file")
 	}
-	if err := os.WriteFile(p, []byte(customConfig), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(customConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	saved, err := s.Update(func(c *appconfig.Config) { c.Objects.Order = appconfig.ObjectsOrderCreation })
@@ -297,7 +297,7 @@ func TestUpdateWritesThroughSymlink(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(target, []byte(customConfig), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte(customConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(dir, "config.yaml")

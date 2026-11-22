@@ -128,7 +128,7 @@ func (s *nativeSession) extractTar(ctx context.Context, dir string, req ExtractR
 // "kc: " lines when there are any, else the tail of what tar printed.
 func scriptError(err error, output string) error {
 	var own, other []string
-	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(output), "\n") {
 		line = strings.TrimSpace(line)
 		switch {
 		case line == "":

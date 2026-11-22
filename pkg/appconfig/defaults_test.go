@@ -18,7 +18,7 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	wd, _ := os.Getwd()
 	dir := wd
 	var path string
-	for i := 0; i < 6; i++ { // up to 6 levels
+	for range 6 { // up to 6 levels
 		p := filepath.Join(dir, "..", "..", "config-default.yaml")
 		if _, err := os.Stat(p); err == nil {
 			path = p

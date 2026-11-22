@@ -74,10 +74,10 @@ type fakeOpener struct {
 
 func newFakeOpener() *fakeOpener {
 	return &fakeOpener{
-		streams: map[string]*fakeStream{},
-		opts:    map[string]corev1.PodLogOptions{},
-		ctxs:    map[string]context.Context{},
-		fail:    map[string]error{},
+		streams: make(map[string]*fakeStream),
+		opts:    make(map[string]corev1.PodLogOptions),
+		ctxs:    make(map[string]context.Context),
+		fail:    make(map[string]error),
 	}
 }
 
@@ -169,7 +169,7 @@ func TestMuxMergesLinesWithPrefix(t *testing.T) {
 		m.SetTargets([]logmux.Target{target("api-1", "app"), target("api-2", "app")})
 		synctest.Wait()
 
-		got := map[string]bool{}
+		got := make(map[string]bool)
 		for range 2 {
 			line, err := r.ReadString('\n')
 			if err != nil {
@@ -243,7 +243,7 @@ func TestFormatColorIsStablePerTarget(t *testing.T) {
 
 	// The color depends on the name: over a few names, more than one color
 	// shows up, so the hash is not constant.
-	colors := map[string]bool{}
+	colors := make(map[string]bool)
 	for i := range 20 {
 		colors[logmux.Color(target(fmt.Sprintf("api-%d", i), "app"))] = true
 	}

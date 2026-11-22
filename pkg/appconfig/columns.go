@@ -41,6 +41,8 @@ func ColumnsKey(groupVersion, resource string) string {
 // ParseColumnsKey splits a columns config key into group, version and
 // resource. Core resources have two parts ("v1/pods"), others three
 // ("apps/v1/deployments").
+//
+//revive:disable-next-line:function-result-limit the three named parts of a GVR key and the error
 func ParseColumnsKey(key string) (group, version, resource string, err error) {
 	parts := strings.Split(key, "/")
 	for _, p := range parts {

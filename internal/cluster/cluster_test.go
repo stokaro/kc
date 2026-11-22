@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -9,7 +8,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -57,22 +55,21 @@ func TestNamespaceScopedClusterListsOneNamespace(t *testing.T) {
 		t.Fatalf("Namespace() = %q", cl.Namespace())
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() { _ = cl.Start(ctx) }()
 
 	createCM := func(ns, name string) {
 		t.Helper()
 		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Data:       map[string]string{"k": "v"},
+			Name: name, Namespace: ns,
+			Data: map[string]string{"k": "v"},
 		}
-		if err := cl.GetClient().Create(context.Background(), cm); err != nil {
+		if err := cl.GetClient().Create(t.Context(), cm); err != nil {
 			t.Fatalf("create configmap %s/%s: %v", ns, name, err)
 		}
 	}
 	for _, ns := range []string{"ns-a", "ns-b"} {
-		if err := cl.GetClient().Create(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}); err != nil && !strings.Contains(err.Error(), "already exists") {
+		if err := cl.GetClient().Create(t.Context(), &corev1.Namespace{Name: ns}); err != nil && !strings.Contains(err.Error(), "already exists") {
 			t.Fatalf("create namespace %s: %v", ns, err)
 		}
 	}

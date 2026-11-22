@@ -2,6 +2,7 @@ package objectaction_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ import (
 
 func newCronJob(suspend *bool) *batchv1.CronJob {
 	return &batchv1.CronJob{
-		ObjectMeta: metav1.ObjectMeta{Name: "backup", Namespace: "ops", UID: "cj-uid"},
+		Name: "backup", Namespace: "ops", UID: "cj-uid",
 		Spec: batchv1.CronJobSpec{
 			Schedule: "0 * * * *",
 			Suspend:  suspend,
@@ -56,7 +57,7 @@ func cronJobActions(t *testing.T) map[string]objectaction.Action {
 	t.Helper()
 	r := objectaction.NewRegistry()
 	objectaction.RegisterCronJobActions(r, func() string { return "abcde" })
-	out := map[string]objectaction.Action{}
+	out := make(map[string]objectaction.Action)
 	for _, a := range r.For(objectaction.CronJobsGVR, nil) {
 		out[a.ID] = a
 	}
@@ -70,7 +71,7 @@ var backupRef = models.ObjectRef{GVR: objectaction.CronJobsGVR, Namespace: "ops"
 
 func TestTriggerCreatesJobLikeKubectl(t *testing.T) {
 	t.Parallel()
-	env := newEnv(t, newCronJob(ptr.To(true)))
+	env := newEnv(t, newCronJob(new(true)))
 	ctx := t.Context()
 
 	action, err := cronJobActions(t)["cronjob.trigger"].Prepare(ctx, env, backupRef)
@@ -133,8 +134,8 @@ func TestSuspendAndResume(t *testing.T) {
 		wantSuspend bool
 	}{
 		{name: "unset suspends", suspend: nil, wantTitle: "Suspend CronJob?", wantSuspend: true},
-		{name: "false suspends", suspend: ptr.To(false), wantTitle: "Suspend CronJob?", wantSuspend: true},
-		{name: "true resumes", suspend: ptr.To(true), wantTitle: "Resume CronJob?", wantSuspend: false},
+		{name: "false suspends", suspend: new(false), wantTitle: "Suspend CronJob?", wantSuspend: true},
+		{name: "true resumes", suspend: new(true), wantTitle: "Resume CronJob?", wantSuspend: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -211,12 +212,7 @@ func TestRegistryFiltersByGVRAndVerb(t *testing.T) {
 	}
 	only := func(verbs ...string) func(string) bool {
 		return func(v string) bool {
-			for _, w := range verbs {
-				if w == v {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(verbs, v)
 		}
 	}
 	tests := []struct {

@@ -1,6 +1,7 @@
 package navigation
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -61,15 +62,7 @@ func TestNavigator_BackFromContextNamespacesGoesToContexts(t *testing.T) {
 }
 
 func equalPath(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }
 
 // closingFolder counts Close calls.

@@ -17,7 +17,7 @@ type Model struct {
 	YOffset    int
 }
 
-func New(fore viewer, back viewer, xPos Position, yPos Position, xOff int, yOff int) *Model {
+func New(fore, back viewer, xPos, yPos Position, xOff, yOff int) *Model {
 	return &Model{
 		Foreground: fore,
 		Background: back,

@@ -18,6 +18,6 @@ func Setup() {
 		logger = zap.New(zap.WriteTo(io.Discard))
 	}
 	ctrl.SetLogger(logger)
-	// Point klog to controller-runtime's logr so both stacks share output
-	klog.SetLogger(ctrl.Log)
+	// Point klog to the same logr so both stacks share output.
+	klog.SetLogger(logger)
 }

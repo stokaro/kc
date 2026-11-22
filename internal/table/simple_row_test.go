@@ -1,8 +1,9 @@
 package table
 
 import (
-	"charm.land/lipgloss/v2"
 	"testing"
+
+	"charm.land/lipgloss/v2"
 )
 
 func TestSimpleRowSetColumnGrowsAndSets(t *testing.T) {
