@@ -221,6 +221,8 @@ func (s *execSession) Run() error {
 		stderr = os.Stderr
 	}
 	_, _ = fmt.Fprintf(stdout, "%s\n", s.banner)
+	// #nosec G204 -- kubectl is fixed; the arguments are built by kc from the
+	// selected object and passed without a shell.
 	cmd := exec.Command("kubectl", s.args...)
 	cmd.Stdin = s.stdin
 	cmd.Stdout = stdout

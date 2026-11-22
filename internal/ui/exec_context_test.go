@@ -174,6 +174,7 @@ func stubOnPath(t *testing.T, name string) {
 	t.Helper()
 	dir := t.TempDir()
 	script := "#!/bin/sh\nprintf 'KUBECONFIG=%s\\n' \"$KUBECONFIG\"\nfor a in \"$@\"; do printf 'arg=%s\\n' \"$a\"; done\n"
+	// #nosec G306 -- the fake command must be executable.
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}

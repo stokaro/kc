@@ -67,6 +67,7 @@ func (t *Terminal) Init() tea.Cmd {
 	}
 
 	// Create shell command
+	// #nosec G204 G702 -- the embedded terminal runs the user's own $SHELL.
 	cmd := exec.Command(shell)
 	env := t.env
 	if len(env) == 0 {

@@ -64,6 +64,8 @@ func commandProcess(shell, cmdStr string, run CommandExec) *exec.Cmd {
 // keeps the user's own credentials.
 func kubectlEditCommand(ec execctx.Context, resourceRef string) (*exec.Cmd, string) {
 	argv := append([]string{"kubectl", "edit", resourceRef}, ec.KubectlArgs()...)
+	// #nosec G204 -- kubectl is fixed; the arguments are built by kc and
+	// passed without a shell.
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env = execctx.ProcessEnv(ec.Kubeconfig)
 	return cmd, execctx.ShellJoin(argv)
