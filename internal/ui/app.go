@@ -251,6 +251,7 @@ type App struct {
 	// all). It is kc state; kubeconfig is never changed.
 	panelScope             [2]string
 	activity               *models.Activity       // pauses background refreshes while a dialog is open
+	usage                  *models.UsageMetrics   // polls metrics.k8s.io for usage columns
 	pendingConfirm         models.ConfirmedAction // waits for the red confirmation
 	namespaceOverride      string
 	startupIntent          StartupIntent
@@ -296,6 +297,7 @@ func NewApp() *App {
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.activity = &models.Activity{}
+	app.usage = models.NewUsageMetrics()
 	app.leftPanel = NewPanel("", app.cfg)
 	app.rightPanel = NewPanel("", app.cfg)
 	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
@@ -890,6 +892,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		PodFSFactory:     a.podfsFactory,
 		ReportError:      a.reportReadError,
 		Activity:         a.activity,
+		Usage:            a.usage,
 	}
 }
 

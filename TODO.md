@@ -16,7 +16,8 @@ Terminal context manager for the integrated PTY session (`internal/ui/termctx`).
 - [ ] mc-style pull-down menu bar on F9 — #48
 - [ ] Describe/Manifest panel modes: refresh when the object changes, describe off the UI thread — #47
 - [ ] Logs panel mode that follows the other panel's selection — #49
-- [ ] Top/metrics: usage columns and sorting by consumption — #44, #37
+- [x] Top/metrics: usage columns in pod and node lists — #44
+- [ ] Top/metrics: sorting by consumption — #37
 - [ ] Extensible actions: built-in object actions and richer custom commands — #33, #46
 - [ ] Favorites: add and remove favorite resource types from the UI (today only `resources.favorites` in the config).
 

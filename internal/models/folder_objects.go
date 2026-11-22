@@ -65,7 +65,7 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 		order = o.objectOrder
 	}
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
-		return o.rowsFromRowList(rl, columnsMode, order), nil
+		return o.rowsFromRowList(o.withUsageColumns(rl), columnsMode, order), nil
 	} else if err != nil && apierrors.IsForbidden(err) {
 		return nil, err
 	}
