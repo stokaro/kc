@@ -35,6 +35,33 @@ const (
 	ObjectsOrderCreationDesc = "-creation"
 )
 
+// ObjectsOrderKey returns the objects order key of a table column: the title
+// in lower case with inner spaces replaced by dashes ("Nominated Node" gives
+// "nominated-node").
+func ObjectsOrderKey(title string) string {
+	return strings.ToLower(strings.Join(strings.Fields(title), "-"))
+}
+
+// NormalizeObjectsOrder returns the canonical form of an objects order: a
+// column key (see ObjectsOrderKey), or "creation", with a leading "-" for
+// descending order. Values that name no key become "name". A key that a
+// given table lacks is not an error here; that list falls back to name.
+func NormalizeObjectsOrder(order string) string {
+	order = strings.TrimSpace(order)
+	desc := strings.HasPrefix(order, "-")
+	if desc {
+		order = order[1:]
+	}
+	key := ObjectsOrderKey(order)
+	if key == "" || strings.HasPrefix(key, "-") {
+		return ObjectsOrderName
+	}
+	if desc {
+		return "-" + key
+	}
+	return key
+}
+
 type HorizontalConfig struct {
 	Step int `json:"step"`
 }
@@ -158,7 +185,10 @@ type CommandConfig struct {
 
 // ObjectsConfig controls object-list specific options.
 type ObjectsConfig struct {
-	// Order controls ordering within object lists. Valid values conform to ObjectsOrder* constants (Name, NameDesc, Creation, CreationDesc).
+	// Order controls ordering within object lists: a column key (the column
+	// title in lower case, spaces as dashes, e.g. "name", "age", "restarts")
+	// or "creation", with a leading "-" for descending order. Lists without
+	// that column sort by name.
 	Order string `json:"order"`
 	// Columns controls which columns are shown. Valid values are ColumnsModeNormal and ColumnsModeWide.
 	Columns string `json:"columns"`
@@ -324,18 +354,7 @@ func Load() (*Config, error) {
 		} else {
 			cfg.Resources.Columns = ColumnsModeNormal
 		}
-		switch {
-		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderName):
-			cfg.Objects.Order = ObjectsOrderName
-		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderNameDesc):
-			cfg.Objects.Order = ObjectsOrderNameDesc
-		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreation):
-			cfg.Objects.Order = ObjectsOrderCreation
-		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreationDesc):
-			cfg.Objects.Order = ObjectsOrderCreationDesc
-		default:
-			cfg.Objects.Order = ObjectsOrderName
-		}
+		cfg.Objects.Order = NormalizeObjectsOrder(cfg.Objects.Order)
 		if strings.EqualFold(cfg.Objects.Columns, ColumnsModeWide) {
 			cfg.Objects.Columns = ColumnsModeWide
 		} else {
@@ -457,18 +476,7 @@ func Load() (*Config, error) {
 	} else {
 		cfg.Resources.Columns = ColumnsModeNormal
 	}
-	switch {
-	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderName):
-		cfg.Objects.Order = ObjectsOrderName
-	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderNameDesc):
-		cfg.Objects.Order = ObjectsOrderNameDesc
-	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreation):
-		cfg.Objects.Order = ObjectsOrderCreation
-	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreationDesc):
-		cfg.Objects.Order = ObjectsOrderCreationDesc
-	default:
-		cfg.Objects.Order = ObjectsOrderName
-	}
+	cfg.Objects.Order = NormalizeObjectsOrder(cfg.Objects.Order)
 	if strings.EqualFold(cfg.Objects.Columns, ColumnsModeWide) {
 		cfg.Objects.Columns = ColumnsModeWide
 	} else {
@@ -507,18 +515,7 @@ func Save(cfg *Config) error {
 	if out.Resources.PeekInterval.Duration <= 0 {
 		out.Resources.PeekInterval = metav1.Duration{Duration: Default().Resources.PeekInterval.Duration}
 	}
-	switch {
-	case strings.EqualFold(out.Objects.Order, ObjectsOrderName):
-		out.Objects.Order = ObjectsOrderName
-	case strings.EqualFold(out.Objects.Order, ObjectsOrderNameDesc):
-		out.Objects.Order = ObjectsOrderNameDesc
-	case strings.EqualFold(out.Objects.Order, ObjectsOrderCreation):
-		out.Objects.Order = ObjectsOrderCreation
-	case strings.EqualFold(out.Objects.Order, ObjectsOrderCreationDesc):
-		out.Objects.Order = ObjectsOrderCreationDesc
-	default:
-		out.Objects.Order = ObjectsOrderName
-	}
+	out.Objects.Order = NormalizeObjectsOrder(out.Objects.Order)
 	if strings.EqualFold(out.Objects.Columns, ColumnsModeWide) {
 		out.Objects.Columns = ColumnsModeWide
 	} else {
