@@ -1368,25 +1368,28 @@ func (a *App) cyclePanelMode(idx int) tea.Cmd {
 	return a.setPanelMode(ctx, panel, next, fmt.Sprintf("cycle panel %d mode", idx))
 }
 
-func (a *App) cyclePanelModeIfVisible(idx int) tea.Cmd {
+// cyclePanelModeIfVisible cycles the mode of panel idx and reports whether
+// it did. The command may be nil when the new widget has nothing to load;
+// the key is still used.
+func (a *App) cyclePanelModeIfVisible(idx int) (tea.Cmd, bool) {
 	leftWidth, rightWidth := a.panelWidths()
 	// Only cycle when both panels are visible to avoid acting on hidden panes.
 	if leftWidth <= 0 || rightWidth <= 0 {
-		return nil
+		return nil, false
 	}
 	switch idx {
 	case 0:
 		if leftWidth <= 0 {
-			return nil
+			return nil, false
 		}
 	case 1:
 		if rightWidth <= 0 {
-			return nil
+			return nil, false
 		}
 	default:
-		return nil
+		return nil, false
 	}
-	return a.cyclePanelMode(idx)
+	return a.cyclePanelMode(idx), true
 }
 
 func panelModeModalKey(idx int) string {

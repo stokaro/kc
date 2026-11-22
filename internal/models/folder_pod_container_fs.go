@@ -326,7 +326,7 @@ func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error
 			rows = append(rows, fileItem)
 		default:
 			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entry, f)
-			fileItem.RowItem.details = fmt.Sprintf("%s bytes", displaySize)
+			fileItem.RowItem.details = fileSizeDetails(entry.Size)
 			rows = append(rows, fileItem)
 		}
 	}
@@ -685,6 +685,15 @@ func (h *containerSessionHandle) HelperUsed() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.helper
+}
+
+// fileSizeDetails is the info line of a file: the exact size, and the
+// rounded one the Size column shows once that has a larger unit.
+func fileSizeDetails(size int64) string {
+	if size < 1024 {
+		return fmt.Sprintf("%d bytes", size)
+	}
+	return fmt.Sprintf("%s (%d bytes)", formatBytes(size), size)
 }
 
 func formatBytes(size int64) string {

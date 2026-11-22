@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/nodeaction"
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
@@ -348,6 +349,12 @@ func (m *drainOptionsModel) FooterHints() []FooterHint {
 // lists.
 const maxBlockedLines = 5
 
+// drainDialogWidth is the width the progress dialog opens with when the
+// screen has room. Refusal messages arrive after the dialog opened and are
+// long, so it does not size itself to the first lines. Lines still wrap
+// on a narrower screen.
+const drainDialogWidth = 100
+
 // drainProgressModel shows a running drain: per node its phase, evicted,
 // remaining and PDB-blocked pods. Esc or Enter cancels while it runs and
 // closes once it is done.
@@ -450,18 +457,47 @@ func (m *drainProgressModel) lines() []string {
 func (m *drainProgressModel) PreferredSize(maxW, maxH int) (width, height int) {
 	// Room for the blocked list, so the window does not grow while the
 	// drain runs.
-	h := 2 + len(m.nodes) + 1 + 1 + maxBlockedLines + 2 + 1 + 2
-	return min(max(linesWidth(m.lines())+2, 56), maxW), min(h, maxH)
+	// A refusal usually wraps once, so each blocked pod gets two lines.
+	h := 2 + len(m.nodes) + 1 + 1 + 2*maxBlockedLines + 2 + 1 + 2
+	return min(max(linesWidth(m.lines())+2, drainDialogWidth), maxW), min(h, maxH)
+}
+
+// wrapDialogLine wraps line to width. The pieces after the first are
+// indented two more columns than the line, so a wrapped refusal stays
+// readable under its pod name.
+func wrapDialogLine(line string, width int) []string {
+	if lipgloss.Width(line) <= width {
+		return []string{line}
+	}
+	text := strings.TrimLeft(line, " ")
+	lead := line[:len(line)-len(text)]
+	cont := lead + "  "
+	parts := strings.Split(ansi.Wrap(text, max(1, width-len(cont)), ""), "\n")
+	out := []string{lead + parts[0]}
+	for _, p := range parts[1:] {
+		out = append(out, cont+p)
+	}
+	return out
 }
 
 func (m *drainProgressModel) View() tea.View {
 	w := max(m.width, 1)
 	lines := m.lines()
 	var out []string
-	for _, l := range lines {
+	var wrapped []string
+	for _, l := range lines[:len(lines)-1] {
+		wrapped = append(wrapped, wrapDialogLine(l, w)...)
+	}
+	// The last line says how the drain ended or how to cancel; it stays
+	// visible when the rest does not fit.
+	status := wrapDialogLine(lines[len(lines)-1], w)
+	body := max(1, m.height-2)
+	if keep := max(0, body-len(status)); len(wrapped) > keep {
+		wrapped = wrapped[:keep]
+	}
+	for _, l := range append(wrapped, status...) {
 		out = append(out, greyLine(l, w, false))
 	}
-	body := max(1, m.height-2)
 	for len(out) < body {
 		out = append(out, greyLine("", w, false))
 	}
