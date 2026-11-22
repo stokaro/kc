@@ -40,7 +40,7 @@ objects:
   columns: normal
 
 portForward:
-  # Local address port forwards listen on (M-f). 127.0.0.1 keeps them
+  # Local address port forwards listen on (M-p). 127.0.0.1 keeps them
   # reachable from this machine only; "localhost" listens on both loopback
   # addresses like kubectl; 0.0.0.0 exposes them to the network.
   address: 127.0.0.1

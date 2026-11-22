@@ -22,11 +22,13 @@ client request logs an INFO line.
 
 ## Decision
 
-1. Key and entry point. `M-f` opens the dialog on the selected pod row,
-   container row (under a pod) or service row; `Esc f` does the same where
+1. Key and entry point. `M-p` opens the dialog on the selected pod row,
+   container row (under a pod) or service row; `Esc p` does the same where
    Option does not send Meta. It works only in list mode. On any other row
-   kc shows "Port forward works on pods, containers and services". The
-   mnemonic follows k9s' Shift-F.
+   kc shows "Port forward works on pods, containers and services". P
+   stands for "port". The first version used `M-f` after k9s' Shift-F;
+   it moved to `M-p` because `M-f` is the row filter (#30), the mc-style
+   "filter" key.
 
 2. Dialog shape. One text field, `local:remote`, in kubectl's syntax:
    `8080:80`, `8080` (same port both sides), `:80` (any free local port),

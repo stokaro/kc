@@ -220,8 +220,8 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// send Alt by default).
 			a.escPressed = false
 			return a, a.copyPanelCommand()
-		case "f":
-			// Esc f is the fallback for M-f (port forward).
+		case "p":
+			// Esc p is the fallback for M-p (port forward).
 			a.escPressed = false
 			return a, a.portForwardForPanel(a.activePanelRef())
 		case "s":

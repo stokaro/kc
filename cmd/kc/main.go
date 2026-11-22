@@ -384,7 +384,7 @@ func showHelp() {
 	fmt.Println("  F8          Delete resource")
 	fmt.Println("  F9          Context menu")
 	fmt.Println("  F10         Quit")
-	fmt.Println("  M-f         Port forward (pods, containers, services)")
+	fmt.Println("  M-p         Port forward (pods, containers, services)")
 	fmt.Println("  C-o         Toggle terminal")
 	fmt.Println("  Tab         Switch panels")
 	fmt.Println("  C-c         Quit")

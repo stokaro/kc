@@ -96,7 +96,7 @@ func TestPortForwardKeyNeedsATarget(t *testing.T) {
 	app.leftPanel = panelWith(t, &mockFolder{items: []models.Item{pod}}, "p")
 	cmd = app.portForwardForPanel(app.leftPanel)
 	if cmd == nil {
-		t.Fatal("M-f on a pod row returned no command")
+		t.Fatal("M-p on a pod row returned no command")
 	}
 	msg, ok := cmd().(portForwardPlanMsg)
 	if !ok || msg.err == nil {

@@ -77,7 +77,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
-| `M-f`      | Port forward the selected pod, container or service (see below). `Esc f` does the same. |
+| `M-p`      | Port forward the selected pod, container or service (see below). `Esc p` does the same. |
 | `M-a`      | In viewers: copy the whole content.                                             |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `C-c`      | Quit.                                                                           |
@@ -88,7 +88,7 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 
 ## Port Forwarding
 
-`M-f` (or `Esc f`) on a pod, a container of a pod, or a service opens a dialog with one field, `local:remote`, prefilled with the first declared TCP port. It takes kubectl's syntax: `8080:80`, `8080` (same port on both sides), `:80` (any free local port), and port names such as `8080:http`. The dialog lists the declared ports and shows the equivalent `kubectl port-forward` command. For a service, kc picks a running pod behind it (ready pods first) and maps the service port to its target port, as kubectl does; the forward stays on that pod.
+`M-p` (or `Esc p`) on a pod, a container of a pod, or a service opens a dialog with one field, `local:remote`, prefilled with the first declared TCP port. It takes kubectl's syntax: `8080:80`, `8080` (same port on both sides), `:80` (any free local port), and port names such as `8080:http`. The dialog lists the declared ports and shows the equivalent `kubectl port-forward` command. For a service, kc picks a running pod behind it (ready pods first) and maps the service port to its target port, as kubectl does; the forward stays on that pod.
 
 kc forwards in-process (client-go, websocket with SPDY fallback) and listens on `127.0.0.1` unless `portForward.address` says otherwise. While forwards run, the panel root shows `/port-forwards` with their count. It lists every forward of this kc process across contexts: `F3` shows its details and kubectl command, `F8` stops it. Forwards keep running when you switch context or namespace, end with a red message when the pod goes away, and all stop when kc exits.
 
@@ -202,7 +202,7 @@ objects:
   columns: normal
 
 portForward:
-  # Local address port forwards listen on (M-f). 127.0.0.1 keeps them
+  # Local address port forwards listen on (M-p). 127.0.0.1 keeps them
   # reachable from this machine only; "localhost" listens on both loopback
   # addresses like kubectl; 0.0.0.0 exposes them to the network.
   address: 127.0.0.1

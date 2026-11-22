@@ -14,8 +14,9 @@ import (
 )
 
 // portForwardKey opens the port forward dialog on a pod, container or
-// service row (k9s uses Shift-F; in kc plain letters go to the shell line).
-const portForwardKey = "alt+f"
+// service row. k9s uses Shift-F; in kc plain letters go to the shell line
+// and M-f is the row filter, so P for "port".
+const portForwardKey = "alt+p"
 
 const (
 	portForwardPrepareTimeout = 15 * time.Second
