@@ -169,20 +169,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if panel != nil {
 					currentTableMode = panel.TableMode()
 				}
-				widthSavePending := false
-				saveHandled := false
 				if m.SetPanelWidth && (m.Accept || m.SaveDefault) {
 					targetPercent := clampPercent(m.PanelWidthPercent)
 					if resizeCmds := a.setPanelWidthPercent(targetIdx, targetPercent); len(resizeCmds) > 0 {
 						cmds = append(cmds, resizeCmds...)
 					}
 					if m.SaveDefault {
-						if a.cfg == nil {
-							a.cfg = appconfig.Default()
-						}
-						a.cfg.Panel.Width.LeftPercent = a.leftPanelWidthPercent
-						a.cfg.Panel.Width.RightPercent = a.rightPanelWidthPercent
-						widthSavePending = true
+						left, right := a.leftPanelWidthPercent, a.rightPanelWidthPercent
+						a.cfg.Panel.Width.LeftPercent = left
+						a.cfg.Panel.Width.RightPercent = right
+						subCmds = append(subCmds, a.saveDefaults(func(c *appconfig.Config) {
+							c.Panel.Width.LeftPercent = left
+							c.Panel.Width.RightPercent = right
+						}))
 					}
 				}
 				if m.Resources != nil && (m.Accept || m.SaveDefault) {
@@ -206,9 +205,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.Close {
 						closedBySubMsg = true
 					}
-					if m.SaveDefault {
-						saveHandled = true
-					}
 				}
 				if m.Objects != nil && (m.Accept || m.SaveDefault) {
 					tableMode := currentTableMode
@@ -229,9 +225,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.Close {
 						closedBySubMsg = true
 					}
-					if m.SaveDefault {
-						saveHandled = true
-					}
 				}
 				if m.Command != nil && (m.Accept || m.SaveDefault) {
 					cmdMsg := CommandOptionsChangedMsg{
@@ -247,27 +240,28 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						closedBySubMsg = true
 					}
 				}
-				if widthSavePending && !saveHandled {
-					_ = appconfig.Save(a.cfg)
+				if m.Accept && !m.SaveDefault {
+					subCmds = append(subCmds, a.sessionOnly())
 				}
 				if m.Close && !closedBySubMsg {
 					a.hideModal()
 				}
 				return a, tea.Batch(subCmds...)
 			case ResourcesOptionsChangedMsg:
+				var saveCmd tea.Cmd
 				if m.SaveDefault {
 					// Persist current dialog values to config defaults
-					if a.cfg == nil {
-						a.cfg = appconfig.Default()
+					change := func(c *appconfig.Config) {
+						if m.HasInclude {
+							c.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
+						}
+						if m.HasOrder {
+							c.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
+						}
+						c.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
 					}
-					if m.HasInclude {
-						a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
-					}
-					if m.HasOrder {
-						a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
-					}
-					a.cfg.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
-					_ = appconfig.Save(a.cfg)
+					change(a.cfg)
+					saveCmd = a.saveDefaults(change)
 					a.applyResourceOptions(a.leftPanel)
 					a.applyResourceOptions(a.rightPanel)
 				}
@@ -321,28 +315,26 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.Close {
 					a.hideModal()
 				}
-				return a, nil
+				return a, saveCmd
 			case ObjectOptionsChangedMsg:
+				var saveCmd tea.Cmd
 				if m.SaveDefault {
-					if a.cfg == nil {
-						a.cfg = appconfig.Default()
+					change := func(c *appconfig.Config) {
+						switch strings.ToLower(m.TableMode) {
+						case "fit":
+							c.Panel.Table.Mode = appconfig.TableModeFit
+						default:
+							c.Panel.Table.Mode = appconfig.TableModeScroll
+						}
+						if strings.EqualFold(m.Columns, appconfig.ColumnsModeWide) {
+							c.Objects.Columns = appconfig.ColumnsModeWide
+						} else {
+							c.Objects.Columns = appconfig.ColumnsModeNormal
+						}
+						c.Objects.Order = m.ObjectsOrder
 					}
-					// Save table mode
-					switch strings.ToLower(m.TableMode) {
-					case "fit":
-						a.cfg.Panel.Table.Mode = appconfig.TableModeFit
-					default:
-						a.cfg.Panel.Table.Mode = appconfig.TableModeScroll
-					}
-					// Save columns mode to objects.columns
-					if strings.EqualFold(m.Columns, "wide") {
-						a.cfg.Objects.Columns = "wide"
-					} else {
-						a.cfg.Objects.Columns = "normal"
-					}
-					// Save objects order
-					a.cfg.Objects.Order = m.ObjectsOrder
-					_ = appconfig.Save(a.cfg)
+					change(a.cfg)
+					saveCmd = a.saveDefaults(change)
 				}
 				if a.activePanel == 0 {
 					ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -378,7 +370,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.Close {
 					a.hideModal()
 				}
-				return a, nil
+				return a, saveCmd
 			case CommandOptionsChangedMsg:
 				panel := a.activePanelRef()
 				panelIdx := a.activePanel
@@ -453,6 +445,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Re-dispatch the original message for normal handling
 		return a, func() tea.Msg { return msg.msg }
+	case configSavedMsg:
+		return a, a.handleConfigSaved(msg)
 	case showToastMsg:
 		a.toastActive = true
 		a.toastText = msg.text
@@ -647,13 +641,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 	case resourceDeletedMsg:
 		if msg.err != nil {
+			text := deleteResultText(msg)
 			if a.toastLogger != nil {
-				a.enqueueCmd(a.toastLogger.Errorf("Delete %s failed: %v", kubectlResourceRef(msg.target.gvr, msg.target.name), msg.err))
+				a.enqueueCmd(a.toastLogger.Errorf("%s", text))
 			} else {
-				a.enqueueCmd(a.ShowToast(fmt.Sprintf("Delete failed: %v", msg.err), 5*time.Second))
+				a.enqueueCmd(a.ShowToast(text, 5*time.Second))
 			}
-			return a, nil
 		}
+		// Refresh on failure too: a replaced or vanished object means the
+		// panel shows stale rows.
 		a.refreshPanelAfterEdit(msg.target.panelIdx)
 		return a, nil
 	case EscTimeoutMsg:
@@ -952,6 +948,9 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case configSavedMsg:
+		// C-s keeps the options dialog open; its result must still show.
 		return true
 	}
 	return false

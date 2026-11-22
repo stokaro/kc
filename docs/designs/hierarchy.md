@@ -175,7 +175,7 @@ BaseFolder
 │  ├─ ClusterObjectsFolder     // cluster-scoped objects for a GVR
 │  └─ NamespacedObjectsFolder  // namespace-scoped objects for a GVR
 ├─ PodContainersFolder         // virtual folder for pod containers/initContainers
-├─ ConfigMapKeysFolder         // virtual folder for ConfigMap data keys
+├─ ConfigMapKeysFolder         // virtual folder for ConfigMap data and binaryData keys
 └─ SecretKeysFolder            // virtual folder for Secret data keys
 ```
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -18,6 +19,11 @@ import (
 // thread and goes through the cache, which waits for the informer to sync;
 // without a bound an informer that cannot sync would hang kc.
 const viewReadTimeout = 5 * time.Second
+
+// binaryMIME marks view content whose body is raw bytes rather than text.
+// The viewer renders such a body as a summary and a hex dump; F5 still
+// writes the body unchanged. It must match viewer.BinaryMIME.
+const binaryMIME = "application/octet-stream"
 
 func getForView(deps Deps, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
 	ctx, cancel := context.WithTimeout(deps.Ctx, viewReadTimeout)
@@ -83,7 +89,7 @@ func keyViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name,
 				if isProbablyText(decoded) {
 					return title, string(decoded), "", "", filename, nil
 				}
-				return title, string(decoded), "", "application/octet-stream", filename, nil
+				return title, string(decoded), "", binaryMIME, filename, nil
 			}
 			return title, v, "", "", filename, nil
 		default:
@@ -96,7 +102,10 @@ func keyViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name,
 	}
 }
 
-func containerViewContent(deps Deps, namespace, pod, container string) ViewContentFunc {
+// containerViewContent renders the spec of one container of a pod. kind
+// selects the pod spec list the container lives in, so the viewer reads the
+// same entry as the kubectl command shown for the row.
+func containerViewContent(deps Deps, namespace, pod, container string, kind containerKind) ViewContentFunc {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	return func() (string, string, string, string, string, error) {
 		obj, err := getForView(deps, gvr, namespace, pod)
@@ -106,9 +115,9 @@ func containerViewContent(deps Deps, namespace, pod, container string) ViewConte
 		if obj == nil {
 			return "", "", "", "", "", ErrNoViewContent
 		}
-		m := findContainer(obj.Object, container)
+		m := findContainer(obj.Object, kind, container)
 		if m == nil {
-			return "", "", "", "", "", fmt.Errorf("container %q not found", container)
+			return "", "", "", "", "", fmt.Errorf("%s %q not found", containerKindLabel(kind), container)
 		}
 		out, err := yaml.Marshal(m)
 		if err != nil {
@@ -119,48 +128,52 @@ func containerViewContent(deps Deps, namespace, pod, container string) ViewConte
 	}
 }
 
-func findContainer(obj map[string]interface{}, name string) map[string]interface{} {
-	if arr, found, _ := unstructured.NestedSlice(obj, "spec", "containers"); found {
-		for _, c := range arr {
-			if m, ok := c.(map[string]interface{}); ok {
-				if n, _ := m["name"].(string); n == name {
-					return m
-				}
-			}
-		}
+// findContainer returns the entry named name in the pod spec list that kind
+// selects (spec.containers, spec.initContainers or spec.ephemeralContainers).
+// Every entry, ephemeral ones included, carries its name in a top-level
+// "name" field; none of them has metadata of its own.
+func findContainer(obj map[string]interface{}, kind containerKind, name string) map[string]interface{} {
+	arr, found, _ := unstructured.NestedSlice(obj, "spec", containerField(kind))
+	if !found {
+		return nil
 	}
-	if arr, found, _ := unstructured.NestedSlice(obj, "spec", "initContainers"); found {
-		for _, c := range arr {
-			if m, ok := c.(map[string]interface{}); ok {
-				if n, _ := m["name"].(string); n == name {
-					return m
-				}
-			}
+	for _, c := range arr {
+		m, ok := c.(map[string]interface{})
+		if !ok {
+			continue
 		}
-	}
-	if arr, found, _ := unstructured.NestedSlice(obj, "spec", "ephemeralContainers"); found {
-		for _, c := range arr {
-			if m, ok := c.(map[string]interface{}); ok {
-				if metadata, ok := m["metadata"].(map[string]interface{}); ok {
-					if n, _ := metadata["name"].(string); n == name {
-						return m
-					}
-				}
-			}
+		if n, _ := m["name"].(string); n == name {
+			return m
 		}
 	}
 	return nil
+}
+
+func containerKindLabel(kind containerKind) string {
+	switch kind {
+	case containerKindInit:
+		return "init container"
+	case containerKindEphemeral:
+		return "ephemeral container"
+	default:
+		return "container"
+	}
 }
 
 func isProbablyText(b []byte) bool {
 	if len(b) == 0 {
 		return true
 	}
+	// Invalid UTF-8, DEL and C1 controls (0x9b is CSI) would reach the
+	// terminal as mangled text or control sequences.
+	if !utf8.Valid(b) {
+		return false
+	}
 	for _, r := range string(b) {
 		switch {
 		case r == '\n' || r == '\r' || r == '\t':
 			continue
-		case r < 0x20:
+		case r < 0x20, r == 0x7f, r >= 0x80 && r < 0xa0:
 			return false
 		}
 	}

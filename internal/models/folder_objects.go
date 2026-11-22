@@ -76,6 +76,15 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	return o.rowsFromList(list, order), nil
 }
 
+// origin names the cluster connection this folder lists from.
+func (o *ObjectsFolder) origin() ObjectOrigin {
+	ctxName := o.Deps.CtxName
+	if ctxName == "" {
+		ctxName = o.Deps.ClusterKey.ContextName
+	}
+	return ObjectOrigin{Cluster: o.Deps.Cl, Context: ctxName}
+}
+
 // Close stops the folder's watch; navigators call it when they drop the folder.
 func (o *ObjectsFolder) Close() {
 	if o.rows != nil {
@@ -136,6 +145,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		style := applyRowStylers(info)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
+		obj.SetInstance(rr.ObjectMeta.UID, o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
@@ -211,6 +221,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		}
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
+		obj.SetInstance(item.GetUID(), o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
