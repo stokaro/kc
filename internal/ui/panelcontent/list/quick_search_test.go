@@ -89,7 +89,11 @@ func TestClickSelectsRowUnderMouse(t *testing.T) {
 	w.UseFolder(true)
 	_, _ = w.Update(ctx, tea.WindowSizeMsg{Width: 30, Height: 10})
 	w.SetFolder(ctx, &rowsFolder{rows: rows}, false)
-	for row, want := range map[int]string{1: "a", 2: "b", 3: "c"} {
+	for _, c := range []struct {
+		row  int
+		want string
+	}{{2, "b"}, {1, "a"}, {3, "c"}} {
+		row, want := c.row, c.want
 		w.handleMouse(ctx, panelcontent.MouseMsg{Intent: panelcontent.MouseIntentClick, Row: row, Button: tea.MouseLeft})
 		if got := w.CurrentItem(ctx).Name; got != want {
 			t.Fatalf("click on row %d selected %q, want %q", row, got, want)

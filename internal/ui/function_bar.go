@@ -36,24 +36,8 @@ func (f *functionBar) Render(state functionBarState) string {
 	}
 
 	if state.ToastActive {
-		msg := state.ToastText
-		maxw := state.Width
-		if lipgloss.Width(msg) > maxw {
-			if maxw > 1 {
-				msg = sliceANSIColsRaw(msg, 0, maxw-1) + "…"
-			} else {
-				msg = sliceANSIColsRaw(msg, 0, maxw)
-			}
-		}
-		toastStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color("196")).
-			Foreground(lipgloss.White).
-			Bold(true)
-		if state.ToastInfo {
-			toastStyle = toastStyle.Background(lipgloss.Cyan).Foreground(lipgloss.Black)
-		}
 		f.key = sig
-		f.cache.set(toastStyle.Width(state.Width).Render(msg), nil)
+		f.cache.set(renderToast(state.ToastText, state.ToastInfo, state.Width), nil)
 		view, _, _ := f.cache.get()
 		return view
 	}
