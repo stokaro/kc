@@ -21,6 +21,7 @@ func TestWorkloadLogsCommand(t *testing.T) {
 		name     string
 		deps     Deps
 		spec     WorkloadLogsSpec
+		logs     *LogsSpec // nil: spec.LogsSpec()
 		selector string
 		max      int
 		want     string
@@ -46,11 +47,23 @@ func TestWorkloadLogsCommand(t *testing.T) {
 			max:  50,
 			want: "kubectl --context prod logs api-1 -n web --all-containers --prefix --tail=50 --max-log-requests=50 -f",
 		},
+		{
+			name:     "viewer options: whole log, since, timestamps, previous",
+			spec:     WorkloadLogsSpec{Namespace: "web", Workload: deploy, WorkloadName: "api", Follow: true},
+			logs:     &LogsSpec{Namespace: "web", Follow: true, TailLines: -1, SinceSeconds: 900, Timestamps: true, Previous: true},
+			selector: "app=api",
+			max:      50,
+			want:     "kubectl logs -l app=api -n web --all-containers --prefix --tail=-1 --since=15m --timestamps -p --max-log-requests=50 -f",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := workloadLogsCommand(tc.deps, tc.spec, tc.selector, tc.max); got != tc.want {
+			logs := tc.spec.LogsSpec()
+			if tc.logs != nil {
+				logs = *tc.logs
+			}
+			if got := workloadLogsCommand(tc.deps, tc.spec, logs, tc.selector, tc.max); got != tc.want {
 				t.Fatalf("command =\n  %s\nwant\n  %s", got, tc.want)
 			}
 		})

@@ -128,6 +128,14 @@ this change must not stack on it.
 
 ### Follow-up after #76 merges
 
+Done when this change was merged onto main, with one difference from step
+2: `openWorkloadLogs` still resolves the workload's selector in a `tea.Cmd`
+first and `workloadLogsReadyMsg` opens the viewer, because the command line
+shows the selector before the stream opens. The viewer's opener then calls
+`startWorkloadLogs` with the F2 options, so each change starts a new merged
+stream. The selectors of the supported workloads are immutable, so the
+selector does not go stale.
+
 #76 replaces `NewLogsViewer(title, reader, cancel, theme)` with
 `NewLogsViewer(title, spec models.LogsSpec, open logStreamOpener, theme)`,
 where the opener runs in a `tea.Cmd` and every F2 change closes the old

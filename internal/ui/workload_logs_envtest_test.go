@@ -200,7 +200,7 @@ func TestWorkloadLogsFollowsPodsThroughTheSharedCache(t *testing.T) {
 		WorkloadName: "api",
 		Follow:       true,
 	}
-	src, err := startWorkloadLogs(ctx, cl, spec, 10, op.open)
+	src, err := startWorkloadLogs(ctx, cl, spec, spec.LogsSpec(), 10, op.open)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -265,7 +265,8 @@ func TestWorkloadLogsSinglePodAndNoMatch(t *testing.T) {
 	go func() { _ = cl.Start(ctx) }()
 
 	op := &recordingOpener{}
-	src, err := startWorkloadLogs(ctx, cl, models.WorkloadLogsSpec{Namespace: ns, Pod: "web-1", Follow: true, TailLines: 20}, 10, op.open)
+	podSpec := models.WorkloadLogsSpec{Namespace: ns, Pod: "web-1", Follow: true, TailLines: 20}
+	src, err := startWorkloadLogs(ctx, cl, podSpec, podSpec.LogsSpec(), 10, op.open)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -275,7 +276,8 @@ func TestWorkloadLogsSinglePodAndNoMatch(t *testing.T) {
 		t.Fatalf("opened another pod: %v", op.snapshot())
 	}
 
-	missing, err := startWorkloadLogs(ctx, cl, models.WorkloadLogsSpec{Namespace: ns, Pod: "gone", Follow: true}, 10, op.open)
+	goneSpec := models.WorkloadLogsSpec{Namespace: ns, Pod: "gone", Follow: true}
+	missing, err := startWorkloadLogs(ctx, cl, goneSpec, goneSpec.LogsSpec(), 10, op.open)
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}

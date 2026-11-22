@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/sttts/kc/internal/logmux"
+	"github.com/sttts/kc/internal/models"
 )
 
 // The widget test (viewer.TestAppendStyledLines) covers search and theme
@@ -16,10 +17,10 @@ func TestLogsViewerStyledLines(t *testing.T) {
 		t.Fatalf("formatted line %q has no styling", line)
 	}
 
-	v := NewLogsViewer("logs:test", nil, nil, "dracula")
+	v := NewLogsViewer("logs:test", models.LogsSpec{}, nil, "dracula")
 	v.SetStyledLines(true)
 	v.SetDimensions(80, 10)
-	v.Update(logStreamMsg{lines: []string{line}})
+	v.Update(logStreamMsg{viewer: v, lines: []string{line}})
 
 	if text := v.inner.PlainText(); !strings.HasSuffix(text, "[api-1/app] hello") {
 		t.Fatalf("viewer text %q, want the stripped line", text)
