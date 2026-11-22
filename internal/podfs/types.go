@@ -69,7 +69,8 @@ type ExecSession interface {
 	Close() error
 }
 
-// Factory constructs ExecSessions on demand.
+// Factory constructs ExecSessions on demand. ctx bounds establishing the
+// session; the session stays usable after ctx ends, until Close.
 type Factory interface {
 	NewSession(ctx context.Context, spec SessionSpec) (ExecSession, error)
 }
