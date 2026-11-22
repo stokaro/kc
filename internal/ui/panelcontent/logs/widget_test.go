@@ -143,7 +143,7 @@ func update(t *testing.T, w *logswidget.Widget, msg tea.Msg) tea.Cmd {
 // command that reads the first lines.
 func open(t *testing.T, w *logswidget.Widget, item models.Item) tea.Cmd {
 	t.Helper()
-	debounced := run(t, w.Follow(t.Context(), panelcontent.Selection{Item: item}))
+	debounced := run(t, w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: item}))
 	opened := run(t, update(t, w, debounced))
 	return update(t, w, opened)
 }
@@ -206,7 +206,7 @@ func TestSameSelectionKeepsStream(t *testing.T) {
 	w := newWidget(t, src)
 	open(t, w, podItem("ns", "pod-a"))
 
-	if cmd := w.Follow(t.Context(), panelcontent.Selection{Item: podItem("ns", "pod-a"), Force: true}); cmd != nil {
+	if cmd := w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: podItem("ns", "pod-a"), Force: true}); cmd != nil {
 		t.Fatal("the same pod must keep its open stream")
 	}
 	if src.wasCanceled("pod-a") {
@@ -220,8 +220,8 @@ func TestDebounceDropsSkippedRows(t *testing.T) {
 	w := newWidget(t, src)
 	ctx := t.Context()
 
-	tickA := w.Follow(ctx, panelcontent.Selection{Item: podItem("ns", "pod-a")})
-	tickB := w.Follow(ctx, panelcontent.Selection{Item: podItem("ns", "pod-b")})
+	tickA := w.OnSelectionChanged(ctx, panelcontent.Selection{Item: podItem("ns", "pod-a")})
+	tickB := w.OnSelectionChanged(ctx, panelcontent.Selection{Item: podItem("ns", "pod-b")})
 
 	if cmd := update(t, w, run(t, tickA)); cmd != nil {
 		t.Fatal("the timer of a row the selection left must not open a stream")
@@ -239,8 +239,8 @@ func TestStaleOpenIsClosed(t *testing.T) {
 	w := newWidget(t, src)
 	ctx := t.Context()
 
-	openA := update(t, w, run(t, w.Follow(ctx, panelcontent.Selection{Item: podItem("ns", "pod-a")})))
-	w.Follow(ctx, panelcontent.Selection{Item: podItem("ns", "pod-b")})
+	openA := update(t, w, run(t, w.OnSelectionChanged(ctx, panelcontent.Selection{Item: podItem("ns", "pod-a")})))
+	w.OnSelectionChanged(ctx, panelcontent.Selection{Item: podItem("ns", "pod-b")})
 
 	// pod-a's open finishes after the selection moved on.
 	closeCmd := update(t, w, run(t, openA))
@@ -266,7 +266,7 @@ func TestNonPodSelectionShowsHint(t *testing.T) {
 
 	open(t, w, podItem("ns", "pod-a"))
 	deployment := models.NewObjectRow("d", []string{"d"}, nil, deploymentsGVR, "ns", "d", nil)
-	if cmd := w.Follow(t.Context(), panelcontent.Selection{Item: deployment}); cmd != nil {
+	if cmd := w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: deployment}); cmd != nil {
 		t.Fatal("a deployment has no log to open")
 	}
 	if !src.wasCanceled("pod-a") {
@@ -307,7 +307,7 @@ func TestEndedStreamIsMarked(t *testing.T) {
 	}
 
 	// Choosing the mode again restarts an ended stream for the same pod.
-	if cmd := w.Follow(t.Context(), panelcontent.Selection{Item: podItem("ns", "pod-a"), Force: true}); cmd == nil {
+	if cmd := w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: podItem("ns", "pod-a"), Force: true}); cmd == nil {
 		t.Fatal("a forced selection should restart an ended stream")
 	}
 }
@@ -346,7 +346,7 @@ func TestMessagesOfAnotherWidgetAreIgnored(t *testing.T) {
 	src := newFakeSource(map[string]*chanBody{"pod-a": newChanBody("a1")})
 	w1, w2 := newWidget(t, src), newWidget(t, src)
 
-	tick := run(t, w1.Follow(t.Context(), panelcontent.Selection{Item: podItem("ns", "pod-a")}))
+	tick := run(t, w1.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: podItem("ns", "pod-a")}))
 	if _, handled := w2.Update(t.Context(), tick); handled {
 		t.Fatal("a widget must not take another widget's message")
 	}

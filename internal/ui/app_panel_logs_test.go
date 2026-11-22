@@ -45,7 +45,7 @@ func logsMsgOf(t *testing.T, app *App) tea.Msg {
 			return func() tea.Msg { return fn(time.Time{}) }
 		},
 	})
-	return w.Follow(t.Context(), panelcontent.Selection{Item: testPodItem()})()
+	return w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: testPodItem()})()
 }
 
 func testPodItem() models.Item {
@@ -61,7 +61,7 @@ func TestLogsPanelFollowsOtherPanel(t *testing.T) {
 	app := NewApp()
 	app.width, app.height = 100, 30
 	if cmd := app.setPanelMode(t.Context(), app.rightPanel, PanelModeLogs, "test"); cmd != nil {
-		drain(t, app, cmd, 0)
+		drainPanelLogs(t, app, cmd, 0)
 	}
 	w := app.rightPanel.logsWidget()
 	if w == nil {
@@ -75,7 +75,7 @@ func TestLogsPanelFollowsOtherPanel(t *testing.T) {
 	if spec := w.Spec(); spec.Namespace != "ns" || spec.Pod != "web" {
 		t.Fatalf("Logs widget follows %+v, want ns/web", spec)
 	}
-	drain(t, app, cmd, 0)
+	drainPanelLogs(t, app, cmd, 0)
 	if w.Streaming() {
 		t.Fatal("the stream should have failed without a cluster")
 	}
@@ -84,9 +84,9 @@ func TestLogsPanelFollowsOtherPanel(t *testing.T) {
 	}
 }
 
-// drain runs cmd and feeds the Logs widget messages it yields back into the
+// drainPanelLogs runs cmd and feeds the Logs widget messages it yields back into the
 // app until none are left.
-func drain(t *testing.T, app *App, cmd tea.Cmd, depth int) {
+func drainPanelLogs(t *testing.T, app *App, cmd tea.Cmd, depth int) {
 	t.Helper()
 	if cmd == nil {
 		return
@@ -107,10 +107,10 @@ func drain(t *testing.T, app *App, cmd tea.Cmd, depth int) {
 	switch msg := out.(type) {
 	case tea.BatchMsg:
 		for _, c := range msg {
-			drain(t, app, c, depth+1)
+			drainPanelLogs(t, app, c, depth+1)
 		}
-	case logswidget.Msg:
+	case panelcontent.BackgroundMsg:
 		_, next := app.Update(msg)
-		drain(t, app, next, depth+1)
+		drainPanelLogs(t, app, next, depth+1)
 	}
 }

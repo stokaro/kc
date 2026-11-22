@@ -1,21 +1,11 @@
 package models
 
-// podContainerRef names the container a ContainerItem stands for.
-type podContainerRef struct {
-	namespace string
-	pod       string
-	container string
-}
-
-// SetPodContainer records the pod and container the row stands for, so
-// views that follow the selection, such as the Logs panel mode, can find
-// them without parsing the row path.
-func (c *ContainerItem) SetPodContainer(namespace, pod, container string) {
-	c.ref = podContainerRef{namespace: namespace, pod: pod, container: container}
-}
-
-// PodContainer returns the namespace, pod and container of the row. All are
-// empty when SetPodContainer was not called.
+// PodContainer returns the namespace, pod and container of the row, so views
+// that follow the selection, such as the Logs panel mode, can find them
+// without parsing the row path. All are empty when SetPod was not called.
 func (c *ContainerItem) PodContainer() (namespace, pod, container string) {
-	return c.ref.namespace, c.ref.pod, c.ref.container
+	if c.pod == "" {
+		return "", "", ""
+	}
+	return c.namespace, c.pod, c.ID()
 }

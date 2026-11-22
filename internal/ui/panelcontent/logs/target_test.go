@@ -21,7 +21,7 @@ func podItem(ns, name string) models.Item {
 
 func containerItem(ns, pod, container string) models.Item {
 	item := models.NewContainerItem(container, []string{"/" + container}, []string{"namespaces", ns, "pods", pod, "containers", container}, nil, nil, nil)
-	item.SetPodContainer(ns, pod, container)
+	item.SetPod(ns, pod)
 	return item
 }
 
@@ -49,7 +49,7 @@ func TestTarget(t *testing.T) {
 		},
 		{
 			name: "container log row",
-			item: models.NewContainerLogItem("logs_latest", []string{"logs"}, nil, models.LogsSpec{Namespace: "ns1", Pod: "web", Container: "app", TailLines: 50}),
+			item: models.NewContainerLogItem(models.Deps{}, "logs_latest", []string{"logs"}, nil, models.LogsSpec{Namespace: "ns1", Pod: "web", Container: "app", TailLines: 50}),
 			want: models.LogsSpec{Namespace: "ns1", Pod: "web", Container: "app", Follow: true, TailLines: 50},
 			ok:   true,
 		},

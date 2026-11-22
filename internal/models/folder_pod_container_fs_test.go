@@ -89,7 +89,7 @@ func TestPodContainerFSFolderListsEntries(t *testing.T) {
 		t.Fatalf("expected at least 3 rows, got %d", len(rows))
 	}
 
-	fileItem, ok := rows[2].(*SimpleItem)
+	fileItem, ok := rows[2].(*PodFSFileItem)
 	if !ok {
 		t.Fatalf("expected simple item for file, got %T", rows[2])
 	}

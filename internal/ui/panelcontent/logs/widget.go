@@ -50,14 +50,6 @@ type Open func() (Stream, error)
 // not do I/O: it captures what Open needs, such as the current cluster.
 type Source func(spec models.LogsSpec) Open
 
-// Msg marks the widget's background messages. The app must hand them to
-// the panels' Logs widgets even behind a dialog or the terminal: a dropped
-// message stops the stream's read loop.
-type Msg interface {
-	tea.Msg
-	logsPanelMsg()
-}
-
 // Options configure a Widget.
 type Options struct {
 	Source Source
@@ -116,12 +108,15 @@ type chunkMsg struct {
 	err    error
 }
 
-func (debounceMsg) logsPanelMsg() {}
-func (openedMsg) logsPanelMsg()   {}
-func (chunkMsg) logsPanelMsg()    {}
+// The widget's messages are panelcontent.BackgroundMsg: the app hands them
+// to the widget even behind a dialog or the terminal, because a dropped
+// message stops the stream's read loop.
+func (debounceMsg) WidgetBackground() {}
+func (openedMsg) WidgetBackground()   {}
+func (chunkMsg) WidgetBackground()    {}
 
-// New returns a Logs widget that shows the hint until Follow names a pod or
-// container.
+// New returns a Logs widget that shows the hint until OnSelectionChanged
+// names a pod or container.
 func New(deps panelcontent.WidgetDeps, opts Options) *Widget {
 	if opts.Debounce <= 0 {
 		opts.Debounce = DefaultDebounce
@@ -139,10 +134,11 @@ func New(deps panelcontent.WidgetDeps, opts Options) *Widget {
 
 func (w *Widget) Init(context.Context) tea.Cmd { return nil }
 
-// Follow switches to the log of sel's item. A new target stops the old
+// OnSelectionChanged switches to the log of sel's item, the selection of the
+// other panel. A new target stops the old
 // stream at once and opens the new one after the debounce delay. The same
 // target keeps its stream; a forced selection restarts an ended one.
-func (w *Widget) Follow(_ context.Context, sel panelcontent.Selection) tea.Cmd {
+func (w *Widget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) tea.Cmd {
 	spec, ok := Target(sel.Item)
 	if !ok {
 		if w.state != stateIdle {
@@ -351,8 +347,8 @@ func (w *Widget) Resize(_ context.Context, size panelcontent.Size) {
 	w.viewer.Resize(size.Width, size.Height)
 }
 
-// SetFocus stops the stream when the panel leaves Logs mode; the app calls
-// Follow again when the mode comes back.
+// SetFocus stops the stream when the panel leaves Logs mode; the app replays
+// the other panel's selection when the mode comes back.
 func (w *Widget) SetFocus(_ context.Context, focused bool) {
 	if focused {
 		return
@@ -378,7 +374,7 @@ func (w *Widget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panel
 	}
 	switch w.state {
 	case stateWaiting:
-		info.HeaderStatus = panelcontentLoading
+		info.HeaderStatus = panelcontent.LoadingStatus
 	case stateStreaming:
 		if !w.follow {
 			info.HeaderStatus = "paused, End follows"
@@ -402,6 +398,3 @@ func (w *Widget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panel
 	}
 	return info
 }
-
-// panelcontentLoading matches the loading status #78 adds to panelcontent.
-const panelcontentLoading = "loading..."

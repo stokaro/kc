@@ -18,7 +18,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var podsGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
+var logsPodsGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
 
 func (a *App) newPanelLogsWidget(p *Panel) PanelWidget {
 	return logswidget.New(p.manifestWidgetDeps(), logswidget.Options{
@@ -33,6 +33,9 @@ func (a *App) newPanelLogsWidget(p *Panel) PanelWidget {
 func (a *App) panelLogsSource() logswidget.Source {
 	return func(spec models.LogsSpec) logswidget.Open {
 		cl, root := a.cl, a.ctx
+		if a.cfg != nil {
+			spec = logsSpecWithDefaults(spec, a.cfg.Viewer.Logs)
+		}
 		return func() (logswidget.Stream, error) {
 			if cl == nil {
 				return logswidget.Stream{}, errors.New("no active cluster")
@@ -41,7 +44,7 @@ func (a *App) panelLogsSource() logswidget.Source {
 			if spec.Container == "" {
 				// The pod comes from the shared cache.
 				ctx, cancel := context.WithTimeout(root, requestTimeout)
-				obj, err := cl.GetByGVR(ctx, podsGVR, spec.Namespace, spec.Pod)
+				obj, err := cl.GetByGVR(ctx, logsPodsGVR, spec.Namespace, spec.Pod)
 				cancel()
 				if err != nil {
 					return logswidget.Stream{}, err
@@ -59,11 +62,11 @@ func (a *App) panelLogsSource() logswidget.Source {
 			if err != nil {
 				return logswidget.Stream{}, err
 			}
-			tail := spec.TailLines
-			opts := &corev1.PodLogOptions{Container: spec.Container, Follow: spec.Follow, TailLines: &tail}
+			opts := spec.PodLogOptions()
 			ctx, cancel := context.WithCancel(root)
-			log.Info("client stream logs", "gvr", podsGVR.String(), "namespace", spec.Namespace, "pod", spec.Pod,
-				"container", spec.Container, "tailLines", tail, "follow", spec.Follow)
+			log.Info("client stream logs", "gvr", logsPodsGVR.String(), "namespace", spec.Namespace, "pod", spec.Pod,
+				"container", spec.Container, "tailLines", spec.EffectiveTailLines(), "sinceSeconds", spec.SinceSeconds,
+				"timestamps", spec.Timestamps, "follow", spec.Follow)
 			body, err := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts).Stream(ctx)
 			if err != nil {
 				cancel()
@@ -75,7 +78,8 @@ func (a *App) panelLogsSource() logswidget.Source {
 }
 
 // followOtherPanelLogs starts a panel that just entered Logs mode on the
-// other panel's selection.
+// other panel's selection. The mode chooser replays the selection itself,
+// but the C-1 / C-2 cycle keys do not.
 func (a *App) followOtherPanelLogs(ctx context.Context, panel *Panel) tea.Cmd {
 	if panel == nil || panel.Mode() != PanelModeLogs {
 		return nil
@@ -93,20 +97,5 @@ func (a *App) followOtherPanelLogs(ctx context.Context, panel *Panel) tea.Cmd {
 		sel.Item = item
 	}
 	sel.Force = true
-	return panel.FollowLogs(ctx, sel)
-}
-
-// deliverPanelLogs hands a Logs widget message to both panels; each widget
-// takes only its own messages.
-func (a *App) deliverPanelLogs(msg logswidget.Msg) tea.Cmd {
-	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	defer cancel()
-	var cmds []tea.Cmd
-	for idx := range 2 {
-		if p := a.panelByIndex(idx); p != nil {
-			cmds = append(cmds, p.deliverLogs(ctx, msg))
-		}
-	}
-	a.invalidateView("panel logs")
-	return tea.Batch(cmds...)
+	return panel.NotifySelection(ctx, sel)
 }

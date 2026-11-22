@@ -33,7 +33,7 @@ func TestObjectsFolderAllNamespacesUsesObjectNamespace(t *testing.T) {
 	}
 
 	all := NewObjectsFolder(Deps{}, gvr, "", []string{"pods"}, nil)
-	rows := all.rowsFromList(list, "")
+	rows := all.rowsFromList(list, "", nil)
 	if len(rows) != 2 {
 		t.Fatalf("expected one row per object, got %d", len(rows))
 	}
@@ -51,7 +51,7 @@ func TestObjectsFolderAllNamespacesUsesObjectNamespace(t *testing.T) {
 	}
 
 	scoped := NewObjectsFolder(Deps{}, gvr, "kube-system", []string{"pods"}, nil)
-	rows = scoped.rowsFromList(&unstructured.UnstructuredList{Items: list.Items[:1]}, "")
+	rows = scoped.rowsFromList(&unstructured.UnstructuredList{Items: list.Items[:1]}, "", nil)
 	id, _, _, _ := rows[0].Columns()
 	if obj := objectRowOf(t, rows[0]); id != "coredns" || obj.Namespace() != "kube-system" {
 		t.Fatalf("namespaced folder: id=%q namespace=%q", id, obj.Namespace())

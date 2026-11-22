@@ -91,6 +91,11 @@ Open questions and constraints:
 
 ## Follow-up after #78 merges
 
+Done when this change was merged onto main: the widget's messages are
+`panelcontent.BackgroundMsg`, `Follow` is `OnSelectionChanged`, and the
+Logs-specific delivery hooks are gone. `App.followOtherPanelLogs` stays for
+the `C-1` / `C-2` cycle keys and calls `Panel.NotifySelection`.
+
 - Make the widget's messages implement `panelcontent.BackgroundMsg` (add
   `WidgetBackground()` to `debounceMsg`, `openedMsg`, `chunkMsg`) and delete
   `logs.Msg`, `case logs.Msg` in `App.Update`, the `passesModal` entry,
@@ -112,6 +117,9 @@ Open questions and constraints:
   needs.
 
 ## Follow-up after #76 merges
+
+The first item is done: the stream uses `LogsSpec.PodLogOptions()` with the
+`viewer.logs` defaults. F2 options for the Logs panel are still open.
 
 - Build the spec with #76's `logsSpecWithDefaults(spec, cfg.Viewer.Logs)` in
   `App.panelLogsSource`, and open the stream with `spec.PodLogOptions()`
