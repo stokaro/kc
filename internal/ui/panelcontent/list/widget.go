@@ -803,7 +803,7 @@ func (w *Widget) render(ctx context.Context, focused bool) string {
 		w.bt.SetFocused(ctx, focused)
 		tableView := w.bt.View()
 		return lipgloss.NewStyle().
-			Background(lipgloss.Blue).
+			Background(uistyles.Current().Background).
 			Width(w.width).
 			Height(w.height).
 			Render(viewString(tableView))
@@ -858,7 +858,7 @@ func (w *Widget) renderItem(item Item, selected bool) string {
 		style = uistyles.PanelItemSelectedStyle.Width(w.width)
 	}
 	if item.Selected {
-		style = style.Foreground(lipgloss.Yellow).Bold(true)
+		style = style.Foreground(uistyles.Current().Marked).Bold(true)
 	}
 	return style.Render(text)
 }
@@ -1160,12 +1160,13 @@ func (w *Widget) decorateBigTable(ctx context.Context, bt *table.BigTable) {
 	st.Header = uistyles.PanelTableHeaderStyle
 	st.Cell = uistyles.PanelItemStyle
 	st.Selector = uistyles.PanelItemSelectedStyle
-	st.Marked = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Bold(true)
+	pal := uistyles.Current()
+	st.Marked = lipgloss.NewStyle().Foreground(pal.Marked).Bold(true)
 	st.Border = lipgloss.NewStyle().
-		Foreground(lipgloss.White).
-		Background(lipgloss.Blue).
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue)
+		Foreground(pal.Frame).
+		Background(pal.Background).
+		BorderForeground(pal.Frame).
+		BorderBackground(pal.Background)
 	bt.SetStyles(st)
 	bt.BorderVertical(ctx, true)
 }

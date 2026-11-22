@@ -176,6 +176,7 @@ A command acts on the marked rows when any are marked, otherwise on the highligh
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation, and how long a cluster cache stays running after the last open folder that uses it is closed.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 - `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
+- `panel.skin`, `contexts` – panel colors and per-context frame colors (see [Panel colors](#panel-colors)).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -206,6 +207,8 @@ panel:
   width:
     leftPercent: 50
     rightPercent: 50
+  # Panel colors: a built-in skin (mc, dark) or ~/.kc/skins/<name>.yaml.
+  skin: mc
 
 input:
   # How long kc waits for the key after Esc (Esc c, Esc 3, Esc s). A lone
@@ -238,6 +241,17 @@ objects:
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
 
+# Tint the panel frame and the context label per kubeconfig context. The
+# first matching entry wins. match is a name or a glob ("*" and "?"); regex is
+# a Go regular expression. Colors: ANSI names (red, bright-cyan), 0-255 or
+# #rrggbb. Example:
+#   contexts:
+#     - match: "*prod*"
+#       color: red
+#     - regex: "^kind-"
+#       color: green
+contexts: []
+
 nodeShell:
   # Off by default. "Start a node shell..." inside a node creates a
   # privileged pod with the host PID, network and IPC namespaces on that
@@ -253,6 +267,31 @@ nodeShell:
   # activeDeadlineSeconds of the pod: it stops after this time even in use.
   maxDuration: 8h
 ```
+
+### Panel colors
+
+Set `contexts` to color the panel frame and the context label for some clusters, for example red for every context with `prod` in its name. A context without a matching entry keeps the normal look.
+
+`panel.skin` picks the panel colors. kc ships `mc` (blue panels, the default) and `dark` (black panels). To make your own, put a YAML file in `~/.kc/skins/<name>.yaml` and set `panel.skin: <name>`; a file with the name of a built-in skin replaces it. Every color is optional and falls back to the `mc` value:
+
+```yaml
+panel:
+  background: blue
+  foreground: white
+  frame: white
+  header: yellow        # table header
+  marked: yellow        # rows marked with Insert
+  cursor:
+    foreground: black
+    background: cyan
+  title:                # path label of the active panel
+    foreground: black
+    background: white
+  context: bright-yellow   # context name in the bottom border
+  namespace: bright-cyan
+```
+
+A skin covers the two panels only; dialogs, the function key bar and the viewer keep their colors (the viewer has `viewer.theme`). An unknown skin, an unknown key or a bad color is shown as an error at startup, and kc then uses `mc`; a bad `contexts` entry is reported and skipped.
 
 ## Contributing / Source
 

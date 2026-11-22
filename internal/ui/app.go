@@ -28,6 +28,7 @@ import (
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
+	"github.com/sttts/kc/internal/ui/skin"
 	viewpkg "github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	describe "github.com/sttts/kc/pkg/describe"
@@ -354,7 +355,16 @@ func (a *App) Init() tea.Cmd {
 	a.rightPanelWidthPercent = rightPercent
 	a.leftConfig = cloneConfig(cfg)
 	a.rightConfig = cloneConfig(cfg)
+	var lookErr tea.Cmd
+	skinsDir, _ := skin.DefaultDir() // no home dir: only built-in skins
+	if err := a.applyLook(cfg, skinsDir); err != nil {
+		ctrllog.FromContext(a.ctx).WithName("skin").Error(err, "panel colors config")
+		if a.toastLogger != nil {
+			lookErr = a.toastLogger.Errorf("%s", strings.ReplaceAll(err.Error(), "\n", "; "))
+		}
+	}
 	return tea.Batch(
+		lookErr,
 		a.leftPanel.Init(),
 		a.rightPanel.Init(),
 		a.terminal.Init(),

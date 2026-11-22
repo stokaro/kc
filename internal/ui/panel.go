@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"image/color"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
 	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
+	"github.com/sttts/kc/internal/ui/skin"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,6 +27,7 @@ type Panel struct {
 	// bottom border; scopeHits are the clickable columns of the last render.
 	scope                panelScopeLabel
 	scopeHits            scopeHits
+	contextColors        skin.ContextColors
 	search               quickSearch
 	title                string
 	frameWidth           int
@@ -88,6 +91,26 @@ func NewPanel(title string, cfg ...*appconfig.Config) *Panel {
 	})
 	// Command widget is registered dynamically when StartCommand is called.
 	return p
+}
+
+// SetContextColors sets the rules that tint the frame for the panel's
+// context.
+func (p *Panel) SetContextColors(cc skin.ContextColors) {
+	p.contextColors = cc
+	p.invalidateRenderCache()
+}
+
+// contextTint is the frame color configured for the panel's context, if any.
+func (p *Panel) contextTint() (color.Color, bool) {
+	return p.contextColors.For(p.scope.Context)
+}
+
+// frameColor is the color of the frame lines: the context tint or the skin's.
+func (p *Panel) frameColor() color.Color {
+	if c, ok := p.contextTint(); ok {
+		return c
+	}
+	return uistyles.Current().Frame
 }
 
 func (p *Panel) escTimeoutValue() time.Duration {
@@ -1081,10 +1104,10 @@ func (p *Panel) renderFramedFooter(content string, width int) (string, int) {
 	frame := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderTop(false).
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue).
-		Background(lipgloss.Blue).
-		Foreground(lipgloss.Color(uistyles.ColorWhite)).
+		BorderForeground(p.frameColor()).
+		BorderBackground(uistyles.Current().Background).
+		Background(uistyles.Current().Background).
+		Foreground(uistyles.Current().Foreground).
 		Width(width).
 		Render(content)
 	return frame, lipgloss.Height(frame)
@@ -1095,8 +1118,8 @@ func (p *Panel) renderFramedFooter(content string, width int) (string, int) {
 func (p *Panel) attachFooterStatus(footer string, info panelcontent.FrameInfo, width int) string {
 	lines := strings.Split(footer, "\n")
 	borderStyle := lipgloss.NewStyle().
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue)
+		BorderForeground(p.frameColor()).
+		BorderBackground(uistyles.Current().Background)
 	statusInfo := info
 	statusInfo.BottomIndicator = ""
 	lines[len(lines)-1] = p.composeBottomBorder(lipgloss.NormalBorder(), borderStyle, statusInfo, width, modeLabel(p.mode))
@@ -1170,11 +1193,12 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 		title = "/"
 	}
 
+	pal := uistyles.Current()
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue).
-		Background(lipgloss.Blue).
+		BorderForeground(p.frameColor()).
+		BorderBackground(pal.Background).
+		Background(pal.Background).
 		Width(width).
 		Height(height)
 	if p.commandFocused {
@@ -1190,13 +1214,13 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 	var labelStyle lipgloss.Style
 	if focused {
 		labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Black).
-			Background(lipgloss.White).
+			Foreground(pal.TitleForeground).
+			Background(pal.TitleBackground).
 			Padding(0, 1)
 	} else {
 		labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.White).
-			Background(lipgloss.Blue).
+			Foreground(pal.Foreground).
+			Background(pal.Background).
 			Padding(0, 1)
 	}
 	if p.commandFocused {
@@ -1288,7 +1312,11 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 		left += label
 		contentWidth -= lipgloss.Width(label)
 	} else if strings.TrimSpace(mode) != "" {
-		scope, hits := renderScopeLabel(p.scope, borderStyle.Render(border.Bottom), leftWidth, contentWidth/2)
+		var tint color.Color
+		if c, ok := p.contextTint(); ok && !p.commandFocused {
+			tint = c
+		}
+		scope, hits := renderScopeLabel(p.scope, borderStyle.Render(border.Bottom), leftWidth, contentWidth/2, tint)
 		p.scopeHits = hits
 		left += scope
 		contentWidth -= lipgloss.Width(scope)

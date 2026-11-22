@@ -91,6 +91,21 @@ type PanelConfig struct {
 	Scrolling ScrollingConfig  `json:"scrolling"`
 	Table     TableConfig      `json:"table"`
 	Width     PanelWidthConfig `json:"width"`
+	// Skin names the panel skin: a built-in one ("mc", "dark") or
+	// ~/.kc/skins/<name>.yaml. Empty means "mc".
+	Skin string `json:"skin"`
+}
+
+// ContextColorConfig tints the panel frame and the context label of panels
+// whose kubeconfig context matches. Set exactly one of Match and Regex.
+type ContextColorConfig struct {
+	// Match is a context name or a glob: "*" matches any run of characters
+	// (including "/"), "?" one character, e.g. "*prod*".
+	Match string `json:"match,omitempty"`
+	// Regex is a Go regular expression matched against the context name.
+	Regex string `json:"regex,omitempty"`
+	// Color is an ANSI name, an ANSI 256 index or a hex value.
+	Color string `json:"color"`
 }
 
 type MouseConfig struct {
@@ -152,6 +167,9 @@ type Config struct {
 	Terminal   TerminalConfig      `json:"terminal"`
 	NodeShell  NodeShellConfig     `json:"nodeShell"`
 	Commands   []CommandConfig     `json:"commands"`
+	// Contexts color panels per kubeconfig context; the first matching
+	// entry wins.
+	Contexts []ContextColorConfig `json:"contexts"`
 }
 
 // NodeShellConfig controls the node shell: a privileged pod pinned to a
@@ -299,6 +317,7 @@ func Default() *Config {
 			Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}},
 			Table:     TableConfig{Mode: TableModeScroll},
 			Width:     PanelWidthConfig{LeftPercent: 50, RightPercent: 50},
+			Skin:      "mc",
 		},
 		Input: InputConfig{
 			Mouse:      MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}},
