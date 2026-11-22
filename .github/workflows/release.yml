@@ -25,18 +25,34 @@ jobs:
       - name: Configure git
         run: |
           git config --global user.name "kc release bot"
-          git config --global user.email "noreply@sttts.dev"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Import GPG key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
         run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::error::RELEASE_GPG_PRIVATE_KEY is not set; see docs/RELEASING.md"
+            exit 1
+          fi
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "$GPG_PASSPHRASE" > /tmp/gpg-passphrase
           chmod 600 /tmp/gpg-passphrase
+
+      # Export the tap token only when the secret exists. Without it,
+      # goreleaser writes the Homebrew cask into dist/ and skips the upload.
+      - name: Homebrew tap token
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -n "$TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_GITHUB_TOKEN=$TAP_TOKEN" >> "$GITHUB_ENV"
+          else
+            echo "::warning::HOMEBREW_TAP_GITHUB_TOKEN is not set; the Homebrew cask is not published"
+          fi
 
       - name: Release
         uses: goreleaser/goreleaser-action@v7

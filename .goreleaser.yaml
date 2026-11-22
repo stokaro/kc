@@ -62,45 +62,44 @@ signs:
 
 release:
   github:
-    owner: sttts
+    owner: stokaro
     name: kc
   prerelease: auto
 
 changelog:
   use: git
 
-brews:
-  - name: kc
-    repository:
-      owner: sttts
-      name: homebrew-kc
-      branch: main
-    directory: Formula
-    homepage: https://github.com/sttts/kc
-    description: Two-panel Kubernetes TUI built entirely with AI
-    license: Apache-2.0
-    commit_author:
-      name: kc release bot
-      email: noreply@sttts.dev
-    test: |
-      system "#{bin}/kc --version"
-
+# The Homebrew tap is stokaro/homebrew-tap (`brew install --cask stokaro/tap/kc`).
+# Publishing to it needs the HOMEBREW_TAP_GITHUB_TOKEN secret. Without it the
+# cask is generated into dist/ but not pushed, so a release still succeeds
+# before the tap exists. See docs/RELEASING.md and docs/adr/0061-publish-fork.md.
 homebrew_casks:
   - name: kc
     ids: [kc]
-    homepage: https://github.com/sttts/kc
+    homepage: https://github.com/stokaro/kc
     description: Two-panel Kubernetes TUI built entirely with AI
     license: Apache-2.0
     directory: Casks
     repository:
-      owner: sttts
-      name: homebrew-kc
+      owner: stokaro
+      name: homebrew-tap
       branch: main
+      token: '{{ envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}'
+    skip_upload: '{{ if isEnvSet "HOMEBREW_TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
     commit_author:
       name: kc release bot
-      email: noreply@sttts.dev
+      email: 41898282+github-actions[bot]@users.noreply.github.com
     binaries:
       - kc
+    # Release builds without Apple notarization would be refused by
+    # Gatekeeper; drop the quarantine flag the download sets. Harmless for
+    # notarized builds.
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/kc"]
+          end
 
 notarize:
   macos:
@@ -114,4 +113,4 @@ notarize:
         key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
         key: "{{ .Env.MACOS_NOTARY_KEY }}"
         wait: true
-        timeout: 30m
+        timeout: 20m

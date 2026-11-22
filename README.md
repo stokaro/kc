@@ -22,33 +22,52 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 
 ## Getting Started
 
-### Build and Run
+### Install with Go
+
+kc needs Go 1.27 or newer.
 
 ```bash
-go run ./cmd/kc
+go install github.com/stokaro/kc/cmd/kc@latest
 ```
 
-Prefer a compiled binary?
+The tags older than the first release of this fork come from the upstream project and do not build under this module path. Until that release exists, install the current main branch with `go install github.com/stokaro/kc/cmd/kc@main`.
+
+### Download a release binary
+
+Each release on the [GitHub Releases page](https://github.com/stokaro/kc/releases) has archives for Linux and macOS (amd64 and arm64), a `kc_checksums.txt` file, and GPG signatures (`.asc`) for the archives and the checksum file.
 
 ```bash
-go build -o kc ./cmd/kc
+VERSION=X.Y.Z   # without the leading "v"
+curl -LO "https://github.com/stokaro/kc/releases/download/v${VERSION}/kc_${VERSION}_linux_amd64.tar.gz"
+curl -LO "https://github.com/stokaro/kc/releases/download/v${VERSION}/kc_checksums.txt"
+shasum -a 256 --check --ignore-missing kc_checksums.txt
+tar -xzf "kc_${VERSION}_linux_amd64.tar.gz" kc
+./kc --version
+```
+
+### Install with Homebrew (macOS)
+
+The Homebrew tap is published together with the first release of this fork. After that:
+
+```bash
+brew install --cask stokaro/tap/kc
+```
+
+On Linux, use `go install` or a release binary.
+
+### Check the installed version
+
+`kc --version` (or `kc version --client`) prints the kc version, the client-go version, the commit and the build date. It does not need a kubeconfig or a cluster. `kc version` also asks the current cluster for its version, as `kubectl version` does, and fails when it cannot reach one.
+
+### Build from source
+
+```bash
+git clone https://github.com/stokaro/kc.git
+cd kc
+go run ./cmd/kc            # run without building
+go build -o kc ./cmd/kc    # or build a binary
 ./kc
 ```
-
-### Install via Homebrew
-
-```bash
-brew tap sttts/homebrew-kc
-# macOS (notarized GUI build)
-brew install --cask sttts/homebrew-kc/kc
-
-# Linux / CLI-only formula
-brew install sttts/homebrew-kc/kc
-```
-
-## Releases
-
-Binaries are published by the maintainers via GitHub Releases and the Homebrew tap. Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, notarizes the macOS artifacts, and refreshes the Homebrew tap. See `docs/RELEASING.md` for the Apple signing credentials required for CI.
 
 ### Kubectl-style shortcuts
 
