@@ -8,7 +8,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/pkg/kubeconfig"
 )
@@ -133,30 +132,5 @@ func TestNamespacePickerTakesATypedNameWhenListingIsForbidden(t *testing.T) {
 	typeText(picker, "team-b")
 	if got := picker.choiceAt(picker.selected); got.Value != "team-b" {
 		t.Fatalf("selected %q, want the typed team-b", got.Value)
-	}
-}
-
-type fakePinner struct {
-	pinned map[kccluster.Key]bool
-}
-
-func (f *fakePinner) Pin(k kccluster.Key)   { f.pinned[k] = true }
-func (f *fakePinner) Unpin(k kccluster.Key) { delete(f.pinned, k) }
-
-func TestScopeHoldsCountsOwners(t *testing.T) {
-	t.Parallel()
-	pool := &fakePinner{pinned: map[kccluster.Key]bool{}}
-	var h scopeHolds
-	key := kccluster.Key{ContextName: "c", Namespace: "team-a"}
-	left := h.hold(pool, key)
-	right := h.hold(pool, key)
-	left()
-	left() // twice is one release
-	if !pool.pinned[key] {
-		t.Fatal("closing one panel unpinned the other panel's cache")
-	}
-	right()
-	if pool.pinned[key] {
-		t.Fatal("the last release left the cache pinned")
 	}
 }

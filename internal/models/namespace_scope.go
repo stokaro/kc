@@ -88,7 +88,7 @@ const listScopeTimeout = 10 * time.Second
 // cached per cluster, so only the first call for a type does network work.
 func (d Deps) resolveListScope(gvr schema.GroupVersionResource, namespace string) (Deps, listScope, func()) {
 	if d.Cl == nil {
-		return d, scopeShared, noScopeRelease
+		return d, scopeShared, noRelease
 	}
 	ctx, cancel := context.WithTimeout(d.Ctx, listScopeTimeout)
 	defer cancel()
@@ -110,24 +110,9 @@ func (d Deps) resolveListScope(gvr schema.GroupVersionResource, namespace string
 		log.V(1).Info("list scope decided", "scope", scope.String())
 	}
 	if scope != scopeNamespace {
-		return d, scope, noScopeRelease
+		return d, scope, noRelease
 	}
-	scoped, release := d.acquireNamespace(namespace)
+	// The pool's lease keeps the namespace cluster running until release.
+	scoped, release := d.ForNamespace(namespace)
 	return scoped, scope, release
 }
-
-// acquireNamespace returns Deps on the namespace-scoped cluster of the pool
-// and a release that ends this hold on it.
-//
-// Follow-up after #85: ForNamespace returns (Deps, release) itself; this
-// becomes "return d.ForNamespace(namespace)" and HoldScope goes away.
-func (d Deps) acquireNamespace(namespace string) (Deps, func()) {
-	scoped := d.ForNamespace(namespace)
-	if scoped.Cl == d.Cl || d.HoldScope == nil {
-		return scoped, noScopeRelease
-	}
-	return scoped, d.HoldScope(scoped.ClusterKey)
-}
-
-// noScopeRelease is the release of a Deps that holds no scoped cluster.
-func noScopeRelease() {}

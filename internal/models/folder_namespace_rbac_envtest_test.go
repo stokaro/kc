@@ -78,10 +78,12 @@ func newNamespaceUserEnv(t *testing.T, user string, grantNamespaces ...string) *
 		ContextName:     "envtest",
 		ImpersonateUser: user,
 	}
-	shared, err := pool.Get(ctx, key)
+	sharedLease, err := pool.Acquire(ctx, key, nil)
 	if err != nil {
 		t.Fatalf("user cluster: %v", err)
 	}
+	t.Cleanup(sharedLease.Release)
+	shared := sharedLease.Cluster()
 	e := &namespaceUserEnv{admin: admin, shared: shared, holds: map[kccluster.Key]int{}}
 	e.deps = Deps{
 		Cl:         shared,
@@ -89,23 +91,27 @@ func newNamespaceUserEnv(t *testing.T, user string, grantNamespaces ...string) *
 		CtxName:    "envtest",
 		AppConfig:  appconfig.Default(),
 		ClusterKey: key,
-		NamespaceFactory: func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, error) {
-			return pool.GetWithSelectors(ctx, key, selectors)
+		// The factory counts the leases it hands out, so the tests can
+		// check that every folder releases its namespace cache on Close.
+		NamespaceFactory: func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, func(), error) {
+			lease, err := pool.Acquire(ctx, key, selectors)
+			if err != nil {
+				return nil, nil, err
+			}
+			e.mu.Lock()
+			e.holds[key]++
+			e.mu.Unlock()
+			return lease.Cluster(), sync.OnceFunc(func() {
+				e.mu.Lock()
+				e.holds[key]--
+				e.mu.Unlock()
+				lease.Release()
+			}), nil
 		},
 		ReportError: func(err error) {
 			e.mu.Lock()
 			e.reported = append(e.reported, err)
 			e.mu.Unlock()
-		},
-		HoldScope: func(key kccluster.Key) func() {
-			e.mu.Lock()
-			e.holds[key]++
-			e.mu.Unlock()
-			return func() {
-				e.mu.Lock()
-				e.holds[key]--
-				e.mu.Unlock()
-			}
 		},
 	}
 	// The premise of every test here: pods are readable in the granted

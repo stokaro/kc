@@ -3,6 +3,8 @@ package ui
 import (
 	"testing"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -10,9 +12,7 @@ import (
 )
 
 func TestFooterShowsGroupVersionForPods(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)

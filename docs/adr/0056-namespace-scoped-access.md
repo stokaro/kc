@@ -81,14 +81,14 @@ Where the decision runs:
 Folders below an objects folder (pod containers, YAML, secret keys) inherit
 its `Deps`, so they read from the same cache.
 
-### 3. Who keeps the namespace cache alive (until #85)
+### 3. Who keeps the namespace cache alive
 
-On main, `Pool.Pin` is one flag per key, and an unpinned entry is evicted
-after the TTL even while a folder reads it. A small owner count in the UI
-(`ui.scopeHolds`, reached through the new `Deps.HoldScope`) pins a namespace
-entry while at least one folder or count holds it and unpins it on the last
-release. The objects folder releases in `Close`; a resource count releases in
-its `Close`, which the resources folder calls when it is dropped.
+`Deps.ForNamespace` returns the release of a pool lease (#85, ADR 0062): the
+entry keeps running while any folder or count holds it. The objects folder
+releases in `Close`; a resource count releases in its `Close`, which the
+resources folder calls when it is dropped. (Before #85 merged, this change
+had its own owner count, `ui.scopeHolds`, that pinned the entry; it was
+removed in the merge.)
 
 ### 4. The namespace picker takes a typed name
 
@@ -147,16 +147,15 @@ namespace; with the decisions above the root lists the permitted types there.
   namespace). An admin sends two in total.
 - RBAC changes during a session are not noticed until the context's cluster
   is rebuilt (context switch or restart).
-- `PruneNamespaces` (context switch, startup) stops namespace entries before
-  the old folders close; this is harmless because those folders are being
-  discarded, and their later releases only unpin a key that is gone.
+- `PruneNamespaces` (context switch, namespace switch) runs after the old
+  navigators are closed and keeps every entry a lease still holds.
 - The read-only and access-view work (#107, #102) has its own review cache
   with a TTL. Once #102 merges, `ListWatchAccess` can be backed by that
   cache; the decision function does not change.
 
 ### Follow-up after #85
 
-`Pool.Acquire` returns a refcounted lease and `NamespaceClusterFactory` and
+Done when this change was merged onto main. `Pool.Acquire` returns a refcounted lease and `NamespaceClusterFactory` and
 `Deps.ForNamespace` return a release. Then:
 
 1. `models.Deps.acquireNamespace` becomes `return d.ForNamespace(namespace)`.

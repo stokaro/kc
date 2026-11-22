@@ -12,10 +12,9 @@ import (
 )
 
 // namespaceScopes is the app's state for namespace scopes that is not a
-// panel's: the namespaces used in this session, and the holds on
-// namespace-scoped caches. Nothing here is saved.
+// panel's: the namespaces used in this session. Nothing here is saved. The
+// folders hold their namespace caches through the pool's leases (#85).
 type namespaceScopes struct {
-	holds  scopeHolds
 	recent []string // most recent first
 }
 

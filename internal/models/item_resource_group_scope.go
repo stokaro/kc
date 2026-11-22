@@ -46,7 +46,7 @@ func (r *ResourceGroupItem) releaseScopeLocked() func() {
 	release := r.scopeRelease
 	r.scopedDeps, r.scope, r.scopeRelease, r.scopeKnown = Deps{}, scopeShared, nil, false
 	if release == nil {
-		return noScopeRelease
+		return noRelease
 	}
 	return release
 }

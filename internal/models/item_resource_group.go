@@ -564,7 +564,7 @@ func (r *ResourceGroupItem) applySpec(spec resourceGroupSpec, deps Deps, created
 	// these only when they actually change.
 	if created || r.deps.Cl != deps.Cl || r.deps.AppConfig != deps.AppConfig {
 		r.mu.Lock()
-		release := noScopeRelease
+		release := noRelease
 		if !created && r.deps.Cl != deps.Cl {
 			// Another cluster: decide its scope again.
 			release = r.releaseScopeLocked()

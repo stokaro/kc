@@ -8,27 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func TestClusterDiscoveryListenerNotified(t *testing.T) {
 	t.Parallel()
 
-	env := &envtest.Environment{}
-	cfg, err := env.Start()
-	if err != nil || cfg == nil {
-		if err != nil {
-			if strings.Contains(err.Error(), "operation not permitted") || strings.Contains(err.Error(), "no such file or directory") {
-				t.Skipf("envtest unavailable: %v", err)
-			}
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = env.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	cl, err := New(cfg)
 	if err != nil {
@@ -56,17 +47,7 @@ func TestClusterDiscoveryListenerNotified(t *testing.T) {
 func TestNamespaceScopedClusterListsOneNamespace(t *testing.T) {
 	t.Parallel()
 
-	env := &envtest.Environment{}
-	cfg, err := env.Start()
-	if err != nil || cfg == nil {
-		if err != nil {
-			if strings.Contains(err.Error(), "operation not permitted") || strings.Contains(err.Error(), "no such file or directory") {
-				t.Skipf("envtest unavailable: %v", err)
-			}
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = env.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	cl, err := New(cfg, WithNamespaceScope("ns-a"))
 	if err != nil {
