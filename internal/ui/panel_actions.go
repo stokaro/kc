@@ -200,6 +200,7 @@ func (p *Panel) actionAllowed(ctx context.Context, action PanelAction) bool {
 }
 
 func (p *Panel) invokeActionIfAllowed(ctx context.Context, action PanelAction) tea.Cmd {
+	action = p.modeAction(action)
 	if !p.actionAllowed(ctx, action) {
 		if mutatingPanelAction(action) && p.environment().ReadOnly {
 			// The handler refuses with a read-only message.
@@ -208,6 +209,16 @@ func (p *Panel) invokeActionIfAllowed(ctx context.Context, action PanelAction) t
 		return nil
 	}
 	return p.InvokeAction(action)
+}
+
+// modeAction maps an action to the one the panel's mode gives its key. In
+// Logs mode F2 opens the options, as in the fullscreen logs viewer; the
+// panel shows no rows a user menu could act on.
+func (p *Panel) modeAction(action PanelAction) PanelAction {
+	if action == PanelActionMenu && p.mode == PanelModeLogs {
+		return PanelActionOptions
+	}
+	return action
 }
 
 // mutatingPanelAction reports whether action changes the cluster.

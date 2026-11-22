@@ -190,15 +190,26 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			// Intercept modal-scoped commits while the dialog is open.
 			switch m := msg.(type) {
 			case ViewOptionsCommittedMsg:
+				var subCmds []tea.Cmd
 				if m.Viewer != nil {
-					cmd := a.applyViewerOptions(m)
-					return a, cmd
+					if m.PanelIndex < 0 {
+						cmd := a.applyViewerOptions(m)
+						return a, cmd
+					}
+					// The Logs panel dialog: the viewer and log options
+					// first, then the Panel section below. A mode change
+					// there stops the restarted stream again.
+					restart, save := a.applyViewerSettings(m)
+					a.viewerOptionsTarget = nil
+					subCmds = append(subCmds, restart)
+					if save != nil {
+						subCmds = append(subCmds, a.saveDefaults(save))
+					}
 				}
 				targetIdx := m.PanelIndex
 				if targetIdx < 0 || targetIdx > 1 {
 					targetIdx = a.activePanel
 				}
-				var subCmds []tea.Cmd
 				closedBySubMsg := false
 				if m.SetPanelMode && m.Accept {
 					if _, cmd := a.Update(PanelModeSelectedMsg{PanelIndex: targetIdx, Mode: m.PanelMode}); cmd != nil {

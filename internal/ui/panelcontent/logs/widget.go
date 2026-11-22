@@ -34,11 +34,42 @@ const maxChunkLines = 512
 // Hint is shown when the other panel's selection has no log.
 const Hint = "Select a pod or container in the other panel to show its log."
 
+// Container choices of Settings besides a container name. "*" is not a
+// valid container name, so it cannot clash with one.
+const (
+	// ContainerDefault streams what the selected row names: its container,
+	// or the default container of a pod.
+	ContainerDefault = ""
+	// ContainerAll merges every started container of the pod.
+	ContainerAll = "*"
+)
+
+// Settings are the stream options F2 changes.
+type Settings struct {
+	// TailLines is the number of recent lines; 0 keeps the row's tail
+	// (models.DefaultLogsTailLines for a pod), -1 fetches the whole log.
+	TailLines int64
+	// SinceSeconds limits the log to newer lines; 0 means no limit.
+	SinceSeconds int64
+	Timestamps   bool
+	// Previous reads the previous instance of the container. It belongs
+	// to one row and is cleared when the selection moves to another row.
+	Previous bool
+	// Container is ContainerDefault, ContainerAll or a container of the
+	// current pod. A container name is cleared when the selection moves
+	// to another row; ContainerAll stays.
+	Container string
+}
+
 // Stream is an open log stream.
 type Stream struct {
-	// Spec is what is streamed; Container is filled in for a pod.
+	// Spec is what is streamed; Container is filled in for a pod and empty
+	// for all containers.
 	Spec models.LogsSpec
-	Body io.ReadCloser
+	// Containers are the pod's containers for the F2 choice; nil when the
+	// pod could not be read.
+	Containers []string
+	Body       io.ReadCloser
 	// Cancel stops the stream. It must not block.
 	Cancel context.CancelFunc
 }
@@ -46,9 +77,9 @@ type Stream struct {
 // Open opens a stream. It runs in a tea.Cmd and may do I/O.
 type Open func() (Stream, error)
 
-// Source prepares the stream for spec. It runs on the UI goroutine and must
+// Source prepares the stream for req. It runs on the UI goroutine and must
 // not do I/O: it captures what Open needs, such as the current cluster.
-type Source func(spec models.LogsSpec) Open
+type Source func(req Request) Open
 
 // Options configure a Widget.
 type Options struct {
@@ -59,6 +90,9 @@ type Options struct {
 	After func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 	Theme string
 	Wrap  bool
+	// Settings are the initial stream options, usually viewer.logs from
+	// the configuration.
+	Settings Settings
 }
 
 type state int
@@ -77,14 +111,23 @@ type Widget struct {
 	opts   Options
 	viewer *viewer.Widget
 
-	gen      uint64
-	key      string
+	gen uint64
+	// target is the selected row's request; req is what is streamed, target
+	// with the settings applied; spec is req.Spec with the container the
+	// opener resolved.
+	target   Request
+	targetID string
+	req      Request
 	spec     models.LogsSpec
-	state    state
-	err      error
-	cancel   context.CancelFunc // of the open stream, nil when none
-	hasLines bool
-	follow   bool
+	settings Settings
+	// containers of the pod named by containersOf, from the last open.
+	containers   []string
+	containersOf string
+	state        state
+	err          error
+	cancel       context.CancelFunc // of the open stream, nil when none
+	hasLines     bool
+	follow       bool
 }
 
 type debounceMsg struct {
@@ -127,7 +170,7 @@ func New(deps panelcontent.WidgetDeps, opts Options) *Widget {
 	v := viewer.New(opts.Theme)
 	v.SetPlainMode(true)
 	v.SetWrapMode(opts.Wrap)
-	w := &Widget{deps: deps, opts: opts, viewer: v, follow: true}
+	w := &Widget{deps: deps, opts: opts, viewer: v, follow: true, settings: opts.Settings}
 	w.showHint()
 	return w
 }
@@ -135,41 +178,111 @@ func New(deps panelcontent.WidgetDeps, opts Options) *Widget {
 func (w *Widget) Init(context.Context) tea.Cmd { return nil }
 
 // OnSelectionChanged switches to the log of sel's item, the selection of the
-// other panel. A new target stops the old
-// stream at once and opens the new one after the debounce delay. The same
-// target keeps its stream; a forced selection restarts an ended one.
+// other panel. A new target stops the old stream at once and opens the new
+// one after the debounce delay. The same target keeps its stream; a forced
+// selection restarts an ended one.
 func (w *Widget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) tea.Cmd {
-	spec, ok := Target(sel.Item)
+	target, ok := Target(sel.Item)
 	if !ok {
 		if w.state != stateIdle {
 			w.stop()
-			w.key = ""
+			w.targetID = ""
 			w.showHint()
 		}
 		return nil
 	}
-	k := key(spec)
-	if k == w.key && w.state != stateIdle {
-		if !sel.Force || (w.state != stateEnded && w.state != stateFailed) {
+	if id := targetID(target); id != w.targetID {
+		// Choices made for one row do not carry over to another.
+		if w.settings.Container != ContainerAll {
+			w.settings.Container = ContainerDefault
+		}
+		w.settings.Previous = false
+		w.targetID = id
+	}
+	w.target = target
+	return w.restart(sel.Force)
+}
+
+// Settings returns the stream options.
+func (w *Widget) Settings() Settings { return w.settings }
+
+// SetSettings changes the stream options and restarts the stream when what
+// is streamed changes. Without a target the options apply to the next one.
+func (w *Widget) SetSettings(s Settings) tea.Cmd {
+	w.settings = s
+	if w.state == stateIdle {
+		return nil
+	}
+	return w.restart(false)
+}
+
+// Containers returns the containers of the selected pod, known once a
+// stream of the pod has opened; nil before.
+func (w *Widget) Containers() []string {
+	if w.state == stateIdle || w.containersOf != podKey(w.target.Spec) {
+		return nil
+	}
+	return append([]string(nil), w.containers...)
+}
+
+// Target returns the selected row's request before the settings are
+// applied. It is the zero Request while the hint is shown.
+func (w *Widget) Target() Request {
+	if w.state == stateIdle {
+		return Request{}
+	}
+	return w.target
+}
+
+// effective applies the settings to the selected row's request.
+func (w *Widget) effective() Request {
+	r := w.target
+	r.Spec.Follow = true
+	if w.settings.TailLines != 0 {
+		r.Spec.TailLines = w.settings.TailLines
+	}
+	r.Spec.SinceSeconds = w.settings.SinceSeconds
+	r.Spec.Timestamps = w.settings.Timestamps
+	r.Spec.Previous = w.settings.Previous
+	switch c := w.settings.Container; c {
+	case ContainerDefault:
+	case ContainerAll:
+		r.AllContainers, r.Spec.Container = true, ""
+	default:
+		r.AllContainers, r.Spec.Container = false, c
+	}
+	return r
+}
+
+// restart streams the effective request after the debounce delay. It keeps
+// a running stream of the same request, and an ended one unless force.
+func (w *Widget) restart(force bool) tea.Cmd {
+	req := w.effective()
+	if req == w.req && w.state != stateIdle {
+		if !force || (w.state != stateEnded && w.state != stateFailed) {
 			return nil
 		}
 	}
 	w.stop()
-	w.key, w.spec = k, spec
+	w.req, w.spec = req, req.Spec
 	w.state, w.err = stateWaiting, nil
 	w.hasLines, w.follow = false, true
-	w.viewer.SetContent("Waiting for the log...", viewer.Metadata{Title: title(spec)})
+	w.viewer.SetContent("Waiting for the log...", viewer.Metadata{Title: w.title()})
 	gen := w.gen
 	return w.opts.After(w.opts.Debounce, func(time.Time) tea.Msg { return debounceMsg{w: w, gen: gen} })
 }
 
-// Spec returns the stream target. It is empty while the hint is shown.
+// Spec returns what is streamed, with the container resolved once the
+// stream has opened. It is empty while the hint is shown.
 func (w *Widget) Spec() models.LogsSpec {
 	if w.state == stateIdle {
 		return models.LogsSpec{}
 	}
 	return w.spec
 }
+
+// AllContainers reports whether the stream merges every container.
+func (w *Widget) AllContainers() bool { return w.state != stateIdle && w.req.AllContainers }
 
 // Streaming reports whether a stream is open or being opened.
 func (w *Widget) Streaming() bool { return w.state == stateWaiting || w.state == stateStreaming }
@@ -202,7 +315,7 @@ func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 			w.fail(errors.New("logs unavailable"))
 			return nil, true
 		}
-		open, gen := w.opts.Source(w.spec), w.gen
+		open, gen := w.opts.Source(w.req), w.gen
 		return func() tea.Msg {
 			s, err := open()
 			return openedMsg{w: w, gen: gen, stream: s, err: err}
@@ -222,7 +335,10 @@ func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		if m.stream.Spec.Pod != "" {
 			w.spec = m.stream.Spec
 		}
-		w.viewer.SetContent("No log lines yet.", viewer.Metadata{Title: title(w.spec)})
+		if m.stream.Containers != nil {
+			w.containers, w.containersOf = m.stream.Containers, podKey(w.target.Spec)
+		}
+		w.viewer.SetContent("No log lines yet.", viewer.Metadata{Title: w.title()})
 		return read(w, w.gen, m.stream, bufio.NewReader(m.stream.Body)), true
 	case chunkMsg:
 		if m.w != w {
@@ -260,7 +376,7 @@ func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 
 func (w *Widget) fail(err error) {
 	w.state, w.err = stateFailed, err
-	w.viewer.SetContent(fmt.Sprintf("Logs failed: %v", err), viewer.Metadata{Title: title(w.spec)})
+	w.viewer.SetContent(fmt.Sprintf("Logs failed: %v", err), viewer.Metadata{Title: w.title()})
 }
 
 func (w *Widget) append(lines []string) {
@@ -327,10 +443,15 @@ func closeStream(s Stream) tea.Cmd {
 	}
 }
 
-func title(spec models.LogsSpec) string {
-	name := spec.Namespace + "/" + spec.Pod
-	if spec.Container != "" {
-		name += "/" + spec.Container
+// title names the stream: the container once it is known, all-containers
+// for a merged stream.
+func (w *Widget) title() string {
+	name := w.spec.Namespace + "/" + w.spec.Pod
+	switch {
+	case w.req.AllContainers:
+		name += "/all-containers"
+	case w.spec.Container != "":
+		name += "/" + w.spec.Container
 	}
 	return "logs:" + name
 }
@@ -354,12 +475,24 @@ func (w *Widget) SetFocus(_ context.Context, focused bool) {
 		return
 	}
 	w.stop()
-	w.key = ""
+	w.targetID = ""
 	w.showHint()
 }
 
 // Teardown stops the stream.
 func (w *Widget) Teardown(context.Context) { w.stop() }
+
+// SetTheme sets the viewer theme (F2).
+func (w *Widget) SetTheme(theme string) { w.viewer.SetTheme(theme) }
+
+// Theme returns the viewer theme.
+func (w *Widget) Theme() string { return w.viewer.Theme() }
+
+// SetWrapMode switches line wrapping (F2).
+func (w *Widget) SetWrapMode(on bool) { w.viewer.SetWrapMode(on) }
+
+// WrapMode reports whether lines wrap.
+func (w *Widget) WrapMode() bool { return w.viewer.WrapMode() }
 
 func (w *Widget) Footer(_ context.Context, width int) string {
 	return w.viewer.Footer(width)
@@ -370,7 +503,7 @@ func (w *Widget) Footer(_ context.Context, width int) string {
 func (w *Widget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
 	info := panelcontent.FrameInfo{SuppressFooter: true, TopIndicator: "─", BottomIndicator: "─", Breadcrumb: "Logs"}
 	if w.state != stateIdle {
-		info.Breadcrumb = title(w.spec)
+		info.Breadcrumb = w.title()
 	}
 	switch w.state {
 	case stateWaiting:

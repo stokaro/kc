@@ -1306,6 +1306,11 @@ func maskCapabilitiesForMode(mode PanelViewMode, commandFocused bool, caps Panel
 		caps.CanEdit = false
 		caps.CanDelete = false
 		caps.CanCreateNS = false
+		if mode == PanelModeLogs {
+			// F2 opens the log options (Panel.modeAction); the user menu
+			// would act on rows the panel does not show.
+			caps.HasContextMenu = false
+		}
 		return caps
 	case PanelModeCommand:
 		// Command mode: no resource actions. Keep help/options/menu when the widget
@@ -1477,6 +1482,11 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 	if !ok {
 		panelIdx = a.activePanel
 	}
+	if panel.Mode() == PanelModeLogs {
+		if w := panel.logsWidget(); w != nil {
+			return a.showPanelLogsOptionsModal(panel, panelIdx, panelLogsOptions{w: w})
+		}
+	}
 
 	// Determine folder context for contextual options.
 	var curFolder models.Folder
@@ -1594,10 +1604,8 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 	return nil
 }
 
-func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
-	if target == nil {
-		return nil
-	}
+// viewerOptionsConfig returns the Viewer and Logs sections for target.
+func (a *App) viewerOptionsConfig(target viewerOptionsTarget) ViewOptionsConfig {
 	themes := viewpkg.AvailableThemes()
 	currentTheme := target.Theme()
 	if currentTheme == "" {
@@ -1623,9 +1631,20 @@ func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
 			SinceSeconds: o.SinceSeconds,
 			Timestamps:   o.Timestamps,
 			Previous:     o.Previous,
+			Container:    o.Container,
+		}
+		if ct, ok := target.(logContainerTarget); ok {
+			optsCfg.Logs.Containers = ct.LogContainerChoices()
 		}
 	}
-	content := NewViewOptionsModel(optsCfg)
+	return optsCfg
+}
+
+func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
+	if target == nil {
+		return nil
+	}
+	content := NewViewOptionsModel(a.viewerOptionsConfig(target))
 	modal := a.modalManager.modals["viewer_options"]
 	if modal == nil {
 		modal = NewModal("Viewer Options", content)
@@ -1652,20 +1671,35 @@ func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
 }
 
 func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
+	if msg.Viewer == nil || a.viewerOptionsTarget == nil {
+		if msg.Close {
+			a.hideModal()
+		}
+		return nil
+	}
+	restart, save := a.applyViewerSettings(msg)
+	var cmd tea.Cmd
+	switch {
+	case save != nil:
+		cmd = a.saveDefaults(save)
+	case msg.Accept:
+		cmd = a.sessionOnly()
+	}
+	if msg.Close {
+		a.hideModal()
+	}
+	a.viewerOptionsTarget = nil
+	return tea.Batch(restart, cmd)
+}
+
+// applyViewerSettings applies the Viewer and Logs sections of msg to the
+// target of the open dialog and to the session configuration. It returns
+// the stream restart and, for Save as defaults, the change to save.
+func (a *App) applyViewerSettings(msg ViewOptionsCommittedMsg) (restart tea.Cmd, save func(*appconfig.Config)) {
 	target := a.viewerOptionsTarget
-	if msg.Viewer == nil {
-		if msg.Close {
-			a.hideModal()
-		}
-		return nil
+	if msg.Viewer == nil || target == nil {
+		return nil, nil
 	}
-	if target == nil {
-		if msg.Close {
-			a.hideModal()
-		}
-		return nil
-	}
-	var restart tea.Cmd
 	saveLogs := false
 	apply := msg.Accept || msg.SaveDefault
 	if apply {
@@ -1691,6 +1725,7 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 				SinceSeconds: msg.Logs.SinceSeconds,
 				Timestamps:   msg.Logs.Timestamps,
 				Previous:     msg.Logs.Previous,
+				Container:    msg.Logs.Container,
 			}
 			restart = lt.SetLogOptions(opts)
 			if msg.SaveDefault {
@@ -1704,25 +1739,17 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 			}
 		}
 	}
-	var cmd tea.Cmd
-	switch {
-	case msg.SaveDefault:
-		theme, mode, logs := a.cfg.Viewer.Theme, a.cfg.Viewer.Mode, a.cfg.Viewer.Logs
-		cmd = a.saveDefaults(func(c *appconfig.Config) {
-			c.Viewer.Theme = theme
-			c.Viewer.Mode = mode
-			if saveLogs {
-				c.Viewer.Logs = logs
-			}
-		})
-	case msg.Accept:
-		cmd = a.sessionOnly()
+	if !msg.SaveDefault {
+		return restart, nil
 	}
-	if msg.Close {
-		a.hideModal()
+	theme, mode, logs := a.cfg.Viewer.Theme, a.cfg.Viewer.Mode, a.cfg.Viewer.Logs
+	return restart, func(c *appconfig.Config) {
+		c.Viewer.Theme = theme
+		c.Viewer.Mode = mode
+		if saveLogs {
+			c.Viewer.Logs = logs
+		}
 	}
-	a.viewerOptionsTarget = nil
-	return tea.Batch(restart, cmd)
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {

@@ -1,6 +1,8 @@
 # Kubernetes Commander (kc)
 
-[![Build Status](https://github.com/sttts/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/sttts/kc/actions/workflows/build.yml)
+[![Build Status](https://github.com/stokaro/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/stokaro/kc/actions/workflows/build.yml)
+
+> **Origin:** kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) (upstream). This repository is developed independently and has diverged a lot from it: key bindings, features and internals differ. Report issues for this version at [stokaro/kc](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE) for attribution.
 
 ![Kubernetes Commander TUI](docs/screenshot.png)
 
@@ -14,7 +16,7 @@ A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, B
 - **Helm releases:** `/helm` lists releases with their stored values, manifest, notes, hooks and revision history, and links each manifest object to the live object (read-only, no `helm` binary needed).
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **CPU and memory usage:** when the cluster serves `metrics.k8s.io` (metrics-server), pod lists show `CPU`, `MEM`, `%CPU/R` (of requests) and `%MEM/L` (of limits), and node lists show `CPU`, `%CPU`, `MEM` and `%MEM` (of allocatable). Wide mode adds `%CPU/L` and `%MEM/R` for pods and `CPU/A` and `MEM/A` for nodes. kc reads the metrics every 15 seconds, only while such a list is on screen and no dialog is open. `n/a` means no metrics for the object yet, no request or limit to compare with, or metrics kc may not read.
-- **Two synchronized panels:** each panel can render lists, or follow the other panel's selection in Describe, Manifest or Logs mode (`C-1` / `C-2` cycle the left / right panel's mode; Logs streams the selected pod's or container's log), supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
+- **Two synchronized panels:** each panel can render lists, or follow the other panel's selection in Describe, Manifest or Logs mode (`C-1` / `C-2` cycle the left / right panel's mode; Logs streams the selected pod's or container's log; `F2` there sets the container, "All containers", tail, since, timestamps and previous), supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
 - **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts; `F2` sets tail lines, the since window, timestamps and the previous container instance, and restarts the stream. A container that restarted also gets a `logs (previous)` row. JSON lines are shown as time, level, message and key=value fields, with display filters and field extraction.
 - **Workload actions:** entering a Deployment, StatefulSet, DaemonSet or ReplicaSet shows rows next to its child types: `Scale...` (a replica count dialog, prefilled with the current count, written through the scale subresource), `Restart...` (as `kubectl rollout restart`) and, for Deployments, `Roll back...` (pick a revision; as `kubectl rollout undo --to-revision`). Each change asks first in a red dialog that names the context, the object and the equivalent kubectl command. Read-only mode refuses them.
 - **Container internals:** each pod container exposes `/logs`, a `shell` row and a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
@@ -25,33 +27,54 @@ A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, B
 
 ## Getting Started
 
-### Build and Run
+### Install with Homebrew
+
+The tap is [`stokaro/homebrew-kc`](https://github.com/stokaro/homebrew-kc). It works on macOS and Linux:
 
 ```bash
-go run ./cmd/kc
+brew install --cask stokaro/kc/kc
 ```
 
-Prefer a compiled binary?
+The tap starts with the first release of this fork. Until then, use a source build.
+
+### Download a release binary
+
+Each release on the [GitHub Releases page](https://github.com/stokaro/kc/releases) has `.tar.gz` archives for Linux and macOS (amd64 and arm64) and a `kc_checksums.txt` file:
 
 ```bash
-go build -o kc ./cmd/kc
+VERSION=X.Y.Z   # without the leading "v"
+curl -LO "https://github.com/stokaro/kc/releases/download/v${VERSION}/kc_${VERSION}_linux_amd64.tar.gz"
+curl -LO "https://github.com/stokaro/kc/releases/download/v${VERSION}/kc_checksums.txt"
+shasum -a 256 --check --ignore-missing kc_checksums.txt
+tar -xzf "kc_${VERSION}_linux_amd64.tar.gz" kc
+./kc --version
+```
+
+The checksum file is signed with [cosign](https://docs.sigstore.dev/) by the release workflow. To check the signature, also download `kc_checksums.txt.sigstore.json` and run:
+
+```bash
+cosign verify-blob --bundle kc_checksums.txt.sigstore.json kc_checksums.txt \
+  --certificate-identity-regexp '^https://github.com/stokaro/kc/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+### Build from source
+
+kc needs Go 1.27 or newer.
+
+```bash
+git clone https://github.com/stokaro/kc.git
+cd kc
+go run ./cmd/kc            # run without building
+go build -o kc ./cmd/kc    # or build a binary
 ./kc
 ```
 
-### Install via Homebrew
+`go install github.com/stokaro/kc/cmd/kc@latest` does not work yet: the Go module path is still the upstream one.
 
-```bash
-brew tap sttts/homebrew-kc
-# macOS (notarized GUI build)
-brew install --cask sttts/homebrew-kc/kc
+### Check the installed version
 
-# Linux / CLI-only formula
-brew install sttts/homebrew-kc/kc
-```
-
-## Releases
-
-Binaries are published by the maintainers via GitHub Releases and the Homebrew tap. Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, notarizes the macOS artifacts, and refreshes the Homebrew tap. See `docs/RELEASING.md` for the Apple signing credentials required for CI.
+`kc --version` and `kc version --client` print the kc version, the client-go version, the commit and the build date. They do not read a kubeconfig or contact a cluster. `kc version` also asks the current cluster for its version, as `kubectl version` does, and fails when it cannot reach one.
 
 ### Kubectl-style shortcuts
 
@@ -76,7 +99,7 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | Key        | Action                                                                          |
 |------------|---------------------------------------------------------------------------------|
 | `F1`       | Help – opens the README.md markdown viewer (windowed modal).                    |
-| `F2`       | User menu – the custom commands menu, as in mc. In viewers: the theme dialog.    |
+| `F2`       | User menu – the custom commands menu, as in mc. In viewers and in a Logs panel: the options dialog. |
 | `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, etc. Closes the viewer again. |
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
 | `F5`       | Copy – download the current YAML/log/file to the local filesystem. Between a container folder and a local panel (`M-l`), copy the marked files and directories in either direction. |
@@ -355,8 +378,8 @@ Read-only mode refuses `M-n` before the menu opens.
 `~/.kc/config.yaml` stores all user preferences. Key sections:
 
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
-- `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer opens with. `F2` in the viewer changes them for that viewer; `C-s` there saves them as the defaults.
-- `viewer.logs.maxRequests` – how many log streams a merged logs viewer (all pods of a workload, all containers of a pod) runs at once (default 50, like stern); further streams wait for a free slot.
+- `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer and a Logs panel open with. `F2` in the viewer or the panel changes them there; `C-s` saves them as the defaults.
+- `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot.
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns` – object list sort and wide/normal column display. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells and `<none>` come last. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace, and `namespace` orders the groups.
