@@ -181,6 +181,7 @@ type App struct {
 	// Data providers
 	kubeMgr           *kubeconfig.Manager
 	cl                *kccluster.Cluster
+	clLease           *kccluster.Lease // holds cl in clPool; see docs/adr/0062-cache-ownership.md
 	clPool            *kccluster.Pool
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -907,14 +908,15 @@ func (a *App) currentClusterKey() kccluster.Key {
 }
 
 func (a *App) namespaceClusterFactory() models.NamespaceClusterFactory {
-	return func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, error) {
+	return func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, func(), error) {
 		if a.clPool == nil {
-			return nil, fmt.Errorf("cluster pool unavailable")
+			return nil, nil, fmt.Errorf("cluster pool unavailable")
 		}
-		if len(selectors) > 0 {
-			return a.clPool.GetWithSelectors(ctx, key, selectors)
+		lease, err := a.clPool.Acquire(ctx, key, selectors)
+		if err != nil {
+			return nil, nil, err
 		}
-		return a.clPool.Get(ctx, key)
+		return lease.Cluster(), lease.Release, nil
 	}
 }
 
@@ -3112,7 +3114,7 @@ func (a *App) initData(ctx context.Context) error {
 		nsLog = "(cluster)"
 	}
 	log.Info("selected context", "name", a.currentCtx.Name, "cluster", a.currentCtx.Cluster, "namespace", nsLog)
-	// Prepare app context and cluster pool; cluster will be started via pool.Get
+	// Prepare app context and cluster pool; cluster will be started via pool.Acquire
 	a.cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
 	a.clPool = kccluster.NewPool(
@@ -3129,13 +3131,15 @@ func (a *App) initData(ctx context.Context) error {
 		ImpersonateGroupsKey: a.impersonationGroupsKey(),
 	}
 	log.Info("acquiring cluster", "key", k)
-	cl, err := a.clPool.Get(a.ctx, k)
+	lease, err := a.clPool.Acquire(a.ctx, k, nil)
 	if err != nil {
 		log.Error(err, "cluster acquisition failed")
-		return fmt.Errorf("cluster pool get: %w", err)
+		return fmt.Errorf("cluster pool acquire: %w", err)
 	}
-	a.cl = cl
-	a.clPool.Pin(k)
+	// The app holds its cluster for as long as it is the current one:
+	// evicting it would cancel the informers the panels still read.
+	a.clLease = lease
+	a.cl = lease.Cluster()
 	if factory, err := podfs.NewFactory(a.cl.GetConfig()); err != nil {
 		log.Error(err, "failed to initialize pod filesystem factory")
 		if a.toastLogger != nil {
@@ -3225,13 +3229,15 @@ func (a *App) initData(ctx context.Context) error {
 func (a *App) goToNamespace(ns string) {
 	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace")
 	log.Info("scoping panels", "namespace", ns)
-	if a.clPool != nil {
-		// Keep at most the cluster-scoped cache plus the current namespace cache.
-		a.clPool.PruneNamespaces(ns)
-	}
 	a.panelScope = [2]string{ns, ns}
 	a.replaceNavigator(0, a.newScopedNavigator(0))
 	a.replaceNavigator(1, a.newScopedNavigator(1))
+	if a.clPool != nil {
+		// Keep at most the cluster-scoped cache plus the current namespace
+		// cache. Prune after the old navigators are closed, so the caches
+		// their folders held are released and can go now.
+		a.clPool.PruneNamespaces(ns)
+	}
 	a.updateTermContextNamespace(ns)
 	a.showNavigatorRoot(0)
 	a.showNavigatorRoot(1)

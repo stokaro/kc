@@ -140,7 +140,7 @@ Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace.
-- `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
+- `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation, and how long a cluster cache stays running after the last open folder that uses it is closed.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
