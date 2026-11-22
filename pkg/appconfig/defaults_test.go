@@ -91,6 +91,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Viewer.Mode != b.Viewer.Mode {
 		t.Fatalf("viewer.mode mismatch: yaml=%q code=%q", a.Viewer.Mode, b.Viewer.Mode)
 	}
+	if a.Viewer.Logs != b.Viewer.Logs {
+		t.Fatalf("viewer.logs mismatch: yaml=%+v code=%+v", a.Viewer.Logs, b.Viewer.Logs)
+	}
 	if a.Panel.Scrolling.Horizontal.Step != b.Panel.Scrolling.Horizontal.Step {
 		t.Fatalf("panel.scrolling.horizontal.step mismatch: yaml=%d code=%d", a.Panel.Scrolling.Horizontal.Step, b.Panel.Scrolling.Horizontal.Step)
 	}
@@ -124,8 +127,37 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Resources.PeekInterval.Duration != b.Resources.PeekInterval.Duration {
 		t.Fatalf("resources.peekInterval mismatch: yaml=%v code=%v", a.Resources.PeekInterval.Duration, b.Resources.PeekInterval.Duration)
 	}
+	if a.Panel.Skin != b.Panel.Skin {
+		t.Fatalf("panel.skin mismatch: yaml=%q code=%q", a.Panel.Skin, b.Panel.Skin)
+	}
+	if len(a.Contexts) != 0 || len(b.Contexts) != 0 {
+		t.Fatalf("contexts must be empty by default: yaml=%v code=%v", a.Contexts, b.Contexts)
+	}
+	if !reflect.DeepEqual(a.NodeShell, b.NodeShell) {
+		t.Fatalf("nodeShell mismatch: yaml=%+v code=%+v", a.NodeShell, b.NodeShell)
+	}
+	// No custom columns by default; the sample may spell that as {}.
+	if len(a.Columns) != 0 || len(b.Columns) != 0 {
+		t.Fatalf("columns mismatch: yaml=%v code=%v, want none", a.Columns, b.Columns)
+	}
+	// Compare the YAML as written: a key missing from the file must fail
+	// here, not be filled in by Normalized.
+	if !reflect.DeepEqual(fromYAML.Overview, fromCode.Overview) {
+		t.Fatalf("overview mismatch: yaml=%+v code=%+v", fromYAML.Overview, fromCode.Overview)
+	}
+	if a.ReadOnly.Enabled != b.ReadOnly.Enabled {
+		t.Fatalf("readOnly.enabled mismatch: yaml=%v code=%v", a.ReadOnly.Enabled, b.ReadOnly.Enabled)
+	}
+	if len(a.ReadOnly.Contexts) != 0 || len(b.ReadOnly.Contexts) != 0 {
+		t.Fatalf("readOnly.contexts must be empty by default: yaml=%v code=%v", a.ReadOnly.Contexts, b.ReadOnly.Contexts)
+	}
 	if len(a.Commands) != len(b.Commands) {
-		t.Fatalf("commands mismatch: yaml has %d, code has %d", len(a.Commands), len(b.Commands))
+		t.Fatalf("commands count mismatch: yaml=%d code=%d", len(a.Commands), len(b.Commands))
+	}
+	for i := range b.Commands {
+		if a.Commands[i].Dangerous != b.Commands[i].Dangerous {
+			t.Fatalf("commands[%d].dangerous mismatch: yaml=%v code=%v", i, a.Commands[i].Dangerous, b.Commands[i].Dangerous)
+		}
 	}
 	for i := range a.Commands {
 		ya, co := a.Commands[i], b.Commands[i]

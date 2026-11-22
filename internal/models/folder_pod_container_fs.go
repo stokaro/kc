@@ -38,6 +38,9 @@ type PodContainerDetailFolder struct {
 	Kind      containerKind
 
 	session *containerSessionHandle
+	// execTarget carries the container's stdin and tty settings from the
+	// list that opened the folder; nil builds a target without them.
+	execTarget *ExecTarget
 }
 
 func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, container string, kind containerKind) *PodContainerDetailFolder {
@@ -51,12 +54,14 @@ func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, conta
 		Kind:       kind,
 		session:    handle,
 	}
-	base.SetPopulate(folder.buildRows)
+	// The pod's status decides whether a previous log exists, so the rows
+	// follow the pod like the container list does.
+	base.SetRowSource(newPodContainerRowSource(deps, namespace, pod, kind, folder.buildRows, base.markDirtyFromSource))
 	return folder
 }
 
-func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, error) {
-	rows := make([]table.Row, 0, 2)
+func (f *PodContainerDetailFolder) buildRows(ctx context.Context) ([]table.Row, error) {
+	rows := make([]table.Row, 0, 3)
 	logSpec := LogsSpec{
 		Namespace: f.Namespace,
 		Pod:       f.Pod,
@@ -65,10 +70,26 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 		TailLines: DefaultLogsTailLines,
 	}
 	logPath := append(append([]string{}, f.Path()...), "logs", "latest")
-	logItem := NewContainerLogItem("logs_latest", []string{"logs"}, logPath, logSpec)
+	logItem := NewContainerLogItem(f.Deps, "logs_latest", []string{"logs"}, logPath, logSpec)
 	logItem.RowItem.details = "Stream container logs"
-	logItem.SetViewCommand(logsCommand(f.Deps, logSpec))
 	rows = append(rows, logItem)
+
+	if restarts := f.restartCount(ctx); restarts > 0 {
+		prevSpec := logSpec
+		prevSpec.Previous = true
+		prevPath := append(append([]string{}, f.Path()...), "logs", "previous")
+		prevItem := NewContainerLogItem(f.Deps, "logs_previous", []string{"logs (previous)"}, prevPath, prevSpec)
+		prevItem.RowItem.details = fmt.Sprintf("Logs of the previous instance (%d restarts)", restarts)
+		rows = append(rows, prevItem)
+	}
+	shellTarget := containerExecTarget(f.Deps, f.Namespace, f.Pod, f.Container, f.Kind, false, false)
+	if f.execTarget != nil {
+		shellTarget = *f.execTarget
+	}
+	shellItem := NewContainerShellItem("shell", []string{"shell"}, append(append([]string{}, f.Path()...), "shell"), shellTarget)
+	shellItem.RowItem.details = "Open a shell (bash, else sh)"
+	shellItem.SetViewCommand(shellTarget.Command(ExecShell))
+	rows = append(rows, shellItem)
 
 	rootPath := append(append([]string{}, f.Path()...), "root")
 	if f.session == nil {
@@ -87,6 +108,43 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 	}
 	rows = append(rows, rootItem)
 	return rows, nil
+}
+
+// restartCount returns the container's restart count from the pod status.
+// It returns 0 when the pod cannot be read: the previous log row is an
+// extra, and the other rows do not depend on the pod.
+func (f *PodContainerDetailFolder) restartCount(ctx context.Context) int32 {
+	if f.Deps.Cl == nil {
+		return 0
+	}
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	obj, err := f.Deps.Cl.GetByGVR(ctx, gvr, f.Namespace, f.Pod)
+	if err != nil || obj == nil {
+		return 0
+	}
+	var pod corev1.Pod
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil {
+		return 0
+	}
+	return containerRestartCount(&pod, f.Container, f.Kind)
+}
+
+// containerRestartCount returns the restart count of the named container in
+// the status list that matches kind.
+func containerRestartCount(pod *corev1.Pod, name string, kind containerKind) int32 {
+	statuses := pod.Status.ContainerStatuses
+	switch kind {
+	case containerKindInit:
+		statuses = pod.Status.InitContainerStatuses
+	case containerKindEphemeral:
+		statuses = pod.Status.EphemeralContainerStatuses
+	}
+	for i := range statuses {
+		if statuses[i].Name == name {
+			return statuses[i].RestartCount
+		}
+	}
+	return 0
 }
 
 // PodContainerFSFolder lists filesystem entries for a container under a given directory.
@@ -258,13 +316,14 @@ func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error
 				}
 			}(entryPath))
 			item.RowItem.details = fmt.Sprintf("Directory (%s)", entryPath)
+			item.entry = entry
 			rows = append(rows, item)
 		case podfs.EntryTypeSymlink:
-			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entryPath, entry.Size, entry.Target, f)
+			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entry, f)
 			fileItem.RowItem.details = fmt.Sprintf("Symlink → %s", entry.Target)
 			rows = append(rows, fileItem)
 		default:
-			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entryPath, entry.Size, "", f)
+			fileItem := newPodFSFileItem(entryPath, cells, rowPath, entry, f)
 			fileItem.RowItem.details = fmt.Sprintf("%s bytes", displaySize)
 			rows = append(rows, fileItem)
 		}
@@ -447,7 +506,20 @@ func (f *PodContainerFSFolder) scheduleRefresh(delay time.Duration) {
 type PodFSDirItem struct {
 	*RowItem
 	enter func() (Folder, error)
+	entry podfs.FileEntry
 }
+
+// FSEntry returns the listing entry the row shows.
+func (d *PodFSDirItem) FSEntry() podfs.FileEntry { return d.entry }
+
+// PodFSFileItem is a file, symbolic link or special file of a container.
+type PodFSFileItem struct {
+	*SimpleItem
+	entry podfs.FileEntry
+}
+
+// FSEntry returns the listing entry the row shows.
+func (i *PodFSFileItem) FSEntry() podfs.FileEntry { return i.entry }
 
 func NewPodFSDirItem(id string, cells []string, path []string, style *lipgloss.Style, enter func() (Folder, error)) *PodFSDirItem {
 	return &PodFSDirItem{RowItem: NewRowItem(id, cells, path, style), enter: enter}
@@ -460,8 +532,9 @@ func (d *PodFSDirItem) Enter() (Folder, error) {
 	return d.enter()
 }
 
-func newPodFSFileItem(id string, cells []string, path []string, fsPath string, size int64, target string, folder *PodContainerFSFolder) *SimpleItem {
-	item := NewSimpleItem(id, cells, path, WhiteStyle())
+func newPodFSFileItem(fsPath string, cells []string, path []string, entry podfs.FileEntry, folder *PodContainerFSFolder) *PodFSFileItem {
+	size, target := entry.Size, entry.Target
+	item := NewSimpleItem(fsPath, cells, path, WhiteStyle())
 	detailsSuffix := ""
 	if target != "" {
 		detailsSuffix = fmt.Sprintf(" → %s", target)
@@ -473,7 +546,7 @@ func newPodFSFileItem(id string, cells []string, path []string, fsPath string, s
 		container, p := folder.session.execTarget(fsPath)
 		item.SetViewCommand(kubectlCommand(folder.Deps, "exec", spec.Pod, "-n", spec.Namespace, "-c", container, "--", "cat", p))
 	}
-	return item
+	return &PodFSFileItem{SimpleItem: item, entry: entry}
 }
 
 func podFSFileViewContent(folder *PodContainerFSFolder, fsPath string, size int64) ViewContentFunc {
@@ -728,6 +801,13 @@ func isContextError(err error) bool {
 // helperConsentRows offers to start a debug helper for a container without
 // a shell. Starting one changes the pod, so it is a confirmed action.
 func (f *PodContainerFSFolder) helperConsentRows() []table.Row {
+	if f.Deps.ReadOnly {
+		// Read-only mode: say why the container cannot be browsed, and offer
+		// nothing to confirm. The UI refuses confirmed actions as well.
+		item := NewSimpleItem("helper_read_only", []string{"Debug helper disabled (read-only mode)", "", "", ""}, f.Path(), DimStyle())
+		item.RowItem.details = "The container has no shell, and read-only mode does not add a debug helper to the pod"
+		return []table.Row{item}
+	}
 	item := &helperStartItem{
 		SimpleItem: NewSimpleItem("start_helper", []string{"Start a debug helper...", "", "", ""}, f.Path(), WhiteStyle()),
 		folder:     f,
@@ -735,6 +815,9 @@ func (f *PodContainerFSFolder) helperConsentRows() []table.Row {
 	item.RowItem.details = "The container has no shell; Enter starts a debug helper to browse it"
 	return []table.Row{item}
 }
+
+// errReadOnlyHelper refuses the debug helper in read-only mode.
+var errReadOnlyHelper = errors.New("read-only mode: the debug helper is disabled")
 
 // helperStartItem asks for consent to add a debug helper to the pod.
 type helperStartItem struct {
@@ -764,6 +847,9 @@ func (i *helperStartItem) Confirmation() Confirmation {
 }
 
 func (i *helperStartItem) Confirm() error {
+	if i.folder.Deps.ReadOnly {
+		return errReadOnlyHelper
+	}
 	i.folder.session.approveHelper()
 	i.folder.reload()
 	return nil
