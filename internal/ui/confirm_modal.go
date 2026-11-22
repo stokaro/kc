@@ -148,6 +148,10 @@ func (a *App) showClusterActionConfirm(action models.ClusterAction, panelIdx int
 
 func (a *App) showConfirmation(c models.Confirmation, pending *pendingConfirmation) tea.Cmd {
 	model := NewConfirmModel(c)
+	// A confirmed action changes the cluster by definition.
+	if a.accessPolicy().ReadOnly {
+		return a.readOnlyRefusal(confirmationName(c))
+	}
 	modal := NewModal("Confirm", model)
 	modal.SetDanger(true)
 	a.pendingConfirm = pending
@@ -167,6 +171,10 @@ func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
 	if !msg.ok || pending == nil {
 		return nil
 	}
+	if a.accessPolicy().ReadOnly {
+		// The context became read-only while the dialog was open.
+		return a.readOnlyRefusal(pending.name())
+	}
 	if pending.cluster != nil {
 		return a.runClusterAction(pending.cluster, pending.panelIdx)
 	}
@@ -181,4 +189,30 @@ func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
 		return func() tea.Msg { return next }
 	}
 	return nil
+}
+
+// confirmedActionName names a confirmed action in messages: its dialog
+// title without the question mark ("Start a debug helper").
+func confirmedActionName(action models.ConfirmedAction) string {
+	return confirmationName(action.Confirmation())
+}
+
+// confirmationName names the action a confirmation asks for, for the
+// read-only refusal.
+func confirmationName(c models.Confirmation) string {
+	if name := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(c.Title), "?")); name != "" {
+		return name
+	}
+	return "This action"
+}
+
+// name names the pending action, for the read-only refusal.
+func (p *pendingConfirmation) name() string {
+	switch {
+	case p.row != nil:
+		return confirmedActionName(p.row)
+	case p.cluster != nil:
+		return confirmationName(p.cluster.Confirmation())
+	}
+	return "This action"
 }

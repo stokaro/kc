@@ -61,7 +61,12 @@ func namespaceScopeLabel(ns string) string {
 type panelScopeLabel struct {
 	Context   string
 	Namespace string // models.AllNamespaces for all
+	ReadOnly  bool   // draws readOnlyMarker before the context
 }
+
+// readOnlyMarker is drawn in the frame of a panel whose context is in
+// read-only mode.
+const readOnlyMarker = " RO "
 
 // scopeHits are the frame columns of the context and namespace labels.
 type scopeHits struct {
@@ -84,6 +89,9 @@ func scopeStyles(tint color.Color) (ctx, sep, ns lipgloss.Style) {
 	return ctx, sep, ns
 }
 
+// scopeReadOnlyStyle draws the RO marker before the context label.
+var scopeReadOnlyStyle = lipgloss.NewStyle().Background(lipgloss.Red).Foreground(lipgloss.BrightWhite).Bold(true)
+
 // SetScope sets the context and namespace drawn in the frame.
 func (p *Panel) SetScope(scope panelScopeLabel) {
 	if p.scope == scope {
@@ -102,19 +110,27 @@ func renderScopeLabel(scope panelScopeLabel, dash string, offset, maxWidth int, 
 	}
 	ctx := " " + scope.Context + " "
 	ns := " " + namespaceScopeLabel(scope.Namespace) + " "
-	room := maxWidth - lipgloss.Width(dash) - 1 // the ":" between them
+	ro := ""
+	if scope.ReadOnly {
+		ro = readOnlyMarker
+	}
+	room := maxWidth - lipgloss.Width(dash) - lipgloss.Width(ro) - 1 // the ":" between them
 	if lipgloss.Width(ctx)+lipgloss.Width(ns) > room {
 		half := max(4, room/2)
 		ctx = truncateStringToWidth(ctx, half)
 		ns = truncateStringToWidth(ns, max(4, room-lipgloss.Width(ctx)))
 	}
 	var hits scopeHits
-	hits.ctxFrom = offset + lipgloss.Width(dash)
+	hits.ctxFrom = offset + lipgloss.Width(dash) + lipgloss.Width(ro)
 	hits.ctxTo = hits.ctxFrom + lipgloss.Width(ctx)
 	hits.nsFrom = hits.ctxTo + 1
 	hits.nsTo = hits.nsFrom + lipgloss.Width(ns)
 	ctxStyle, sepStyle, nsStyle := scopeStyles(tint)
-	out := dash + ctxStyle.Render(ctx) + sepStyle.Render(":") + nsStyle.Render(ns)
+	out := dash
+	if ro != "" {
+		out += scopeReadOnlyStyle.Render(ro)
+	}
+	out += ctxStyle.Render(ctx) + sepStyle.Render(":") + nsStyle.Render(ns)
 	return out, hits
 }
 
@@ -241,13 +257,11 @@ func (a *App) setPanelScope(idx int, ns string) {
 
 // syncPanelScopeLabels updates the scope drawn in both panel frames.
 func (a *App) syncPanelScopeLabels() {
-	ctxName := ""
-	if a.currentCtx != nil {
-		ctxName = a.currentCtx.Name
-	}
+	ctxName := a.currentContextName()
+	readOnly := a.readOnly()
 	for idx, panel := range []*Panel{a.leftPanel, a.rightPanel} {
 		if panel != nil {
-			panel.SetScope(panelScopeLabel{Context: ctxName, Namespace: a.panelScope[idx]})
+			panel.SetScope(panelScopeLabel{Context: ctxName, Namespace: a.panelScope[idx], ReadOnly: readOnly})
 		}
 	}
 }

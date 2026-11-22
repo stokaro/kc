@@ -206,6 +206,24 @@ Each row has a value and a state: white is ok, yellow a warning, red failed, and
 
 The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. Thresholds are set under `overview:` in the configuration.
 
+## Read-only mode
+
+In read-only mode kc does not change the cluster: `F4` (edit), `F7` (create namespace) and `F8` (delete) are grayed out, the pod filesystem offers no debug helper for a container without a shell, custom commands marked `dangerous: true` are hidden from the `F9` menu, and port forwards (`M-p`), the node shell and the CronJob actions of the `F2` menu (Run now, Suspend/Resume) are refused. Pressing a grayed key shows "Read-only mode: ... is disabled". The panel frame shows a red `RO` before the context name.
+
+Turn it on per context in `~/.kc/config.yaml`, with exact names or globs (`*` matches any run of characters, including `/` in EKS ARNs; `?` one character):
+
+```yaml
+readOnly:
+  enabled: false        # true: every context
+  contexts:
+    - "*prod*"
+    - shared-staging
+```
+
+`kc --readonly` makes every context read-only for this run; `kc --write` ignores the config and allows writes everywhere. Without either flag the config decides. Switching the context with a click on its name applies the setting of the new context.
+
+Read-only mode guards against accidental changes from kc's own keys. It is not a security boundary: the integrated terminal (`C-o`) and commands not marked dangerous still run whatever they run, and RBAC on the cluster stays the real limit.
+
 ## Custom Commands
 
 You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F2** user menu (also under **Command** in the `F9` menu bar). Commands run in a terminal panel and can use templates to reference the selected item.
@@ -238,7 +256,16 @@ commands:
     type: "selector" # Reruns when selection changes
     location: "panel"
     onExit: "keep-open"
+
+  - name: "Restart Deployment"
+    command: "kubectl rollout restart deployment {{.Name}} -n {{.Namespace}}"
+    type: "selector"
+    showFor:
+      resources: ["deployments"]
+    dangerous: true # Hidden and refused in read-only mode
 ```
+
+Mark every command that changes the cluster with `dangerous: true`. kc cannot tell what a shell command does, so a command without the flag runs in read-only mode too.
 
 ### Command Types
 - **selector**: Triggered by selection, reruns on change. Good for `describe`, `get -o yaml`, etc.
@@ -277,6 +304,7 @@ A command acts on the marked rows when any are marked, otherwise on the highligh
 - `panel.skin`, `contexts` – panel colors and per-context frame colors (see [Panel colors](#panel-colors)).
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
 - `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, pods per node, and ResourceQuota use.
+- `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -415,6 +443,16 @@ overview:
   podsWarnPercent: 90
   # A ResourceQuota is flagged when any used value reaches this percent.
   quotaWarnPercent: 80
+
+# Read-only mode: kc refuses edits (F4), deletes (F8), namespace creation
+# (F7), the pod filesystem debug helper and commands marked dangerous.
+# --readonly turns it on for every context, --write turns it off.
+readOnly:
+  # true makes every context read-only.
+  enabled: false
+  # Context names or globs ("*" any run of characters, "?" one), for
+  # example "*prod*". A pattern must match the whole name.
+  contexts: []
 ```
 
 ### Panel colors

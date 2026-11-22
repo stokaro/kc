@@ -18,6 +18,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	readmedoc "github.com/sttts/kc"
+	"github.com/sttts/kc/internal/access"
 	"github.com/sttts/kc/internal/atomicfile"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/execctx"
@@ -74,8 +75,9 @@ func (a *App) hasApplicableCommands(panel *Panel) bool {
 	selected := panel.GetSelectedItems()
 	activeNamespace := deriveNamespace(item, selected, panel.namespace(ctx))
 	targets := commandTargets(item, selected)
+	policy := a.accessPolicy()
 	for _, cmd := range a.cfg.Commands {
-		if isCommandApplicableToTargets(cmd, targets, activeNamespace) {
+		if policy.PermitsCommand(cmd.Dangerous) && isCommandApplicableToTargets(cmd, targets, activeNamespace) {
 			return true
 		}
 	}
@@ -207,6 +209,10 @@ type App struct {
 	access            *accessState // access review cache; see access_gate.go
 	viewConfig        *ViewConfig
 	cfg               *appconfig.Config
+
+	// readOnlyOverride is the --readonly / --write flag; see readonly.go.
+	readOnlyOverride ReadOnlyOverride
+
 	// Command watch scheduling
 	commandWatchToken    [2]int
 	commandWatchInterval [2]time.Duration
@@ -945,6 +951,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		PodFSFactory:     a.podfsFactory,
 		ReportError:      a.reportReadError,
 		Activity:         a.activity,
+		ReadOnly:         a.readOnlyFor(key.ContextName),
 		PortForwards:     a.portForwards,
 		Usage:            a.usage,
 	}
@@ -1267,6 +1274,7 @@ func (a *App) panelEnvironment() PanelEnvironment {
 		env.AllowDeleteObjects = true
 	}
 	env.Permit = a.permitAccess
+	env.ReadOnly = a.readOnly()
 	return env
 }
 
@@ -1847,6 +1855,9 @@ func (a *App) createNamespace() tea.Cmd {
 }
 
 func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
+	if cmd := a.refuseReadOnly("Create namespace", access.CreateNamespaceChecks()...); cmd != nil {
+		return cmd
+	}
 	if a.currentCtx == nil {
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("No active context for namespace creation"))
@@ -1915,6 +1926,9 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	if cmd := a.refuseReadOnly("Delete", access.DeleteChecks(objectAccessTarget(obj))...); cmd != nil {
+		return cmd
+	}
 	target, err := deleteTargetFor(panelIdx, obj)
 	if err != nil {
 		return a.ShowToast(fmt.Sprintf("Cannot delete %s: %v", kubectlResourceRef(obj.GVR(), obj.Name()), err), 5*time.Second)
@@ -1964,6 +1978,9 @@ func (a *App) createNamespaceWithName(name string) tea.Cmd {
 	if name == "" {
 		return nil
 	}
+	if cmd := a.refuseReadOnly("Create namespace", access.CreateNamespaceChecks()...); cmd != nil {
+		return cmd
+	}
 	return a.withBusy("Create namespace", 300*time.Millisecond, func() tea.Msg {
 		if a.cl == nil {
 			return namespaceCreatedMsg{name: name, err: fmt.Errorf("cluster not ready")}
@@ -1981,6 +1998,10 @@ func (a *App) createNamespaceWithName(name string) tea.Cmd {
 // performDelete deletes the confirmed object instance on the cluster it
 // was read from; see executeDelete.
 func (a *App) performDelete(target deleteTarget) tea.Cmd {
+	checks := access.DeleteChecks(access.Target{Resource: target.gvr, Namespace: target.namespace, Name: target.name})
+	if cmd := a.refuseReadOnly("Delete", checks...); cmd != nil {
+		return cmd
+	}
 	root := a.ctx
 	return a.withBusy("Delete", 300*time.Millisecond, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(root, requestTimeout)
@@ -2241,6 +2262,9 @@ func (a *App) editSelectionForPanel(panel *Panel) tea.Cmd {
 }
 
 func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectItem) tea.Cmd {
+	if cmd := a.refuseReadOnly("Edit", access.EditChecks(objectAccessTarget(obj))...); cmd != nil {
+		return cmd
+	}
 	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
 		if a.toastLogger != nil {
 			return a.toastLogger.Errorf("kubectl edit: no active kubeconfig")
@@ -3012,6 +3036,9 @@ type RunConfig struct {
 	ImpersonateUser    string
 	ImpersonateUID     string
 	ImpersonateGroups  []string
+	// ReadOnly is the command line's read-only choice: --readonly forces it
+	// on, --write forces it off, neither leaves it to the config.
+	ReadOnly ReadOnlyOverride
 }
 
 // Run starts the application
@@ -3029,6 +3056,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	app.impersonateUser = strings.TrimSpace(cfg.ImpersonateUser)
 	app.impersonateUID = strings.TrimSpace(cfg.ImpersonateUID)
 	app.impersonateGroups = append([]string(nil), cfg.ImpersonateGroups...)
+	app.readOnlyOverride = cfg.ReadOnly
 
 	// Initialize data model (best-effort; UI can still run without it)
 	log.Info("initializing data")
@@ -3703,6 +3731,11 @@ func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) (models.Item,
 }
 
 func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, namespace string) tea.Cmd {
+	// A namespace change restarts the command; the context may be read-only
+	// by now.
+	if refuse := a.refuseCommand(cfg); refuse != nil {
+		return refuse
+	}
 	panel := a.panelByIndex(panelIdx)
 	if panel == nil {
 		return nil
@@ -3826,8 +3859,13 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	targets := commandTargets(item, selectedItems)
 
 	// Filter commands
+	// Read-only mode hides dangerous commands.
+	policy := a.accessPolicy()
 	var available []appconfig.CommandConfig
 	for _, cmd := range a.cfg.Commands {
+		if !policy.PermitsCommand(cmd.Dangerous) {
+			continue
+		}
 		if isCommandApplicableToTargets(cmd, targets, namespaceForApplicability) {
 			available = append(available, cmd)
 		}
@@ -3848,6 +3886,9 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 
 	selector := NewCommandSelectorModel(available, targetPanel, targetNamespace, targetLeft, func(cmd appconfig.CommandConfig) tea.Cmd {
 		a.hideModal()
+		if refuse := a.refuseCommand(cmd); refuse != nil {
+			return refuse
+		}
 		// The menu only offers commands that accept len(targets) rows.
 		items := targets
 

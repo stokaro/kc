@@ -50,10 +50,10 @@ func (a *App) accessIdentity() access.Identity {
 	}
 }
 
-// accessPolicy is the user's own restriction on actions. The read-only mode
-// (issue #42) plugs in here; until it exists nothing is restricted.
+// accessPolicy is the user's own restriction on actions: the read-only
+// mode (#42) refuses every mutating check.
 func (a *App) accessPolicy() access.Policy {
-	return access.Policy{}
+	return access.Policy{ReadOnly: a.readOnly()}
 }
 
 // accessReviewer returns the reviewer for the current cluster. Its client

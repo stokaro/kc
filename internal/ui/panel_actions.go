@@ -37,6 +37,10 @@ type PanelEnvironment struct {
 	// Permit reports whether an action needing these access checks stays
 	// enabled (RBAC answers and the read-only preference). Nil permits all.
 	Permit func(checks ...access.Check) bool
+	// ReadOnly is set when the current context is read-only. A mutating key
+	// pressed then still reaches its handler, which refuses it with a
+	// message instead of doing nothing silently.
+	ReadOnly bool
 }
 
 func (e PanelEnvironment) permits(checks ...access.Check) bool {
@@ -133,7 +137,7 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 		}
 	}
 	// Namespace creation depends on both environment and location.
-	if env.AllowCreateNamespaces {
+	if env.AllowCreateNamespaces && env.permits(access.CreateNamespaceChecks()...) {
 		if strings.EqualFold(strings.TrimSpace(p.GetCurrentPath()), "/namespaces") {
 			caps.CanCreateNS = true
 		}
@@ -192,7 +196,20 @@ func (p *Panel) actionAllowed(ctx context.Context, action PanelAction) bool {
 
 func (p *Panel) invokeActionIfAllowed(ctx context.Context, action PanelAction) tea.Cmd {
 	if !p.actionAllowed(ctx, action) {
+		if mutatingPanelAction(action) && p.environment().ReadOnly {
+			// The handler refuses with a read-only message.
+			return p.InvokeAction(action)
+		}
 		return nil
 	}
 	return p.InvokeAction(action)
+}
+
+// mutatingPanelAction reports whether action changes the cluster.
+func mutatingPanelAction(action PanelAction) bool {
+	switch action {
+	case PanelActionEdit, PanelActionCreateNamespace, PanelActionDelete:
+		return true
+	}
+	return false
 }

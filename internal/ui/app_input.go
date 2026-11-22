@@ -218,7 +218,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		case "4":
 			a.escPressed = false
-			if panel != nil && caps.CanEdit {
+			if panel != nil && (caps.CanEdit || a.readOnly()) {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 				cmd := panel.invokeActionIfAllowed(ctx, PanelActionEdit)
 				cancel()
@@ -239,7 +239,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, a.renameMoveItem() // Esc 6 = F6
 		case "7":
 			a.escPressed = false
-			if panel != nil && caps.CanCreateNS {
+			if panel != nil && (caps.CanCreateNS || a.readOnly()) {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 				cmd := panel.invokeActionIfAllowed(ctx, PanelActionCreateNamespace)
 				cancel()
@@ -248,7 +248,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		case "8":
 			a.escPressed = false
-			if panel != nil && caps.CanDelete {
+			if panel != nil && (caps.CanDelete || a.readOnly()) {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 				cmd := panel.invokeActionIfAllowed(ctx, PanelActionDelete)
 				cancel()
