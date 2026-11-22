@@ -16,6 +16,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/logmux"
+	"github.com/stokaro/kc/internal/logview"
 	models "github.com/stokaro/kc/internal/models"
 	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 	"github.com/stokaro/kc/pkg/appconfig"
@@ -38,7 +39,18 @@ func (a *App) newPanelLogsWidget(p *Panel) PanelWidget {
 		Theme:    a.viewerTheme(),
 		Wrap:     a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap),
 		Settings: settings,
+		Limits:   a.logLimits(),
 	})
+}
+
+// logLimits are the limits of what one logs viewer or Logs panel keeps,
+// from viewer.logs.maxLines and viewer.logs.maxMemoryMiB.
+func (a *App) logLimits() logview.Limits {
+	var cfg appconfig.LogsViewerConfig
+	if a.cfg != nil {
+		cfg = a.cfg.Viewer.Logs
+	}
+	return logview.Limits{MaxRecords: cfg.EffectiveMaxLines(), MaxBytes: cfg.EffectiveMaxMemoryBytes()}
 }
 
 // panelLogsSource captures the cluster on the UI goroutine; the returned

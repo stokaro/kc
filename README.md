@@ -132,7 +132,8 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `M-n`      | In the node list: cordon, uncordon or drain the marked nodes (see [Node Actions](#node-actions)). `Esc n` does the same. |
 | `M-j`      | Owners: opens `<object>/owners` with the owner references of the selected object, the controller first with the cursor on it. Owners that no longer exist or whose kind the cluster does not serve are listed dim with the reason. `Esc j` does the same. |
-| `M-b`      | Used by: opens `<object>/used-by` with the objects that use the selected one, read from the watch cache: pods using a ConfigMap, Secret, PersistentVolumeClaim or ServiceAccount (volumes, env, envFrom, imagePullSecrets, serviceAccountName), Services selecting a Pod, Ingresses routing to a Service, the claim bound to a PersistentVolume. `Esc b` does the same. |
+| `M-b`      | Used by: opens `<object>/used-by` with the objects that use the selected one, read from the watch cache: pods using a ConfigMap, Secret, PersistentVolumeClaim or ServiceAccount (volumes, env, envFrom, imagePullSecrets, serviceAccountName) with the controllers that run them (ReplicaSet, Deployment, Job and so on, once each), Services selecting a Pod, Ingresses routing to a Service, the claim bound to a PersistentVolume. `Esc b` does the same. |
+| `M-d`      | Requires: opens `<object>/requires` with the objects the selected one names in its spec: for a Pod its ConfigMaps, Secrets, PersistentVolumeClaims, ServiceAccount and the Node it runs on; for a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob the same from its pod template; for a PersistentVolumeClaim its volume. Targets that do not exist are listed dim with the reason. `Esc d` does the same; the File menu calls it Requires. |
 | `C-x C-d`  | Compare the objects under the cursors of the two panels, as mc's "Compare files". Opens a read-only unified diff of the two YAML manifests. |
 | `M-e`      | Explain: browse the field documentation of the selected object or resource type, read from the cluster's OpenAPI v3 schema for exactly that group and version (CRDs included). See [Field documentation](#field-documentation). `Esc e` does the same. |
 | `M-i`      | Open the [cluster overview](#cluster-overview) in the active panel for the namespace of the list it shows (all namespaces for a list across namespaces). `Esc` and `/..` return to the panel root. `Esc i` does the same. |
@@ -151,7 +152,9 @@ Each panel keeps its own history of the last 50 locations. A location is the con
 
 The compare viewer heads the diff with both identities (context, group/version/resource, namespace, name) and the fields it left out. By default it shows the configuration view: it omits `metadata.uid`, `resourceVersion`, `generation`, `creationTimestamp`, `managedFields`, `selfLink` and `status`, and never reorders lists. `r` switches to the raw view and back, `s` adds or removes `status`, `n`/`Space`/`Enter` go to the next change and `p`/`Backspace` to the previous one (search continues with `Shift-F7`), and `C-r` reads both objects again; until then the diff stays as it was read. The last line shows the matching `diff -u <(kubectl get ...) <(kubectl get ...)` command.
 
-Rows in `/owners` and `/used-by` behave like the same object in its own list: `Enter` opens its child folder (a Deployment's ReplicaSets, a Pod's containers), `F3` shows its YAML. They are read-only there; edit or delete an object from its own list. `/..` returns to the object.
+Rows in `/owners`, `/used-by` and `/requires` behave like the same object in its own list: `Enter` opens its child folder (a Deployment's ReplicaSets, a Pod's containers), `F3` shows its YAML, and `M-j`, `M-b` and `M-d` work on them, so a chain can be followed one step at a time. They are read-only there; edit or delete an object from its own list. `/..` returns to the object.
+
+The Relation column says which field links the two objects: `volumes[cfg]`, `containers[app].envFrom`, `containers[app].env[A,B]`, `spec.nodeName`, `controller of pods/web-1-abc`. A related object that cannot be opened is dim with the reason: `not found`, `not found (an object with another UID has the name)` for an owner that was deleted and created again, `unknown kind`, or `forbidden` when you may not read that type there. When you may not list a type a used-by lookup reads, a `(not listed)` row says the result is incomplete, instead of an empty folder. kc asks the API server (SelfSubjectAccessReview) before it reads a type, so a type you may read only in some namespaces is read from that namespace, and a type you may not read starts no watch.
 
 `F4`, `F8` and `F3` on container logs are grayed out when a SelfSubjectAccessReview for the current context, impersonation and namespace says the action is denied (`F4` needs get and patch, as `kubectl edit` sends a patch). Answers are cached for 30 seconds. An unknown or failed review keeps the key enabled; the API server still decides every request.
 
@@ -159,7 +162,7 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 
 ### JSON logs
 
-The logs viewer keeps every line it reads. Lines that hold one JSON object (optionally after the `--timestamps` time) are shown formatted: time, level (colored by severity), message, then the other fields as `key=value`, with nested objects as dotted keys. Other lines, including broken JSON, are shown as they are. `M-v` switches to the raw lines and back; the filter, the search and follow mode stay.
+The logs viewer and the Logs panel keep the most recent lines they read: up to `viewer.logs.maxLines` lines (default 100000) and about `viewer.logs.maxMemoryMiB` MiB (default 64) each. When either limit is passed, the oldest tenth goes; the footer then counts the dropped lines (`90000 lines (10000 older dropped)`), and a copy with `M-a` or `M-A` says so too. If you were reading lines that were dropped, the view moves to the oldest kept line and the footer says so until you scroll. A line longer than 256 KiB keeps its first 256 KiB and ends with `[kc] line truncated: <n> bytes, the first 262144 kept`. Lines that hold one JSON object (optionally after the `--timestamps` time) are shown formatted: time, level (colored by severity), message, then the other fields as `key=value`, with nested objects as dotted keys. Other lines, including broken JSON, are shown as they are. `M-v` switches to the raw lines and back; the filter, the search and follow mode stay.
 
 `M-g` opens the filter. It takes space-separated terms; a line is shown when it matches every term and no `!` term. The footer shows how many lines pass.
 
@@ -190,7 +193,7 @@ The menu bar titles stay on the top row, as in mc, and the panels start under th
 Options > Menu bar visible (or `layout.menuBarVisible: false` in the config) hides the bar and gives the row to the panels; `F9` then draws the bar over the top row only while it is open. The entry saves the setting to `~/.kc/config.yaml`. The fullscreen terminal (`C-o`) and fullscreen viewers cover the bar, as in mc.
 
 - **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info, and Local files, which lists the local filesystem like `M-l`; the current one is marked `*`), panel options, columns, reread, sort and reverse, group by namespace, row filter and faults only, namespace and context pickers.
-- **File**: view, edit, copy, create namespace, delete, port forward, owners and used by, explain, marking and selecting rows, quick search, exit.
+- **File**: view, edit, copy, create namespace, delete, port forward, owners, used by and requires, explain, marking and selecting rows, quick search, exit.
 - **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
 - **Options**: panel width, the options of each panel, and whether the menu bar stays visible.
 
@@ -395,6 +398,7 @@ Read-only mode refuses `M-n` before the menu opens.
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer and a Logs panel open with. `F2` in the viewer or the panel changes them there; `C-s` saves them as the defaults.
 - `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot.
+- `viewer.logs.maxLines`, `viewer.logs.maxMemoryMiB` – how many lines, and about how much memory, one logs viewer or Logs panel keeps (defaults 100000 and 64); older lines are dropped, see [JSON logs](#json-logs).
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
@@ -465,6 +469,10 @@ viewer:
     # Log streams a merged logs viewer (all pods of a workload, all
     # containers of a pod) runs at once; more wait for a free slot.
     maxRequests: 50
+    # Lines one logs viewer or Logs panel keeps, and their estimated memory
+    # in MiB; older lines are dropped and the footer counts them.
+    maxLines: 100000
+    maxMemoryMiB: 64
 
 panel:
   scrolling:

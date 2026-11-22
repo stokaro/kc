@@ -247,6 +247,7 @@ func (a *App) showWorkloadLogs(msg workloadLogsReadyMsg) tea.Cmd {
 	}
 	title := workloadLogsTitle(spec)
 	logsViewer := NewLogsViewer(title, logs, open, a.viewerTheme())
+	logsViewer.SetLimits(a.logLimits())
 	logsViewer.SetStyledLines(true)
 	provider, selector := msg.provider, msg.selector
 	logsViewer.SetCommandBuilder(func(ls models.LogsSpec) string {
