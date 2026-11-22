@@ -936,6 +936,9 @@ func (w *Widget) enterItem(ctx context.Context) tea.Cmd {
 	if action, ok := row.(models.ConfirmedAction); ok {
 		return func() tea.Msg { return models.ConfirmRequest{Action: action} }
 	}
+	if link, ok := row.(models.ObjectLink); ok {
+		return func() tea.Msg { return models.OpenObjectRequest{Link: link} }
+	}
 	enterable, ok := row.(models.Enterable)
 	if !ok {
 		return nil

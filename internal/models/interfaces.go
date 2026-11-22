@@ -35,6 +35,27 @@ type ConfirmedAction interface {
 // ConfirmRequest asks the UI to confirm and then run Action.
 type ConfirmRequest struct{ Action ConfirmedAction }
 
+// ObjectRef names a live object by its full GVR.
+type ObjectRef struct {
+	GVR        schema.GroupVersionResource
+	Namespaced bool
+	Namespace  string
+	Name       string
+}
+
+// ObjectLink is a row that refers to a live object listed elsewhere, such
+// as an object of a Helm release manifest. Enter opens the object in the
+// other panel. Missing is non-empty when the object is known not to be in
+// the cluster; the UI shows it as a message.
+type ObjectLink interface {
+	Item
+	LinkTarget() (ref ObjectRef, missing string)
+}
+
+// OpenObjectRequest asks the UI to show the linked object in the other
+// panel.
+type OpenObjectRequest struct{ Link ObjectLink }
+
 // ObjectItem identifies items backed by Kubernetes objects.
 type ObjectItem interface {
 	Item
