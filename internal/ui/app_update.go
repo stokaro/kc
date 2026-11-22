@@ -690,6 +690,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.showConfirm(msg.Action)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case objectActionPreparedMsg:
+		return a, a.handleObjectActionPrepared(msg)
+	case objectActionDoneMsg:
+		return a, a.handleObjectActionDone(msg)
+	case selectCreatedMsg:
+		return a, a.selectCreatedRow(msg)
 	case startupSelectMsg:
 		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
 	case contextSwitchedMsg:
