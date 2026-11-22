@@ -20,6 +20,16 @@ type GoToResult struct {
 	Entered []models.Folder
 }
 
+// ItemNotFoundError reports a GoTo step whose row is not in the folder. The
+// row may still be loading, so callers that wait for data can retry.
+type ItemNotFoundError struct {
+	ID string
+}
+
+func (e *ItemNotFoundError) Error() string {
+	return fmt.Sprintf("navigation: item %q not found", e.ID)
+}
+
 // GoTo walks the navigator through the provided steps by selecting rows and, if
 // requested, entering the selected row to push a child folder. It returns an
 // error if any step cannot be satisfied (missing row, non-enterable row, or
@@ -48,7 +58,7 @@ func GoTo(ctx context.Context, nav *Navigator, steps []GoToStep) (GoToResult, er
 		}
 		item, ok := cur.ItemByID(ctx, step.SelectionID)
 		if !ok {
-			return res, fmt.Errorf("navigation: item %q not found", step.SelectionID)
+			return res, &ItemNotFoundError{ID: step.SelectionID}
 		}
 		enterable, ok := item.(models.Enterable)
 		if !ok {

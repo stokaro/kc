@@ -40,18 +40,18 @@
 2. After `initData` finishes and `goToNamespace` wires both panels, call `app.applyStartupIntent()` on the UI goroutine using `enqueueCmd`.
 3. `applyStartupIntent` performs:
    - Resource resolution: use the cluster’s RESTMapper (`ResourceFor`) so short forms like `po` work.
-   - GoTo path building: translate the intent into `[]navigation.GoToStep` and call `navigation.GoTo` on the left navigator. This keeps the history stack/breadcrumbs consistent.
+   - Path building: translate the intent into a `PanelPath` (the type row, then the object) and call `App.NavigatePanel`, the routine `cd` on the shell line also uses (`docs/adr/0040-cd-from-shell-line.md`). It waits up to 10 seconds for each row, because on a fresh start the root shows a type only once its emptiness is known and object rows arrive from informers (#84). Empty types the root hides are still found. The navigator stack and breadcrumbs stay consistent.
    - Panel sync: reuse the existing helper that pushes navigator state into `Panel.SetFolder`, `SetCurrentPath`, `UseFolder`, and `SelectByRowID`.
    - Verb-specific hooks (below).
 
 ### `get` Verb
 - **Resource list (single target)**: if no name is provided, stop after selecting the resource group row in the namespace folder; the left panel now shows the object list.
-- **Object drill-in (single target)**: when a name is present, add another GoTo step (`SelectionID=name`, `Enter=true`). For pods this lands inside `PodContainersFolder`; other resources remain at the object row (still selected so F3 works).
+- **Object drill-in (single target)**: when a name is present, add the object as the last path element and select it (`SelectLast`), so the cursor is on the object and F3 works.
 - **Multiple names for one resource**: navigate to the object list once and multi-select all named rows. We do not auto-enter a single object because there is no unique target.
 - **Multiple resources**: determine the closest shared ancestor (usually the namespace resources folder). Navigate there and multi-select the resource group rows referenced either via commas or individual arguments. Mixed `TYPE/NAME` pairs (e.g., `pod/foo svc/bar`) likewise stop at the shared level; each row is selected so function keys operate on the visible set.
 - **`-o yaml`**:
   - Always drive the left panel as above so navigation stays intuitive.
-  - After GoTo succeeds, set `a.activePanel = 1`, ensure the right panel is in manifest mode, and call the same helper we use today for the describe/manifest viewer (selects the object on the right and refreshes `PanelModeManifest`).
+  - After the navigation succeeds, set `a.activePanel = 1`, ensure the right panel is in manifest mode, and call the same helper we use today for the describe/manifest viewer (selects the object on the right and refreshes `PanelModeManifest`).
   - No modal: the manifest view auto-opens in the right panel so users can scroll immediately. When multiple objects are requested, show their selection on the left but only render the first target’s manifest on the right.
 
 ### `logs` Verb
@@ -60,7 +60,7 @@
 - Determine the target container:
   - If `-c/--container` is set, use it.
   - Otherwise fetch the Pod (`Cluster.GetByGVR`); if only one regular container exists, pick it; if multiple regular containers or only init/ephemeral containers exist, emit a toast asking for `-c`.
-- Build GoTo steps:
+- Build the path:
   1. `namespaces/<ns>/pods` resource row.
   2. Pod row (`Enter=true`).
   3. Container section row (`containers` / `init` / `ephemeral`).
@@ -70,7 +70,7 @@
 
 ### Error Handling
 - If resolution fails (unknown resource, missing pod/container, namespace not found), show a toast and keep both panels at whatever state `goToNamespace` left them in.
-- Never leave the navigators in a half-updated state: run `navigation.GoTo` on a clone or rollback on error.
+- On a failed or timed-out navigation the panel stays at the deepest folder reached (always a valid folder) and a toast names the missing element.
 - When some targets resolve and others fail, still navigate/select the valid set and show a toast summarizing the failures.
 
 ### Testing

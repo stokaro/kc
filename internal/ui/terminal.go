@@ -29,6 +29,7 @@ type Terminal struct {
 	showPanels bool // Whether panels are visible
 	// Input tracking
 	hasTyped bool // Whether user has typed since last command
+	line     shellLine
 	// Exit handling
 	shellExited bool
 	// Whether the PTY app has enabled mouse tracking (ESC[?1000h/1002h/1003h/1006h/1015h)
@@ -131,6 +132,9 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if paste, ok := msg.(tea.PasteMsg); ok {
 			if t.showPanels {
 				t.hasTyped = true
+				t.line.paste(paste.Content)
+			} else {
+				t.line.invalidate()
 			}
 			return t, writeNow(t.terminal.SendInput(pasteInput(paste.Content)))
 		}
@@ -309,6 +313,18 @@ func cloneCursor(c *tea.Cursor) *tea.Cursor {
 
 // trackTyped records whether the user typed into the inline shell line.
 func (t *Terminal) trackTyped(msg tea.Msg) {
+	if press, ok := msg.(tea.KeyPressMsg); ok {
+		switch {
+		case press.String() == "enter":
+			t.line.reset()
+		case t.showPanels:
+			t.line.key(press)
+		default:
+			// Keys typed in the fullscreen terminal may edit the line in
+			// ways kc cannot follow, or go to another program.
+			t.line.invalidate()
+		}
+	}
 	if !t.showPanels {
 		return
 	}
@@ -427,6 +443,22 @@ func (t *Terminal) HasInput() bool {
 
 // ClearTyped resets the typed flag (used to return focus to panels).
 func (t *Terminal) ClearTyped() { t.hasTyped = false }
+
+// ShellLine returns the text typed on the shell line since the last
+// command, and false when kc cannot know it (see shellLine).
+func (t *Terminal) ShellLine() (string, bool) { return t.line.current() }
+
+// DiscardLine clears the shell's input line with C-u (kill the line in
+// bash, zsh and fish with the cursor at the end) and returns the focus to
+// the panels.
+func (t *Terminal) DiscardLine() tea.Cmd {
+	t.line.reset()
+	t.hasTyped = false
+	if t.terminal == nil {
+		return nil
+	}
+	return writeNow(t.terminal.SendInput("\x15"))
+}
 
 // SetLogger installs a logger for terminal lifecycle events.
 func (t *Terminal) SetLogger(log logr.Logger) { t.log = log }
