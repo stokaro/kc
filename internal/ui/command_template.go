@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"text/template"
 
+	"github.com/sttts/kc/internal/execctx"
 	"github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -20,6 +21,14 @@ type CommandContext struct {
 
 	// Multi-selection fields
 	Items []CommandItemContext
+
+	// Execution context: the kubeconfig context and the impersonation the
+	// command runs with. KUBECONFIG already selects them; these fields are
+	// for tools that take them as flags.
+	Context  string
+	As       string
+	AsUID    string
+	AsGroups []string
 }
 
 // CommandItemContext represents a single item in the selection
@@ -34,6 +43,13 @@ type CommandItemContext struct {
 
 // RenderCommand renders a command template with the given context
 func RenderCommand(tmplStr string, items []models.Item, resourceInfo schema.GroupVersionResource) (string, error) {
+	return RenderCommandIn(tmplStr, items, resourceInfo, execctx.Context{})
+}
+
+// RenderCommandIn renders like RenderCommand and fills the execution
+// context fields from exec. A template is rendered only when there are
+// items, as before, so itemless commands keep literal braces.
+func RenderCommandIn(tmplStr string, items []models.Item, resourceInfo schema.GroupVersionResource, exec execctx.Context) (string, error) {
 	if len(items) == 0 {
 		return tmplStr, nil
 	}
@@ -83,6 +99,8 @@ func RenderCommand(tmplStr string, items []models.Item, resourceInfo schema.Grou
 		ctx.Resource = first.Resource
 	}
 
+	ctx.setExec(exec)
+
 	// Parse and execute template
 	tmpl, err := template.New("command").Parse(tmplStr)
 	if err != nil {
@@ -95,4 +113,12 @@ func RenderCommand(tmplStr string, items []models.Item, resourceInfo schema.Grou
 	}
 
 	return buf.String(), nil
+}
+
+func (c *CommandContext) setExec(exec execctx.Context) {
+	imp := exec.Impersonation.Normalized()
+	c.Context = exec.Context
+	c.As = imp.User
+	c.AsUID = imp.UID
+	c.AsGroups = imp.Groups
 }
