@@ -124,8 +124,8 @@ func TestRESTTableFetcherListUnknownGroupVersion(t *testing.T) {
 
 	requestCh := make(chan *http.Request, 1)
 	response := &metav1.Table{
-		TypeMeta: metav1.TypeMeta{APIVersion: "meta.k8s.io/v1", Kind: "Table"},
-		ListMeta: metav1.ListMeta{ResourceVersion: "123"},
+		APIVersion: "meta.k8s.io/v1", Kind: "Table",
+		ResourceVersion: "123",
 	}
 	payload, err := json.Marshal(response)
 	if err != nil {
@@ -262,26 +262,22 @@ func buildTestTable(t *testing.T) *metav1.Table {
 
 	pods := []corev1.Pod{
 		{
-			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "pod-a",
-				Namespace:       "default",
-				Labels:          map[string]string{"app": "demo"},
-				Annotations:     map[string]string{"anno": "value"},
-				Finalizers:      []string{"finalizer"},
-				ResourceVersion: "100",
-				UID:             "uid-a",
-				ManagedFields:   []metav1.ManagedFieldsEntry{{Manager: "manager"}},
-			},
+			APIVersion: "v1", Kind: "Pod",
+			Name:            "pod-a",
+			Namespace:       "default",
+			Labels:          map[string]string{"app": "demo"},
+			Annotations:     map[string]string{"anno": "value"},
+			Finalizers:      []string{"finalizer"},
+			ResourceVersion: "100",
+			UID:             "uid-a",
+			ManagedFields:   []metav1.ManagedFieldsEntry{{Manager: "manager"}},
 		},
 		{
-			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            "pod-b",
-				Namespace:       "default",
-				ResourceVersion: "101",
-				UID:             "uid-b",
-			},
+			APIVersion: "v1", Kind: "Pod",
+			Name:            "pod-b",
+			Namespace:       "default",
+			ResourceVersion: "101",
+			UID:             "uid-b",
 		},
 	}
 
@@ -292,7 +288,7 @@ func buildTestTable(t *testing.T) *metav1.Table {
 			ObjectMeta: pods[i].ObjectMeta,
 		}
 		rows[i] = metav1.TableRow{
-			Cells:  []interface{}{pods[i].Name},
+			Cells:  []any{pods[i].Name},
 			Object: runtime.RawExtension{Object: meta},
 		}
 	}
@@ -300,7 +296,7 @@ func buildTestTable(t *testing.T) *metav1.Table {
 	return &metav1.Table{
 		ColumnDefinitions: []metav1.TableColumnDefinition{{Name: "Name", Type: "string"}},
 		Rows:              rows,
-		ListMeta:          metav1.ListMeta{ResourceVersion: "200"},
+		ResourceVersion:   "200",
 	}
 }
 

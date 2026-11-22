@@ -18,7 +18,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -27,19 +26,19 @@ import (
 )
 
 func node(name string, unschedulable bool) *corev1.Node {
-	return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: corev1.NodeSpec{Unschedulable: unschedulable}}
+	return &corev1.Node{Name: name, Spec: corev1.NodeSpec{Unschedulable: unschedulable}}
 }
 
 type podOpt func(*corev1.Pod)
 
 func ownedBy(kind, apiVersion, name string) podOpt {
 	return func(p *corev1.Pod) {
-		p.OwnerReferences = []metav1.OwnerReference{{APIVersion: apiVersion, Kind: kind, Name: name, UID: types.UID(name + "-uid"), Controller: ptr.To(true)}}
+		p.OwnerReferences = []metav1.OwnerReference{{APIVersion: apiVersion, Kind: kind, Name: name, UID: types.UID(name + "-uid"), Controller: new(true)}}
 	}
 }
 
 func withEmptyDir(p *corev1.Pod) {
-	p.Spec.Volumes = []corev1.Volume{{Name: "scratch", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}}
+	p.Spec.Volumes = []corev1.Volume{{Name: "scratch", EmptyDir: &corev1.EmptyDirVolumeSource{}}}
 }
 
 func mirror(p *corev1.Pod) {
@@ -50,9 +49,9 @@ func phase(ph corev1.PodPhase) podOpt { return func(p *corev1.Pod) { p.Status.Ph
 
 func pod(name, nodeName string, opts ...podOpt) *corev1.Pod {
 	p := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: name, UID: types.UID(name + "-uid")},
-		Spec:       corev1.PodSpec{NodeName: nodeName},
-		Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+		Namespace: "app", Name: name, UID: types.UID(name + "-uid"),
+		Spec:   corev1.PodSpec{NodeName: nodeName},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}
 	for _, o := range opts {
 		o(p)
@@ -64,7 +63,7 @@ func rs(p *corev1.Pod) { ownedBy("ReplicaSet", "apps/v1", "web")(p) }
 func ds(p *corev1.Pod) { ownedBy("DaemonSet", "apps/v1", "agent")(p) }
 
 func daemonSet() *appsv1.DaemonSet {
-	return &appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "agent"}}
+	return &appsv1.DaemonSet{Namespace: "app", Name: "agent"}
 }
 
 func newEnv(t *testing.T, funcs interceptor.Funcs, objs ...crclient.Object) nodeaction.Env {
@@ -287,8 +286,7 @@ func TestPrepareDrainRefusesBeforeCordoning(t *testing.T) {
 	t.Parallel()
 	env := newEnv(t, interceptor.Funcs{}, node("a", false), pod("loose", "a"), pod("web", "a", rs))
 	_, err := nodeaction.PrepareDrain(t.Context(), env, []string{"a"}, nodeaction.DefaultDrainOptions())
-	var refused *nodeaction.RefusedError
-	if !errors.As(err, &refused) {
+	if _, ok := errors.AsType[*nodeaction.RefusedError](err); !ok {
 		t.Fatalf("error = %v, want RefusedError", err)
 	}
 	if !strings.Contains(err.Error(), "app/loose") || !strings.Contains(err.Error(), "--force") {

@@ -1,6 +1,9 @@
 package table
 
-import "context"
+import (
+	"context"
+	"slices"
+)
 
 // LinkedList is a doubly-linked list List implementation. It offers efficient
 // inserts/removals by pointer and linear-time indexing.
@@ -52,8 +55,7 @@ func (l *LinkedList) Append(rows ...Row) {
 
 // Prepend inserts rows at the beginning of the list.
 func (l *LinkedList) Prepend(rows ...Row) {
-	for i := len(rows) - 1; i >= 0; i-- { // keep order
-		r := rows[i]
+	for _, r := range slices.Backward(rows) { // keep order
 		n := &dnode{row: r}
 		if l.head == nil {
 			l.head, l.tail = n, n
@@ -75,8 +77,7 @@ func (l *LinkedList) InsertBeforeID(anchorID string, rows ...Row) bool {
 	if !ok {
 		return false
 	}
-	for i := len(rows) - 1; i >= 0; i-- { // insert preserving order
-		r := rows[i]
+	for _, r := range slices.Backward(rows) { // insert preserving order
 		n := &dnode{row: r}
 		n.prev = at.prev
 		n.next = at

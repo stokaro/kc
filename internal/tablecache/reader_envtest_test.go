@@ -48,14 +48,14 @@ func TestReaderListPodsEnvtest(t *testing.T) {
 		t.Fatalf("new reader: %v", err)
 	}
 
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "tablecache-list"}}
+	ns := &corev1.Namespace{Name: "tablecache-list"}
 	if err := cl.Create(ctx, ns); err != nil && !errors.IsAlreadyExists(err) {
 		t.Fatalf("create namespace: %v", err)
 	}
 
 	pods := []corev1.Pod{
-		{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: ns.Name}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "pause"}}}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: ns.Name}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "pause"}}}},
+		{Name: "pod-a", Namespace: ns.Name, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "pause"}}}},
+		{Name: "pod-b", Namespace: ns.Name, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "pause"}}}},
 	}
 
 	for i := range pods {
@@ -119,9 +119,7 @@ func TestReaderListCustomResourceColumnsEnvtest(t *testing.T) {
 	}
 
 	crd := &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "widgets.example.com",
-		},
+		Name: "widgets.example.com",
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: "example.com",
 			Names: apiextensionsv1.CustomResourceDefinitionNames{
@@ -196,7 +194,7 @@ func TestReaderListCustomResourceColumnsEnvtest(t *testing.T) {
 		t.Fatalf("build client: %v", err)
 	}
 
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "tablecache-crd"}}
+	ns := &corev1.Namespace{Name: "tablecache-crd"}
 	if err := cl.Create(ctx, ns); err != nil && !errors.IsAlreadyExists(err) {
 		t.Fatalf("create namespace: %v", err)
 	}
@@ -208,14 +206,14 @@ func TestReaderListCustomResourceColumnsEnvtest(t *testing.T) {
 
 	resource := schema.GroupVersionResource{Group: "example.com", Version: "v1alpha1", Resource: "widgets"}
 	customObj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "example.com/v1alpha1",
 			"kind":       "Widget",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      "demo-widget",
 				"namespace": ns.Name,
 			},
-			"spec": map[string]interface{}{
+			"spec": map[string]any{
 				"flavor":  "vanilla",
 				"enabled": true,
 			},
@@ -315,7 +313,7 @@ func TestReaderWatchPodsEnvtest(t *testing.T) {
 		t.Fatalf("new reader: %v", err)
 	}
 
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "tablecache-watch"}}
+	ns := &corev1.Namespace{Name: "tablecache-watch"}
 	if err := cl.Create(ctx, ns); err != nil && !errors.IsAlreadyExists(err) {
 		t.Fatalf("create namespace: %v", err)
 	}
@@ -331,9 +329,9 @@ func TestReaderWatchPodsEnvtest(t *testing.T) {
 	defer watcher.Stop()
 
 	pod := &corev1.Pod{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
-		ObjectMeta: metav1.ObjectMeta{Name: "pod-watch", Namespace: ns.Name},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "pause"}}},
+		APIVersion: "v1", Kind: "Pod",
+		Name: "pod-watch", Namespace: ns.Name,
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "pause"}}},
 	}
 	if err := cl.Create(ctx, pod); err != nil {
 		t.Fatalf("create pod: %v", err)

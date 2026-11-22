@@ -26,6 +26,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -107,10 +108,8 @@ func cleanArchiveName(name string) (string, error) {
 	case strings.ContainsRune(n, 0) || strings.Contains(n, `\`):
 		return "", fmt.Errorf("%w: %q", ErrUnsafePath, name)
 	}
-	for _, elem := range strings.Split(n, "/") {
-		if elem == ".." {
-			return "", fmt.Errorf("%w: %q has ..", ErrUnsafePath, name)
-		}
+	if slices.Contains(strings.Split(n, "/"), "..") {
+		return "", fmt.Errorf("%w: %q has ..", ErrUnsafePath, name)
 	}
 	return n, nil
 }

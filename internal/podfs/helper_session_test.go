@@ -64,7 +64,7 @@ func TestHelperSessionCheckTarget(t *testing.T) {
 }
 
 func TestCreateHelperAddsPtrace(t *testing.T) {
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"}}
+	pod := &corev1.Pod{Name: "p", Namespace: "ns"}
 	client := fake.NewClientset(pod)
 	m := newHelperManager(client)
 	pods := client.CoreV1().Pods("ns")
@@ -91,7 +91,7 @@ func TestPickHelper(t *testing.T) {
 	pod := func(states map[string]corev1.ContainerState, names ...string) *corev1.Pod {
 		p := &corev1.Pod{}
 		for _, n := range names {
-			p.Spec.EphemeralContainers = append(p.Spec.EphemeralContainers, corev1.EphemeralContainer{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: n}})
+			p.Spec.EphemeralContainers = append(p.Spec.EphemeralContainers, corev1.EphemeralContainer{Name: n})
 			if st, ok := states[n]; ok {
 				p.Status.EphemeralContainerStatuses = append(p.Status.EphemeralContainerStatuses, corev1.ContainerStatus{Name: n, State: st})
 			}
@@ -145,8 +145,8 @@ func (nopWriteCloser) Close() error { return nil }
 // never adds one: an exited helper means asking again.
 func TestEnsureHelperNeedsConsentForNewHelper(t *testing.T) {
 	helperPod := func(name string, state corev1.ContainerState) *corev1.Pod {
-		p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"}}
-		p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: name}}}
+		p := &corev1.Pod{Name: "p", Namespace: "ns"}
+		p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{Name: name}}
 		p.Status.EphemeralContainerStatuses = []corev1.ContainerStatus{{Name: name, State: state}}
 		return p
 	}

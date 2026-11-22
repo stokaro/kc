@@ -185,9 +185,7 @@ func (r *Registry) Start(ctx context.Context, spec Spec, runner Runner) (Forward
 
 	readyCh := make(chan int32, 1)
 	errCh := make(chan error, 1)
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		defer close(e.done)
 		var once sync.Once
 		err := runner.Run(runCtx, spec, func(port int32) {
@@ -195,7 +193,7 @@ func (r *Registry) Start(ctx context.Context, spec Spec, runner Runner) (Forward
 		})
 		r.finish(id, e, runCtx, err)
 		errCh <- err
-	}()
+	})
 
 	abort := func(err error) (Forward, error) {
 		r.mu.Lock()

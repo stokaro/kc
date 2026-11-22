@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -223,14 +222,12 @@ func getenvDefault(key, def string) string {
 
 func (m *helperManager) createHelper(ctx context.Context, pods typedcorev1.PodInterface, pod *corev1.Pod, targetContainer, helperName string, ptrace bool) error {
 	ec := corev1.EphemeralContainer{
-		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
-			Name:            helperName,
-			Image:           m.cfg.image,
-			Command:         append([]string(nil), m.cfg.command...),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Stdin:           true,
-			TTY:             true,
-		},
+		Name:                helperName,
+		Image:               m.cfg.image,
+		Command:             append([]string(nil), m.cfg.command...),
+		ImagePullPolicy:     corev1.PullIfNotPresent,
+		Stdin:               true,
+		TTY:                 true,
 		TargetContainerName: targetContainer,
 	}
 	if ptrace {

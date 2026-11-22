@@ -106,20 +106,19 @@ func JobFromCronJob(cj *batchv1.CronJob, name string) *batchv1.Job {
 	}
 	annotations[InstantiateAnnotation] = "manual"
 	return &batchv1.Job{
-		TypeMeta: metav1.TypeMeta{APIVersion: batchv1.SchemeGroupVersion.String(), Kind: "Job"},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Namespace:   cj.Namespace,
-			Labels:      maps.Clone(cj.Spec.JobTemplate.Labels),
-			Annotations: annotations,
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: batchv1.SchemeGroupVersion.String(),
-				Kind:       "CronJob",
-				Name:       cj.Name,
-				UID:        cj.UID,
-				Controller: ptr.To(true),
-			}},
-		},
+		APIVersion:  batchv1.SchemeGroupVersion.String(),
+		Kind:        "Job",
+		Name:        name,
+		Namespace:   cj.Namespace,
+		Labels:      maps.Clone(cj.Spec.JobTemplate.Labels),
+		Annotations: annotations,
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: batchv1.SchemeGroupVersion.String(),
+			Kind:       "CronJob",
+			Name:       cj.Name,
+			UID:        cj.UID,
+			Controller: new(true),
+		}},
 		Spec: *cj.Spec.JobTemplate.Spec.DeepCopy(),
 	}
 }

@@ -77,7 +77,7 @@ func selectCurrentContext(mgr *kubeconfig.Manager) *kubeconfig.Context {
 		if runtime.GOOS == "windows" {
 			sep = ";"
 		}
-		for _, p := range strings.Split(env, sep) {
+		for p := range strings.SplitSeq(env, sep) {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue

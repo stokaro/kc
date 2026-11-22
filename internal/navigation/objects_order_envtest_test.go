@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -32,7 +31,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 	ctx := t.Context()
 	for _, n := range []string{"a", "b", "c"} {
-		if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: n}}); err != nil {
+		if err := cli.Create(ctx, &corev1.Namespace{Name: n}); err != nil {
 			t.Fatalf("create ns %s: %v", n, err)
 		}
 		time.Sleep(1100 * time.Millisecond) // kube timestamps are second precision; ensure unique creation times

@@ -648,7 +648,7 @@ func (c *Cluster) fetchStorageMetrics(ctx context.Context) (map[schema.GroupReso
 			continue
 		}
 		labels := make(map[string]string)
-		for _, kv := range strings.Split(labelStr, ",") {
+		for kv := range strings.SplitSeq(labelStr, ",") {
 			parts := strings.SplitN(strings.TrimSpace(kv), "=", 2)
 			if len(parts) != 2 {
 				continue

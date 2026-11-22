@@ -257,10 +257,7 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 		current = ordinals[w.selected]
 	}
 	visibleStart := w.scroll
-	visibleEnd := w.scroll + w.visibleHeight()
-	if visibleEnd > len(ordinals) {
-		visibleEnd = len(ordinals)
-	}
+	visibleEnd := min(w.scroll+w.visibleHeight(), len(ordinals))
 	bottomOrdinal := current
 	for i := visibleStart; i < visibleEnd; i++ {
 		if ordinals[i] > bottomOrdinal {
@@ -269,16 +266,10 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	}
 	percent := 0
 	if totalReal > 0 {
-		percent = int(math.Round(float64(bottomOrdinal) * 100 / float64(totalReal)))
-		if percent < 0 {
-			percent = 0
-		}
-		if percent > 100 {
-			percent = 100
-		}
+		percent = min(max(int(math.Round(float64(bottomOrdinal)*100/float64(totalReal))), 0), 100)
 	}
 	topMore := false
-	for i := 0; i < visibleStart; i++ {
+	for i := range visibleStart {
 		if ordinals[i] > 0 {
 			topMore = true
 			break
@@ -536,10 +527,7 @@ func (w *Widget) SelectByRowID(ctx context.Context, id string) {
 		w.ResetSelection(ctx)
 		return
 	}
-	sel := idx
-	if sel < 0 {
-		sel = 0
-	}
+	sel := max(idx, 0)
 	if sel >= len(w.items) {
 		sel = len(w.items) - 1
 	}
@@ -675,10 +663,7 @@ func (w *Widget) RestorePosition() {
 		if w.selected < w.scroll {
 			w.scroll = w.selected
 		} else if w.selected >= w.scroll+visible {
-			w.scroll = w.selected - visible + 1
-			if w.scroll < 0 {
-				w.scroll = 0
-			}
+			w.scroll = max(w.selected-visible+1, 0)
 		}
 	} else {
 		w.selected = 0
@@ -819,10 +804,7 @@ func (w *Widget) render(ctx context.Context, focused bool) string {
 
 	visibleHeight := max(0, w.height-1)
 	start := w.scroll
-	end := start + visibleHeight
-	if end > len(w.items) {
-		end = len(w.items)
-	}
+	end := min(start+visibleHeight, len(w.items))
 	lines := make([]string, 0, visibleHeight)
 	for i := start; i < end; i++ {
 		lines = append(lines, w.renderItem(w.items[i], i == w.selected && focused))
@@ -1032,10 +1014,7 @@ func (w *Widget) adjustScroll() {
 	if w.selected < w.scroll {
 		w.scroll = w.selected
 	} else if w.selected >= w.scroll+visible {
-		w.scroll = w.selected - visible + 1
-		if w.scroll < 0 {
-			w.scroll = 0
-		}
+		w.scroll = max(w.selected-visible+1, 0)
 	}
 }
 
@@ -1099,8 +1078,8 @@ func (w *Widget) syncFromFolder(ctx context.Context) {
 		displayName := ""
 		if len(rcells) > 0 {
 			displayName = rcells[0]
-			if strings.HasPrefix(displayName, "/") {
-				displayName = strings.TrimPrefix(displayName, "/")
+			if after, ok0 := strings.CutPrefix(displayName, "/"); ok0 {
+				displayName = after
 			}
 		}
 		items = append(items, Item{Item: itemRow, Name: displayName})
@@ -1246,20 +1225,6 @@ func columnsToTitles(cols []table.Column) []string {
 	return out
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func viewString(view tea.View) string {
 	return view.Content
 }
@@ -1281,7 +1246,7 @@ func (w *Widget) QuickSearch(ctx context.Context, prefix string, next bool) bool
 		start++
 	}
 	q := strings.ToLower(prefix)
-	for k := 0; k < n; k++ {
+	for k := range n {
 		it := w.items[(start+k)%n]
 		if it.Item == nil {
 			continue

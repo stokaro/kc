@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -31,11 +30,11 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-objtest"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: "ns-objtest"}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 	for _, n := range []string{"a", "b", "c"} {
-		if err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm-" + n, Namespace: "ns-objtest"}}); err != nil {
+		if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm-" + n, Namespace: "ns-objtest"}); err != nil {
 			t.Fatalf("create cm %s: %v", n, err)
 		}
 		time.Sleep(1100 * time.Millisecond) // kube timestamps are second precision; ensure unique creation times
@@ -129,7 +128,6 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
 		t.Fatalf("name desc unexpected (cm-c>cm-b>cm-a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
-
 }
 
 func normFirstCellsNS(rows []table.Row) []string {

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -42,15 +41,15 @@ func TestCacheReturnsRows(t *testing.T) {
 		t.Fatalf("build client: %v", err)
 	}
 
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "tablecache"}}
+	ns := &corev1.Namespace{Name: "tablecache"}
 	if err := cl.Create(ctx, ns); err != nil {
 		t.Fatalf("create namespace: %v", err)
 	}
 
 	pod := &corev1.Pod{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
-		ObjectMeta: metav1.ObjectMeta{Name: "tablecache-pod", Namespace: ns.Name},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "pause"}}},
+		APIVersion: "v1", Kind: "Pod",
+		Name: "tablecache-pod", Namespace: ns.Name,
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "pause"}}},
 	}
 	if err := cl.Create(ctx, pod); err != nil {
 		t.Fatalf("create pod: %v", err)

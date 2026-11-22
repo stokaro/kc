@@ -124,11 +124,12 @@ func resolve(v any, steps []step) (any, bool) {
 			names++
 		}
 		for n := names; n >= 1; n-- {
-			key := steps[0].key
+			var key strings.Builder
+			key.WriteString(steps[0].key)
 			for _, s := range steps[1:n] {
-				key += "." + s.key
+				key.WriteString("." + s.key)
 			}
-			if child, ok := node.get(key); ok {
+			if child, ok := node.get(key.String()); ok {
 				if out, ok := resolve(child, steps[n:]); ok {
 					return out, true
 				}

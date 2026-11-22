@@ -330,7 +330,7 @@ func errorMatches(err error, want string) bool {
 	if err == nil {
 		return false
 	}
-	for _, part := range strings.Split(want, "|") {
+	for part := range strings.SplitSeq(want, "|") {
 		if strings.Contains(err.Error(), part) {
 			return true
 		}

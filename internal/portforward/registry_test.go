@@ -240,13 +240,11 @@ func TestRegistryConcurrentStarts(t *testing.T) {
 	const n = 20
 	var wg sync.WaitGroup
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, err := reg.Start(t.Context(), spec("p"), newFakeRunner(int32(i+1))); err != nil {
 				t.Errorf("Start: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	list := reg.List()

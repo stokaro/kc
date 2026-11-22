@@ -53,13 +53,11 @@ func TestFrameInfoProvidesIndicatorsAndStatus(t *testing.T) {
 		lines[i] = fmt.Sprintf("line %02d", i+1)
 	}
 	item := objectViewableStub{
-		viewableStub: viewableStub{
-			body: lines,
-			path: []string{"namespaces", "default", "pods", "stub"},
-		},
-		gvr: schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
-		ns:  "default",
-		nm:  "stub",
+		body: lines,
+		path: []string{"namespaces", "default", "pods", "stub"},
+		gvr:  schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		ns:   "default",
+		nm:   "stub",
 	}
 	w.SetFocus(ctx, true)
 	cmd := w.OnSelectionChanged(ctx, panelcontent.Selection{
@@ -118,7 +116,7 @@ func TestManifestLoadsInBackgroundAndRefreshKeepsScroll(t *testing.T) {
 	}
 	body := strings.Join(lines, "\n")
 	calls := 0
-	item := countingViewable{viewableStub: viewableStub{path: []string{"a"}}, body: &body, calls: &calls}
+	item := countingViewable{path: []string{"a"}, body: &body, calls: &calls}
 
 	cmd := w.OnSelectionChanged(ctx, panelcontent.Selection{Item: item})
 	if calls != 0 {

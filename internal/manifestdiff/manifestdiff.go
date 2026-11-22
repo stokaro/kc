@@ -8,6 +8,7 @@ package manifestdiff
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -168,9 +169,7 @@ func Strip(obj map[string]any, opts Options) (map[string]any, []string) {
 		return obj, nil
 	}
 	out := make(map[string]any, len(obj))
-	for k, v := range obj {
-		out[k] = v
-	}
+	maps.Copy(out, obj)
 	var omitted []string
 	if !opts.IncludeStatus {
 		if _, ok := out["status"]; ok {
@@ -183,9 +182,7 @@ func Strip(obj map[string]any, opts Options) (map[string]any, []string) {
 		return out, omitted
 	}
 	m := make(map[string]any, len(meta))
-	for k, v := range meta {
-		m[k] = v
-	}
+	maps.Copy(m, meta)
 	for _, f := range ServerFields {
 		if _, ok := m[f]; ok {
 			delete(m, f)

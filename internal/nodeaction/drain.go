@@ -442,13 +442,13 @@ func (a *DrainAction) stopError(ctx context.Context, node string, np *NodeProgre
 // PodDisruptionBudgets.
 func (a *DrainAction) evict(ctx context.Context, pod *corev1.Pod) error {
 	eviction := &policyv1.Eviction{
-		ObjectMeta: metav1.ObjectMeta{Namespace: pod.Namespace, Name: pod.Name},
+		Namespace: pod.Namespace, Name: pod.Name,
 	}
 	if a.opts.GracePeriodSeconds >= 0 {
 		grace := int64(a.opts.GracePeriodSeconds)
 		eviction.DeleteOptions = &metav1.DeleteOptions{GracePeriodSeconds: &grace}
 	}
-	target := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: pod.Namespace, Name: pod.Name}}
+	target := &corev1.Pod{Namespace: pod.Namespace, Name: pod.Name}
 	ctrllog.FromContext(ctx).WithName("nodeaction").Info("client create",
 		"gvr", "v1/pods/eviction", "namespace", pod.Namespace, "name", pod.Name, "node", pod.Spec.NodeName)
 	return a.env.Client.SubResource("eviction").Create(ctx, target, eviction)

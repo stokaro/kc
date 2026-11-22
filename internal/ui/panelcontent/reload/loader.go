@@ -123,10 +123,7 @@ func (l *Loader) Refresh() tea.Cmd {
 		l.dirty = true
 		return nil
 	}
-	wait := Interval - l.now().Sub(l.started)
-	if wait < 0 {
-		wait = 0
-	}
+	wait := max(Interval-l.now().Sub(l.started), 0)
 	return l.tick(wait)
 }
 

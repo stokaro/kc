@@ -98,13 +98,7 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 		if below {
 			info.BottomIndicator = "v"
 		}
-		percent := int(math.Round(float64(current) * 100 / float64(total)))
-		if percent < 0 {
-			percent = 0
-		}
-		if percent > 100 {
-			percent = 100
-		}
+		percent := min(max(int(math.Round(float64(current)*100/float64(total))), 0), 100)
 		info.FooterStatus = fmt.Sprintf("%d/%d • %d%%", current, total, percent)
 	}
 	return info

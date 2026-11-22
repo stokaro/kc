@@ -85,8 +85,8 @@ func revisionOf(label, secretName string) int {
 	if v, err := strconv.Atoi(label); err == nil {
 		return v
 	}
-	if i := strings.LastIndex(secretName, ".v"); i >= 0 {
-		if v, err := strconv.Atoi(secretName[i+2:]); err == nil {
+	if _, after, ok := strings.CutLast(secretName, ".v"); ok {
+		if v, err := strconv.Atoi(after); err == nil {
 			return v
 		}
 	}

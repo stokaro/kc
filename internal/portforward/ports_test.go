@@ -59,7 +59,7 @@ func TestParsePair(t *testing.T) {
 
 func testPod() *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "web-0", Namespace: "ns"},
+		Name: "web-0", Namespace: "ns",
 		Spec: corev1.PodSpec{
 			InitContainers: []corev1.Container{{
 				Name:  "proxy",
@@ -151,7 +151,7 @@ func TestPodPort(t *testing.T) {
 
 func testService() *corev1.Service {
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "ns"},
+		Name: "web", Namespace: "ns",
 		Spec: corev1.ServiceSpec{
 			Selector:  map[string]string{"app": "web"},
 			ClusterIP: "10.0.0.1",
@@ -217,9 +217,9 @@ func TestServicePort(t *testing.T) {
 
 func pod(name string, labels map[string]string, phase corev1.PodPhase, ready bool, created time.Time) corev1.Pod {
 	p := corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns", Labels: labels, CreationTimestamp: metav1.NewTime(created)},
-		Spec:       corev1.PodSpec{NodeName: "node"},
-		Status:     corev1.PodStatus{Phase: phase},
+		Name: name, Namespace: "ns", Labels: labels, CreationTimestamp: metav1.NewTime(created),
+		Spec:   corev1.PodSpec{NodeName: "node"},
+		Status: corev1.PodStatus{Phase: phase},
 	}
 	status := corev1.ConditionFalse
 	if ready {

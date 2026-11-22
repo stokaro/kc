@@ -314,10 +314,7 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 				m.rebuildWindow(ctx)
 			}
 		case "pgup":
-			vis := m.bodyRowsHeight()
-			if vis < 1 {
-				vis = 1
-			}
+			vis := max(m.bodyRowsHeight(), 1)
 			m.cursor -= vis
 			if m.cursor < 0 {
 				m.cursor = 0
@@ -327,10 +324,7 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 			}
 			m.rebuildWindow(ctx)
 		case "pgdown":
-			vis := m.bodyRowsHeight()
-			if vis < 1 {
-				vis = 1
-			}
+			vis := max(m.bodyRowsHeight(), 1)
 			m.cursor += vis
 			if m.cursor >= m.list.Len(ctx) {
 				m.cursor = m.list.Len(ctx) - 1
@@ -393,10 +387,7 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 	// Compute how many data rows are visible and the total body height.
 	rowsVisible := m.bodyRowsHeight()
 	// rowsVisible already accounts for header and border lines.
-	n := m.list.Len(ctx)
-	if n < 0 {
-		n = 0
-	}
+	n := max(m.list.Len(ctx), 0)
 	if m.cursor >= n {
 		m.cursor = max(0, n-1)
 	}
@@ -601,10 +592,7 @@ func (m *BigTable) tryShiftDown(ctx context.Context, targetSize int) bool {
 	if !ok {
 		return false
 	}
-	need := targetSize - len(trimmed)
-	if need < 0 {
-		need = 0
-	}
+	need := max(targetSize-len(trimmed), 0)
 	if need == 0 {
 		m.window = trimmed
 		m.windowTop = m.top
@@ -629,13 +617,7 @@ func (m *BigTable) tryShiftUp(ctx context.Context, targetSize int) bool {
 	if !ok {
 		return false
 	}
-	keep := targetSize - 1
-	if keep < 0 {
-		keep = 0
-	}
-	if keep > len(prev) {
-		keep = len(prev)
-	}
+	keep := min(max(targetSize-1, 0), len(prev))
 	remain := prev[:keep]
 	if len(remain) >= targetSize {
 		m.window = remain[len(remain)-targetSize:]
@@ -707,10 +689,7 @@ func (m *BigTable) VisibleRowID(i int) (string, bool) {
 // after subtracting sticky header lines.
 func (m *BigTable) bodyRowsHeight() int {
 	// Reserve exactly one line for the table header; the rest is body space.
-	rows := m.h - 1
-	if rows < 1 {
-		rows = 1
-	}
+	rows := max(m.h-1, 1)
 	return rows
 }
 
@@ -784,7 +763,7 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
 	// so we must include their width in our horizontal plan.
 	sep := 1
 	total := 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		w := base[i]
 		total += w
 		if i > 0 {
@@ -848,10 +827,7 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
 		if avail <= 0 {
 			continue
 		}
-		take := avail
-		if take > remaining {
-			take = remaining
-		}
+		take := min(avail, remaining)
 		idx = append(idx, i)
 		cuts = append(cuts, cut)
 		widths = append(widths, take)
@@ -895,7 +871,7 @@ func (m *BigTable) computeScrollBaseWidths() []int {
 	}
 	w := make([]int, n)
 	// Start from header title widths.
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if m.cols[i].Title != "" {
 			if l := utf8.RuneCountInString(m.cols[i].Title); l > w[i] {
 				w[i] = l
@@ -905,7 +881,7 @@ func (m *BigTable) computeScrollBaseWidths() []int {
 	// Include visible rows.
 	for _, r := range m.window {
 		_, cells, _, _ := r.Columns()
-		for i := 0; i < n; i++ {
+		for i := range n {
 			var s string
 			if i < len(cells) {
 				s = cells[i]
@@ -916,7 +892,7 @@ func (m *BigTable) computeScrollBaseWidths() []int {
 		}
 	}
 	// Ensure a sensible minimum width of 1 per column.
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if w[i] < 1 {
 			w[i] = 1
 		}
@@ -939,10 +915,7 @@ func asciiSlicePad(s string, start, width int) string {
 		}
 		return strings.Repeat(" ", width)
 	}
-	end := start + width
-	if end > len(s) {
-		end = len(s)
-	}
+	end := min(start+width, len(s))
 	out := s[start:end]
 	if len(out) < width {
 		out += strings.Repeat(" ", width-len(out))
@@ -1000,10 +973,7 @@ func titleSlicePad(s string, start, width int) string {
 		return ""
 	}
 	r := []rune(s)
-	start = max(start, 0)
-	if start > len(r) {
-		start = len(r)
-	}
+	start = min(max(start, 0), len(r))
 	r = r[start:min(len(r), start+width)]
 	return string(r) + strings.Repeat(" ", width-len(r))
 }
@@ -1039,13 +1009,6 @@ func ensureTrailingSpace(s string) string {
 		return s + " "
 	}
 	return s
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // repositionOnDataChange keeps the cursor stable by ID. If the previous
@@ -1102,12 +1065,4 @@ func (m *BigTable) repositionOnDataChange(ctx context.Context) {
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
-}
-
-// small helpers
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

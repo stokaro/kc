@@ -64,10 +64,7 @@ func (m *model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		usableHeight := msg.Height - 1
-		if usableHeight < 1 {
-			usableHeight = 1
-		}
+		usableHeight := max(msg.Height-1, 1)
 		m.width = msg.Width
 		m.height = msg.Height
 		msg.Height = usableHeight

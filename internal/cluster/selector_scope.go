@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -59,9 +60,7 @@ func copySelectorScope(scopes map[schema.GroupVersionResource]cache.ByObject) ma
 		return nil
 	}
 	out := make(map[schema.GroupVersionResource]cache.ByObject, len(scopes))
-	for gvr, sel := range scopes {
-		out[gvr] = sel
-	}
+	maps.Copy(out, scopes)
 	return out
 }
 

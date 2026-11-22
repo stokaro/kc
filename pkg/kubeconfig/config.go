@@ -141,14 +141,11 @@ func (m *Manager) DiscoverKubeconfigs() error {
 	}
 
 	var mu sync.Mutex
-	workerCount := runtime.NumCPU()
-	if workerCount < 2 {
-		workerCount = 2
-	}
+	workerCount := max(runtime.NumCPU(), 2)
 	jobs := make(chan string)
 	var wg sync.WaitGroup
 	wg.Add(workerCount)
-	for i := 0; i < workerCount; i++ {
+	for range workerCount {
 		go func() {
 			defer wg.Done()
 			for path := range jobs {

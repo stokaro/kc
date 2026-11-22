@@ -168,7 +168,7 @@ const noteWidth = 50
 func wrapWords(s string, width int) []string {
 	var lines []string
 	line := ""
-	for _, w := range strings.Fields(s) {
+	for w := range strings.FieldsSeq(s) {
 		switch {
 		case line == "":
 			line = w

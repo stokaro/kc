@@ -291,7 +291,7 @@ func (r *Reader) objectEventConverter(ctx context.Context, mapping *meta.RESTMap
 		row.Columns = make([]metav1.TableColumnDefinition, len(fallbackColumns))
 		copy(row.Columns, fallbackColumns)
 		row.TableRow = metav1.TableRow{
-			Cells:  []interface{}{row.Name, row.Namespace},
+			Cells:  []any{row.Name, row.Namespace},
 			Object: runtime.RawExtension{},
 		}
 

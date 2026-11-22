@@ -170,15 +170,13 @@ func NewPod(node, name string, opts Options) *corev1.Pod {
 	opts = opts.withDefaults()
 	deadline := int64(opts.MaxDuration / time.Second)
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: opts.Namespace,
-			Labels: map[string]string{
-				LabelComponent: ComponentValue,
-				LabelManagedBy: "kc",
-			},
-			Annotations: map[string]string{AnnotationNode: node},
+		Name:      name,
+		Namespace: opts.Namespace,
+		Labels: map[string]string{
+			LabelComponent: ComponentValue,
+			LabelManagedBy: "kc",
 		},
+		Annotations: map[string]string{AnnotationNode: node},
 		Spec: corev1.PodSpec{
 			// nodeName skips the scheduler: the pod lands on the node even
 			// when it is cordoned or full.
@@ -192,8 +190,8 @@ func NewPod(node, name string, opts Options) *corev1.Pod {
 			Tolerations:                   []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 			ActiveDeadlineSeconds:         &deadline,
 			TerminationGracePeriodSeconds: ptr.To[int64](0),
-			AutomountServiceAccountToken:  ptr.To(false),
-			EnableServiceLinks:            ptr.To(false),
+			AutomountServiceAccountToken:  new(false),
+			EnableServiceLinks:            new(false),
 			DNSPolicy:                     corev1.DNSClusterFirstWithHostNet,
 			Containers: []corev1.Container{{
 				Name:            ContainerName,
@@ -201,7 +199,7 @@ func NewPod(node, name string, opts Options) *corev1.Pod {
 				ImagePullPolicy: corev1.PullIfNotPresent,
 				Command:         []string{"sh", "-c", idleScript},
 				SecurityContext: &corev1.SecurityContext{
-					Privileged: ptr.To(true),
+					Privileged: new(true),
 					RunAsUser:  ptr.To[int64](0),
 				},
 			}},

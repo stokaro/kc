@@ -8,7 +8,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
@@ -70,7 +69,7 @@ func TestPoolHeldNodeScopeStaysLivePastTTL(t *testing.T) {
 	createPod := func(name, node string) {
 		t.Helper()
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			Name: name, Namespace: "default",
 			Spec: corev1.PodSpec{
 				NodeName:   node,
 				Containers: []corev1.Container{{Name: "c", Image: "busybox"}},
@@ -133,7 +132,7 @@ func TestPoolHeldNodeScopeStaysLivePastTTL(t *testing.T) {
 		return l["on-a-2"]["updated"] == "yes"
 	})
 
-	gone := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "on-a-1", Namespace: "default"}}
+	gone := &corev1.Pod{Name: "on-a-1", Namespace: "default"}
 	if err := admin.Delete(ctx, gone, crclient.GracePeriodSeconds(0)); err != nil {
 		t.Fatalf("delete pod: %v", err)
 	}

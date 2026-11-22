@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"time"
 )
@@ -112,8 +113,8 @@ type object struct {
 // get returns the value of key. With duplicate keys the last one wins, as in
 // encoding/json.
 func (o *object) get(key string) (any, bool) {
-	for i := len(o.keys) - 1; i >= 0; i-- {
-		if o.keys[i] == key {
+	for i, v := range slices.Backward(o.keys) {
+		if v == key {
 			return o.vals[i], true
 		}
 	}

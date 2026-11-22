@@ -154,10 +154,7 @@ func (l *SliceList) RemoveAt(i, count int) int {
 	if count <= 0 || i < 0 || i >= len(l.rows) {
 		return 0
 	}
-	end := i + count
-	if end > len(l.rows) {
-		end = len(l.rows)
-	}
+	end := min(i+count, len(l.rows))
 	kept := append([]Row(nil), l.rows[:i]...)
 	kept = append(kept, l.rows[end:]...)
 	removed := len(l.rows) - len(kept)
@@ -179,10 +176,7 @@ func (l *SliceList) Lines(_ context.Context, top, num int) []Row {
 	if top < 0 {
 		top = 0
 	}
-	end := top + num
-	if end > len(l.rows) {
-		end = len(l.rows)
-	}
+	end := min(top+num, len(l.rows))
 	return l.rows[top:end]
 }
 
@@ -198,10 +192,7 @@ func (l *SliceList) Above(_ context.Context, rowID string, num int) []Row {
 	if !ok {
 		return nil
 	}
-	start := i - num
-	if start < 0 {
-		start = 0
-	}
+	start := max(i-num, 0)
 	out := make([]Row, i-start)
 	for j := start; j < i; j++ {
 		out[j-start] = l.rows[j]
@@ -214,10 +205,7 @@ func (l *SliceList) Below(_ context.Context, rowID string, num int) []Row {
 	if !ok {
 		return nil
 	}
-	end := i + 1 + num
-	if end > len(l.rows) {
-		end = len(l.rows)
-	}
+	end := min(i+1+num, len(l.rows))
 	out := make([]Row, end-(i+1))
 	k := 0
 	for j := i + 1; j < end; j++ {

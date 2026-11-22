@@ -5,9 +5,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // palette holds the prefix colors. They are the basic ANSI colors, so they

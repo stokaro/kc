@@ -3,6 +3,7 @@ package viewer
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -371,10 +372,7 @@ func (w *Widget) Position() (current int, total int) {
 	if total == 0 {
 		return 0, 0
 	}
-	end := w.offset + w.page()
-	if end > total {
-		end = total
-	}
+	end := min(w.offset+w.page(), total)
 	if end <= 0 {
 		end = 1
 	}
@@ -404,10 +402,7 @@ func (w *Widget) ScrollToEnd() {
 		w.offset = 0
 		return
 	}
-	w.offset = len(w.lines) - page
-	if w.offset < 0 {
-		w.offset = 0
-	}
+	w.offset = max(len(w.lines)-page, 0)
 }
 
 // ScrollIndicators reports whether additional content exists above or below.
@@ -767,8 +762,8 @@ func (w *Widget) updateSearchMatches() {
 func (w *Widget) firstMatchFromView() int {
 	if w.searchOpts.Backwards {
 		bottom := w.offset + w.page() - 1
-		for i := len(w.searchMatches) - 1; i >= 0; i-- {
-			if w.searchMatches[i].line <= bottom {
+		for i, v := range slices.Backward(w.searchMatches) {
+			if v.line <= bottom {
 				return i
 			}
 		}
@@ -853,18 +848,12 @@ func (w *Widget) scrollToMatch(matchIdx int) {
 	}
 	line := w.searchMatches[matchIdx].line
 	page := w.page()
-	target := line - page/2
-	if target < 0 {
-		target = 0
-	}
+	target := max(line-page/2, 0)
 	maxScroll := max(0, len(w.lines)-page)
 	if target > maxScroll {
 		target = maxScroll
 	}
-	w.offset = target
-	if w.offset < 0 {
-		w.offset = 0
-	}
+	w.offset = max(target, 0)
 	w.hOffset = 0
 }
 
@@ -1019,20 +1008,6 @@ func runeWidth(s string) int {
 	return lipgloss.Width(s)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func applyPanelBackground(line string, width int) string {
 	return applyBackground(line, width, "\033[44m")
 }
@@ -1051,8 +1026,8 @@ func applyBackground(line string, width int, bg string) string {
 func trimBackgroundPrefix(line string) string {
 	backgrounds := []string{"\033[44m", "\033[45m", "\033[43m"}
 	for _, bg := range backgrounds {
-		if strings.HasPrefix(line, bg) {
-			return strings.TrimPrefix(line, bg)
+		if after, ok := strings.CutPrefix(line, bg); ok {
+			return after
 		}
 	}
 	return line

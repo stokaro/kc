@@ -3,6 +3,7 @@ package table
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -11,7 +12,7 @@ import (
 
 func mkCols(n int, w int) []Column {
 	cols := make([]Column, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		cols[i] = Column{Title: fmt.Sprintf("C%02d", i), Width: w}
 	}
 	return cols
@@ -19,7 +20,7 @@ func mkCols(n int, w int) []Column {
 
 func mkRow(id string, cols int) Row {
 	r := SimpleRow{ID: id}
-	for i := 0; i < cols; i++ {
+	for i := range cols {
 		s := lipgloss.NewStyle()
 		r.SetColumn(i, id, &s)
 	}
@@ -28,7 +29,7 @@ func mkRow(id string, cols int) Row {
 
 func mkList(n, cols int) *SliceList {
 	rows := make([]Row, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		id := "id-" + pad2(i)
 		rows = append(rows, mkRow(id, cols))
 	}
@@ -105,7 +106,7 @@ func TestBigTableVirtualScrollUsesAbove(t *testing.T) {
 	bt := NewBigTable(cols, list, 60, 10)
 	bt.Refresh(ctx)
 	vis := bt.bodyRowsHeight()
-	for i := 0; i < vis; i++ {
+	for range vis {
 		bt.UpdateWithContext(ctx, tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 	}
 	// Align cursor with the topmost visible row to force a window shift when moving up.
@@ -152,7 +153,7 @@ func TestBigTableVirtualScrollLargeList(t *testing.T) {
 
 	vis := bt.bodyRowsHeight()
 	steps := 500
-	for i := 0; i < steps; i++ {
+	for range steps {
 		bt.UpdateWithContext(ctx, tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 	}
 
@@ -247,7 +248,7 @@ type lineCall struct {
 func newWindowSpyList(n, cols int) *windowSpyList {
 	rows := make([]Row, n)
 	index := make(map[string]int, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		id := fmt.Sprintf("row-%05d", i)
 		row := mkRow(id, cols)
 		rows[i] = row
@@ -264,10 +265,7 @@ func (s *windowSpyList) Lines(_ context.Context, top, num int) []Row {
 	if top < 0 {
 		top = 0
 	}
-	end := top + num
-	if end > len(s.rows) {
-		end = len(s.rows)
-	}
+	end := min(top+num, len(s.rows))
 	out := make([]Row, end-top)
 	copy(out, s.rows[top:end])
 	return out
@@ -279,10 +277,7 @@ func (s *windowSpyList) Above(_ context.Context, rowID string, num int) []Row {
 	if !ok || num <= 0 {
 		return nil
 	}
-	start := idx - num
-	if start < 0 {
-		start = 0
-	}
+	start := max(idx-num, 0)
 	out := make([]Row, idx-start)
 	copy(out, s.rows[start:idx])
 	return out
@@ -298,10 +293,7 @@ func (s *windowSpyList) Below(_ context.Context, rowID string, num int) []Row {
 	if start >= len(s.rows) {
 		return nil
 	}
-	end := start + num
-	if end > len(s.rows) {
-		end = len(s.rows)
-	}
+	end := min(start+num, len(s.rows))
 	out := make([]Row, end-start)
 	copy(out, s.rows[start:end])
 	return out
@@ -333,9 +325,9 @@ func (s *windowSpyList) windowFetches() int {
 }
 
 func (s *windowSpyList) lastWindowCall() (lineCall, bool) {
-	for i := len(s.lines) - 1; i >= 0; i-- {
-		if s.lines[i].num > 1 {
-			return s.lines[i], true
+	for _, v := range slices.Backward(s.lines) {
+		if v.num > 1 {
+			return v, true
 		}
 	}
 	return lineCall{}, false

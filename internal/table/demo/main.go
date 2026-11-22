@@ -26,20 +26,20 @@ type app struct {
 
 func newApp(provider string) app {
 	cols := make([]table.Column, 10)
-	for c := 0; c < 10; c++ {
+	for c := range 10 {
 		// No fixed widths in the demo; BigTable computes widths from visible data in ModeScroll.
 		cols[c] = table.Column{Title: fmt.Sprintf("Col%02d", c+1)}
 	}
 	// Build a demo List provider with ASCII cells and per-cell styles.
 	base := makeBaseRows(1000, 20) // ASCII text only
 	colStyles := []*lipgloss.Style{
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#93C5FD"))), // ID
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))), // Status (value-specific override below)
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA"))),
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA"))),
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))),
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#FBBF24"))),
-		ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#F472B6"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#93C5FD"))), // ID
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))), // Status (value-specific override below)
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#A78BFA"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#FBBF24"))),
+		new(lipgloss.NewStyle().Foreground(lipgloss.Color("#F472B6"))),
 	}
 	rows := make([]table.Row, 0, len(base))
 	for i := range base {
@@ -54,11 +54,11 @@ func newApp(provider string) app {
 			if c == 1 { // status column override
 				switch cells[c] {
 				case "ERROR":
-					st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")))
+					st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")))
 				case "WARN":
-					st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")))
+					st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")))
 				case "OK":
-					st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")))
+					st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")))
 				}
 			}
 			if st == nil {
@@ -252,12 +252,9 @@ func (a app) View() tea.View {
 func joinSideBySide(aStr, bStr, sep string) string {
 	aLines := strings.Split(strings.TrimRight(aStr, "\n"), "\n")
 	bLines := strings.Split(strings.TrimRight(bStr, "\n"), "\n")
-	n := len(aLines)
-	if len(bLines) > n {
-		n = len(bLines)
-	}
+	n := max(len(bLines), len(aLines))
 	out := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var l, r string
 		if i < len(aLines) {
 			l = aLines[i]
@@ -295,12 +292,9 @@ func (a app) randomlyUpdateStatuses(bt *table.BigTable, p float64) {
 		bt.Refresh(ctx)
 		return
 	}
-	count := int(float64(n) * p)
-	if count < 1 {
-		count = 1
-	}
+	count := max(int(float64(n)*p), 1)
 	statuses := []string{"OK", "WARN", "ERROR"}
-	for i := 0; i < count; i++ {
+	for range count {
 		idx := rand.Intn(n)
 		rows := list.Lines(ctx, idx, 1)
 		if len(rows) != 1 {
@@ -312,11 +306,11 @@ func (a app) randomlyUpdateStatuses(bt *table.BigTable, p float64) {
 			var st *lipgloss.Style
 			switch val {
 			case "ERROR":
-				st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")))
+				st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")))
 			case "WARN":
-				st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")))
+				st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308")))
 			case "OK":
-				st = ptrStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")))
+				st = new(lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E")))
 			}
 			r.SetColumn(1, val, st)
 		}
@@ -326,9 +320,9 @@ func (a app) randomlyUpdateStatuses(bt *table.BigTable, p float64) {
 
 func makeBaseRows(nRows, nCols int) [][]string {
 	rows := make([][]string, nRows)
-	for r := 0; r < nRows; r++ {
+	for r := range nRows {
 		row := make([]string, nCols)
-		for c := 0; c < nCols; c++ {
+		for c := range nCols {
 			switch c {
 			case 0:
 				row[c] = fmt.Sprintf("id-%04d", r+1)
@@ -350,4 +344,5 @@ func makeBaseRows(nRows, nCols int) [][]string {
 	return rows
 }
 
-func ptrStyle(s lipgloss.Style) *lipgloss.Style { return &s }
+//go:fix inline
+func ptrStyle(s lipgloss.Style) *lipgloss.Style { return new(s) }

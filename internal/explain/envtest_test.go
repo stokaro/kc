@@ -7,7 +7,6 @@ import (
 	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/openapi"
@@ -23,7 +22,7 @@ func fixtureCRD() *apiextensionsv1.CustomResourceDefinition {
 		return apiextensionsv1.JSONSchemaProps{Type: "string", Description: desc}
 	}
 	return &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: "deployments.fixture.kc.dev"},
+		Name: "deployments.fixture.kc.dev",
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: "fixture.kc.dev",
 			Names: apiextensionsv1.CustomResourceDefinitionNames{Plural: "deployments", Singular: "deployment", Kind: "Deployment", ListKind: "DeploymentList"},

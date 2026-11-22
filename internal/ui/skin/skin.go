@@ -36,8 +36,8 @@ type PanelColors struct {
 	Frame      string    `json:"frame,omitempty"`
 	Header     string    `json:"header,omitempty"`
 	Marked     string    `json:"marked,omitempty"`
-	Cursor     ColorPair `json:"cursor,omitempty"`
-	Title      ColorPair `json:"title,omitempty"`
+	Cursor     ColorPair `json:"cursor"`
+	Title      ColorPair `json:"title"`
 	Context    string    `json:"context,omitempty"`
 	Namespace  string    `json:"namespace,omitempty"`
 }

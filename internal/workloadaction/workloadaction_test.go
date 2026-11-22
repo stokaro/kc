@@ -11,7 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -88,16 +87,16 @@ func detail(c models.Confirmation, label string) string {
 
 func podTemplate(image string, annotations map[string]string) corev1.PodTemplateSpec {
 	return corev1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "web"}, Annotations: annotations},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "web", Image: image}}},
+		Labels: map[string]string{"app": "web"}, Annotations: annotations,
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "web", Image: image}}},
 	}
 }
 
 func deployment(replicas int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: ns, UID: "uid-web"},
+		Name: "web", Namespace: ns, UID: "uid-web",
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr.To(replicas),
+			Replicas: new(replicas),
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
 			Template: podTemplate("web:3", nil),
 		},

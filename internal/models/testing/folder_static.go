@@ -13,7 +13,7 @@ import (
 func NewStaticFolder(title string, cols []table.Column, rows []table.Row) *models.BaseFolder {
 	var path []string
 	if title != "" && title != "/" {
-		for _, seg := range strings.Split(title, "/") {
+		for seg := range strings.SplitSeq(title, "/") {
 			if seg != "" {
 				path = append(path, seg)
 			}

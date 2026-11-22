@@ -59,8 +59,8 @@ func TestCursorLineHighlightsSeparators(t *testing.T) {
 func TestHeaderTitlesCentered(t *testing.T) {
 	for _, mode := range []GridMode{ModeScroll, ModeFit} {
 		bt := mcLookTable(t, mode)
-		header := strings.Split(ansi.Strip(bt.View().Content), "\n")[0]
-		first := strings.Split(header, "│")[0]
+		header, _, _ := strings.Cut(ansi.Strip(bt.View().Content), "\n")
+		first, _, _ := strings.Cut(header, "│")
 		if strings.HasPrefix(first, "Name") {
 			t.Fatalf("mode %v: expected centered title, got %q", mode, header)
 		}
