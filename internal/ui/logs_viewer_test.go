@@ -237,7 +237,8 @@ func TestApplyViewerOptionsRestartsTheLogsViewer(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("changed log options did not restart the stream")
 	}
-	drain(t, v, cmd)
+	// Accept also returns the session-only notice; keep the stream command.
+	drain(t, v, onlyStreamCmd(cmd))
 	if got := streams.specs[len(streams.specs)-1]; got.TailLines != 500 || got.SinceSeconds != 900 || !got.Timestamps || got.Previous {
 		t.Fatalf("restarted spec = %+v", got)
 	}
