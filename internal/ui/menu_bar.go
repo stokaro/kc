@@ -80,6 +80,7 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 			a.changeObjectSort(reverseSortOrder)
 			return nil
 		})},
+		a.groupNamespacesItem(idx, list),
 		{Label: "&Filter...", Shortcut: "M-f", Disabled: !list, Run: a.onPanel(idx, a.showRowFilterDialog)},
 		{Label: "Faults onl&y", Shortcut: "C-z", Disabled: !list, Run: a.onPanel(idx, a.toggleFaultsOnly)},
 		menubar.Separator(),

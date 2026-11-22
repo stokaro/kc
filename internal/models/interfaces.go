@@ -201,6 +201,15 @@ type ObjectOrderConfigurable interface {
 	ApplyObjectOrder(order string)
 }
 
+// NamespaceGroupingConfigurable folders list objects across namespaces and
+// can group the rows by namespace or sort them as one list.
+type NamespaceGroupingConfigurable interface {
+	ApplyNamespaceGrouping(on bool)
+	// NamespaceGrouping reports the grouping and whether it applies: a list
+	// of one namespace has nothing to group.
+	NamespaceGrouping() (on, applies bool)
+}
+
 // DirtyObservable folders notify listeners when their data changes.
 type DirtyObservable interface {
 	RegisterDirtyListener(func()) func()
