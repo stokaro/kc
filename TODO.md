@@ -17,7 +17,8 @@ Terminal context manager for the integrated PTY session (`internal/ui/termctx`).
 - [ ] Describe/Manifest panel modes: refresh when the object changes, describe off the UI thread — #47
 - [ ] Logs panel mode that follows the other panel's selection — #49
 - [ ] Top/metrics: usage columns and sorting by consumption — #44, #37
-- [ ] Extensible actions: built-in object actions and richer custom commands — #33, #46
+- [x] Built-in workload actions: scale, rollout restart, rollback — #33
+- [ ] Extensible actions: built-in object actions and richer custom commands — #46
 - [ ] Favorites: add and remove favorite resource types from the UI (today only `resources.favorites` in the config).
 
 Dropped as no longer useful:
