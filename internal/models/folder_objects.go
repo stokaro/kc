@@ -39,6 +39,10 @@ type ObjectsFolder struct {
 	// kubectlArgs and kubectlNote refine KubectlCommand for filtered folders.
 	kubectlArgs []string
 	kubectlNote string
+
+	// release gives up the scoped cluster the folder reads, if it holds one.
+	// Close calls it; until then the pool keeps that cluster running.
+	release func()
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -85,10 +89,15 @@ func (o *ObjectsFolder) origin() ObjectOrigin {
 	return ObjectOrigin{Cluster: o.Deps.Cl, Context: ctxName}
 }
 
-// Close stops the folder's watch; navigators call it when they drop the folder.
+// Close stops the folder's watch and releases the scoped cluster it holds;
+// navigators call it when they drop the folder. Calling it again is a no-op.
 func (o *ObjectsFolder) Close() {
 	if o.rows != nil {
 		o.rows.Close()
+	}
+	if r := o.release; r != nil {
+		o.release = nil
+		r()
 	}
 }
 
