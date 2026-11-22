@@ -38,6 +38,9 @@ type PodContainerDetailFolder struct {
 	Kind      containerKind
 
 	session *containerSessionHandle
+	// execTarget carries the container's stdin and tty settings from the
+	// list that opened the folder; nil builds a target without them.
+	execTarget *ExecTarget
 }
 
 func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, container string, kind containerKind) *PodContainerDetailFolder {
@@ -56,7 +59,7 @@ func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, conta
 }
 
 func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, error) {
-	rows := make([]table.Row, 0, 2)
+	rows := make([]table.Row, 0, 3)
 	logSpec := LogsSpec{
 		Namespace: f.Namespace,
 		Pod:       f.Pod,
@@ -69,6 +72,15 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 	logItem.RowItem.details = "Stream container logs"
 	logItem.SetViewCommand(logsCommand(f.Deps, logSpec))
 	rows = append(rows, logItem)
+
+	shellTarget := containerExecTarget(f.Deps, f.Namespace, f.Pod, f.Container, f.Kind, false, false)
+	if f.execTarget != nil {
+		shellTarget = *f.execTarget
+	}
+	shellItem := NewContainerShellItem("shell", []string{"shell"}, append(append([]string{}, f.Path()...), "shell"), shellTarget)
+	shellItem.RowItem.details = "Open a shell (bash, else sh)"
+	shellItem.SetViewCommand(shellTarget.Command(ExecShell))
+	rows = append(rows, shellItem)
 
 	rootPath := append(append([]string{}, f.Path()...), "root")
 	if f.session == nil {

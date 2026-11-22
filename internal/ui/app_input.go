@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/models"
 )
 
 func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, tea.Cmd) {
@@ -220,6 +221,14 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// send Alt by default).
 			a.escPressed = false
 			return a, a.copyPanelCommand()
+		case "x":
+			// Esc x is the fallback for M-x: shell in the selected container.
+			a.escPressed = false
+			return a, a.openContainerSession(models.ExecShell)
+		case "t":
+			// Esc t is the fallback for M-t: attach to the selected container.
+			a.escPressed = false
+			return a, a.openContainerSession(models.ExecAttach)
 		case "s":
 			// Esc s is the fallback for M-s, as in mc.
 			a.escPressed = false
@@ -279,6 +288,12 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		if msg.String() == copyCommandKey {
 			return a, a.copyPanelCommand()
+		}
+		switch msg.String() {
+		case containerShellKey:
+			return a, a.openContainerSession(models.ExecShell)
+		case containerAttachKey:
+			return a, a.openContainerSession(models.ExecAttach)
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys

@@ -688,6 +688,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleKeyMsg(msg, cmds)
 	case models.ConfirmRequest:
 		return a, a.showConfirm(msg.Action)
+	case models.ExecRequest:
+		if panel := a.activePanelRef(); panel != nil {
+			return a, a.resolveExecTarget(panel.Folder(), msg.Item, msg.Mode)
+		}
+		return a, nil
+	case execResolvedMsg:
+		return a, a.handleExecResolved(msg)
+	case execFinishedMsg:
+		return a, a.handleExecFinished(msg)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
 	case startupSelectMsg:
