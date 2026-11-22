@@ -208,7 +208,7 @@ func TestOverviewEngineCloseStops(t *testing.T) {
 	})
 }
 
-func rowIDs(rows []table.Row) []string {
+func overviewRowIDs(rows []table.Row) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
 		id, _, _, _ := r.Columns()
@@ -225,7 +225,7 @@ func rowCells(t *testing.T, rows []table.Row, id string) []string {
 			return cells
 		}
 	}
-	t.Fatalf("no row %q in %v", id, rowIDs(rows))
+	t.Fatalf("no row %q in %v", id, overviewRowIDs(rows))
 	return nil
 }
 
@@ -238,9 +238,9 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		deps := Deps{CtxName: "prod", KubectlContext: "dev"}
 		objs := []crclient.Object{
 			readyNode("n1", "4", "8Gi", 110),
-			waiting(runningPod("a", "loop"), "CrashLoopBackOff"),
-			waiting(runningPod("b", "loop"), "CrashLoopBackOff"),
-			runningPod("a", "fine"),
+			waiting(overviewRunningPod("a", "loop"), "CrashLoopBackOff"),
+			waiting(overviewRunningPod("b", "loop"), "CrashLoopBackOff"),
+			overviewRunningPod("a", "fine"),
 			&corev1.Event{ObjectMeta: om("a", "e1"), Type: corev1.EventTypeWarning, Reason: "BackOff", LastTimestamp: ago(time.Minute)},
 		}
 		e, _ := newTestOverviewEngine(t, deps, AllNamespaces, objs...)
@@ -249,12 +249,12 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		defer folder.Close()
 		ctx := t.Context()
 
-		if ids := rowIDs(folder.Lines(ctx, 0, 100)); !slices.Contains(ids, "overview/loading") {
+		if ids := overviewRowIDs(folder.Lines(ctx, 0, 100)); !slices.Contains(ids, "overview/loading") {
 			t.Fatalf("rows before the first report = %v, want a loading row", ids)
 		}
 		synctest.Wait()
 		rows := folder.Lines(ctx, 0, 100)
-		ids := rowIDs(rows)
+		ids := overviewRowIDs(rows)
 		wantOrder := []string{"__back__", "section/capacity", "capacity/cpu", "capacity/memory", "capacity/pods", "section/health", "health/nodes-not-ready"}
 		if !slices.Equal(ids[:len(wantOrder)], wantOrder) {
 			t.Fatalf("first rows = %v, want %v", ids[:len(wantOrder)], wantOrder)
@@ -290,7 +290,7 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		targets := child.(*OverviewTargetsFolder)
 		defer targets.Close()
 		trows := targets.Lines(ctx, 0, 100)
-		if got, want := rowIDs(trows), []string{"__back__", "v1/pods/a/loop", "v1/pods/b/loop"}; !slices.Equal(got, want) {
+		if got, want := overviewRowIDs(trows), []string{"__back__", "v1/pods/a/loop", "v1/pods/b/loop"}; !slices.Equal(got, want) {
 			t.Fatalf("targets = %v, want %v", got, want)
 		}
 		target, ok := targets.ItemByID(ctx, "v1/pods/a/loop")
@@ -324,7 +324,7 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		events, _ := folder.ItemByID(ctx, "activity/events-warning")
 		echild, _ := events.(Enterable).Enter()
 		defer echild.(*OverviewTargetsFolder).Close()
-		if got := rowIDs(echild.Lines(ctx, 0, 10)); !slices.Equal(got, []string{"__back__", "v1/events/a/e1"}) {
+		if got := overviewRowIDs(echild.Lines(ctx, 0, 10)); !slices.Equal(got, []string{"__back__", "v1/events/a/e1"}) {
 			t.Fatalf("event targets = %v", got)
 		}
 	})
@@ -333,8 +333,8 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 func TestOverviewFolderNamespaceScope(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		objs := []crclient.Object{
-			waiting(runningPod("a", "loop"), "CrashLoopBackOff"),
-			waiting(runningPod("b", "loop"), "CrashLoopBackOff"),
+			waiting(overviewRunningPod("a", "loop"), "CrashLoopBackOff"),
+			waiting(overviewRunningPod("b", "loop"), "CrashLoopBackOff"),
 		}
 		e, _ := newTestOverviewEngine(t, Deps{}, "b", objs...)
 		folder := newOverviewFolder(Deps{}, "b", []string{"overview"}, e)
@@ -344,11 +344,11 @@ func TestOverviewFolderNamespaceScope(t *testing.T) {
 		synctest.Wait()
 		item, ok := folder.ItemByID(ctx, "health/pods-crashloop")
 		if !ok {
-			t.Fatalf("no crash loop row in %v", rowIDs(folder.Lines(ctx, 0, 100)))
+			t.Fatalf("no crash loop row in %v", overviewRowIDs(folder.Lines(ctx, 0, 100)))
 		}
 		child, _ := item.(Enterable).Enter()
 		defer child.(*OverviewTargetsFolder).Close()
-		if got := rowIDs(child.Lines(ctx, 0, 10)); !slices.Equal(got, []string{"__back__", "v1/pods/b/loop"}) {
+		if got := overviewRowIDs(child.Lines(ctx, 0, 10)); !slices.Equal(got, []string{"__back__", "v1/pods/b/loop"}) {
 			t.Fatalf("targets in namespace b = %v", got)
 		}
 		_, body, _, _, _, _ := item.(Viewable).ViewContent()

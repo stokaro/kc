@@ -264,30 +264,33 @@ func overviewClusterKey(k kccluster.Key) kccluster.Key {
 	return k
 }
 
-// acquireOverviewConn gets the overview's cluster from the pool. Without a
-// factory (tests, examples) it uses deps.Cl.
-func acquireOverviewConn(ctx context.Context, deps Deps) (overviewConn, error) {
-	acquire := func(ctx context.Context) (*kccluster.Cluster, error) {
-		if deps.NamespaceFactory == nil {
-			if deps.Cl == nil {
-				return nil, fmt.Errorf("no cluster")
-			}
-			return deps.Cl, nil
+// acquireOverviewConn leases the overview's cluster from the pool. Without
+// a factory (tests, examples) it uses deps.Cl. The lease is given up when
+// the engine stops watching (the stop function Watch returns); the pool then
+// stops the cache one TTL later.
+func acquireOverviewConn(_ context.Context, deps Deps) (overviewConn, error) {
+	if deps.NamespaceFactory == nil {
+		if deps.Cl == nil {
+			return nil, fmt.Errorf("no cluster")
 		}
-		// The pool ties the cache's life to this context: use the app's.
-		return deps.NamespaceFactory(deps.Ctx, overviewClusterKey(deps.ClusterKey), nil)
+		return newClusterOverviewConn(deps.Cl, noRelease), nil
 	}
-	cl, err := acquire(ctx)
+	// The pool ties the cache's life to this context: use the app's.
+	cl, release, err := deps.NamespaceFactory(deps.Ctx, overviewClusterKey(deps.ClusterKey), nil)
 	if err != nil {
 		return nil, err
 	}
-	return &clusterOverviewConn{cl: cl, acquire: acquire, informers: map[schema.GroupVersionResource]crcache.Informer{}, failed: map[schema.GroupVersionResource]string{}}, nil
+	return newClusterOverviewConn(cl, release), nil
+}
+
+func newClusterOverviewConn(cl *kccluster.Cluster, release func()) *clusterOverviewConn {
+	return &clusterOverviewConn{cl: cl, release: release, informers: map[schema.GroupVersionResource]crcache.Informer{}, failed: map[schema.GroupVersionResource]string{}}
 }
 
 // clusterOverviewConn reads the overview kinds from a kc cluster's cache.
 type clusterOverviewConn struct {
 	cl      *kccluster.Cluster
-	acquire func(context.Context) (*kccluster.Cluster, error)
+	release func() // gives up the pool lease; called once by Watch's stop
 
 	mu        sync.Mutex
 	started   time.Time
@@ -341,6 +344,13 @@ func (c *clusterOverviewConn) Watch(ctx context.Context, onEvent func()) func() 
 		for _, r := range regs {
 			r()
 		}
+		c.mu.Lock()
+		release := c.release
+		c.release = nil
+		c.mu.Unlock()
+		if release != nil {
+			release()
+		}
 	}
 }
 
@@ -363,9 +373,6 @@ func (c *clusterOverviewConn) Unavailable(gvr schema.GroupVersionResource) (stri
 	return "the cache did not sync (no list or watch permission?)", false
 }
 
-// KeepAlive fetches the entry again, which renews its idle time in the pool.
-func (c *clusterOverviewConn) KeepAlive(ctx context.Context) {
-	if _, err := c.acquire(ctx); err != nil {
-		ctrllog.FromContext(ctx).WithName("overview").Error(err, "renew overview cluster")
-	}
-}
+// KeepAlive does nothing: the lease taken in acquireOverviewConn keeps the
+// pool entry alive until Watch's stop gives it up.
+func (c *clusterOverviewConn) KeepAlive(context.Context) {}

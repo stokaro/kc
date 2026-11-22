@@ -43,7 +43,7 @@ func readyNode(name string, cpu, mem string, pods int64) *corev1.Node {
 	}
 }
 
-func runningPod(ns, name string) *corev1.Pod {
+func overviewRunningPod(ns, name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: om(ns, name),
 		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
@@ -185,12 +185,12 @@ func TestOverviewRules(t *testing.T) {
 		{
 			name: "pods not ready", finding: "health/pods-not-ready",
 			objs: []crclient.Object{
-				runningPod("a", "ready"),
-				withPod(runningPod("a", "unready"), func(p *corev1.Pod) {
+				overviewRunningPod("a", "ready"),
+				withPod(overviewRunningPod("a", "unready"), func(p *corev1.Pod) {
 					p.Status.Conditions[0].Status = corev1.ConditionFalse
 					p.Status.ContainerStatuses[0].Ready = false
 				}),
-				withPod(runningPod("a", "done"), func(p *corev1.Pod) {
+				withPod(overviewRunningPod("a", "done"), func(p *corev1.Pod) {
 					p.Status.Phase = corev1.PodSucceeded
 					p.Status.Conditions[0].Status = corev1.ConditionFalse
 				}),
@@ -200,12 +200,12 @@ func TestOverviewRules(t *testing.T) {
 		{
 			name: "pods pending, unschedulable fails", finding: "health/pods-pending",
 			objs: []crclient.Object{
-				runningPod("a", "running"),
-				withPod(runningPod("a", "stuck"), func(p *corev1.Pod) {
+				overviewRunningPod("a", "running"),
+				withPod(overviewRunningPod("a", "stuck"), func(p *corev1.Pod) {
 					p.Status.Phase = corev1.PodPending
 					p.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable}}
 				}),
-				withPod(runningPod("a", "pulling"), func(p *corev1.Pod) {
+				withPod(overviewRunningPod("a", "pulling"), func(p *corev1.Pod) {
 					p.Status.Phase = corev1.PodPending
 					p.Status.Conditions = nil
 					p.Status.ContainerStatuses[0].State.Waiting = &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}
@@ -216,43 +216,43 @@ func TestOverviewRules(t *testing.T) {
 		{
 			name: "pods crash looping", finding: "health/pods-crashloop",
 			objs: []crclient.Object{
-				waiting(runningPod("a", "loop"), "CrashLoopBackOff"),
-				waiting(runningPod("a", "creating"), "ContainerCreating"),
+				waiting(overviewRunningPod("a", "loop"), "CrashLoopBackOff"),
+				waiting(overviewRunningPod("a", "creating"), "ContainerCreating"),
 			},
 			want: []string{"pods:a/loop"}, sev: severityFailed, value: "CrashLoopBackOff (app)",
 		},
 		{
 			name: "pods image pull errors", finding: "health/pods-image",
 			objs: []crclient.Object{
-				waiting(runningPod("a", "pull"), "ImagePullBackOff"),
-				waiting(runningPod("a", "err"), "ErrImagePull"),
-				waiting(runningPod("a", "loop"), "CrashLoopBackOff"),
+				waiting(overviewRunningPod("a", "pull"), "ImagePullBackOff"),
+				waiting(overviewRunningPod("a", "err"), "ErrImagePull"),
+				waiting(overviewRunningPod("a", "loop"), "CrashLoopBackOff"),
 			},
 			want: []string{"pods:a/err", "pods:a/pull"}, sev: severityFailed,
 		},
 		{
 			name: "pods config errors", finding: "health/pods-config",
 			objs: []crclient.Object{
-				waiting(runningPod("a", "cfg"), "CreateContainerConfigError"),
-				runningPod("a", "fine"),
+				waiting(overviewRunningPod("a", "cfg"), "CreateContainerConfigError"),
+				overviewRunningPod("a", "fine"),
 			},
 			want: []string{"pods:a/cfg"}, sev: severityFailed,
 		},
 		{
 			name: "pods OOMKilled inside the window only", finding: "health/pods-oomkilled",
 			objs: []crclient.Object{
-				restarted(runningPod("a", "recent"), 1, "OOMKilled", 10*time.Minute),
-				restarted(runningPod("a", "old"), 1, "OOMKilled", 2*time.Hour),
-				restarted(runningPod("a", "error"), 1, "Error", 10*time.Minute),
+				restarted(overviewRunningPod("a", "recent"), 1, "OOMKilled", 10*time.Minute),
+				restarted(overviewRunningPod("a", "old"), 1, "OOMKilled", 2*time.Hour),
+				restarted(overviewRunningPod("a", "error"), 1, "Error", 10*time.Minute),
 			},
 			want: []string{"pods:a/recent"}, sev: severityWarning, value: "OOMKilled (app) 10m ago",
 		},
 		{
 			name: "pods restarting above the threshold", finding: "health/pods-restarting",
 			objs: []crclient.Object{
-				restarted(runningPod("a", "flappy"), 7, "Error", 5*time.Minute),
-				restarted(runningPod("a", "once"), 2, "Error", 5*time.Minute),
-				restarted(runningPod("a", "settled"), 9, "Error", 3*time.Hour),
+				restarted(overviewRunningPod("a", "flappy"), 7, "Error", 5*time.Minute),
+				restarted(overviewRunningPod("a", "once"), 2, "Error", 5*time.Minute),
+				restarted(overviewRunningPod("a", "settled"), 9, "Error", 3*time.Hour),
 			},
 			want: []string{"pods:a/flappy"}, sev: severityWarning, value: "7 restarts (app), last 5m ago",
 		},
@@ -346,21 +346,21 @@ func TestOverviewRules(t *testing.T) {
 		{
 			name: "pods without requests", finding: "risks/pods-besteffort",
 			objs: []crclient.Object{
-				withPod(runningPod("a", "free"), func(p *corev1.Pod) { p.Status.QOSClass = corev1.PodQOSBestEffort }),
-				withPod(runningPod("a", "done"), func(p *corev1.Pod) {
+				withPod(overviewRunningPod("a", "free"), func(p *corev1.Pod) { p.Status.QOSClass = corev1.PodQOSBestEffort }),
+				withPod(overviewRunningPod("a", "done"), func(p *corev1.Pod) {
 					p.Status.QOSClass = corev1.PodQOSBestEffort
 					p.Status.Phase = corev1.PodSucceeded
 				}),
-				runningPod("a", "burstable"),
+				overviewRunningPod("a", "burstable"),
 			},
 			want: []string{"pods:a/free"}, sev: severityWarning,
 		},
 		{
 			name: "pods without memory limit", finding: "risks/pods-no-memory-limit",
 			objs: []crclient.Object{
-				withPod(runningPod("a", "open"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("100m", "64Mi", "", "") }),
-				withPod(runningPod("a", "capped"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("", "", "", "128Mi") }),
-				withPod(runningPod("a", "pod-level"), func(p *corev1.Pod) {
+				withPod(overviewRunningPod("a", "open"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("100m", "64Mi", "", "") }),
+				withPod(overviewRunningPod("a", "capped"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("", "", "", "128Mi") }),
+				withPod(overviewRunningPod("a", "pod-level"), func(p *corev1.Pod) {
 					p.Spec.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")}}
 				}),
 			},
@@ -412,10 +412,10 @@ func TestOverviewRules(t *testing.T) {
 		{
 			name: "pods restarted in the window, latest first", finding: "activity/pods-restarted",
 			objs: []crclient.Object{
-				restarted(runningPod("a", "early"), 1, "Error", 40*time.Minute),
-				restarted(runningPod("a", "late"), 1, "Completed", 5*time.Minute),
-				restarted(runningPod("a", "long-ago"), 4, "Error", 5*time.Hour),
-				runningPod("a", "never"),
+				restarted(overviewRunningPod("a", "early"), 1, "Error", 40*time.Minute),
+				restarted(overviewRunningPod("a", "late"), 1, "Completed", 5*time.Minute),
+				restarted(overviewRunningPod("a", "long-ago"), 4, "Error", 5*time.Hour),
+				overviewRunningPod("a", "never"),
 			},
 			want: []string{"pods:a/late", "pods:a/early"}, sev: severityWarning, value: "app: Completed, 5m ago",
 		},
@@ -447,7 +447,7 @@ func TestOverviewRules(t *testing.T) {
 // every rule as ok with a count of zero.
 func TestOverviewRulesWithNothingToReport(t *testing.T) {
 	t.Parallel()
-	web := withPod(runningPod("a", "web"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("100m", "64Mi", "", "64Mi") })
+	web := withPod(overviewRunningPod("a", "web"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("100m", "64Mi", "", "64Mi") })
 	r := reportFor(t, AllNamespaces, appconfig.DefaultOverview(), readyNode("n1", "4", "8Gi", 110), web)
 	if len(r.findings) != len(overviewRules) {
 		t.Fatalf("findings = %d, want one per rule (%d)", len(r.findings), len(overviewRules))
@@ -465,8 +465,8 @@ func TestOverviewRulesWithNothingToReport(t *testing.T) {
 func TestOverviewNamespaceScope(t *testing.T) {
 	t.Parallel()
 	objs := []crclient.Object{
-		waiting(runningPod("a", "loop"), "CrashLoopBackOff"),
-		waiting(runningPod("b", "loop"), "CrashLoopBackOff"),
+		waiting(overviewRunningPod("a", "loop"), "CrashLoopBackOff"),
+		waiting(overviewRunningPod("b", "loop"), "CrashLoopBackOff"),
 		&batchv1.Job{ObjectMeta: om("b", "bad"), Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}}},
 		&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-a"}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "a"}}, Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}},
 		&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-b"}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "b"}}, Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}},
@@ -493,7 +493,7 @@ func TestOverviewNamespaceScope(t *testing.T) {
 func TestOverviewCapacity(t *testing.T) {
 	t.Parallel()
 	pod := func(ns, name, node string, r corev1.ResourceRequirements) *corev1.Pod {
-		return withPod(runningPod(ns, name), func(p *corev1.Pod) {
+		return withPod(overviewRunningPod(ns, name), func(p *corev1.Pod) {
 			p.Spec.NodeName = node
 			p.Spec.Containers[0].Resources = r
 		})
@@ -563,11 +563,11 @@ func TestOverviewThresholdsFromConfig(t *testing.T) {
 	t.Parallel()
 	objs := []crclient.Object{
 		readyNode("n1", "4", "8Gi", 10),
-		withPod(runningPod("a", "web"), func(p *corev1.Pod) {
+		withPod(overviewRunningPod("a", "web"), func(p *corev1.Pod) {
 			p.Spec.NodeName = "n1"
 			p.Spec.Containers[0].Resources = resources("3", "1Gi", "", "")
 		}),
-		restarted(runningPod("a", "flappy"), 2, "Error", 50*time.Minute),
+		restarted(overviewRunningPod("a", "flappy"), 2, "Error", 50*time.Minute),
 		quota("q", "6", "10"),
 	}
 	def := reportFor(t, AllNamespaces, appconfig.DefaultOverview(), objs...)
