@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/access"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/nodeaction"
 )
@@ -146,8 +147,11 @@ func (a *App) openNodeActions() (tea.Cmd, bool) {
 	if reason != "" {
 		return a.ShowToast(reason, 3*time.Second), true
 	}
-	// Gate point: a read-only mode (#107) and the access view (#102) refuse
-	// or gray out these actions here, before any dialog opens.
+	// Read-only mode refuses every node action here, before any dialog
+	// opens: cordon, uncordon and drain all patch the nodes.
+	if cmd := a.refuseReadOnly("Node actions", access.Check{Resource: nodeaction.NodesGVR, Verb: "patch"}); cmd != nil {
+		return cmd, true
+	}
 	menu := newNodeActionMenu(target)
 	modal := NewModal("Node actions", menu)
 	a.modalManager.Register(nodeMenuModal, modal)

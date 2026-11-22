@@ -10,8 +10,6 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var nodeGVR = corev1.SchemeGroupVersion.WithResource("nodes")
-
 // NodeActionTarget is what the node actions (cordon, uncordon, drain) need
 // from the folder that lists the nodes.
 type NodeActionTarget struct {
@@ -53,8 +51,12 @@ func (o *ObjectsFolder) NodeActions() (NodeActionTarget, bool) {
 
 // nodePods lists the pods on node from the node-scoped shared cache. It
 // reads them as unstructured, the form the /pods folder's informer holds.
+// It holds the scoped cluster only for the list; the pool keeps an unused
+// cluster for kubernetes.clusters.ttl, so the next round of a drain finds
+// it running.
 func nodePods(ctx context.Context, deps Deps, node string) ([]corev1.Pod, error) {
-	scoped := deps.ForNodePods(node)
+	scoped, release := deps.ForNodePods(node)
+	defer release()
 	ctrllog.FromContext(ctx).WithName("nodeaction").V(1).Info("cache list",
 		"gvr", podGVR.String(), "fieldSelector", "spec.nodeName="+node)
 	list, err := scoped.Cl.ListByGVR(ctx, podGVR, "")

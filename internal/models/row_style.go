@@ -102,31 +102,13 @@ func registerDefaultRowStylers() {
 		}
 		return info.BaseStyle
 	}))
-	registerReadyStylers()
-	registerJobStyler()
-	registerWorkloadStylers()
+	registerHealthStylers()
+	RegisterRowStylerForGVR(nodeGVR, rowStylerFunc(cordonedNodeStyle))
 }
 
-func registerReadyStylers() {
-	styler := rowStylerFunc(func(info RowStyleInfo) *lipgloss.Style {
-		if info.Unstructured == nil {
-			return info.BaseStyle
-		}
-		status := readinessStatus(info.Unstructured, "Ready")
-		if status == conditionFalse {
-			return NotReadyStyle()
-		}
-		return info.BaseStyle
-	})
-
-	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}, styler)
-	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}, styler)
-	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}, rowStylerFunc(cordonedNodeStyle))
-	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, styler)
-}
-
-// cordonedNodeStyle shows a cordoned node (spec.unschedulable) like a
-// node that is not ready: no new pods go there.
+// cordonedNodeStyle shows a cordoned node (spec.unschedulable) like a node
+// that is not ready: no new pods go there. It is a style only; the faults
+// filter (C-z) does not count a cordoned node.
 func cordonedNodeStyle(info RowStyleInfo) *lipgloss.Style {
 	if info.Unstructured == nil {
 		return info.BaseStyle
@@ -137,71 +119,23 @@ func cordonedNodeStyle(info RowStyleInfo) *lipgloss.Style {
 	return info.BaseStyle
 }
 
-func registerJobStyler() {
+// registerHealthStylers colors the rows of every resource that has a
+// health rule (see row_health.go).
+func registerHealthStylers() {
 	styler := rowStylerFunc(func(info RowStyleInfo) *lipgloss.Style {
-		if info.Unstructured == nil {
-			return info.BaseStyle
-		}
-		succeeded, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "status", "succeeded")
-		failed, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "status", "failed")
-		backoffLimit, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "spec", "backoffLimit")
-		if succeeded > 0 {
+		switch ClassifyRowHealth(info.GVR, info.Unstructured) {
+		case RowHealthNotReady:
+			return NotReadyStyle()
+		case RowHealthFailed:
+			return JobFailedStyle()
+		case RowHealthSucceeded:
 			return JobSuccessStyle()
 		}
-		if failed > 0 && backoffLimit > 0 && failed >= backoffLimit {
-			return JobFailedStyle()
-		}
 		return info.BaseStyle
 	})
-	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, styler)
-}
-
-func registerWorkloadStylers() {
-	deployStyler := rowStylerFunc(func(info RowStyleInfo) *lipgloss.Style {
-		if info.Unstructured == nil {
-			return info.BaseStyle
-		}
-		if deploymentNotReady(info.Unstructured) {
-			return NotReadyStyle()
-		}
-		return info.BaseStyle
-	})
-	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, deployStyler)
-
-	dsStyler := rowStylerFunc(func(info RowStyleInfo) *lipgloss.Style {
-		if info.Unstructured == nil {
-			return info.BaseStyle
-		}
-		desired, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "status", "desiredNumberScheduled")
-		ready, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "status", "numberReady")
-		available, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "status", "numberAvailable")
-		if desired > 0 && (ready < desired || available < desired) {
-			return NotReadyStyle()
-		}
-		if readinessStatus(info.Unstructured, "NumberAvailable") == conditionFalse {
-			return NotReadyStyle()
-		}
-		return info.BaseStyle
-	})
-	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, dsStyler)
-}
-
-func deploymentNotReady(u *unstructured.Unstructured) bool {
-	if u == nil {
-		return false
+	for gvr := range healthRules {
+		RegisterRowStylerForGVR(gvr, styler)
 	}
-	ready, _, _ := unstructured.NestedInt64(u.Object, "status", "readyReplicas")
-	available, _, _ := unstructured.NestedInt64(u.Object, "status", "availableReplicas")
-	replicas, _, _ := unstructured.NestedInt64(u.Object, "spec", "replicas")
-	if readinessStatus(u, "Available") == conditionFalse {
-		return true
-	}
-	if replicas > 0 {
-		if ready < replicas || available < replicas {
-			return true
-		}
-	}
-	return false
 }
 
 type conditionState string

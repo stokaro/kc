@@ -108,7 +108,10 @@ the scheduler, or that the cache did not show yet, is evicted too.
 (`docs/designs/node-pods-folder.md`); `NewNodePodsFolder` now calls it
 too. The drain lists that cache as unstructured, the form the folder's
 informer holds, so draining a node starts no cluster-wide pod watch and
-shares the informer with the folder. The DaemonSet existence check and
+shares the informer with the folder. With #85's reference-counted pool,
+`ForNodePods` also returns a release; each pod list of the drain holds the
+cluster only for that list, and the pool keeps it running for
+`kubernetes.clusters.ttl` between rounds. The DaemonSet existence check and
 the node reads go through the shared cache as well. Writes (node patch,
 evictions) go to the API server and log an INFO line first.
 
@@ -193,6 +196,9 @@ Follow-up after #80 merges:
 
 Follow-up after #107 / #102: refuse or gray out the menu in
 `openNodeActions` (marked "Gate point").
+The read-only part is done since this change was merged onto main:
+`openNodeActions` calls `refuseReadOnly` with a patch check on nodes before
+the menu opens. Graying out by RBAC (#102's cache) is still open.
 
 Follow-up after #96: the node shell row and these actions are unrelated
 in code; nothing to change.
