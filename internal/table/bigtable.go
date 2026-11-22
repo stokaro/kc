@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -88,7 +89,7 @@ func DefaultStyles() Styles {
 func (m *BigTable) SetStyles(s Styles) { m.styles = s }
 
 // NewBigTable constructs a table with the given columns, data provider and
-// initial size (content width and height). Titles are treated as plain ASCII.
+// initial size (content width and height). Titles are plain text; runes count as one cell each (sort marks such as "↓").
 func NewBigTable(cols []Column, list List, w, h int) BigTable {
 	desired := make([]int, len(cols))
 	for i := range cols {
@@ -438,8 +439,8 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 		headerAlign := m.styles.Header.GetAlignHorizontal()
 		headers := make([]string, len(idx))
 		for i, col := range idx {
-			title := alignASCII(m.cols[col].Title, base[col], headerAlign)
-			h := asciiSlicePad(title, cuts[i], widths[i])
+			title := alignTitle(m.cols[col].Title, base[col], headerAlign)
+			h := titleSlicePad(title, cuts[i], widths[i])
 			if !m.bColumn && i < len(idx)-1 {
 				h = ensureTrailingSpace(h)
 			}
@@ -896,7 +897,7 @@ func (m *BigTable) computeScrollBaseWidths() []int {
 	// Start from header title widths.
 	for i := 0; i < n; i++ {
 		if m.cols[i].Title != "" {
-			if l := len(m.cols[i].Title); l > w[i] {
+			if l := utf8.RuneCountInString(m.cols[i].Title); l > w[i] {
 				w[i] = l
 			}
 		}
@@ -990,6 +991,30 @@ func rowsToStringRowsSubsetSep(rows []Row, idx []int, spaceSep bool) [][]string 
 		out[i] = row
 	}
 	return out
+}
+
+// titleSlicePad is asciiSlicePad by runes, for titles that carry a sort mark
+// such as "AGE↓". The marks are one cell wide.
+func titleSlicePad(s string, start, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	start = max(start, 0)
+	if start > len(r) {
+		start = len(r)
+	}
+	r = r[start:min(len(r), start+width)]
+	return string(r) + strings.Repeat(" ", width-len(r))
+}
+
+// alignTitle is alignASCII counting runes.
+func alignTitle(s string, width int, pos lipgloss.Position) string {
+	gap := width - utf8.RuneCountInString(s)
+	if gap <= 0 {
+		return s
+	}
+	return alignASCII(s, len(s)+gap, pos)
 }
 
 // alignASCII pads s to width according to the horizontal position (left,
