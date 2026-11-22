@@ -2,18 +2,16 @@ package cluster
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metameta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	toolscache "k8s.io/client-go/tools/cache"
-	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
@@ -55,7 +53,7 @@ func TestClusterDiscoveryListenerNotified(t *testing.T) {
 	}
 }
 
-func TestNamespaceScopedInformerExposesStore(t *testing.T) {
+func TestNamespaceScopedClusterListsOneNamespace(t *testing.T) {
 	t.Parallel()
 
 	env := &envtest.Environment{}
@@ -74,6 +72,9 @@ func TestNamespaceScopedInformerExposesStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("namespace-scoped cluster: %v", err)
 	}
+	if cl.Namespace() != "ns-a" {
+		t.Fatalf("Namespace() = %q", cl.Namespace())
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -89,7 +90,6 @@ func TestNamespaceScopedInformerExposesStore(t *testing.T) {
 			t.Fatalf("create configmap %s/%s: %v", ns, name, err)
 		}
 	}
-	// ensure namespaces exist
 	for _, ns := range []string{"ns-a", "ns-b"} {
 		if err := cl.GetClient().Create(context.Background(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}); err != nil && !strings.Contains(err.Error(), "already exists") {
 			t.Fatalf("create namespace %s: %v", ns, err)
@@ -98,53 +98,38 @@ func TestNamespaceScopedInformerExposesStore(t *testing.T) {
 	createCM("ns-a", "only-a")
 	createCM("ns-b", "only-b")
 
-	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-	gvk, err := cl.RESTMapper().KindFor(gvr)
-	if err != nil {
-		t.Fatalf("kindFor: %v", err)
-	}
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(gvk)
-
-	informer, err := cl.GetCache().GetInformer(context.Background(), obj, crcache.BlockUntilSynced(true))
-	if err != nil {
-		t.Fatalf("get informer: %v", err)
-	}
-
-	type storeInformer interface{ GetStore() toolscache.Store }
-	si, ok := informer.(storeInformer)
-	if !ok {
-		t.Fatalf("informer %T does not expose GetStore", informer)
-	}
-
-	toolscache.WaitForCacheSync(ctx.Done(), informer.HasSynced)
-
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		items := si.GetStore().List()
-		foundA := false
-		foundB := false
-		for _, raw := range items {
-			obj, okObj := raw.(metav1.Object)
-			if !okObj {
-				acc, err := metameta.Accessor(raw)
-				if err != nil {
-					continue
-				}
-				obj = acc
-			}
-			switch obj.GetNamespace() {
-			case "ns-a":
-				foundA = true
-			case "ns-b":
-				foundB = true
-			}
+	names := func(list *unstructured.UnstructuredList) []string {
+		var out []string
+		for _, item := range list.Items {
+			out = append(out, item.GetNamespace()+"/"+item.GetName())
 		}
-		if foundA && !foundB {
-			return
+		return out
+	}
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+	deadline := time.Now().Add(5 * time.Second)
+	var got []string
+	for time.Now().Before(deadline) {
+		list, err := cl.ListByGVR(ctx, gvr, "")
+		if err != nil {
+			t.Fatalf("list configmaps: %v", err)
+		}
+		got = names(list)
+		if slices.Contains(got, "ns-a/only-a") {
+			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	if !slices.Contains(got, "ns-a/only-a") || slices.Contains(got, "ns-b/only-b") {
+		t.Fatalf("namespace-scoped list = %v, want ns-a/only-a and nothing from ns-b", got)
+	}
 
-	t.Fatalf("expected informer store to contain only ns-a objects; store=%v", si.GetStore().List())
+	// A cluster-scoped type is not rewritten into the namespace: the
+	// cache lists it cluster-wide.
+	nsList, err := cl.ListByGVR(ctx, schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}, "")
+	if err != nil {
+		t.Fatalf("list namespaces through a namespace-scoped cluster: %v", err)
+	}
+	if got := names(nsList); !slices.Contains(got, "/ns-a") || !slices.Contains(got, "/ns-b") {
+		t.Fatalf("namespaces = %v, want ns-a and ns-b", got)
+	}
 }

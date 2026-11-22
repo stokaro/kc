@@ -1,5 +1,12 @@
 # Namespace-Scoped Cache Strategy
 
+> Superseded by [ADR 0056](../adr/0056-namespace-scoped-access.md). The
+> transport shim below rewrote cluster-scoped paths too (it cannot tell them
+> apart without a RESTMapper), so namespace-scoped clusters now use
+> `cache.Options.DefaultNamespaces`, and counts read the cache with
+> `cache.List` when the informer has no single store. This document is kept
+> for the history of the decision.
+
 ## Background
 
 Resource-group rows pre-compute object counts by peeking directly into the controller-runtime cache via `GetStore()`/`GetIndexer()`. That works as long as the cache exposes plain client-go `SharedIndexInformer` instances, but breaks when the cache is restricted to a subset of namespaces. In that mode controller-runtime swaps in a `multiNamespaceInformer` wrapper that only satisfies the narrow `cache.Informer` interface—`GetStore()` and `GetIndexer()` are gone, so count recomputation has to fall back to fresh LIST calls.
