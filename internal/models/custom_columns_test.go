@@ -12,8 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-var deploymentsGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
-
 func deployment(ns, name string, images ...string) unstructured.Unstructured {
 	containers := make([]any, len(images))
 	for i, img := range images {

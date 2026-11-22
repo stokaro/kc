@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
 	kctesting "github.com/sttts/kc/internal/testing"
@@ -17,9 +19,7 @@ import (
 )
 
 func TestLimitedUserSeesAllowedResourcesOnly(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 
 	ctx := t.Context()
 	adminCl, err := kccluster.New(testCfg)

@@ -66,6 +66,10 @@ func (p *Panel) SetActionHandlers(h PanelActionHandlers) {
 // SetEnvironmentSupplier wires a supplier for environment-level capability hints.
 func (p *Panel) SetEnvironmentSupplier(s PanelEnvironmentSupplier) { p.envSupplier = s }
 
+// SetCommandExecSupplier sets where custom commands started in this panel
+// get their cluster and identity.
+func (p *Panel) SetCommandExecSupplier(s CommandExecSupplier) { p.commandExec = s }
+
 // InvokeAction runs the handler for the requested action when available.
 func (p *Panel) InvokeAction(action PanelAction) tea.Cmd {
 	if p == nil {
@@ -94,6 +98,9 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 			if isViewableItem(item) {
 				caps.CanView = true
 				caps.CanCopy = true
+			}
+			if _, ok := item.(models.Stoppable); ok {
+				caps.CanDelete = true
 			}
 			if obj, ok := item.(models.ObjectItem); ok {
 				if env.AllowEditObjects && obj.SupportsVerb("update") {

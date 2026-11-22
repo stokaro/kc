@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"image/color"
 	"sort"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -63,15 +65,24 @@ type panelScopeLabel struct {
 
 // scopeHits are the frame columns of the context and namespace labels.
 type scopeHits struct {
-	ctxFrom, ctxTo int
-	nsFrom, nsTo   int
+	ctxFrom, ctxTo       int
+	nsFrom, nsTo         int
+	filterFrom, filterTo int // the row filter label; a click clears it
 }
 
-var (
-	scopeContextStyle   = lipgloss.NewStyle().Background(lipgloss.Blue).Foreground(lipgloss.BrightYellow).Bold(true)
-	scopeNamespaceStyle = lipgloss.NewStyle().Background(lipgloss.Blue).Foreground(lipgloss.BrightCyan).Bold(true)
-	scopeSepStyle       = lipgloss.NewStyle().Background(lipgloss.Blue).Foreground(lipgloss.White)
-)
+// scopeStyles returns the styles of the context label, the ":" and the
+// namespace label. A non-nil tint fills the context label, so a context with
+// a configured color stands out, with black or white text for contrast.
+func scopeStyles(tint color.Color) (ctx, sep, ns lipgloss.Style) {
+	pal := uistyles.Current()
+	ctx = lipgloss.NewStyle().Background(pal.Background).Foreground(pal.Context).Bold(true)
+	if tint != nil {
+		ctx = lipgloss.NewStyle().Background(tint).Foreground(uistyles.ContrastText(tint)).Bold(true)
+	}
+	sep = lipgloss.NewStyle().Background(pal.Background).Foreground(pal.Foreground)
+	ns = lipgloss.NewStyle().Background(pal.Background).Foreground(pal.Namespace).Bold(true)
+	return ctx, sep, ns
+}
 
 // SetScope sets the context and namespace drawn in the frame.
 func (p *Panel) SetScope(scope panelScopeLabel) {
@@ -83,8 +94,9 @@ func (p *Panel) SetScope(scope panelScopeLabel) {
 }
 
 // renderScopeLabel renders "─ ctx : ns " after the bottom-left corner, which
-// is offset columns wide, in at most maxWidth columns.
-func renderScopeLabel(scope panelScopeLabel, dash string, offset, maxWidth int) (string, scopeHits) {
+// is offset columns wide, in at most maxWidth columns. tint, when not nil,
+// is the color configured for the context.
+func renderScopeLabel(scope panelScopeLabel, dash string, offset, maxWidth int, tint color.Color) (string, scopeHits) {
 	if scope.Context == "" || maxWidth < 8 {
 		return "", scopeHits{}
 	}
@@ -101,12 +113,13 @@ func renderScopeLabel(scope panelScopeLabel, dash string, offset, maxWidth int) 
 	hits.ctxTo = hits.ctxFrom + lipgloss.Width(ctx)
 	hits.nsFrom = hits.ctxTo + 1
 	hits.nsTo = hits.nsFrom + lipgloss.Width(ns)
-	out := dash + scopeContextStyle.Render(ctx) + scopeSepStyle.Render(":") + scopeNamespaceStyle.Render(ns)
+	ctxStyle, sepStyle, nsStyle := scopeStyles(tint)
+	out := dash + ctxStyle.Render(ctx) + sepStyle.Render(":") + nsStyle.Render(ns)
 	return out, hits
 }
 
 // scopeHit reports which scope label is at frame column x: "context",
-// "namespace", or "".
+// "namespace", "filter", or "".
 func (p *Panel) scopeHit(x int) string {
 	h := p.scopeHits
 	switch {
@@ -114,6 +127,8 @@ func (p *Panel) scopeHit(x int) string {
 		return "context"
 	case x >= h.nsFrom && x < h.nsTo:
 		return "namespace"
+	case x >= h.filterFrom && x < h.filterTo:
+		return "filter"
 	}
 	return ""
 }
@@ -215,11 +230,13 @@ func (a *App) setPanelScope(idx int, ns string) {
 		_, _ = navui.GoTo(ctx, newNav, []navui.GoToStep{{SelectionID: resourceRowID(ns, *keep, true), Enter: true}})
 		cancel()
 	}
+	a.cancelJump(idx)
 	a.showNavigatorRoot(idx)
 	a.syncPanelScopeLabels()
 	if idx == a.activePanel {
 		a.updateTermContextNamespace(ns)
 	}
+	a.recordHistory(idx)
 }
 
 // syncPanelScopeLabels updates the scope drawn in both panel frames.
@@ -246,12 +263,16 @@ func (a *App) handleScopeClick(m tea.Mouse) (tea.Cmd, bool) {
 	case "context":
 		a.setActivePanel(idx, "scope click")
 		return a.showContextPicker(), true
+	case "filter":
+		a.setActivePanel(idx, "filter click")
+		a.clearRowFilter(idx)
+		return nil, true
 	}
 	return nil, false
 }
 
 // scopeHitAt returns the panel and the scope label ("context",
-// "namespace" or "") under the mouse.
+// "namespace", "filter" or "") under the mouse.
 func (a *App) scopeHitAt(m tea.Mouse) (int, string) {
 	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
 	if m.Y != panelHeight-1 {

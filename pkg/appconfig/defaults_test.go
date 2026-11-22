@@ -91,6 +91,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Viewer.Mode != b.Viewer.Mode {
 		t.Fatalf("viewer.mode mismatch: yaml=%q code=%q", a.Viewer.Mode, b.Viewer.Mode)
 	}
+	if a.Viewer.Logs != b.Viewer.Logs {
+		t.Fatalf("viewer.logs mismatch: yaml=%+v code=%+v", a.Viewer.Logs, b.Viewer.Logs)
+	}
 	if a.Panel.Scrolling.Horizontal.Step != b.Panel.Scrolling.Horizontal.Step {
 		t.Fatalf("panel.scrolling.horizontal.step mismatch: yaml=%d code=%d", a.Panel.Scrolling.Horizontal.Step, b.Panel.Scrolling.Horizontal.Step)
 	}
@@ -123,6 +126,15 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	}
 	if a.Resources.PeekInterval.Duration != b.Resources.PeekInterval.Duration {
 		t.Fatalf("resources.peekInterval mismatch: yaml=%v code=%v", a.Resources.PeekInterval.Duration, b.Resources.PeekInterval.Duration)
+	}
+	if a.Panel.Skin != b.Panel.Skin {
+		t.Fatalf("panel.skin mismatch: yaml=%q code=%q", a.Panel.Skin, b.Panel.Skin)
+	}
+	if len(a.Contexts) != 0 || len(b.Contexts) != 0 {
+		t.Fatalf("contexts must be empty by default: yaml=%v code=%v", a.Contexts, b.Contexts)
+	}
+	if !reflect.DeepEqual(a.NodeShell, b.NodeShell) {
+		t.Fatalf("nodeShell mismatch: yaml=%+v code=%+v", a.NodeShell, b.NodeShell)
 	}
 	// No custom columns by default; the sample may spell that as {}.
 	if len(a.Columns) != 0 || len(b.Columns) != 0 {

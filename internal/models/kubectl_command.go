@@ -79,6 +79,9 @@ func (o *ObjectsFolder) KubectlCommand() string {
 	namespaced := o.resourceNamespaced()
 	args = append(args, namespaceArgs(o.namespace, namespaced)...)
 	args = append(args, o.kubectlArgs...)
+	if sel := o.RowFilter().Selector(); sel != "" {
+		args = append(args, "-l", sel)
+	}
 	var notes []string
 	if o.kubectlNote != "" {
 		notes = append(notes, o.kubectlNote)
@@ -145,7 +148,8 @@ func (f *PodContainerFSFolder) KubectlCommand() string {
 }
 
 func (f *ConfigMapKeysFolder) KubectlCommand() string {
-	return kubectlCommand(f.Deps, "get", "configmap", f.Name, "-n", f.Namespace, "-o", "jsonpath={.data}")
+	// The folder lists both fields, so the command prints both.
+	return kubectlCommand(f.Deps, "get", "configmap", f.Name, "-n", f.Namespace, "-o", `jsonpath={.data}{"\n"}{.binaryData}`)
 }
 
 func (f *SecretKeysFolder) KubectlCommand() string {
@@ -166,14 +170,34 @@ func keyViewCommand(deps Deps, kind, namespace, name, key string, secret bool) s
 	return cmd
 }
 
-// logsCommand matches the logs viewer: recent lines, then follow.
+// configMapKeyViewCommand prints one ConfigMap key from the field it lives
+// in; binaryData values are base64 in the API and are decoded.
+func configMapKeyViewCommand(deps Deps, namespace, name, key string, binary bool) string {
+	if !binary {
+		return keyViewCommand(deps, "configmap", namespace, name, key, false)
+	}
+	return kubectlCommand(deps, "get", "configmap", name, "-n", namespace, "-o", "jsonpath={.binaryData."+jsonpathKey(key)+"}") + " | base64 -d"
+}
+
+// logsCommand prints the kubectl command for the options LogsSpec.PodLogOptions
+// sends: recent lines, the since window, timestamps, the previous instance,
+// then follow.
 func logsCommand(deps Deps, spec LogsSpec) string {
 	args := []string{"logs", spec.Pod, "-n", spec.Namespace}
 	if spec.Container != "" {
 		args = append(args, "-c", spec.Container)
 	}
-	if spec.TailLines > 0 {
-		args = append(args, fmt.Sprintf("--tail=%d", spec.TailLines))
+	if tail := spec.EffectiveTailLines(); tail > 0 {
+		args = append(args, fmt.Sprintf("--tail=%d", tail))
+	}
+	if since := FormatLogsSince(spec.SinceSeconds); since != "" {
+		args = append(args, "--since="+since)
+	}
+	if spec.Timestamps {
+		args = append(args, "--timestamps")
+	}
+	if spec.Previous {
+		args = append(args, "-p")
 	}
 	if spec.Follow {
 		args = append(args, "-f")
