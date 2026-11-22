@@ -7,17 +7,18 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/logmux"
-	models "github.com/sttts/kc/internal/models"
-	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/logmux"
+	models "github.com/stokaro/kc/internal/models"
+	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 var logsPodsGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}

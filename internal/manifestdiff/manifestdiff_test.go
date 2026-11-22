@@ -6,8 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/manifestdiff"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/manifestdiff"
 )
 
 var deployments = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}

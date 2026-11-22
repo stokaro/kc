@@ -6,15 +6,16 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	models "github.com/sttts/kc/internal/models"
-	kctesting "github.com/sttts/kc/internal/testing"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	models "github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // deleteEnv starts a kc cluster against envtest and creates a namespace.

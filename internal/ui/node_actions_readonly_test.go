@@ -3,8 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/nodeaction"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/nodeaction"
 )
 
 // nodeListFolder is a node list that offers node actions.

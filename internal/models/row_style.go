@@ -5,11 +5,12 @@ import (
 	"sync"
 
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/tablecache"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/tablecache"
 )
 
 // RowStyleInfo carries the metadata available when styling a row.

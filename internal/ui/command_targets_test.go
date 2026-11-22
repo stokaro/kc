@@ -3,9 +3,10 @@ package ui
 import (
 	"testing"
 
-	models "github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // White-box: commandTargets and isCommandApplicableToTargets are the

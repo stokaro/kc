@@ -9,8 +9,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/nodeaction"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/nodeaction"
 )
 
 func nodeKey(s string) tea.KeyPressMsg {

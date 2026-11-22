@@ -10,9 +10,9 @@ import (
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/sttts/kc/internal/execctx"
-	"github.com/sttts/kc/pkg/appconfig"
-	"github.com/sttts/kc/pkg/kubeconfig"
+	"github.com/stokaro/kc/internal/execctx"
+	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 // This file builds the one execution context (execctx.Context) that every

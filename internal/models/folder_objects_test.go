@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
-	table "github.com/sttts/kc/internal/table"
-	"github.com/sttts/kc/internal/tablecache"
-	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/internal/tablecache"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestLiveObjectRowSourceRefresh(t *testing.T) {

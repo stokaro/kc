@@ -3,8 +3,9 @@ package models
 import (
 	"sync"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // MessageRow is a row whose Enter sends EnterMessage to the UI instead of

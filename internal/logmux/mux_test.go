@@ -14,9 +14,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/logmux"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/stokaro/kc/internal/logmux"
 )
 
 // fakeStream is a log stream the test feeds line by line.

@@ -5,13 +5,14 @@ import (
 	"sync"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
 )
 
 // metrics.k8s.io resources read by the usage poller.

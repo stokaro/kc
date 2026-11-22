@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // Not parallel: Load reads ~/.kc/config.yaml, so the test sets HOME.

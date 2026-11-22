@@ -3,9 +3,10 @@ package ui
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
-	navui "github.com/sttts/kc/internal/navigation"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
+	navui "github.com/stokaro/kc/internal/navigation"
 )
 
 // listFolder is an object list of one namespace (or a cluster-scoped list).

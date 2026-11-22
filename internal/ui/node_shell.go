@@ -8,15 +8,16 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/access"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/nodeshell"
-	"github.com/sttts/kc/internal/podexec"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	utilexec "k8s.io/client-go/util/exec"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/access"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/nodeshell"
+	"github.com/stokaro/kc/internal/podexec"
 )
 
 // nodeShellDeleteTimeout bounds the delete of the shell pod.

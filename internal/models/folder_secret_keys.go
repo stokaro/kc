@@ -4,8 +4,9 @@ import (
 	"context"
 	"sort"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // SecretKeysFolder lists the data keys for a Secret.

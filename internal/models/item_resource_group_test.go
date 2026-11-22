@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/testing/kcenvtest"
-
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/pkg/appconfig"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestResourceGroupItemNotifyIfChanged(t *testing.T) {

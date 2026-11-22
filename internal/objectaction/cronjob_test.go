@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/objectaction"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -16,6 +14,9 @@ import (
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/objectaction"
 )
 
 func newCronJob(suspend *bool) *batchv1.CronJob {

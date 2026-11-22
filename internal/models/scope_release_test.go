@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
 )
 
 // TestNodePodsFolderHoldsScopeUntilClose checks that the node's pods folder

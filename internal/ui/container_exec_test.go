@@ -10,9 +10,10 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/models"
-	table "github.com/sttts/kc/internal/table"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/models"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // collectMsgs runs cmd and every command a batch carries, and returns the

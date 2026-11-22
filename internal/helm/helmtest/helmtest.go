@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/sttts/kc/internal/helm"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/stokaro/kc/internal/helm"
 )
 
 // Release is a release record fixture.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // flagNearLimit is the state of a workload bar whose usage reaches the

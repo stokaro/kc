@@ -8,10 +8,6 @@ import (
 	"testing"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/models"
-	kctesting "github.com/sttts/kc/internal/testing"
-	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,6 +15,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 // TestAppBrowsesPodsWithNamespaceOnlyAccess runs the app as kc -n would

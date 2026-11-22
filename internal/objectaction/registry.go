@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 // Action is one built-in change for objects of a resource.

@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestResourcesFolderFinalizeMarksDirtyOnlyOnChange(t *testing.T) {

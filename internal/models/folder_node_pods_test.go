@@ -5,11 +5,12 @@ import (
 	"reflect"
 	"testing"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
 )
 
 func TestNodeChildFolderPopulatesPodsEntry(t *testing.T) {

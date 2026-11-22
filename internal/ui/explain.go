@@ -6,13 +6,14 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/explain"
-	models "github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/openapi"
 	"k8s.io/client-go/rest"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/explain"
+	models "github.com/stokaro/kc/internal/models"
 )
 
 // explainKey opens the field documentation of the selected object or

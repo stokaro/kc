@@ -6,12 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/helm"
-	"github.com/sttts/kc/internal/helm/helmtest"
-	table "github.com/sttts/kc/internal/table"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/helm"
+	"github.com/stokaro/kc/internal/helm/helmtest"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 const helmTestManifest = `---

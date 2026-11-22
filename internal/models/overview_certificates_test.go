@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // certificate returns a cert-manager Certificate with a Ready condition

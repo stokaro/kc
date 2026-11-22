@@ -3,8 +3,9 @@ package models
 import (
 	"context"
 
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // ContextRootFolder represents the root folder when browsing within a context scope.

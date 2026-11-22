@@ -2,7 +2,8 @@ package ui
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/ui/viewer"
+
+	"github.com/stokaro/kc/internal/ui/viewer"
 )
 
 // TextViewer wraps the shared viewer widget for modal usage.

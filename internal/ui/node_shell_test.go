@@ -11,13 +11,14 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/podexec"
-	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/podexec"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 type followUpAction struct {

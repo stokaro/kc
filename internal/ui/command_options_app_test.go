@@ -6,8 +6,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestCommandOptionsChangedMsgAppliesWatchInterval(t *testing.T) {

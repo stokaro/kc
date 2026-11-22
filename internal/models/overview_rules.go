@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
@@ -15,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/duration"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // overviewSeverity orders findings: a row takes the worst severity of the

@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sttts/kc/internal/portforward"
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/util/duration"
+
+	"github.com/stokaro/kc/internal/portforward"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // PortForwardsPathSegment is the root entry listing the active forwards.

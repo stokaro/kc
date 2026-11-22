@@ -5,9 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
 )
 
 func TestObjectRowManifest(t *testing.T) {

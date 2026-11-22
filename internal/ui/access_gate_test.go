@@ -8,13 +8,14 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/access"
-	models "github.com/sttts/kc/internal/models"
-	uistyles "github.com/sttts/kc/internal/ui/styles"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+
+	"github.com/stokaro/kc/internal/access"
+	models "github.com/stokaro/kc/internal/models"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // ssarServer answers SelfSubjectAccessReviews from a fake clientset: verbs

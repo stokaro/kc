@@ -1,7 +1,7 @@
 package list
 
 import (
-	models "github.com/sttts/kc/internal/models"
+	models "github.com/stokaro/kc/internal/models"
 )
 
 // Item mirrors panel row metadata stored in list widgets.

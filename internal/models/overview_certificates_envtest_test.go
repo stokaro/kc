@@ -5,15 +5,16 @@ import (
 	"testing"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	kctesting "github.com/sttts/kc/internal/testing"
-	"github.com/sttts/kc/internal/testing/kcenvtest"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
 )
 
 // TestOverviewCertificatesOnARealCache runs the engine against an API server

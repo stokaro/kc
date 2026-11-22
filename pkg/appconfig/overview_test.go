@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestOverviewNormalized(t *testing.T) {

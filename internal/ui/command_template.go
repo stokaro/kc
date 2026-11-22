@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"text/template"
 
-	"github.com/sttts/kc/internal/execctx"
-	"github.com/sttts/kc/internal/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/execctx"
+	"github.com/stokaro/kc/internal/models"
 )
 
 // CommandContext holds the data available to command templates

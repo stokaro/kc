@@ -8,8 +8,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/kubeconfig"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 func typeText(m *ScopePickerModel, s string) {

@@ -8,10 +8,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/access"
-	"github.com/sttts/kc/internal/filexfer"
-	"github.com/sttts/kc/internal/models"
-	navui "github.com/sttts/kc/internal/navigation"
+
+	"github.com/stokaro/kc/internal/access"
+	"github.com/stokaro/kc/internal/filexfer"
+	"github.com/stokaro/kc/internal/models"
+	navui "github.com/stokaro/kc/internal/navigation"
 )
 
 // uploadActionName names a copy into a container in read-only refusals.

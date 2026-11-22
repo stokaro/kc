@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/sttts/kc/internal/tablecache"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/tablecache"
 )
 
 var nodeGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}

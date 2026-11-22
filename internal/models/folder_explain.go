@@ -7,9 +7,10 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/explain"
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/explain"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // ExplainTarget is implemented by rows that name an API type, so the UI

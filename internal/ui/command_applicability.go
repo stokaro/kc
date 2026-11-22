@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	models "github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/pkg/appconfig"
+	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func isCommandApplicable(cmd appconfig.CommandConfig, item models.Item, selectedCount int, activeNamespace string) bool {

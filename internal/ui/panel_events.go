@@ -1,6 +1,6 @@
 package ui
 
-import panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+import panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 
 // PanelSelectionChangedMsg is emitted when the selection within a panel changes.
 type PanelSelectionChangedMsg struct {

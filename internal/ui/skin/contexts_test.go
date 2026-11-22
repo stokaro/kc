@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
-	"github.com/sttts/kc/internal/ui/skin"
-	"github.com/sttts/kc/pkg/appconfig"
+
+	"github.com/stokaro/kc/internal/ui/skin"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestContextColorsFor(t *testing.T) {

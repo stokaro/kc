@@ -6,10 +6,11 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	table "github.com/sttts/kc/internal/table"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // OverviewRowID is the ID of the /overview row in the panel root.

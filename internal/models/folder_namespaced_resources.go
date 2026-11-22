@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	table "github.com/sttts/kc/internal/table"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // NamespacedResourcesFolder models resource groups scoped to a namespace.

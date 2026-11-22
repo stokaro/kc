@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/models"
-	navui "github.com/sttts/kc/internal/navigation"
+
+	"github.com/stokaro/kc/internal/models"
+	navui "github.com/stokaro/kc/internal/navigation"
 )
 
 func typeKeys(l *shellLine, s string) {

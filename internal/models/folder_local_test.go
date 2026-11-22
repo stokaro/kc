@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sttts/kc/internal/podfs"
-	table "github.com/sttts/kc/internal/table"
+	"github.com/stokaro/kc/internal/podfs"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // localRows returns the rows without the synthetic back row.

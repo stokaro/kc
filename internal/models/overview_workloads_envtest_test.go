@@ -4,13 +4,14 @@ import (
 	"testing"
 	"time"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
 )
 
 // TestOverviewInfoWorkloadOnARealCache reads ReplicaSets as metadata

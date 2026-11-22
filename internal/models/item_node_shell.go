@@ -3,8 +3,8 @@ package models
 import (
 	"strings"
 
-	"github.com/sttts/kc/internal/nodeshell"
-	table "github.com/sttts/kc/internal/table"
+	"github.com/stokaro/kc/internal/nodeshell"
+	table "github.com/stokaro/kc/internal/table"
 )
 
 // nodeShellEnabled reports whether the node shell is turned on for the

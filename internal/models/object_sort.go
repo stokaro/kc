@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sttts/kc/internal/tablecache"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/stokaro/kc/internal/tablecache"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // Sort keys with a meaning of their own. Every other key names a server-side

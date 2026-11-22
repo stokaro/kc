@@ -16,7 +16,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	"github.com/sttts/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/navigation"
 )
 
 // FileName is the hotlist file name inside ~/.kc.

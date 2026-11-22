@@ -1,7 +1,7 @@
 package ui
 
 import (
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 )
 
 // PanelViewMode identifies the active widget/view embedded inside a panel.

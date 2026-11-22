@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sttts/kc/internal/models"
-	navui "github.com/sttts/kc/internal/navigation"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/models"
+	navui "github.com/stokaro/kc/internal/navigation"
 )
 
 const (

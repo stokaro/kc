@@ -4,13 +4,14 @@ import (
 	"context"
 
 	"charm.land/lipgloss/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	table "github.com/sttts/kc/internal/table"
-	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // Item matches the navigation item contract. Navigation will alias to this type.

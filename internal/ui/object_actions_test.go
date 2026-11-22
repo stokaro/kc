@@ -7,9 +7,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/objectaction"
-	"github.com/sttts/kc/pkg/appconfig"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/objectaction"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 type fakeClusterAction struct{ runs int }

@@ -12,7 +12,7 @@ import (
 
 	yaml "sigs.k8s.io/yaml"
 
-	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 const customConfig = `viewer:

@@ -6,14 +6,15 @@ import (
 	"strings"
 	"testing"
 
-	kccluster "github.com/sttts/kc/internal/cluster"
-	models "github.com/sttts/kc/internal/models"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	kccluster "github.com/stokaro/kc/internal/cluster"
+	models "github.com/stokaro/kc/internal/models"
 )
 
 var gvrConfigMaps = schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}

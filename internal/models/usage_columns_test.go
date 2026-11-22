@@ -5,10 +5,11 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sttts/kc/internal/tablecache"
-	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/stokaro/kc/internal/tablecache"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func TestFormatPercent(t *testing.T) {

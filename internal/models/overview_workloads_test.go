@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/pkg/appconfig"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 func controllerRef(apiVersion, kind, name string, uid types.UID) []metav1.OwnerReference {

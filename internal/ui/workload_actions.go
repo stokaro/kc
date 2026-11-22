@@ -5,8 +5,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/sttts/kc/internal/access"
-	"github.com/sttts/kc/internal/workloadaction"
+
+	"github.com/stokaro/kc/internal/access"
+	"github.com/stokaro/kc/internal/workloadaction"
 )
 
 // Workload actions (scale, restart, rollback) run in steps: prepare (read

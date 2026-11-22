@@ -12,8 +12,9 @@ import (
 	"slices"
 	"strings"
 
-	uistyles "github.com/sttts/kc/internal/ui/styles"
 	yaml "sigs.k8s.io/yaml"
+
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // DefaultName is the built-in skin kc uses when none is configured.
