@@ -10,7 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
+	"github.com/sttts/kc/internal/logview"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/ui/viewer"
 )
@@ -107,30 +107,31 @@ type LogsViewer struct {
 	err        error
 	onOptions  func() tea.Cmd
 	onClose    func() tea.Cmd
+	onFilter   func() tea.Cmd
 	bar        viewerCommandBar
+	// log keeps every line read; the widget shows log's display lines.
+	log *logview.Log
 
-	// styled marks a stream whose lines carry ANSI styling (the colored
-	// prefixes of a merged log); search and copy use the stripped text.
-	styled bool
+	// merged marks a merged stream: every line starts with a colored
+	// `[pod/container]` prefix, which becomes the record's source.
+	merged bool
 }
 
 // SetCommand sets the kubectl command shown under the log. A command builder
 // set with SetCommandBuilder replaces it when the options change.
 func (v *LogsViewer) SetCommand(cmd string) { v.bar.command = cmd }
 
-// SetStyledLines marks the stream's lines as carrying ANSI styling.
-func (v *LogsViewer) SetStyledLines(on bool) { v.styled = on }
-
-func (v *LogsViewer) appendLines(lines []string) {
-	if !v.styled {
-		v.inner.AppendLines(lines)
-		return
+// SetStyledLines marks the stream as a merged log whose lines carry a
+// colored `[pod/container]` prefix (logmux.Format). The prefix becomes the
+// record's source, so JSON after it is still parsed, and is shown colored.
+func (v *LogsViewer) SetStyledLines(on bool) {
+	v.merged = on
+	format := logview.DefaultFormat()
+	if on {
+		format.SourceStyle = mergedSourceStyle
 	}
-	text := make([]string, len(lines))
-	for i, l := range lines {
-		text[i] = ansi.Strip(l)
-	}
-	v.inner.AppendStyledLines(text, lines)
+	v.log.SetFormat(format)
+	v.refreshDisplay()
 }
 
 // SetCommandBuilder sets how the kubectl command under the log is built, and
@@ -151,7 +152,9 @@ func NewLogsViewer(title string, spec models.LogsSpec, open logStreamOpener, the
 		MimeType: "text/plain",
 		Filename: strings.ReplaceAll(title, "/", "_") + ".log",
 	})
+	w.SetLines(nil)
 	lv := &LogsViewer{
+		log:        logview.NewLog(logview.DefaultFormat()),
 		inner:      w,
 		spec:       spec,
 		open:       open,
@@ -186,6 +189,10 @@ func (v *LogsViewer) SetLogOptions(opts LogOptions) tea.Cmd {
 		v.bar.command = v.commandFor(v.spec)
 	}
 	v.inner.SetContent("", v.inner.Metadata())
+	// A reopened stream starts with no records; the view mode and the
+	// filter stay.
+	v.log.Reset()
+	v.inner.SetLines(nil)
 	v.inner.ScrollToEnd()
 	v.autoFollow = true
 	return v.start()
@@ -213,6 +220,11 @@ func (v *LogsViewer) SetDimensions(w, h int) {
 }
 
 func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok {
+		if cmd, handled := v.handleLogViewKey(key); handled {
+			return v, cmd
+		}
+	}
 	if cmd, handled := v.bar.handle(msg, v.inner, v.width, v.height); handled {
 		return v, cmd
 	}
@@ -258,7 +270,7 @@ func (v *LogsViewer) handleOpened(m logStreamOpenedMsg) tea.Cmd {
 		closeStream(m.reader, m.cancel)
 		v.err = m.err
 		v.done = true
-		v.appendLines([]string{"[kc] logs stream failed: " + m.err.Error()})
+		v.appendRecords([]string{"[kc] logs stream failed: " + m.err.Error()})
 		return nil
 	}
 	v.reader = m.reader
@@ -271,8 +283,7 @@ func (v *LogsViewer) handleChunk(m logStreamMsg) tea.Cmd {
 	if m.viewer != v || m.gen != v.gen || v.closed {
 		return nil
 	}
-	if len(m.lines) > 0 {
-		v.appendLines(m.lines)
+	if len(m.lines) > 0 && v.appendRecords(m.lines) {
 		if v.autoFollow || v.inner.AtEnd() {
 			v.inner.ScrollToEnd()
 			v.autoFollow = true
@@ -313,7 +324,7 @@ func (v *LogsViewer) FooterHints() []FooterHint {
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "n", Label: "Next", Enabled: v.inner.HasSearchMatches()},
 		{Key: "End", Label: "Follow", Enabled: !v.autoFollow},
-	}, viewerCopyHints(v.bar.command != "")...)
+	}, v.logViewHints()...)
 }
 
 // FooterStatus shows the search summary while a search is active, and the
@@ -330,7 +341,7 @@ func (v *LogsViewer) FooterStatus(width int) string {
 
 // statusText is the stream options followed by the stream state.
 func (v *LogsViewer) statusText() string {
-	text := v.LogOptions().summary()
+	text := v.LogOptions().summary() + ", " + v.logViewStatus()
 	switch {
 	case v.opening:
 		text += " (connecting)"

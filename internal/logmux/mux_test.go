@@ -496,3 +496,32 @@ func sorted(s []string) []string {
 	slices.Sort(out)
 	return out
 }
+
+func TestParseFormatted(t *testing.T) {
+	t.Parallel()
+	target := logmux.Target{Pod: "api-1", Container: "app"}
+	tests := []struct {
+		name   string
+		line   string
+		want   logmux.Target
+		text   string
+		wantOK bool
+	}{
+		{name: "colored", line: logmux.Format(logmux.Line{Target: target, Text: `{"msg":"a b"}`}, true), want: target, text: `{"msg":"a b"}`, wantOK: true},
+		{name: "plain", line: logmux.Format(logmux.Line{Target: target, Text: "hello"}, false), want: target, text: "hello", wantOK: true},
+		{name: "empty text", line: logmux.Format(logmux.Line{Target: target}, true), want: target, wantOK: true},
+		{name: "notice", line: logmux.Format(logmux.Line{Notice: true, Text: "+ api-1/app"}, true)},
+		{name: "no prefix", line: "plain line"},
+		{name: "no container", line: "[api-1] text"},
+		{name: "no space", line: "[api-1/app]"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, text, ok := logmux.ParseFormatted(tc.line)
+			if ok != tc.wantOK || got != tc.want || text != tc.text {
+				t.Fatalf("ParseFormatted(%q) = %+v, %q, %v; want %+v, %q, %v", tc.line, got, text, ok, tc.want, tc.text, tc.wantOK)
+			}
+		})
+	}
+}

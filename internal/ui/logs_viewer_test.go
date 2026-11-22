@@ -101,7 +101,7 @@ func TestLogsViewerStreamsAndRestartsWithNewOptions(t *testing.T) {
 	if got, want := v.bar.command, "kubectl logs all lines, since 1h, timestamps, previous"; got != want {
 		t.Fatalf("command after restart = %q, want %q", got, want)
 	}
-	if got := v.statusText(); got != "all lines, since 1h, timestamps, previous (ended)" {
+	if got := v.statusText(); got != "all lines, since 1h, timestamps, previous, formatted, 1 lines (ended)" {
 		t.Fatalf("status = %q", got)
 	}
 
@@ -147,7 +147,7 @@ func TestLogsViewerShowsOpenFailure(t *testing.T) {
 	if got := v.inner.PlainText(); !strings.Contains(got, "logs stream failed: previous terminated container") {
 		t.Fatalf("content = %q, want the error", got)
 	}
-	if got := v.statusText(); got != "tail 200, previous (failed)" {
+	if got := v.statusText(); got != "tail 200, previous, formatted, 1 lines (failed)" {
 		t.Fatalf("status = %q", got)
 	}
 }

@@ -3,6 +3,9 @@ package logmux
 import (
 	"hash/fnv"
 	"io"
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"charm.land/lipgloss/v2"
 )
@@ -24,6 +27,11 @@ func Color(t Target) string {
 // Prefix returns the plain prefix of a line from t: `[pod/container]`.
 func Prefix(t Target) string { return "[" + t.Name() + "]" }
 
+// StyledPrefix returns the prefix of t in its color.
+func StyledPrefix(t Target) string {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(Color(t))).Render(Prefix(t))
+}
+
 // Format renders a line as it is shown: a container line gets its prefix,
 // colored when color is true; a notice is prefixed with `[kc]`.
 func Format(l Line, color bool) string {
@@ -32,9 +40,29 @@ func Format(l Line, color bool) string {
 	}
 	prefix := Prefix(l.Target)
 	if color {
-		prefix = lipgloss.NewStyle().Foreground(lipgloss.Color(Color(l.Target))).Render(prefix)
+		prefix = StyledPrefix(l.Target)
 	}
 	return prefix + " " + l.Text
+}
+
+// ParseFormatted splits a line rendered by Format into its target and text.
+// ok is false for a notice and for a line without a `[pod/container]`
+// prefix. Pod and container names have no spaces, so the prefix ends at the
+// first space.
+func ParseFormatted(line string) (t Target, text string, ok bool) {
+	head, rest, found := strings.Cut(line, " ")
+	if !found {
+		return Target{}, "", false
+	}
+	name := ansi.Strip(head)
+	if len(name) < len("[a/b]") || name[0] != '[' || name[len(name)-1] != ']' {
+		return Target{}, "", false
+	}
+	pod, container, found := strings.Cut(name[1:len(name)-1], "/")
+	if !found || pod == "" || container == "" || strings.ContainsAny(container, "/[]") || strings.ContainsAny(pod, "[]") {
+		return Target{}, "", false
+	}
+	return Target{Pod: pod, Container: container}, rest, true
 }
 
 // Reader exposes the merged stream as text, one formatted line per line, so

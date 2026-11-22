@@ -15,7 +15,7 @@ A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, B
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **CPU and memory usage:** when the cluster serves `metrics.k8s.io` (metrics-server), pod lists show `CPU`, `MEM`, `%CPU/R` (of requests) and `%MEM/L` (of limits), and node lists show `CPU`, `%CPU`, `MEM` and `%MEM` (of allocatable). Wide mode adds `%CPU/L` and `%MEM/R` for pods and `CPU/A` and `MEM/A` for nodes. kc reads the metrics every 15 seconds, only while such a list is on screen and no dialog is open. `n/a` means no metrics for the object yet, no request or limit to compare with, or metrics kc may not read.
 - **Two synchronized panels:** each panel can render lists, or follow the other panel's selection in Describe, Manifest or Logs mode (`C-1` / `C-2` cycle the left / right panel's mode; Logs streams the selected pod's or container's log), supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
-- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts; `F2` sets tail lines, the since window, timestamps and the previous container instance, and restarts the stream. A container that restarted also gets a `logs (previous)` row.
+- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts; `F2` sets tail lines, the since window, timestamps and the previous container instance, and restarts the stream. A container that restarted also gets a `logs (previous)` row. JSON lines are shown as time, level, message and key=value fields, with display filters and field extraction.
 - **Container internals:** each pod container exposes `/logs`, a `shell` row and a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
 - **Merged logs:** Deployments, StatefulSets, DaemonSets, ReplicaSets and Jobs have a `logs` row, and every pod a `logs (all containers)` row. `F3` on it streams the logs of all matching pods and containers into one viewer, each line prefixed with a colored `[pod/container]`, like `kubectl logs -l <selector> --all-containers --prefix -f`. Pods that start or go away are followed; `[kc] +` and `[kc] -` lines mark each stream.
 - **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker. kc writes the export to a temporary file next to the destination and replaces the destination only when the whole content arrived, so a failed export leaves an existing file as it was. New files are created with mode 0600; a replaced file keeps its owner permissions and loses group and other access. kc refuses to write through a symbolic link. Binary ConfigMap and Secret keys show their size, detected content type and a hex dump in `F3`; `F5` saves the original bytes.
@@ -96,7 +96,10 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | `M-H`      | List the active panel's history, newest first; `Enter` goes there (`Esc H`).   |
 | `M-o`      | Sort the object list by the next column, ascending. `Esc o` does the same. The sorted column has `↑` (ascending) or `↓` (descending) after its title. |
 | `M-r`      | Reverse the sort of the object list. `Esc r` does the same. The panel options (`M-F1`, `M-F2`) set the column ("Sort by") and the direction ("Reverse") too. |
-| `M-a`      | In viewers: copy the whole content.                                             |
+| `M-a`      | In viewers: copy the whole content. In the logs viewer: copy the shown lines.   |
+| `M-A`      | In the logs viewer: copy the original records that pass the filter, unchanged.  |
+| `M-v`      | In the logs viewer: switch between the formatted and the raw view.              |
+| `M-g`      | In the logs viewer: open the filter dialog.                                     |
 | `M-l`      | Open a local directory in the active panel, or leave it again. `Esc l` does the same. |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `M-j`      | Owners: opens `<object>/owners` with the owner references of the selected object, the controller first with the cursor on it. Owners that no longer exist or whose kind the cluster does not serve are listed dim with the reason. `Esc j` does the same. |
@@ -121,6 +124,26 @@ Rows in `/owners` and `/used-by` behave like the same object in its own list: `E
 `F4`, `F8` and `F3` on container logs are grayed out when a SelfSubjectAccessReview for the current context, impersonation and namespace says the action is denied (`F4` needs get and patch, as `kubectl edit` sends a patch). Answers are cached for 30 seconds. An unknown or failed review keeps the key enabled; the API server still decides every request.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
+
+### JSON logs
+
+The logs viewer keeps every line it reads. Lines that hold one JSON object (optionally after the `--timestamps` time) are shown formatted: time, level (colored by severity), message, then the other fields as `key=value`, with nested objects as dotted keys. Other lines, including broken JSON, are shown as they are. `M-v` switches to the raw lines and back; the filter, the search and follow mode stay.
+
+`M-g` opens the filter. It takes space-separated terms; a line is shown when it matches every term and no `!` term. The footer shows how many lines pass.
+
+| Term                | Matches                                                                 |
+|---------------------|-------------------------------------------------------------------------|
+| `timeout`           | lines that contain the text, in any case                                |
+| `"conn refused"`    | lines that contain the quoted text                                      |
+| `/5\d\d/`           | lines that match the regular expression (RE2)                           |
+| `level=error,warn`  | JSON lines whose field equals one of the values, in any case            |
+| `msg~^GET`          | JSON lines whose field matches the regular expression                   |
+| `!term`             | drops the lines that match `term`                                       |
+| `.msg .http.status` | shows only these fields of JSON lines (a line without them is shown whole) |
+
+Field names are paths: `http.status`, `items[0].name`, `["key with spaces"]`; `http.status` also finds a literal `http.status` key. Field terms never match a text line. Filtering only changes what is shown: the stream is not reopened, and clearing the filter brings every line back. An invalid term is reported in the dialog. `M-a` copies the shown lines, `M-A` the original records.
+
+In a merged log (all pods of a workload, all containers of a pod) the colored `[pod/container]` prefix is the source of the line: it stays in front in both views, the JSON after it is formatted, and `M-A` copies the records without it.
 
 ## Field documentation
 
