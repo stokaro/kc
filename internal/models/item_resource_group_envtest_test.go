@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
@@ -13,9 +15,7 @@ import (
 )
 
 func TestResourceGroupItemUpdatesCountOnInformerEvents(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)

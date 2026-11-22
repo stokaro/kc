@@ -43,11 +43,17 @@ jobs:
           ENVTEST_K8S_VERSION: "1.37.x"
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-          eval "$(setup-envtest use -p env ${ENVTEST_K8S_VERSION})"
-          echo "KUBEBUILDER_ASSETS=$KUBEBUILDER_ASSETS" >> "$GITHUB_ENV"
+          # A plain assignment carries the command's exit status, so bash -e
+          # stops here when setup-envtest fails.
+          assets="$(setup-envtest use -p path "${ENVTEST_K8S_VERSION}")"
+          echo "KUBEBUILDER_ASSETS=${assets}" >> "$GITHUB_ENV"
 
       - name: Run tests
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        env:
+          # envtest suites fail instead of skipping when the control plane
+          # cannot start. See docs/adr/0060-require-envtest-in-ci.md.
+          KC_REQUIRE_ENVTEST: "1"
         run: go test ./...
 
       - name: Build

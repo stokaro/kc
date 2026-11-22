@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -23,9 +25,7 @@ import (
 )
 
 func TestReaderListPodsEnvtest(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 
 	ctx := t.Context()
 
@@ -109,9 +109,7 @@ func TestReaderListPodsEnvtest(t *testing.T) {
 }
 
 func TestReaderListCustomResourceColumnsEnvtest(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 
 	ctx := t.Context()
 
@@ -294,9 +292,7 @@ func TestReaderListCustomResourceColumnsEnvtest(t *testing.T) {
 }
 
 func TestReaderWatchPodsEnvtest(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 
 	ctx := t.Context()
 
