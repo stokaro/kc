@@ -11,6 +11,7 @@ import (
 	chroma "github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/sttts/kc/internal/overlay"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
@@ -179,6 +180,35 @@ func (w *Widget) AppendLines(lines []string) {
 		w.highlight()
 	}
 	w.extendSearchMatches(start, lines)
+}
+
+// SetLines replaces the body with lines and keeps the metadata, the search
+// query and the scroll position (clamped to the new length). The logs viewer
+// uses it to show the same log in another format or filter without losing
+// the search.
+func (w *Widget) SetLines(lines []string) {
+	w.rawLines = append([]string(nil), lines...)
+	w.raw = strings.Join(lines, "\n")
+	w.updateMaxLineWidth()
+	if w.plain {
+		w.lines = append([]string(nil), lines...)
+	} else {
+		w.highlight()
+	}
+	w.offset = min(w.offset, max(0, len(w.lines)-w.page()))
+	w.sel = selection{}
+	w.searchMatchIndex = make(map[int][]int)
+	w.searchMatches = w.searchMatches[:0]
+	w.activeMatch = -1
+	if w.searchRe == nil {
+		return
+	}
+	for idx, line := range w.rawLines {
+		w.appendMatchesForLine(idx, line, w.searchRe)
+	}
+	if len(w.searchMatches) > 0 {
+		w.activeMatch = w.firstMatchFromView()
+	}
 }
 
 // SetCallbacks configures optional edit/theme/close handlers.
@@ -707,6 +737,11 @@ func (w *Widget) extendSearchMatches(startLine int, lines []string) {
 func (w *Widget) appendMatchesForLine(lineIdx int, line string, re *regexp.Regexp) {
 	if re == nil {
 		return
+	}
+	// Match the text as shown: color codes (the logs viewer's level colors,
+	// a container's own colors) must neither match nor split a match.
+	if strings.IndexByte(line, '\x1b') >= 0 {
+		line = ansi.Strip(line)
 	}
 	for _, m := range re.FindAllStringIndex(line, -1) {
 		if m[1] <= m[0] {
