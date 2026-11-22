@@ -1123,6 +1123,7 @@ func (a *App) setupPanelInputs() {
 			return manifestwidget.New(deps)
 		})
 		panel.RegisterMode(PanelModeLogs, a.newPanelLogsWidget)
+		panel.RegisterMode(PanelModeInfo, a.newPanelInfoWidget)
 	}
 	if a.leftPanel != nil {
 		a.leftPanel.SetEnvironmentSupplier(envSupplier)
@@ -1299,7 +1300,7 @@ func maskCapabilitiesForMode(mode PanelViewMode, commandFocused bool, caps Panel
 	switch mode {
 	case PanelModeList:
 		return caps
-	case PanelModeDescribe, PanelModeManifest, PanelModeLogs:
+	case PanelModeDescribe, PanelModeManifest, PanelModeLogs, PanelModeInfo:
 		// Read-only; allow help/options/menu only.
 		caps.CanView = false
 		caps.CanCopy = false
@@ -2340,6 +2341,8 @@ func (a *App) applyStartupIntent() tea.Cmd {
 		return a.applyStartupIntentGet()
 	case KubectlVerbLogs:
 		return a.applyStartupIntentLogs()
+	case KubectlVerbOverview:
+		return a.applyStartupIntentOverview()
 	default:
 		return nil
 	}
