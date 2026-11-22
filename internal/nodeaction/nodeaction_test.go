@@ -16,6 +16,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -546,5 +547,37 @@ func TestDrainConfirmation(t *testing.T) {
 	}
 	if !slices.Contains(c.Details, [2]string{"Nodes", "a, b"}) || !slices.Contains(c.Details, [2]string{"Context", "dev"}) {
 		t.Errorf("details = %v", c.Details)
+	}
+}
+
+// A cancel that lands while the drain reads a DaemonSet ends the drain as
+// canceled, not failed: the lookup error is a result of the cancel.
+func TestDrainCancelDuringDaemonSetLookup(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var armed atomic.Bool
+	funcs := interceptor.Funcs{
+		Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+			if u, ok := obj.(*unstructured.Unstructured); ok && u.GetKind() == "DaemonSet" && armed.Load() {
+				cancel()
+				return ctx.Err()
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	}
+	env := newEnv(t, funcs, node("a", false), daemonSet(), pod("agent-1", "a", ds), pod("web-1", "a", rs))
+	action, err := nodeaction.PrepareDrain(ctx, env, []string{"a"}, nodeaction.DefaultDrainOptions())
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	armed.Store(true)
+	var last nodeaction.Progress
+	_, err = action.Run(ctx, func(p nodeaction.Progress) { last = p })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if last.Nodes[0].Phase != nodeaction.PhaseCanceled {
+		t.Fatalf("node a progress = %+v, want canceled", last.Nodes[0])
 	}
 }

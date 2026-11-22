@@ -355,6 +355,11 @@ func (a *DrainAction) drainNode(ctx context.Context, node string, np *NodeProgre
 			return err
 		}
 		if len(sel.Blocked) > 0 {
+			// A lookup the cancel interrupted (a DaemonSet read) shows up as
+			// a blocked pod; report the cancel, not the lookup error.
+			if ctx.Err() != nil {
+				return a.stopError(ctx, node, np)
+			}
 			return fmt.Errorf("drain node %s: %s", node, sel.Blocked[0])
 		}
 		countGone(np, requested, sel.Evict)
