@@ -204,6 +204,7 @@ type App struct {
 	impersonateUser   string
 	impersonateUID    string
 	impersonateGroups []string
+	access            *accessState // access review cache; see access_gate.go
 	viewConfig        *ViewConfig
 	cfg               *appconfig.Config
 	// Command watch scheduling
@@ -1260,6 +1261,7 @@ func (a *App) panelEnvironment() PanelEnvironment {
 	if a.cl != nil {
 		env.AllowDeleteObjects = true
 	}
+	env.Permit = a.permitAccess
 	return env
 }
 

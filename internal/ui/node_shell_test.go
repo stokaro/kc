@@ -17,7 +17,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -168,8 +167,6 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
-
-var podsResource = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
 
 func nodeShellTestApp(t *testing.T) (*App, *fake.Clientset, *corev1.Pod) {
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "kc-node-shell-n1-abcde", Namespace: "default", UID: "u1"}}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/access"
 	models "github.com/sttts/kc/internal/models"
 )
 
@@ -33,6 +34,13 @@ type PanelEnvironment struct {
 	AllowEditObjects      bool
 	AllowDeleteObjects    bool
 	AllowCreateNamespaces bool
+	// Permit reports whether an action needing these access checks stays
+	// enabled (RBAC answers and the read-only preference). Nil permits all.
+	Permit func(checks ...access.Check) bool
+}
+
+func (e PanelEnvironment) permits(checks ...access.Check) bool {
+	return e.Permit == nil || e.Permit(checks...)
 }
 
 // PanelEnvironmentSupplier resolves the current environment prior to computing capabilities.
@@ -98,15 +106,23 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 			if isViewableItem(item) {
 				caps.CanView = true
 				caps.CanCopy = true
+				if logs, ok := item.(models.LogsProvider); ok {
+					spec := logs.LogsSpec()
+					if !env.permits(access.LogsChecks(spec.Namespace, spec.Pod)...) {
+						caps.CanView = false
+						caps.CanCopy = false
+					}
+				}
 			}
 			if _, ok := item.(models.Stoppable); ok {
 				caps.CanDelete = true
 			}
 			if obj, ok := item.(models.ObjectItem); ok {
-				if env.AllowEditObjects && obj.SupportsVerb("update") {
+				target := objectAccessTarget(obj)
+				if env.AllowEditObjects && obj.SupportsVerb("update") && env.permits(access.EditChecks(target)...) {
 					caps.CanEdit = true
 				}
-				if env.AllowDeleteObjects && obj.SupportsVerb("delete") {
+				if env.AllowDeleteObjects && obj.SupportsVerb("delete") && env.permits(access.DeleteChecks(target)...) {
 					caps.CanDelete = true
 				}
 			}

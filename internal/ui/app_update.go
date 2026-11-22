@@ -36,9 +36,11 @@ func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 }
 
 // Update handles messages and updates the application state
-func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	a.syncActivity()
 	defer a.syncActivity()
+	// Start the access reviews the selected row needs for function key gating.
+	defer func() { cmd = batchAccessPrefetch(cmd, a.accessPrefetchCmd()) }()
 	if a.cfg != nil {
 		a.logMsg(msg)
 	}
@@ -783,6 +785,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.showNamespacePicker(msg)
 	case viewer.CopyRequestMsg:
 		return a, a.copyText(msg.Text, copyWhat(msg))
+	case accessResultMsg:
+		return a, tea.Batch(append(cmds, a.handleAccessResult())...)
 	case relatedFolderMsg:
 		return a, a.handleRelatedFolder(msg)
 	case compareResultMsg:
@@ -1049,6 +1053,9 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case accessResultMsg:
+		// Function keys and an open access view redraw from the cache.
 		return true
 	case compareResultMsg:
 		// The result names its viewer; it must not be lost when another
