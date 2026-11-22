@@ -20,17 +20,18 @@ func TestKubectlCommand(t *testing.T) {
 	nodePods.kubectlArgs = []string{"--field-selector", "spec.nodeName=n1"}
 	owned := objects(current, podGVR, "web")
 	owned.kubectlNote = "owned by replicasets.apps/web-1"
-	filtered := func(text string) *ObjectsFolder {
-		o := objects(current, podGVR, "web")
+	filteredIn := func(ns, text string, faults bool) *ObjectsFolder {
+		o := objects(current, podGVR, ns)
 		o.rows = newLiveObjectRowSourceWithHooks(nil, nil, nil)
 		f, err := ParseRowFilter(text)
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.FaultsOnly = true
+		f.FaultsOnly = faults
 		o.rows.setRowFilter(f)
 		return o
 	}
+	filtered := func(text string) *ObjectsFolder { return filteredIn("web", text, false) }
 
 	tests := []struct {
 		name   string
@@ -44,7 +45,10 @@ func TestKubectlCommand(t *testing.T) {
 		{"owned children", owned, "kubectl get pods -n web  # owned by replicasets.apps/web-1"},
 		{"label filter", filtered("-l app=web"), "kubectl get pods -n web -l app=web"},
 		{"label set filter", filtered("-l tier in (a, b)"), "kubectl get pods -n web -l 'tier in (a,b)'"},
-		{"name filter is not a kubectl flag", filtered("!web"), "kubectl get pods -n web"},
+		{"name filter and faults are noted", filteredIn("web", "!web", true), "kubectl get pods -n web  # kc also filters: !web, faults"},
+		{"one namespace term becomes -n", filteredIn("", "-n api -l app=web", false), "kubectl get pods -n api -l app=web"},
+		{"several namespaces are noted", filteredIn("", "-n api,db cpu>500m", false), "kubectl get pods -A  # kc also filters: -n api,db, cpu>500m"},
+		{"namespace term inside one namespace is noted", filteredIn("web", "-n api", false), "kubectl get pods -n web  # kc also filters: -n api"},
 		{"namespace resources", &NamespacedResourcesFolder{ResourcesFolder: &ResourcesFolder{BaseFolder: &BaseFolder{Deps: current}}}, "kubectl api-resources --namespaced=true"},
 		{"configmap keys", &ConfigMapKeysFolder{BaseFolder: &BaseFolder{Deps: current}, Namespace: "web", Name: "cfg"}, `kubectl get configmap cfg -n web -o 'jsonpath={.data}{"\n"}{.binaryData}'`},
 		{"containers", &PodContainerListFolder{BaseFolder: &BaseFolder{Deps: current}, Namespace: "web", Pod: "p", Kind: containerKindInit},

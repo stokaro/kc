@@ -77,14 +77,30 @@ func (f *NamespacedResourcesFolder) KubectlCommand() string {
 func (o *ObjectsFolder) KubectlCommand() string {
 	args := []string{"get", kubectlResource(o.gvr)}
 	namespaced := o.resourceNamespaced()
-	args = append(args, namespaceArgs(o.namespace, namespaced)...)
+	filter := o.RowFilter()
+	filterNS, filterOther := filter.kubectlParts()
+	switch {
+	case filterNS != "" && namespaced && o.namespace == "":
+		// "-n web" in a list of all namespaces is kubectl's own -n.
+		args = append(args, namespaceArgs(filterNS, namespaced)...)
+	case filterNS != "":
+		args = append(args, namespaceArgs(o.namespace, namespaced)...)
+		filterOther = append([]string{"-n " + filterNS}, filterOther...)
+	default:
+		args = append(args, namespaceArgs(o.namespace, namespaced)...)
+	}
 	args = append(args, o.kubectlArgs...)
-	if sel := o.RowFilter().Selector(); sel != "" {
+	if sel := filter.Selector(); sel != "" {
 		args = append(args, "-l", sel)
 	}
 	var notes []string
 	if o.kubectlNote != "" {
 		notes = append(notes, o.kubectlNote)
+	}
+	if len(filterOther) > 0 {
+		// kubectl has no flag for these; say so rather than print a
+		// command that lists more than the panel shows.
+		notes = append(notes, "kc also filters: "+strings.Join(filterOther, ", "))
 	}
 	if o.Deps.AppConfig != nil {
 		cc := planCustomColumns(o.Deps, o.gvr, o.Deps.AppConfig.Objects.Columns)

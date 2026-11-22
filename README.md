@@ -215,13 +215,17 @@ kc works with access granted only inside namespaces (a Role and RoleBinding, no 
 
 ## Filtering Rows
 
-`M-f` opens the Filter dialog for the object list in the active panel. It takes one of:
+`M-f` opens the Filter dialog for the object list in the active panel. The filter is a list of terms separated by spaces, and a row must match every term:
 
-- `nginx`: keep the rows whose name matches the regular expression (case-insensitive). In lists across all namespaces the pattern also sees `namespace/name`.
-- `!nginx`: keep the rows whose name does not match.
-- `-l app=web`: keep the rows whose labels match the label selector, in the syntax of `kubectl -l`. The copied kubectl command (`M-c`) gets the same `-l`.
+- `nginx`: the name matches the regular expression (case-insensitive). In lists across all namespaces the pattern also sees `namespace/name`. Spaces inside parentheses stay in the pattern: `^(web| api)`.
+- `!nginx`: the name does not match.
+- `-l app=web`: the labels match the label selector, in the syntax of `kubectl -l`. The selector runs as far as it parses, so `-l env in (a, b) web` is a selector and a name term. Several `-l` terms combine.
+- `-n web,api`: the namespace is one of the listed ones. In a list of all namespaces this narrows the view to those namespaces and updates live; `namespace!=kube-system` leaves namespaces out.
+- `<column><op><value>`: a column compares with the value. The column is named by its sort key (the title in lower case, spaces as dashes): `cpu>500m`, `mem>=1Gi`, `restarts>3`, `status=Running`, `node=worker-1`, `age<10m`. Operators are `=`, `!=`, `>`, `>=`, `<`, `<=`. `=` and `!=` take a list: `status=Pending,Failed` keeps either one, `status!=Running,Completed` keeps neither. Values compare the way the column sorts: CPU and memory as quantities, RESTARTS as counts, ages and durations as time, numbers as numbers, the rest as text in any case. Wide columns filter in normal mode too, so hiding a column does not drop its term.
 
-An empty text clears the filter. `C-z`, or "Faults only" in the panel options (`M-F1`, `M-F2`), keeps only the rows in a fault state; it combines with the text filter. Faults are the rows kc colors red: pods that are Pending, Failed or Unknown, not ready, or with a container waiting in CrashLoopBackOff, ImagePullBackOff and the like; Deployments, StatefulSets and ReplicaSets with fewer ready replicas than wanted; DaemonSets with unavailable pods; failed Jobs; nodes that are not Ready; PVCs that are not Bound; failed PVs.
+A row whose cell is empty, `<none>` or `n/a` (no metrics) matches no column term, `!=` included, and a cluster-scoped row matches no namespace term: a term never makes the view wider. The dialog refuses a column the list does not have and a value the column cannot hold (`cpu>fast`). An empty text clears the filter. `C-z`, or "Faults only" in the panel options (`M-F1`, `M-F2`), keeps only the rows in a fault state; it combines with the text filter. Faults are the rows kc colors red: pods that are Pending, Failed or Unknown, not ready, or with a container waiting in CrashLoopBackOff, ImagePullBackOff and the like; Deployments, StatefulSets and ReplicaSets with fewer ready replicas than wanted; DaemonSets with unavailable pods; failed Jobs; nodes that are not Ready; PVCs that are not Bound; failed PVs.
+
+The copied kubectl command (`M-c`) gets the label selector as `-l`, and a single `-n ns` in a list of all namespaces as `-n ns`. Terms kubectl has no flag for are listed after it, for example `kubectl get pods -A -l app=api  # kc also filters: -n prod,stage, cpu>500m, faults`.
 
 The active filter shows next to the scope in the bottom border (`Filter: !nginx, faults`); a click on it clears it. The filter belongs to the folder: it stays while you look at its objects and come back, and a new listing starts unfiltered. It applies to live updates, and the cursor stays on its row when the row is kept. Marked rows that the filter hides are unmarked.
 ### cd on the shell line

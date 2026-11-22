@@ -89,7 +89,11 @@ func (a *App) showRowFilterDialog() tea.Cmd {
 	}
 	idx := a.panelIndex(p)
 	current, _ := p.RowFilter()
-	model := NewRowFilterModel(idx, current.Text())
+	var check func(models.RowFilter) error
+	if v, ok := p.Folder().(models.RowFilterValidator); ok {
+		check = v.ValidateRowFilter
+	}
+	model := newRowFilterModelFor(idx, current.Text(), check)
 	modal := a.modalManager.modals[rowFilterModal]
 	if modal == nil {
 		modal = NewModal("Filter", model)
