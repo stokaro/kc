@@ -12,7 +12,7 @@
   - Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.
 - Width management: measure plain ASCII, compute target widths, avoid slicing ANSI (truncate before styling).
 - Selector line: show when focused; on row removal, clamp selection to next/previous.
-- Selection toggling: handle Ctrl+T and Insert; render selected rows with selection style.
+- Selection toggling: handle C-t and Insert; render selected rows with selection style.
 - Styling options: header style defaults + overrides; borders on/off; vertical separators; Bubble Tea v2 idioms.
 - Dynamic updates: efficiently diff and reflow; keep cursor stable via row IDs.
 - v2 imports: ensure `/v2` for bubbletea, bubbles, and lipgloss; `go mod tidy`.

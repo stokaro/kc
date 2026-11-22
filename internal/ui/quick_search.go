@@ -11,7 +11,7 @@ import (
 // black on cyan).
 var quickSearchStyle = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.Black)
 
-// quickSearch is mc's quick search (Ctrl+S, M-s): typing jumps to the
+// quickSearch is mc's quick search (C-s, M-s): typing jumps to the
 // first row whose name starts with the text.
 type quickSearch struct {
 	active bool
@@ -40,7 +40,7 @@ func (p *Panel) StopQuickSearch() {
 	p.invalidateRenderCache()
 }
 
-// QuickSearchKey handles a key during quick search. Ctrl+S or M-s jumps to
+// QuickSearchKey handles a key during quick search. C-s or M-s jumps to
 // the next match, Backspace shortens the text, a printable key extends it
 // when some row still matches, and Esc ends the search. Any other key ends
 // the search and is not handled, so it does its usual job (Enter enters

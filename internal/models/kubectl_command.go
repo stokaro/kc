@@ -132,7 +132,8 @@ func (f *PodContainerFSFolder) KubectlCommand() string {
 }
 
 func (f *ConfigMapKeysFolder) KubectlCommand() string {
-	return kubectlCommand(f.Deps, "get", "configmap", f.Name, "-n", f.Namespace, "-o", "jsonpath={.data}")
+	// The folder lists both fields, so the command prints both.
+	return kubectlCommand(f.Deps, "get", "configmap", f.Name, "-n", f.Namespace, "-o", `jsonpath={.data}{"\n"}{.binaryData}`)
 }
 
 func (f *SecretKeysFolder) KubectlCommand() string {
@@ -151,6 +152,15 @@ func keyViewCommand(deps Deps, kind, namespace, name, key string, secret bool) s
 		cmd += " | base64 -d"
 	}
 	return cmd
+}
+
+// configMapKeyViewCommand prints one ConfigMap key from the field it lives
+// in; binaryData values are base64 in the API and are decoded.
+func configMapKeyViewCommand(deps Deps, namespace, name, key string, binary bool) string {
+	if !binary {
+		return keyViewCommand(deps, "configmap", namespace, name, key, false)
+	}
+	return kubectlCommand(deps, "get", "configmap", name, "-n", namespace, "-o", "jsonpath={.binaryData."+jsonpathKey(key)+"}") + " | base64 -d"
 }
 
 // logsCommand prints the kubectl command for the options LogsSpec.PodLogOptions
