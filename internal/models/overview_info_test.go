@@ -267,13 +267,11 @@ func TestMeasuredUsageClusterPods(t *testing.T) {
 	tests := []struct {
 		name        string
 		namespace   string
-		clusterPods bool
 		wantPolls   []string
-		wantCluster string // the pod key clusterPods holds, or "" for none
+		wantCluster string // the pod key clusterPods holds
 	}{
-		{name: "info in a namespace", namespace: "a", clusterPods: true, wantPolls: []string{"nodes:", "pods:", "pods:a"}, wantCluster: "kube-system/big"},
-		{name: "info in every namespace", namespace: AllNamespaces, clusterPods: true, wantPolls: []string{"nodes:", "pods:"}, wantCluster: "kube-system/big"},
-		{name: "overview in a namespace", namespace: "a", wantPolls: []string{"nodes:", "pods:a"}},
+		{name: "one namespace", namespace: "a", wantPolls: []string{"nodes:", "pods:", "pods:a"}, wantCluster: "kube-system/big"},
+		{name: "every namespace", namespace: AllNamespaces, wantPolls: []string{"nodes:", "pods:"}, wantCluster: "kube-system/big"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -296,9 +294,9 @@ func TestMeasuredUsageClusterPods(t *testing.T) {
 				}}
 				deps := Deps{Ctx: t.Context(), Usage: usage}
 				watcher := new(int)
-				_ = measuredUsage(deps, tc.namespace, tc.clusterPods, watcher, nil)
+				_ = measuredUsage(deps, tc.namespace, watcher, nil)
 				synctest.Wait()
-				m := measuredUsage(deps, tc.namespace, tc.clusterPods, watcher, nil)
+				m := measuredUsage(deps, tc.namespace, watcher, nil)
 				mu.Lock()
 				got := make([]string, 0, len(polls))
 				for p := range polls {
@@ -309,11 +307,7 @@ func TestMeasuredUsageClusterPods(t *testing.T) {
 				if !slices.Equal(got, tc.wantPolls) {
 					t.Errorf("polls = %v, want %v", got, tc.wantPolls)
 				}
-				_, ok := m.clusterPods[tc.wantCluster]
-				switch {
-				case tc.wantCluster == "" && (m.clusterPods != nil || m.clusterPodsReason != "not measured"):
-					t.Errorf("clusterPods = %v (%q), want none", m.clusterPods, m.clusterPodsReason)
-				case tc.wantCluster != "" && (!ok || m.clusterPodsReason != ""):
+				if _, ok := m.clusterPods[tc.wantCluster]; !ok || m.clusterPodsReason != "" {
 					t.Errorf("clusterPods = %v (%q), want %s", m.clusterPods, m.clusterPodsReason, tc.wantCluster)
 				}
 			})

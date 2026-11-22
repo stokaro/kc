@@ -37,81 +37,13 @@ func measuredReport(t *testing.T, ns string, m *overviewMeasured, objs ...crclie
 
 func onNode(p *corev1.Pod, node string) *corev1.Pod { p.Spec.NodeName = node; return p }
 
-// TestCapacityFlag checks the order of the capacity flags: a failure beats
-// a warning, and among warnings overcommitted beats under-requested beats
-// high.
-func TestCapacityFlag(t *testing.T) {
-	t.Parallel()
-	cfg := appconfig.DefaultOverview()
-	tests := []struct {
-		name          string
-		req, lim, use float64
-		hasUse        bool
-		wantSev       overviewSeverity
-		wantFlag      string
-	}{
-		{name: "idle", req: 10, lim: 20, use: 5, hasUse: true, wantSev: severityOK, wantFlag: "ok"},
-		{name: "requests full", req: 96, wantSev: severityFailed, wantFlag: "full"},
-		{name: "usage full", req: 50, use: 91, hasUse: true, wantSev: severityFailed, wantFlag: "full"},
-		{name: "usage full is ignored without usage", req: 50, use: 91, wantSev: severityOK, wantFlag: "ok"},
-		{name: "overcommitted beats under-requested", req: 10, lim: 120, use: 55, hasUse: true, wantSev: severityWarning, wantFlag: "overcommitted"},
-		{name: "under-requested: the mba case", req: 10, lim: 64, use: 55, hasUse: true, wantSev: severityWarning, wantFlag: flagUnderRequested},
-		{name: "under-requested needs the factor", req: 30, lim: 64, use: 55, hasUse: true, wantSev: severityOK, wantFlag: "ok"},
-		{name: "under-requested needs the minimum usage", req: 2, lim: 10, use: 20, hasUse: true, wantSev: severityOK, wantFlag: "ok"},
-		{name: "usage high", req: 70, use: 85, hasUse: true, wantSev: severityWarning, wantFlag: "high"},
-		{name: "requests high", req: 85, use: 10, hasUse: true, wantSev: severityWarning, wantFlag: "high"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			sev, flag := capacityFlag(cfg, tc.req, tc.lim, tc.hasUse, tc.use)
-			if sev != tc.wantSev || flag != tc.wantFlag {
-				t.Fatalf("capacityFlag(req %v, lim %v, use %v/%v) = %v %q, want %v %q", tc.req, tc.lim, tc.use, tc.hasUse, sev, flag, tc.wantSev, tc.wantFlag)
-			}
-		})
-	}
-}
-
-// TestOverviewCapacityUnderRequested reproduces the issue's example: a node
-// that uses 55% of its memory while its pods request 10%.
-func TestOverviewCapacityUnderRequested(t *testing.T) {
-	t.Parallel()
-	busy := onNode(withPod(overviewRunningPod("a", "busy"), func(p *corev1.Pod) {
-		p.Spec.Containers[0].Resources = resources("100m", "1Gi", "", "")
-	}), "mba")
-	quiet := onNode(withPod(overviewRunningPod("a", "quiet"), func(p *corev1.Pod) {
-		p.Spec.Containers[0].Resources = resources("100m", "1Gi", "", "")
-	}), "quiet")
-	m := &overviewMeasured{nodes: map[string]usageValues{
-		"mba":   {cpu: 400, mem: 5632 << 20}, // 55% of 10Gi
-		"quiet": {cpu: 100, mem: 1 << 30},
-	}}
-	r := measuredReport(t, AllNamespaces, m, readyNode("mba", "10", "10Gi", 110), readyNode("quiet", "10", "10Gi", 110), busy, quiet)
-	mem := mustFinding(t, r, "capacity/memory")
-	if mem.state != flagUnderRequested || mem.severity != severityWarning {
-		t.Fatalf("memory = %q %v, want %s warning", mem.state, mem.severity, flagUnderRequested)
-	}
-	if mem.value != "use 32% req 10% lim 0%" {
-		t.Fatalf("memory value = %q", mem.value)
-	}
-	if got := targetKeys(mem); !slices.Equal(got, []string{"nodes:mba", "nodes:quiet"}) {
-		t.Fatalf("memory targets = %v, want the flagged node first", got)
-	}
-	if !strings.HasSuffix(mem.targets[0].value, " "+flagUnderRequested) || strings.Contains(mem.targets[1].value, flagUnderRequested) {
-		t.Fatalf("target values = %q, %q", mem.targets[0].value, mem.targets[1].value)
-	}
-	if cpu := mustFinding(t, r, "capacity/cpu"); cpu.state != "ok" {
-		t.Fatalf("cpu = %q %q, want ok", cpu.value, cpu.state)
-	}
-}
-
 func TestOverviewCapacityUsageReasonInExplain(t *testing.T) {
 	t.Parallel()
 	m := &overviewMeasured{nodesReason: "metrics.k8s.io is not served by this cluster"}
 	r := measuredReport(t, AllNamespaces, m, readyNode("n1", "4", "8Gi", 10))
 	f := mustFinding(t, r, "capacity/cpu")
-	if !strings.HasPrefix(f.value, "use n/a") || f.unavailable != "" {
-		t.Fatalf("cpu = %q unavailable %q, want use n/a and the row still computed", f.value, f.unavailable)
+	if f.value != "pods n/a req 0% lim 0% of alloc, node n/a" || f.unavailable != "" {
+		t.Fatalf("cpu = %q unavailable %q, want n/a usage and the row still computed", f.value, f.unavailable)
 	}
 	if !strings.Contains(f.explain, "not served by this cluster") {
 		t.Fatalf("explain does not carry the usage reason:\n%s", f.explain)
@@ -452,7 +384,7 @@ func TestOverviewEngineMeasures(t *testing.T) {
 			time.Sleep(time.Second)
 			synctest.Wait()
 		}
-		if got := mustFinding(t, r, "capacity/cpu").value; got != "use 50% req 0% lim 0%" {
+		if got := mustFinding(t, r, "capacity/cpu").value; got != "pods 0% req 0% lim 0% of alloc, node 50% of cap" {
 			t.Fatalf("cpu = %q", got)
 		}
 		if got := mustFinding(t, r, "capacity/disk").value; got != "50% (50/100Gi)" {
@@ -464,8 +396,8 @@ func TestOverviewEngineMeasures(t *testing.T) {
 		mu.Lock()
 		got := append([]string(nil), fetched...)
 		mu.Unlock()
-		if !slices.Contains(got, "nodes::true") || !slices.Contains(got, "pods:a:true") {
-			t.Fatalf("polls = %v, want metrics-only pollers for nodes and the namespace's pods", got)
+		if !slices.Contains(got, "nodes::true") || !slices.Contains(got, "pods:a:true") || !slices.Contains(got, "pods::true") {
+			t.Fatalf("polls = %v, want metrics-only pollers for nodes, the namespace's pods and every namespace's pods", got)
 		}
 		if stats.Load() != 1 {
 			t.Fatalf("stats requests = %d, want 1 before the minute is over", stats.Load())
@@ -501,7 +433,7 @@ func TestMeasuredUsageReasons(t *testing.T) {
 			}
 		})
 	}
-	if m := measuredUsage(Deps{}, "", true, new(int), nil); m.nodesReason != "usage metrics are off" || m.podsReason != "usage metrics are off" {
+	if m := measuredUsage(Deps{}, "", new(int), nil); m.nodesReason != "usage metrics are off" || m.podsReason != "usage metrics are off" {
 		t.Fatalf("without a registry = %+v", m)
 	}
 }
