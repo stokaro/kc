@@ -269,6 +269,7 @@ func TestVersionWithoutClusterAccess(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			// #nosec G204 G702 -- the test runs its own test binary.
 			cmd := exec.CommandContext(t.Context(), os.Args[0], tc.args...)
 			cmd.Env = offlineEnv(t)
 			var stdout, stderr bytes.Buffer

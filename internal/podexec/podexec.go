@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"sync"
 
@@ -105,7 +106,19 @@ func (q *SizeQueue) Push(width, height int) {
 	case <-q.ch:
 	default:
 	}
-	q.ch <- remotecommand.TerminalSize{Width: uint16(width), Height: uint16(height)}
+	q.ch <- remotecommand.TerminalSize{Width: clampUint16(width), Height: clampUint16(height)}
+}
+
+// clampUint16 limits a terminal dimension to the uint16 range of a
+// TerminalSize.
+func clampUint16(n int) uint16 {
+	switch {
+	case n < 0:
+		return 0
+	case n > math.MaxUint16:
+		return math.MaxUint16
+	}
+	return uint16(n)
 }
 
 // Next blocks until a size arrives; nil ends the resize loop of the stream.

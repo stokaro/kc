@@ -68,7 +68,8 @@ func assetsDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	for _, name := range []string{"etcd", "kube-apiserver"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		// #nosec G306 -- the stand-in binaries must be executable.
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -80,7 +81,7 @@ func TestCheckAssets(t *testing.T) {
 	good := assetsDir(t)
 	noExec := t.TempDir()
 	for _, name := range []string{"etcd", "kube-apiserver"} {
-		if err := os.WriteFile(filepath.Join(noExec, name), nil, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(noExec, name), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -271,6 +272,7 @@ func TestChildStart(t *testing.T) {
 func TestRequiredInvalidAssetsFails(t *testing.T) {
 	t.Parallel()
 	run := func(extra ...string) (string, error) {
+		// #nosec G204 G702 -- the test runs its own test binary.
 		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestChildStart$", "-test.v")
 		cmd.Env = append(os.Environ(), childEnv+"=1", assetsEnv+"=/nonexistent/kc-envtest", RequireEnv+"=", SkipEnv+"=")
 		cmd.Env = append(cmd.Env, extra...)

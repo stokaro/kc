@@ -239,9 +239,9 @@ func TestRegistryConcurrentStarts(t *testing.T) {
 	reg := portforward.NewRegistry(t.Context())
 	const n = 20
 	var wg sync.WaitGroup
-	for i := range n {
+	for i := range int32(n) {
 		wg.Go(func() {
-			if _, err := reg.Start(t.Context(), spec("p"), newFakeRunner(int32(i+1))); err != nil {
+			if _, err := reg.Start(t.Context(), spec("p"), newFakeRunner(i+1)); err != nil {
 				t.Errorf("Start: %v", err)
 			}
 		})

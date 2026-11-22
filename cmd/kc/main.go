@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/go-logr/logr"
@@ -146,23 +147,27 @@ func main() {
 		ns = strings.TrimSpace(cli.Namespace)
 	}
 
-	// After the UI exits, run a minimal cleanup mirroring the manual sequence:
-	// hop to alt screen, disable kitty keyboard protocol, return to primary.
-	defer func() {
-		fmt.Print("\033[?1049h") // alt screen on
-		fmt.Print("\033[>u")     // kitty: push zero (disable)
-		fmt.Print("\033[?1049l") // back to primary
-	}()
-
 	// Run the application
 	runCfg := newRunConfig(&cli, intent, ns)
 	runCfg.DebugLogPath = debugLogPath
 	runCfg.SwitchToFileLogger = switchToUILogger
 	runCfg.ReadOnly = readOnlyOverride(&cli)
-	if err := ui.Run(context.Background(), runCfg); err != nil {
+	if err := runUI(runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// runUI runs the TUI. After the UI exits, it runs a minimal cleanup
+// mirroring the manual sequence: hop to alt screen, disable kitty keyboard
+// protocol, return to primary.
+func runUI(cfg ui.RunConfig) error {
+	defer func() {
+		fmt.Print("\033[?1049h") // alt screen on
+		fmt.Print("\033[>u")     // kitty: push zero (disable)
+		fmt.Print("\033[?1049l") // back to primary
+	}()
+	return ui.Run(context.Background(), cfg)
 }
 
 // cliOptions returns the kong options main parses the command line with.
@@ -393,7 +398,10 @@ func startPprofServer(addr string) {
 
 	go func() {
 		fmt.Fprintf(os.Stderr, "pprof: listening on http://%s/debug/pprof/\n", addr)
-		if err := http.ListenAndServe(addr, mux); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// No read or write timeout: a CPU profile or trace streams for as long
+		// as the client asks.
+		srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "pprof server error: %v\n", err)
 		}
 	}()

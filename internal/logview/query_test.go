@@ -1,6 +1,7 @@
 package logview_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stokaro/kc/internal/logview"
@@ -111,13 +112,5 @@ func TestParseQueryErrors(t *testing.T) {
 }
 
 func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }

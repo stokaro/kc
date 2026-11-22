@@ -33,7 +33,10 @@ import (
 	tablecache "github.com/stokaro/kc/internal/tablecache"
 )
 
-func init() {
+// init registers the table types in the client-go global scheme before any
+// goroutine decodes with it. A lazy registration in New would write to the
+// scheme while other clusters read it.
+func init() { //nolint:gochecknoinits // the global scheme must be complete before it is shared, see above
 	_ = tablecache.AddToScheme(scheme.Scheme)
 }
 

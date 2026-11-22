@@ -53,6 +53,7 @@ func (m *model) Init() tea.Cmd {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
+	// #nosec G204 G702 -- the sample runs the user's own $SHELL.
 	cmd := exec.Command(shell)
 	cmd.Env = os.Environ()
 	return tea.Batch(

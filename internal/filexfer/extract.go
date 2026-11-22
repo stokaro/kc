@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 )
 
 // extract reads a tar stream and hands its entries to w. Regular files and
@@ -26,7 +25,7 @@ func extract(ctx context.Context, r io.Reader, w *writer) error {
 			return fmt.Errorf("reading archive: %w", err)
 		}
 		w.entries++
-		mode := fs.FileMode(hdr.Mode).Perm()
+		mode := hdr.FileInfo().Mode().Perm()
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := w.dir(hdr.Name); err != nil {

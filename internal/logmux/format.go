@@ -12,7 +12,7 @@ import (
 // palette holds the prefix colors. They are the basic ANSI colors, so they
 // follow the terminal's color scheme; red and white are left out because
 // they read as errors or as plain text.
-var palette = []string{"6", "2", "5", "3", "4", "14", "10", "13", "11", "12"}
+var palette = [...]string{"6", "2", "5", "3", "4", "14", "10", "13", "11", "12"}
 
 // Color returns the ANSI color of a target's prefix. It depends only on the
 // `pod/container` name, so a target keeps its color across restarts and

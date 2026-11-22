@@ -24,6 +24,7 @@ func localExec(env []string, record *[]string) execFunc {
 		if record != nil {
 			*record = append([]string{container}, command...)
 		}
+		// #nosec G204 -- the fake runs the script the test hands to tar extraction.
 		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr, cmd.Env = streams.Stdin, streams.Stdout, streams.Stderr, env
 		return cmd.Run()
@@ -88,6 +89,7 @@ func readTree(t *testing.T, dir string) map[string]string {
 		case d.IsDir():
 			out[rel+"/"] = ""
 		default:
+			// #nosec G122 -- the test reads back a temporary tree it created.
 			data, err := os.ReadFile(p)
 			if err != nil {
 				return err
@@ -319,7 +321,7 @@ func writeFile(t *testing.T, p, data string) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

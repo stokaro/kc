@@ -210,7 +210,7 @@ func (m *Mux) SetTargets(targets []Target) {
 }
 
 // Notify adds a notice line to the merged stream.
-func (m *Mux) Notify(format string, args ...any) {
+func (m *Mux) Notify(format string, args ...any) { //nolint:goprintffuncname // the rename to Notifyf also changes internal/ui, left for a follow-up in #128
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()

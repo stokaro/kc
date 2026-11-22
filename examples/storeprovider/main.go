@@ -36,6 +36,16 @@ func main() {
 	}
 	fmt.Printf("Using context: %s (kubeconfig: %s)\n", ctx.Name, ctx.Kubeconfig.Path)
 
+	if err := listNamespaces(ctx); err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("\nCluster pool demo completed.")
+}
+
+// listNamespaces starts a cluster pool, acquires the cluster of ctx and
+// prints its namespaces.
+func listNamespaces(ctx *kubeconfig.Context) error {
 	// Create a cluster pool with 2m TTL and 30s discovery refresh, then start it
 	pool := kccluster.NewPool(2*time.Minute, 30*time.Second)
 	pool.Start()
@@ -47,7 +57,7 @@ func main() {
 	key := kccluster.Key{KubeconfigPath: ctx.Kubeconfig.Path, ContextName: ctx.Name}
 	lease, err := pool.Acquire(appCtx, key, nil)
 	if err != nil {
-		log.Fatalf("pool acquire: %v", err)
+		return fmt.Errorf("pool acquire: %w", err)
 	}
 	defer lease.Release()
 	cl := lease.Cluster()
@@ -55,18 +65,18 @@ func main() {
 	// List namespaces using the cluster helpers
 	gvrNS, err := cl.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
 	if err != nil {
-		log.Fatalf("map GVK to GVR: %v", err)
+		return fmt.Errorf("map GVK to GVR: %w", err)
 	}
 	ul, err := cl.ListByGVR(appCtx, gvrNS, "")
 	if err != nil {
-		log.Fatalf("list namespaces: %v", err)
+		return fmt.Errorf("list namespaces: %w", err)
 	}
 	fmt.Printf("\nNamespaces (%d):\n", len(ul.Items))
 	for _, it := range ul.Items {
 		fmt.Printf(" - %s\n", it.GetName())
 	}
 
-	fmt.Println("\nCluster pool demo completed.")
+	return nil
 }
 
 // selectCurrentContext prefers $KUBECONFIG (first path) current-context, else any kubeconfig's current-context, else first.

@@ -125,7 +125,7 @@ func ParsePair(s string) (Pair, error) {
 	case "":
 		lp = 0
 	default:
-		n, err := strconv.Atoi(local)
+		n, err := strconv.ParseInt(local, 10, 64)
 		if err != nil {
 			if !found {
 				// "http" alone: a named remote port, the same port locally.
@@ -163,7 +163,7 @@ func validPortName(s string) bool {
 // PodPort resolves the remote side of a pod forward: a number is used as
 // is, a name is looked up in the pod's container ports.
 func PodPort(pod *corev1.Pod, remote string) (int32, error) {
-	if n, err := strconv.Atoi(remote); err == nil {
+	if n, err := strconv.ParseInt(remote, 10, 32); err == nil {
 		return int32(n), nil
 	}
 	return kubectlutil.LookupContainerPortNumberByName(*pod, remote)
@@ -174,7 +174,7 @@ func PodPort(pod *corev1.Pod, remote string) (int32, error) {
 // and a named target port is looked up in the pod. It returns the service
 // port and the pod port.
 func ServicePort(svc *corev1.Service, pod *corev1.Pod, remote string) (svcPort, podPort int32, err error) {
-	if n, convErr := strconv.Atoi(remote); convErr == nil {
+	if n, convErr := strconv.ParseInt(remote, 10, 32); convErr == nil {
 		svcPort = int32(n)
 	} else {
 		svcPort, err = kubectlutil.LookupServicePortNumberByName(*svc, remote)

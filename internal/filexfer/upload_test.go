@@ -125,6 +125,7 @@ func localTree(t *testing.T, entries map[string]string) string {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
+		// #nosec G306 -- the test checks that the archive keeps the 0644 mode.
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}

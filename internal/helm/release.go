@@ -21,7 +21,7 @@ import (
 
 // Storage labels and keys used by Helm's Secret and ConfigMap drivers.
 const (
-	SecretType   = "helm.sh/release.v1"
+	SecretType   = "helm.sh/release.v1" // #nosec G101 -- a Secret type name, not a credential
 	ReleaseKey   = "release"
 	OwnerLabel   = "owner"
 	OwnerValue   = "helm"
