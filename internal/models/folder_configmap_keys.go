@@ -2,13 +2,26 @@ package models
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"sort"
 
 	table "github.com/sttts/kc/internal/table"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// ConfigMapKeysFolder lists the data keys for a ConfigMap.
+// Values of the Type column in a ConfigMap data folder. They name the
+// ConfigMap field a key lives in: data holds UTF-8 strings, binaryData
+// holds arbitrary bytes.
+const (
+	configMapKeyText   = "text"
+	configMapKeyBinary = "binary"
+)
+
+var configMapGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+
+// ConfigMapKeysFolder lists the data and binaryData keys of a ConfigMap.
 type ConfigMapKeysFolder struct {
 	*BaseFolder
 	Namespace string
@@ -18,22 +31,20 @@ type ConfigMapKeysFolder struct {
 // NewConfigMapKeysFolder constructs the ConfigMap data keys folder.
 func NewConfigMapKeysFolder(deps Deps, parentPath []string, namespace, name string) *ConfigMapKeysFolder {
 	path := append(append([]string{}, parentPath...), "data")
-	cols := []table.Column{{Title: " Name"}}
+	cols := []table.Column{{Title: " Name"}, {Title: " Type"}, {Title: " Size"}}
 	base := NewBaseFolder(deps, cols, path)
 	folder := &ConfigMapKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
-	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-	rows := newLiveKeyRowSource(deps, gvr, namespace, name, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	rows := newLiveKeyRowSource(deps, configMapGVR, namespace, name, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
 	base.SetRowSource(rows)
 	return folder
 }
 
 func (f *ConfigMapKeysFolder) Parent() (schema.GroupVersionResource, string, string) {
-	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}, f.Namespace, f.Name
+	return configMapGVR, f.Namespace, f.Name
 }
 
 func (f *ConfigMapKeysFolder) buildRows(ctx context.Context) ([]table.Row, error) {
-	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-	obj, err := f.Deps.Cl.GetByGVR(ctx, gvr, f.Namespace, f.Name)
+	obj, err := f.Deps.Cl.GetByGVR(ctx, configMapGVR, f.Namespace, f.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -44,19 +55,82 @@ func (f *ConfigMapKeysFolder) buildRows(ctx context.Context) ([]table.Row, error
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]string, 0, len(cm.Data))
-	for k := range cm.Data {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	rows := make([]table.Row, 0, len(keys))
+	entries := configMapKeyEntries(cm.Data, cm.BinaryData)
+	rows := make([]table.Row, 0, len(entries))
 	style := WhiteStyle()
-	for _, k := range keys {
-		rowPath := append(append([]string{}, f.Path()...), k)
-		item := NewSimpleItem(k, []string{k}, rowPath, style)
-		item.WithViewContent(keyViewContent(f.Deps, gvr, f.Namespace, f.Name, k, false))
-		item.SetViewCommand(keyViewCommand(f.Deps, "configmap", f.Namespace, f.Name, k, false))
+	for _, e := range entries {
+		rowPath := append(append([]string{}, f.Path()...), e.key)
+		item := NewSimpleItem(e.key, []string{e.key, e.kind, formatBytes(int64(e.size))}, rowPath, style)
+		item.WithViewContent(configMapKeyViewContent(f.Deps, f.Namespace, f.Name, e.key))
+		item.SetViewCommand(configMapKeyViewCommand(f.Deps, f.Namespace, f.Name, e.key, e.kind == configMapKeyBinary))
 		rows = append(rows, item)
 	}
 	return rows, nil
+}
+
+// configMapKeyEntry is one row of the ConfigMap data folder.
+type configMapKeyEntry struct {
+	key  string
+	kind string // configMapKeyText or configMapKeyBinary
+	size int    // bytes of the value; decoded bytes for binaryData
+}
+
+// configMapKeyEntries merges the keys of data and binaryData, sorted by
+// key. The API server refuses a key present in both fields, so the key
+// alone identifies a row.
+func configMapKeyEntries(data map[string]string, binaryData map[string][]byte) []configMapKeyEntry {
+	entries := make([]configMapKeyEntry, 0, len(data)+len(binaryData))
+	for k, v := range data {
+		entries = append(entries, configMapKeyEntry{key: k, kind: configMapKeyText, size: len(v)})
+	}
+	for k, v := range binaryData {
+		entries = append(entries, configMapKeyEntry{key: k, kind: configMapKeyBinary, size: len(v)})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+	return entries
+}
+
+func configMapKeyViewContent(deps Deps, namespace, name, key string) ViewContentFunc {
+	return func() (string, string, string, string, string, error) {
+		obj, err := getForView(deps, configMapGVR, namespace, name)
+		if err != nil {
+			return "", "", "", "", "", err
+		}
+		if obj == nil {
+			return "", "", "", "", "", ErrNoViewContent
+		}
+		return configMapKeyView(obj.Object, name, key)
+	}
+}
+
+// configMapKeyView returns the value of one ConfigMap key for the viewer
+// and for F5. The body is always the exact value: a Go string carries
+// arbitrary bytes, and F5 writes the body unchanged. Binary values are
+// marked with binaryMIME so the viewer shows a summary and a hex dump
+// instead of writing the bytes to the terminal.
+func configMapKeyView(obj map[string]interface{}, name, key string) (title, body, lang, mime, filename string, err error) {
+	title = fmt.Sprintf("%s:%s", name, key)
+	filename = fmt.Sprintf("%s_%s", name, key)
+	if v, found, _ := unstructured.NestedFieldNoCopy(obj, "data", key); found {
+		s, ok := v.(string)
+		if !ok {
+			return "", "", "", "", "", fmt.Errorf("configmap %s: data key %q is not a string", name, key)
+		}
+		if !isProbablyText([]byte(s)) {
+			return title, s, "", binaryMIME, filename, nil
+		}
+		return title, s, "", "", filename, nil
+	}
+	if v, found, _ := unstructured.NestedFieldNoCopy(obj, "binaryData", key); found {
+		s, ok := v.(string)
+		if !ok {
+			return "", "", "", "", "", fmt.Errorf("configmap %s: binaryData key %q is not a base64 string", name, key)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			return "", "", "", "", "", fmt.Errorf("configmap %s: decoding binaryData key %q: %w", name, key, err)
+		}
+		return title, string(decoded), "", binaryMIME, filename, nil
+	}
+	return title, "", "", "", filename, nil
 }

@@ -63,7 +63,26 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 		return nil, err
 	}
 	groupItems = append(groupItems, clusterItems...)
+	if row, ok := portForwardsRootRow(f.Deps, f.Path()); ok {
+		rows = append(rows, row)
+	}
 	rows = append(rows, f.ResourcesFolder.finalize(ctx, groupItems)...)
 
 	return rows, nil
+}
+
+// RegisterDirtyListener also repaints the root when a port forward starts
+// or ends, so the /port-forwards entry and its count stay current.
+func (f *RootFolder) RegisterDirtyListener(fn func()) func() {
+	cancel := f.ClusterResourcesFolder.RegisterDirtyListener(fn)
+	if f.Deps.PortForwards == nil {
+		return cancel
+	}
+	unsubscribe := f.Deps.PortForwards.Subscribe(f.Refresh)
+	return func() {
+		unsubscribe()
+		if cancel != nil {
+			cancel()
+		}
+	}
 }

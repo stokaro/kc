@@ -77,7 +77,7 @@ brews:
       branch: main
     directory: Formula
     homepage: https://github.com/sttts/kc
-    description: Two-panel Kubernetes TUI built entirely with AI
+    description: Two-panel Kubernetes TUI inspired by Midnight Commander
     license: Apache-2.0
     commit_author:
       name: kc release bot
@@ -89,7 +89,7 @@ homebrew_casks:
   - name: kc
     ids: [kc]
     homepage: https://github.com/sttts/kc
-    description: Two-panel Kubernetes TUI built entirely with AI
+    description: Two-panel Kubernetes TUI inspired by Midnight Commander
     license: Apache-2.0
     directory: Casks
     repository:
