@@ -2844,6 +2844,9 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 	if _, ok := item.(*models.PodFSDirItem); ok {
 		return a.ShowToast("To copy a directory, open a local directory in the other panel with M-l", 4*time.Second)
 	}
+	if _, ok := item.(models.LocalEntryItem); ok {
+		return a.ShowToast("To copy into a container, open a container folder in the other panel", 4*time.Second)
+	}
 
 	if logs, ok := item.(models.LogsProvider); ok {
 		if a.cl == nil {
