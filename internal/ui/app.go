@@ -19,6 +19,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	readmedoc "github.com/sttts/kc"
+	"github.com/sttts/kc/internal/atomicfile"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
@@ -102,13 +103,6 @@ type restartNamespaceCommandMsg struct {
 }
 
 type startupIntentMsg struct{}
-
-type deleteTarget struct {
-	panelIdx  int
-	gvr       schema.GroupVersionResource
-	namespace string
-	name      string
-}
 
 type cachedView struct {
 	view   string
@@ -223,6 +217,7 @@ type App struct {
 	toastLogger            *ToastLogger
 	pendingCmdsMu          sync.Mutex
 	pendingCmds            []tea.Cmd
+	cfgStore               *appconfig.Store // ~/.kc/config.yaml; see configStore
 	leftConfig             *appconfig.Config
 	rightConfig            *appconfig.Config
 	namespaceInput         *NamespaceCreateModel
@@ -331,12 +326,8 @@ func NewApp() *App {
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
-	// Load config (best-effort)
-	cfg, err := appconfig.Load()
-	if err != nil {
-		cfg = appconfig.Default()
-	}
-	*a.cfg = *cfg
+	loadToast := a.loadConfig()
+	cfg := a.cfg
 	a.modalManager.SyncEscTimeout()
 	leftPercent, rightPercent := normalizePanelWidthPercents(cfg.Panel.Width.LeftPercent, cfg.Panel.Width.RightPercent)
 	a.leftPanelWidthPercent = leftPercent
@@ -354,6 +345,7 @@ func (a *App) Init() tea.Cmd {
 		},
 		a.waitFolderDirtyEvents(),
 		a.waitReadErrors(),
+		loadToast,
 	)
 }
 
@@ -1587,15 +1579,23 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 		} else {
 			a.cfg.Viewer.Mode = appconfig.ViewerModeScroll
 		}
-		if msg.SaveDefault {
-			_ = appconfig.Save(a.cfg)
-		}
+	}
+	var cmd tea.Cmd
+	switch {
+	case msg.SaveDefault:
+		theme, mode := a.cfg.Viewer.Theme, a.cfg.Viewer.Mode
+		cmd = a.saveDefaults(func(c *appconfig.Config) {
+			c.Viewer.Theme = theme
+			c.Viewer.Mode = mode
+		})
+	case msg.Accept:
+		cmd = a.sessionOnly()
 	}
 	if msg.Close {
 		a.hideModal()
 	}
 	a.viewerOptionsTarget = nil
-	return nil
+	return cmd
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
@@ -1800,14 +1800,9 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	gvr := obj.GVR()
-	name := obj.Name()
-	namespace := obj.Namespace()
-	target := deleteTarget{
-		panelIdx:  panelIdx,
-		gvr:       gvr,
-		namespace: namespace,
-		name:      name,
+	target, err := deleteTargetFor(panelIdx, obj)
+	if err != nil {
+		return a.ShowToast(fmt.Sprintf("Cannot delete %s: %v", kubectlResourceRef(obj.GVR(), obj.Name()), err), 5*time.Second)
 	}
 	a.pendingDelete = &target
 
@@ -1822,14 +1817,14 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 			return nil
 		}
 	}
-	resourceLabel := kubectlResourceRef(gvr, name)
-	a.deleteConfirm.Configure(resourceLabel, namespace)
+	resourceLabel := kubectlResourceRef(target.gvr, target.name)
+	a.deleteConfirm.Configure(resourceLabel, target.namespace, target.context)
 	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
 	modal.SetContent(a.deleteConfirm)
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
 	winW := min(max(50, a.width/2), a.width-4)
-	winH := min(8, a.height-4)
+	winH := min(9, a.height-4)
 	if winW < 40 {
 		winW = 40
 	}
@@ -1868,27 +1863,14 @@ func (a *App) createNamespaceWithName(name string) tea.Cmd {
 	})
 }
 
+// performDelete deletes the confirmed object instance on the cluster it
+// was read from; see executeDelete.
 func (a *App) performDelete(target deleteTarget) tea.Cmd {
+	root := a.ctx
 	return a.withBusy("Delete", 300*time.Millisecond, func() tea.Msg {
-		if a.cl == nil {
-			return resourceDeletedMsg{target: target, err: fmt.Errorf("cluster not ready")}
-		}
-		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+		ctx, cancel := context.WithTimeout(root, requestTimeout)
 		defer cancel()
-		kind, err := a.cl.RESTMapper().KindFor(target.gvr)
-		if err != nil {
-			return resourceDeletedMsg{target: target, err: err}
-		}
-		obj := &unstructured.Unstructured{}
-		obj.SetGroupVersionKind(kind)
-		obj.SetName(target.name)
-		if target.namespace != "" {
-			obj.SetNamespace(target.namespace)
-		}
-		if err := a.cl.GetClient().Delete(ctx, obj); err != nil {
-			return resourceDeletedMsg{target: target, err: err}
-		}
-		return resourceDeletedMsg{target: target}
+		return executeDelete(ctx, target)
 	})
 }
 
@@ -2830,16 +2812,20 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 	if filename == "" {
 		filename = "resource.txt"
 	}
+	return a.showCopyDialog(viewContentCopyRequest(a.modalTitleFromItem(item, title), filename, body))
+}
+
+// viewContentCopyRequest copies a viewer body as is. The body may be raw
+// bytes (binary ConfigMap and Secret keys), so it must not be transformed.
+func viewContentCopyRequest(subject, filename, body string) *copyRequest {
 	data := []byte(body)
-	subject := a.modalTitleFromItem(item, title)
-	req := &copyRequest{
+	return &copyRequest{
 		subject:  subject,
 		filename: filename,
 		fetch: func(context.Context) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(data)), nil
 		},
 	}
-	return a.showCopyDialog(req)
 }
 
 func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
@@ -2914,22 +2900,9 @@ func (a *App) copyToPath(req *copyRequest, dest string) error {
 		return err
 	}
 	defer reader.Close()
-	file, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	closed := false
-	defer func() {
-		if !closed {
-			_ = file.Close()
-		}
-	}()
-	if _, err := io.Copy(file, reader); err != nil {
-		_ = os.Remove(dest)
-		return err
-	}
-	closed = true
-	return file.Close()
+	// The destination changes only after the whole stream was written, and a
+	// new export is private: it may hold decoded Secret values.
+	return atomicfile.Write(ctx, dest, reader)
 }
 
 type copyRequest struct {
