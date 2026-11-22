@@ -59,8 +59,8 @@ func (h *harness) last() *fakeSource { return h.opened[len(h.opened)-1] }
 
 func bars(cpu, mem float64) []models.InfoBar {
 	return []models.InfoBar{
-		{Label: "CPU", Known: true, Percent: cpu, Detail: "use 1.0/4.0 cores, req 10%, lim 20%", Flag: "ok", Health: models.RowHealthOK},
-		{Label: "Memory", Known: true, Percent: mem, Detail: "use 5.5/10 Gi, req 10%, lim 64%", Flag: "under-req", Health: models.RowHealthNotReady},
+		{Label: "CPU", Known: true, Usage: true, Percent: cpu, Detail: "pods 1.0/4.0 cores allocatable, 25%", More: []string{"node 1.2/4.0 cores capacity, 30%", "req 10%, lim 20%"}, Flag: "ok", Health: models.RowHealthOK},
+		{Label: "Memory", Known: true, Usage: true, Percent: mem, Detail: "pods 5.5/10.0 Gi allocatable, 55% (under-req)", More: []string{"node 6.0/12.0 Gi capacity, 50%", "req 10%, lim 64%"}, Flag: "under-req", Health: models.RowHealthNotReady},
 		{Label: "Pods", Known: true, Percent: 25, Detail: "27/110", Flag: "ok"},
 		{Label: "Disk", Detail: "forbidden: nodes/proxy"},
 	}
@@ -137,7 +137,8 @@ func TestWidgetViewAndHistory(t *testing.T) {
 	view := ansi.Strip(strings.Join(h.w.lines(60, 40), "\n"))
 	for _, want := range []string{
 		"ctx: namespace ns", "usage measured 5s ago",
-		"CPU", " 25%", "use 1.0/4.0 cores", "55% under-req",
+		"CPU", " 25%", "pods 1.0/4.0 cores allocatable", "55% under-req",
+		"        node 6.0/12.0 Gi capacity, 50%\n        req 10%, lim 64%",
 		"Disk   n/a", "forbidden: nodes/proxy",
 		"Top pods by memory", "2048Mi   120m  db/postgres-0",
 	} {
@@ -172,6 +173,45 @@ func TestWidgetViewAndHistory(t *testing.T) {
 	}
 	if got := len(h.w.lines(60, 3)); got != 3 {
 		t.Fatalf("lines in 3 rows = %d", got)
+	}
+}
+
+// TestWidgetRendersCapacityRows checks the Memory row of issue #165 as the
+// panel prints it: the bar's percentage is truncated and carries no
+// overcommitted word, the limits line does, and every line under the bar
+// is indented under it. A bar of requests adds no usage sample.
+func TestWidgetRendersCapacityRows(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	h := newHarness(t)
+	h.summary = models.InfoSummary{
+		UsageAt: h.now,
+		Bars: []models.InfoBar{
+			{Label: "CPU", Known: true, Percent: 14.75, Detail: "req 0.6/4.0 cores allocatable, 14%", More: []string{"lim 112% (overcommitted)", "use n/a: loading"}, Flag: "ok", Health: models.RowHealthNotReady},
+			{Label: "Memory", Known: true, Usage: true, Percent: 22.9, Detail: "pods 2.3/10.4 Gi allocatable, 22%", More: []string{"node 6.0/14.9 Gi capacity, 40%", "req 25%, lim 116% (overcommitted)"}, Flag: "ok", Health: models.RowHealthNotReady},
+		},
+		TopNote: "no pods in empty",
+	}
+	h.w.SetFocus(ctx, true)
+	_ = h.w.Init(ctx)
+	lines := h.w.lines(60, 40)
+	view := ansi.Strip(strings.Join(lines, "\n"))
+	for _, want := range []string{
+		" 14%\n        req 0.6/4.0 cores allocatable, 14%\n        lim 112% (overcommitted)\n        use n/a: loading\n",
+		" 22%\n        pods 2.3/10.4 Gi allocatable, 22%\n        node 6.0/14.9 Gi capacity, 40%\n        req 25%, lim 116% (overcommitted)\n",
+		" Top pods by memory\n   no pods in empty",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view misses %q:\n%s", want, view)
+		}
+	}
+	for _, line := range lines {
+		if s := ansi.Strip(line); strings.HasPrefix(s, " Memory") && strings.Contains(s, "overcommitted") {
+			t.Fatalf("the memory bar carries the limits' word: %q", s)
+		}
+	}
+	if h.w.history[h.w.historyKey()] != nil {
+		t.Fatal("a CPU bar of requests was recorded as usage")
 	}
 }
 

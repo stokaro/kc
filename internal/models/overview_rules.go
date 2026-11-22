@@ -93,6 +93,8 @@ type overviewReport struct {
 	// workloadsReason says why no pod can be grouped (pods cannot be
 	// read); replicaSetsReason why pods cannot be grouped by Deployment.
 	workloadsReason, replicaSetsReason string
+	// info is what the Info mode needs beyond the summaries.
+	info overviewInfoInput
 }
 
 // finding returns the finding with id, if any.
@@ -113,7 +115,7 @@ func (r *overviewReport) finding(id string) (overviewFinding, bool) {
 func computeOverview(in *overviewInput, cfg appconfig.OverviewConfig, now time.Time, m *overviewMeasured) *overviewReport {
 	cfg = cfg.Normalized()
 	if m == nil {
-		m = &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", statsReason: "not measured"}
+		m = &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", clusterPodsReason: "not measured", statsReason: "not measured"}
 	}
 	rc := ruleContext{in: in, cfg: cfg, now: now, m: m}
 	report := &overviewReport{at: now, usageAt: m.usageAt}
@@ -126,6 +128,7 @@ func computeOverview(in *overviewInput, cfg appconfig.OverviewConfig, now time.T
 	report.workloadsReason = rc.in.missingReason(ovPodsGVR)
 	report.replicaSetsReason = rc.in.missingReason(ovReplicaSetsGVR)
 	report.pods = summarizePods(&rc, byPod)
+	report.info = infoInput(&rc)
 	return report
 }
 
