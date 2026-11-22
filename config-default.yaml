@@ -124,6 +124,9 @@ overview:
   # The kubelet stats summary (one request per node) is skipped on
   # clusters with more nodes than this.
   statsMaxNodes: 50
+  # A cert-manager Certificate is flagged when it expires within this many
+  # days.
+  certificateExpiryDays: 14
 
 commands:
   - name: Top Nodes

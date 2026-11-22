@@ -9,6 +9,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -29,7 +30,31 @@ var (
 	ovCronJobsGVR     = schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}
 	ovPDBsGVR         = schema.GroupVersionResource{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}
 	ovHPAsGVR         = schema.GroupVersionResource{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}
+	// Certificates of cert-manager are read as unstructured objects: kc does
+	// not import cert-manager's types. A cluster without cert-manager does
+	// not serve the kind; the certificate row then says so.
+	ovCertificatesGVR = schema.GroupVersionResource{Group: "cert-manager.io", Version: "v1", Resource: "certificates"}
 )
+
+var ovCertificateGVK = schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"}
+
+// listGVK returns the GroupVersionKind of the list of gvk.
+func listGVK(gvk schema.GroupVersionKind) schema.GroupVersionKind {
+	gvk.Kind += "List"
+	return gvk
+}
+
+func newCertificate() crclient.Object {
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(ovCertificateGVK)
+	return u
+}
+
+func newCertificateList() crclient.ObjectList {
+	l := &unstructured.UnstructuredList{}
+	l.SetGroupVersionKind(listGVK(ovCertificateGVK))
+	return l
+}
 
 // overviewKind is one resource the overview watches and lists.
 type overviewKind struct {
@@ -54,6 +79,7 @@ var overviewKinds = []overviewKind{
 	{ovCronJobsGVR, true, func() crclient.Object { return &batchv1.CronJob{} }, func() crclient.ObjectList { return &batchv1.CronJobList{} }},
 	{ovPDBsGVR, true, func() crclient.Object { return &policyv1.PodDisruptionBudget{} }, func() crclient.ObjectList { return &policyv1.PodDisruptionBudgetList{} }},
 	{ovHPAsGVR, true, func() crclient.Object { return &autoscalingv2.HorizontalPodAutoscaler{} }, func() crclient.ObjectList { return &autoscalingv2.HorizontalPodAutoscalerList{} }},
+	{ovCertificatesGVR, true, newCertificate, newCertificateList},
 }
 
 // overviewInput is what one recompute reads from the cache. Pods are always
@@ -74,6 +100,7 @@ type overviewInput struct {
 	cronJobs     []batchv1.CronJob
 	pdbs         []policyv1.PodDisruptionBudget
 	hpas         []autoscalingv2.HorizontalPodAutoscaler
+	certificates []certificateInfo
 
 	// missing holds the resources that could not be read, with the reason.
 	// Rows that need them are shown dim with that reason.
@@ -118,13 +145,17 @@ func loadOverviewInput(ctx context.Context, r crclient.Reader, namespace string,
 			in.missing[k.gvr] = err.Error()
 			continue
 		}
-		in.assign(list)
+		in.assign(k.gvr, list)
 	}
 	return in
 }
 
-func (in *overviewInput) assign(list crclient.ObjectList) {
+func (in *overviewInput) assign(gvr schema.GroupVersionResource, list crclient.ObjectList) {
 	switch l := list.(type) {
+	case *unstructured.UnstructuredList:
+		if gvr == ovCertificatesGVR {
+			in.certificates = certificatesFrom(l.Items)
+		}
 	case *corev1.NodeList:
 		in.nodes = l.Items
 	case *corev1.PodList:

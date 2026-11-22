@@ -20,16 +20,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func measuredReport(t *testing.T, ns string, m *overviewMeasured, objs ...crclient.Object) *overviewReport {
 	t.Helper()
-	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(objs...).Build()
+	cl := newOverviewFakeClient(objs...)
 	in := loadOverviewInput(t.Context(), cl, ns, nil)
 	if len(in.missing) > 0 {
 		t.Fatalf("fake cache could not list: %v", in.missing)

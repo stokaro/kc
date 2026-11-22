@@ -181,6 +181,7 @@ var overviewRules = []overviewRule{
 	singleReplicaRule,
 	quotasRule,
 	hpasRule,
+	certificatesRule,
 	warningEventsRule,
 	podsRestartedRule,
 }
