@@ -30,7 +30,7 @@ const (
 
 // Summarizer is the data behind the widget: models.OverviewInfo.
 type Summarizer interface {
-	Summary(node string) models.InfoSummary
+	Summary(focus models.InfoFocus) models.InfoSummary
 	Close()
 }
 
@@ -45,6 +45,10 @@ type Target struct {
 	// Node narrows the summary to one node when the other panel's cursor
 	// is on a node.
 	Node string
+	// Workload narrows the summary to one workload when the other panel's
+	// cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or
+	// CronJob. It wins over Node.
+	Workload *models.InfoWorkload
 	// Open creates the Summarizer for Key.
 	Open func() Summarizer
 	// Hint replaces the summary when Open is nil (no cluster yet).
@@ -200,11 +204,18 @@ func (w *Widget) refresh(ctx context.Context) {
 		w.summary = models.InfoSummary{}
 		return
 	}
-	w.summary = w.src.Summary(t.Node)
+	w.summary = w.src.Summary(models.InfoFocus{Node: t.Node, Workload: t.Workload})
 	w.record()
 }
 
-func (w *Widget) historyKey() string { return w.target.Key + "|" + w.target.Node }
+// historyKey separates the samples of the scope, each node and each
+// workload. A workload key carries its full GVR.
+func (w *Widget) historyKey() string {
+	if wl := w.target.Workload; wl != nil {
+		return w.target.Key + "|" + wl.GVR.String() + "|" + wl.Namespace + "/" + wl.Name
+	}
+	return w.target.Key + "|" + w.target.Node
+}
 
 // record adds a sample when the usage was measured again.
 func (w *Widget) record() {
@@ -267,7 +278,10 @@ func (w *Widget) lines(width, height int) []string {
 		return clip(out, height)
 	}
 	scope := w.target.Label
-	if w.target.Node != "" {
+	switch {
+	case w.target.Workload != nil:
+		scope = w.target.Workload.String()
+	case w.target.Node != "":
 		scope = "node " + w.target.Node
 	}
 	add(" " + scope)

@@ -85,9 +85,13 @@ type overviewReport struct {
 	at       time.Time
 	usageAt  time.Time // when the node usage was measured; zero when unknown
 	findings []overviewFinding
-	// nodes and pods feed the Info panel mode.
-	nodes []overviewNodeSummary
-	pods  []overviewPodUsage
+	// nodes, pods and workloads feed the Info panel mode.
+	nodes     []overviewNodeSummary
+	pods      []overviewPodUsage
+	workloads map[InfoWorkload]*overviewWorkloadSummary
+	// workloadsReason says why no pod can be grouped (pods cannot be
+	// read); replicaSetsReason why pods cannot be grouped by Deployment.
+	workloadsReason, replicaSetsReason string
 }
 
 // finding returns the finding with id, if any.
@@ -116,7 +120,11 @@ func computeOverview(in *overviewInput, cfg appconfig.OverviewConfig, now time.T
 		report.findings = append(report.findings, rule(&rc))
 	}
 	report.nodes = summarizeNodes(&rc)
-	report.pods = summarizePods(&rc)
+	var byPod map[string][]InfoWorkload
+	report.workloads, byPod = summarizeWorkloads(&rc)
+	report.workloadsReason = rc.in.missingReason(ovPodsGVR)
+	report.replicaSetsReason = rc.in.missingReason(ovReplicaSetsGVR)
+	report.pods = summarizePods(&rc, byPod)
 	return report
 }
 
@@ -182,6 +190,7 @@ var overviewRules = []overviewRule{
 	singleReplicaRule,
 	quotasRule,
 	hpasRule,
+	certificatesRule,
 	warningEventsRule,
 	podsRestartedRule,
 }

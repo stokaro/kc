@@ -16,10 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/stokaro/kc/pkg/appconfig"
 )
@@ -86,7 +84,7 @@ func restarted(p *corev1.Pod, count int32, reason string, finished time.Duration
 
 func reportFor(t *testing.T, ns string, cfg appconfig.OverviewConfig, objs ...crclient.Object) *overviewReport {
 	t.Helper()
-	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(objs...).Build()
+	cl := newOverviewFakeClient(objs...)
 	in := loadOverviewInput(t.Context(), cl, ns, nil)
 	if len(in.missing) > 0 {
 		t.Fatalf("fake cache could not list: %v", in.missing)
@@ -449,7 +447,7 @@ func TestOverviewRules(t *testing.T) {
 func TestOverviewRulesWithNothingToReport(t *testing.T) {
 	t.Parallel()
 	web := withPod(overviewRunningPod("a", "web"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("100m", "64Mi", "", "64Mi") })
-	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(readyNode("n1", "4", "8Gi", 110), web).Build()
+	cl := newOverviewFakeClient(readyNode("n1", "4", "8Gi", 110), web)
 	in := loadOverviewInput(t.Context(), cl, AllNamespaces, nil)
 	// Usage and kubelet stats are measured, and show nothing.
 	m := &overviewMeasured{
@@ -552,7 +550,7 @@ func TestOverviewCapacity(t *testing.T) {
 
 func TestOverviewCapacityUsagePlugsIn(t *testing.T) {
 	t.Parallel()
-	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(readyNode("n1", "4", "8Gi", 10)).Build()
+	cl := newOverviewFakeClient(readyNode("n1", "4", "8Gi", 10))
 	in := loadOverviewInput(t.Context(), cl, AllNamespaces, nil)
 	m := &overviewMeasured{nodes: map[string]usageValues{"n1": {cpu: 1000, mem: 2 << 30}}}
 	r := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, m)
@@ -622,7 +620,7 @@ func quota(name, used, hard string) *corev1.ResourceQuota {
 
 func TestOverviewUnavailableSourceDimsRows(t *testing.T) {
 	t.Parallel()
-	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
+	cl := newOverviewFakeClient()
 	in := loadOverviewInput(t.Context(), cl, AllNamespaces, func(gvr schema.GroupVersionResource) string {
 		if gvr == ovPDBsGVR {
 			return "forbidden"

@@ -31,7 +31,7 @@ func TestOverviewNormalized(t *testing.T) {
 				PodsWarnPercent: 60, QuotaWarnPercent: 90,
 				UsageWarnPercent: 70, UsageFailPercent: 85, UnderRequestedFactor: 1.5,
 				UnderRequestedMinPercent: 10, MemoryLimitWarnPercent: 95, CPULimitWarnPercent: 99,
-				DiskWarnPercent: 70, DiskFailPercent: 75, VolumeWarnPercent: 60, StatsMaxNodes: 5,
+				DiskWarnPercent: 70, DiskFailPercent: 75, VolumeWarnPercent: 60, StatsMaxNodes: 5, CertificateExpiryDays: 30,
 			},
 			want: appconfig.OverviewConfig{
 				Window: metav1.Duration{Duration: 10 * time.Minute}, RestartThreshold: 1,
@@ -39,7 +39,7 @@ func TestOverviewNormalized(t *testing.T) {
 				PodsWarnPercent: 60, QuotaWarnPercent: 90,
 				UsageWarnPercent: 70, UsageFailPercent: 85, UnderRequestedFactor: 1.5,
 				UnderRequestedMinPercent: 10, MemoryLimitWarnPercent: 95, CPULimitWarnPercent: 99,
-				DiskWarnPercent: 70, DiskFailPercent: 75, VolumeWarnPercent: 60, StatsMaxNodes: 5,
+				DiskWarnPercent: 70, DiskFailPercent: 75, VolumeWarnPercent: 60, StatsMaxNodes: 5, CertificateExpiryDays: 30,
 			},
 		},
 		{

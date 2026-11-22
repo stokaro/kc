@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	models "github.com/stokaro/kc/internal/models"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
@@ -19,8 +20,8 @@ type fakeSource struct {
 	closed  bool
 }
 
-func (f *fakeSource) Summary(node string) models.InfoSummary {
-	f.reads = append(f.reads, node)
+func (f *fakeSource) Summary(focus models.InfoFocus) models.InfoSummary {
+	f.reads = append(f.reads, focus.Node)
 	return f.summary
 }
 
@@ -187,6 +188,7 @@ func TestWidgetHintsAndStates(t *testing.T) {
 		{name: "loading", summary: models.InfoSummary{Loading: true}, want: "Loading..."},
 		{name: "error", summary: models.InfoSummary{Err: "no cluster"}, want: "Overview unavailable: no cluster"},
 		{name: "node scope", target: Target{Node: "mba"}, summary: models.InfoSummary{Bars: bars(1, 1)}, want: "node mba"},
+		{name: "workload scope", target: Target{Node: "mba", Workload: &webWorkload}, summary: models.InfoSummary{Bars: bars(1, 1)}, want: "deployments.apps shop/web"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -205,6 +207,40 @@ func TestWidgetHintsAndStates(t *testing.T) {
 		})
 	}
 }
+
+var webWorkload = models.InfoWorkload{GVR: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, Namespace: "shop", Name: "web"}
+
+// TestWidgetAsksForTheWorkload checks that a workload under the other
+// panel's cursor reaches the summary and keeps a history of its own.
+func TestWidgetAsksForTheWorkload(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	var focuses []models.InfoFocus
+	target := Target{Key: "k", Open: func() Summarizer { return &focusSource{seen: &focuses} }}
+	w := New(panelcontent.WidgetDeps{}, Options{Resolve: func(context.Context) Target { return target }})
+	w.SetFocus(ctx, true)
+	_ = w.Init(ctx)
+	scopeKey := w.historyKey()
+
+	target.Workload = &webWorkload
+	_ = w.OnSelectionChanged(ctx, panelcontent.Selection{})
+	last := focuses[len(focuses)-1]
+	if last.Workload == nil || *last.Workload != webWorkload {
+		t.Fatalf("focus = %+v, want the workload", last)
+	}
+	if w.historyKey() == scopeKey || !strings.Contains(w.historyKey(), "apps/v1, Resource=deployments") {
+		t.Fatalf("history key %q does not separate the workload from %q", w.historyKey(), scopeKey)
+	}
+}
+
+type focusSource struct{ seen *[]models.InfoFocus }
+
+func (f *focusSource) Summary(focus models.InfoFocus) models.InfoSummary {
+	*f.seen = append(*f.seen, focus)
+	return models.InfoSummary{Bars: bars(1, 1)}
+}
+
+func (f *focusSource) Close() {}
 
 func TestRenderBarAndSparkline(t *testing.T) {
 	t.Parallel()

@@ -11,9 +11,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes/scheme"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	table "github.com/stokaro/kc/internal/table"
@@ -74,7 +72,7 @@ func (c *fakeOverviewConn) watching() bool {
 
 func newTestOverviewEngine(t *testing.T, deps Deps, namespace string, objs ...crclient.Object) (*overviewEngine, *fakeOverviewConn) {
 	t.Helper()
-	conn := &fakeOverviewConn{reader: fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(objs...).Build()}
+	conn := &fakeOverviewConn{reader: newOverviewFakeClient(objs...)}
 	if deps.Ctx == nil {
 		deps.Ctx = t.Context()
 	}

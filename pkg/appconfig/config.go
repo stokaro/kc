@@ -243,6 +243,9 @@ type OverviewConfig struct {
 	// StatsMaxNodes skips the kubelet stats summary (one request per node)
 	// on clusters with more nodes than this.
 	StatsMaxNodes int `json:"statsMaxNodes"`
+	// CertificateExpiryDays flags a cert-manager Certificate whose
+	// status.notAfter is less than this many days away.
+	CertificateExpiryDays int `json:"certificateExpiryDays"`
 }
 
 // DefaultOverview returns the default overview thresholds.
@@ -266,6 +269,7 @@ func DefaultOverview() OverviewConfig {
 		DiskFailPercent:          90,
 		VolumeWarnPercent:        80,
 		StatsMaxNodes:            50,
+		CertificateExpiryDays:    14,
 	}
 }
 
@@ -296,6 +300,7 @@ func (o OverviewConfig) Normalized() OverviewConfig {
 	positive(&o.DiskFailPercent, d.DiskFailPercent)
 	positive(&o.VolumeWarnPercent, d.VolumeWarnPercent)
 	positive(&o.StatsMaxNodes, d.StatsMaxNodes)
+	positive(&o.CertificateExpiryDays, d.CertificateExpiryDays)
 	if o.UnderRequestedFactor <= 1 {
 		// A factor of 1 or less would flag every node that uses what it
 		// requests.
