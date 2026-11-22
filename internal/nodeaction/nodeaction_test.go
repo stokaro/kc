@@ -581,3 +581,42 @@ func TestDrainCancelDuringDaemonSetLookup(t *testing.T) {
 		t.Fatalf("node a progress = %+v, want canceled", last.Nodes[0])
 	}
 }
+
+// A cancel that lands during the cordon patch ends the drain as canceled
+// and says the node may be cordoned: the patch can reach the server first.
+func TestDrainCancelDuringCordon(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var armed atomic.Bool
+	funcs := interceptor.Funcs{
+		Patch: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
+			if armed.Load() {
+				err := c.Patch(ctx, obj, patch, opts...)
+				cancel()
+				if err != nil {
+					return err
+				}
+				return ctx.Err()
+			}
+			return c.Patch(ctx, obj, patch, opts...)
+		},
+	}
+	env := newEnv(t, funcs, node("a", false), pod("web-1", "a", rs))
+	action, err := nodeaction.PrepareDrain(ctx, env, []string{"a"}, nodeaction.DefaultDrainOptions())
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	armed.Store(true)
+	var last nodeaction.Progress
+	_, err = action.Run(ctx, func(p nodeaction.Progress) { last = p })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if last.Nodes[0].Phase != nodeaction.PhaseCanceled {
+		t.Fatalf("node a progress = %+v, want canceled", last.Nodes[0])
+	}
+	if !strings.Contains(last.Nodes[0].Error, "may be cordoned") {
+		t.Errorf("error text = %q, want it to say the node may be cordoned", last.Nodes[0].Error)
+	}
+}

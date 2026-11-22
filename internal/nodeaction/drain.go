@@ -301,6 +301,11 @@ func (a *DrainAction) Run(ctx context.Context, report func(Progress)) (Result, e
 			return fail(i, PhaseCanceled, fmt.Errorf("drain canceled: %w", err))
 		}
 		if err := patchUnschedulable(ctx, a.env, n, true); err != nil {
+			if ctx.Err() != nil {
+				// The patch may have reached the API server before the
+				// cancel, so the node can be cordoned either way.
+				return fail(i, PhaseCanceled, fmt.Errorf("drain canceled while cordoning node %s; the node may be cordoned: %w", n, context.Canceled))
+			}
 			return fail(i, PhaseFailed, err)
 		}
 		prog.Nodes[i].Phase = PhaseWaiting
