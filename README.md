@@ -13,6 +13,7 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Kubectl-compatible startup intents:** `kc get ...` and `kc logs ...` parse familiar CLI syntax and launch directly into the matching folders, multi-selecting objects and opening manifest/log viewers when requested (`docs/designs/cli-intents.md`).
 - **Hierarchy-first navigation:** resource groups → object folders → virtual subfolders (pod containers, ConfigMap/Secret keys, etc.). Every row is keyed by full `group/version/resource`.
 - **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices) via per-object child folders so related resources stay discoverable in the tree.
+- **Helm releases:** `/helm` lists releases with their stored values, manifest, notes, hooks and revision history, and links each manifest object to the live object (read-only, no `helm` binary needed).
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
 - **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
@@ -88,6 +89,18 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 ## Context and Namespace
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
+
+## Helm Releases
+
+`/helm`, the first row of the panel root and of `/namespaces/<name>`, lists the Helm releases of that scope: name, namespace, newest revision, status, chart, app version and last update. kc reads the release records Helm stores as Secrets (type `helm.sh/release.v1`) from its shared cache; it does not need the `helm` binary and never changes a release. `F3` on a release shows its stored status, like `helm status`.
+
+Enter a release for its newest revision:
+
+- `values`, `manifest`, `notes` and `hooks` open with `F3` and save with `F5`. They are the content stored in the release record, not the live state; the viewer shows the matching `helm get` command.
+- `/resources` lists the objects of the stored manifest with a Live column (`yes`, `missing`, `denied`, `type not served`). `Enter` on an object (marked `@`, like a link in mc) opens the live object in the other panel; `F3` shows the object as the release stored it.
+- `/history` lists every stored revision; enter one to see its values, manifest and objects.
+
+kc needs get, list and watch on Secrets in all namespaces for this, because its cache watches Secrets cluster-wide. Without that access `/helm` shows a row that says what is missing and the `helm list` command to use instead. Releases stored with `HELM_DRIVER=configmap` or `sql` are not shown.
 
 ## Custom Commands
 
