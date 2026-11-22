@@ -260,8 +260,9 @@ type App struct {
 	activity               *models.Activity     // pauses background refreshes while a dialog is open
 	pendingConfirm         *pendingConfirmation // waits for the red confirmation
 	objectActions          *objectaction.Registry
-	nodeShell              *nodeShellSession // open node shell, shown full screen
-	nodeShellStarting      bool              // a node shell pod is being created
+	nodeShell              *nodeShellSession    // open node shell, shown full screen
+	nodeShellStarting      bool                 // a node shell pod is being created
+	usage                  *models.UsageMetrics // polls metrics.k8s.io for usage columns
 	namespaceOverride      string
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
@@ -309,6 +310,7 @@ func NewApp() *App {
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.activity = &models.Activity{}
+	app.usage = models.NewUsageMetrics()
 	app.leftPanel = NewPanel("", app.cfg)
 	app.rightPanel = NewPanel("", app.cfg)
 	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
@@ -900,6 +902,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		PodFSFactory:     a.podfsFactory,
 		ReportError:      a.reportReadError,
 		Activity:         a.activity,
+		Usage:            a.usage,
 	}
 }
 

@@ -50,6 +50,8 @@ type Deps struct {
 	ReportError func(error)
 	// Activity pauses background count refreshes; nil never pauses.
 	Activity *Activity
+	// Usage adds CPU and memory columns to pod and node lists; nil adds none.
+	Usage *UsageMetrics
 }
 
 // reportReadError reports that reading what failed.
