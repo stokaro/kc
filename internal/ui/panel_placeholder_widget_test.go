@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"testing"
 
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
@@ -14,7 +13,7 @@ func TestPlaceholderFrameInfoSuppressesFooter(t *testing.T) {
 		t.Fatalf("placeholder widget does not implement FrameInfoProvider")
 	}
 
-	info := provider.FrameInfo(context.Background(), panelcontent.FrameInfoRequest{Width: 20})
+	info := provider.FrameInfo(t.Context(), panelcontent.FrameInfoRequest{Width: 20})
 	if !info.SuppressFooter {
 		t.Fatalf("expected footer suppression")
 	}

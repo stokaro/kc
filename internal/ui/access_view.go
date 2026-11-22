@@ -273,7 +273,7 @@ func (m *accessViewModel) SetDimensions(w, h int) {
 }
 
 // PreferredSize implements ModalSizer.
-func (m *accessViewModel) PreferredSize(maxContentWidth, maxContentHeight int) (int, int) {
+func (m *accessViewModel) PreferredSize(maxContentWidth, maxContentHeight int) (width, height int) {
 	return min(maxContentWidth, 96), min(maxContentHeight, len(m.checks)+accessHeaderLines+accessFooterLines)
 }
 

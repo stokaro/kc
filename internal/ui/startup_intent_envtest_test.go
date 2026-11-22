@@ -11,7 +11,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/models"
@@ -41,7 +40,7 @@ func setupAppWithCluster(t *testing.T) (*App, *kccluster.Cluster) {
 func createNamespace(t *testing.T, cl *kccluster.Cluster, name string) func() {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	ns := &corev1.Namespace{Name: name}
 	if err := cl.GetClient().Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatalf("create namespace: %v", err)
 	}
@@ -60,10 +59,8 @@ func createPod(t *testing.T, cl *kccluster.Cluster, namespace, name string, cont
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
+		Name:      name,
+		Namespace: namespace,
 		Spec: corev1.PodSpec{
 			Containers: containers,
 		},
@@ -74,7 +71,7 @@ func createPod(t *testing.T, cl *kccluster.Cluster, namespace, name string, cont
 	return func() {
 		delCtx, cancelDel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancelDel()
-		_ = cl.GetClient().Delete(delCtx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}})
+		_ = cl.GetClient().Delete(delCtx, &corev1.Pod{Name: name, Namespace: namespace})
 	}
 }
 

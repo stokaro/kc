@@ -74,7 +74,7 @@ type execTestEnv struct {
 func newExecTestApp(t *testing.T, mode appconfig.TerminalMode) execTestEnv {
 	t.Helper()
 	dir := t.TempDir()
-	env := execTestEnv{pathA: filepath.Join(dir, "a.yaml"), pathB: filepath.Join(dir, "b.yaml"), before: map[string][]byte{}}
+	env := execTestEnv{pathA: filepath.Join(dir, "a.yaml"), pathB: filepath.Join(dir, "b.yaml"), before: make(map[string][]byte)}
 	for p, content := range map[string]string{env.pathA: execTestConfigA, env.pathB: execTestConfigB} {
 		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
@@ -174,6 +174,7 @@ func stubOnPath(t *testing.T, name string) {
 	t.Helper()
 	dir := t.TempDir()
 	script := "#!/bin/sh\nprintf 'KUBECONFIG=%s\\n' \"$KUBECONFIG\"\nfor a in \"$@\"; do printf 'arg=%s\\n' \"$a\"; done\n"
+	// #nosec G306 -- the fake command must be executable.
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +187,7 @@ func runOutput(t *testing.T, cmd *exec.Cmd) (kubeconfigValue string, args []stri
 	if err != nil {
 		t.Fatalf("run %v: %v", cmd.Args, err)
 	}
-	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(string(out), "\n"), "\n") {
 		if v, ok := strings.CutPrefix(line, "KUBECONFIG="); ok {
 			kubeconfigValue = v
 		} else if v, ok := strings.CutPrefix(line, "arg="); ok {
@@ -340,7 +341,7 @@ func TestCommandWidgetUsesExecSupplier(t *testing.T) {
 
 	t.Run("env, namespace and template", func(t *testing.T) {
 		rec := &recordingExec{env: []string{"KUBECONFIG=/kc/cmd.kubeconfig"}}
-		w := NewCommandWidget(panelcontent.WidgetDeps{}, cfg)
+		w := NewCommandWidget(t.Context(), panelcontent.WidgetDeps{}, cfg)
 		w.SetExecSupplier(rec)
 		_ = w.StartCommand(t.Context(), []models.Item{item}, schema.GroupVersionResource{})
 		if len(rec.calls) != 1 || rec.calls[0][1] != "team" || rec.calls[0][0] != w.execSlot {
@@ -368,7 +369,7 @@ func TestCommandWidgetUsesExecSupplier(t *testing.T) {
 
 	t.Run("supplier failure starts nothing", func(t *testing.T) {
 		rec := &recordingExec{err: errors.New("disk full")}
-		w := NewCommandWidget(panelcontent.WidgetDeps{}, cfg)
+		w := NewCommandWidget(t.Context(), panelcontent.WidgetDeps{}, cfg)
 		w.SetExecSupplier(rec)
 		_ = w.StartCommand(t.Context(), []models.Item{item}, schema.GroupVersionResource{})
 		if w.cmd != nil {
@@ -380,8 +381,8 @@ func TestCommandWidgetUsesExecSupplier(t *testing.T) {
 	})
 
 	t.Run("slots are distinct per widget", func(t *testing.T) {
-		a := NewCommandWidget(panelcontent.WidgetDeps{}, cfg)
-		b := NewCommandWidget(panelcontent.WidgetDeps{}, cfg)
+		a := NewCommandWidget(t.Context(), panelcontent.WidgetDeps{}, cfg)
+		b := NewCommandWidget(t.Context(), panelcontent.WidgetDeps{}, cfg)
 		if a.execSlot == b.execSlot {
 			t.Fatalf("two widgets share slot %q", a.execSlot)
 		}

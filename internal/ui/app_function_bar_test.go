@@ -44,15 +44,6 @@ func (f *mockFolderFB) Find(ctx context.Context, query string) (int, table.Row, 
 func (f *mockFolderFB) Len(ctx context.Context) int         { return len(f.items) }
 func (f *mockFolderFB) RegisterDirtyListener(func()) func() { return func() {} }
 
-type mockBackItemFB struct{}
-
-func (m mockBackItemFB) Columns() (string, []string, []*lipgloss.Style, bool) {
-	return "__back__", []string{".."}, nil, true
-}
-func (m mockBackItemFB) IsBack() bool    { return true }
-func (m mockBackItemFB) Details() string { return "Back" }
-func (m mockBackItemFB) Path() []string  { return nil }
-
 type mockItemFB struct {
 	id string
 }
@@ -64,7 +55,7 @@ func (m mockItemFB) Details() string { return "Item" }
 func (m mockItemFB) Path() []string  { return []string{m.id} }
 
 // Implement Viewable to enable F3
-func (m mockItemFB) ViewContent() (string, string, string, string, string, error) {
+func (m mockItemFB) ViewContent() (title, body, lang, mime, filename string, err error) {
 	return "title", "content", "txt", "text/plain", "file.txt", nil
 }
 
@@ -109,7 +100,7 @@ func TestAppFunctionBarUpdate(t *testing.T) {
 	}
 
 	// 2. Now simulate entering a new folder (empty with back)
-	emptyFolder := &mockFolderFB{items: []models.Item{}}
+	emptyFolder := &mockFolderFB{items: make([]models.Item, 0)}
 	app.rightPanel.SetFolder(ctx, emptyFolder, true) // hasBack=true
 	app.rightPanel.ResetSelectionTop(ctx)
 

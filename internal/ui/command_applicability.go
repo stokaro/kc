@@ -7,6 +7,7 @@ import (
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
+//nolint:gocognit,gocyclo // one check per command applicability rule
 func isCommandApplicable(cmd appconfig.CommandConfig, item models.Item, selectedCount int, activeNamespace string) bool {
 	if selectedCount > 1 && !cmd.SupportsMultiSelection {
 		return false

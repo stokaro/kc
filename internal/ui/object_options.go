@@ -61,55 +61,56 @@ type ObjectOptionsChangedMsg struct {
 }
 
 func (m *ObjectOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch t := msg.(type) {
-	case tea.KeyMsg:
-		switch t.String() {
-		case "up", "k":
-			if m.focus > 0 {
-				m.focus--
+	t, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+	switch t.String() {
+	case "up", "k":
+		if m.focus > 0 {
+			m.focus--
+		}
+	case "down", "j":
+		if m.focus < 2 {
+			m.focus++
+		}
+	case "left", "right", " ", "space":
+		switch m.focus {
+		case 0: // mode
+			if m.modeIdx == 0 {
+				m.modeIdx = 1
+			} else {
+				m.modeIdx = 0
 			}
-		case "down", "j":
-			if m.focus < 2 {
-				m.focus++
+		case 1: // columns
+			if m.columnsIdx == 0 {
+				m.columnsIdx = 1
+			} else {
+				m.columnsIdx = 0
 			}
-		case "left", "right", " ", "space":
-			switch m.focus {
-			case 0: // mode
-				if m.modeIdx == 0 {
-					m.modeIdx = 1
+		case 2: // order
+			if t.String() == "left" {
+				if m.orderIdx > 0 {
+					m.orderIdx--
 				} else {
-					m.modeIdx = 0
+					m.orderIdx = len(objOrderKeys) - 1
 				}
-			case 1: // columns
-				if m.columnsIdx == 0 {
-					m.columnsIdx = 1
+			} else {
+				if m.orderIdx < len(objOrderKeys)-1 {
+					m.orderIdx++
 				} else {
-					m.columnsIdx = 0
-				}
-			case 2: // order
-				if t.String() == "left" {
-					if m.orderIdx > 0 {
-						m.orderIdx--
-					} else {
-						m.orderIdx = len(objOrderKeys) - 1
-					}
-				} else {
-					if m.orderIdx < len(objOrderKeys)-1 {
-						m.orderIdx++
-					} else {
-						m.orderIdx = 0
-					}
+					m.orderIdx = 0
 				}
 			}
-			return m, nil
-		case "ctrl+s":
-			return m, func() tea.Msg {
-				return ObjectOptionsChangedMsg{TableMode: objModeKeys[m.modeIdx], Columns: objColumnsKeys[m.columnsIdx], ObjectsOrder: objOrderKeys[m.orderIdx], SaveDefault: true}
-			}
-		case "enter":
-			return m, func() tea.Msg {
-				return ObjectOptionsChangedMsg{TableMode: objModeKeys[m.modeIdx], Columns: objColumnsKeys[m.columnsIdx], ObjectsOrder: objOrderKeys[m.orderIdx], Accept: true, Close: true}
-			}
+		}
+		return m, nil
+	case "ctrl+s":
+		return m, func() tea.Msg {
+			return ObjectOptionsChangedMsg{TableMode: objModeKeys[m.modeIdx], Columns: objColumnsKeys[m.columnsIdx], ObjectsOrder: objOrderKeys[m.orderIdx], SaveDefault: true}
+		}
+	case "enter":
+		return m, func() tea.Msg {
+			return ObjectOptionsChangedMsg{TableMode: objModeKeys[m.modeIdx], Columns: objColumnsKeys[m.columnsIdx], ObjectsOrder: objOrderKeys[m.orderIdx], Accept: true, Close: true}
 		}
 	}
 	return m, nil
@@ -141,7 +142,7 @@ func (m *ObjectOptionsModel) View() tea.View {
 		}
 		lpad := labels[i]
 		if w := lipgloss.Width(lpad); w < maxLabel {
-			lpad = lpad + strings.Repeat(" ", maxLabel-w)
+			lpad += strings.Repeat(" ", maxLabel-w)
 		}
 		s := marker + " " + lpad + ": " + values[i]
 		rows = append(rows, st.Width(m.width).Render(s))

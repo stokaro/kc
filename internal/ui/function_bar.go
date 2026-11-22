@@ -138,7 +138,7 @@ func functionKeySlotStarts(n, width int) []int {
 // functionKeyAt returns the index of the slot under column x, or -1.
 func functionKeyAt(n, width, x int) int {
 	starts := functionKeySlotStarts(n, width)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if x >= starts[i] && x < starts[i+1] {
 			return i
 		}

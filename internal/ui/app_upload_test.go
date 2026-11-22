@@ -56,7 +56,7 @@ func uploadJob(t *testing.T, sess podfs.ExecSession, conflicts int, names ...str
 	t.Helper()
 	src := t.TempDir()
 	for _, n := range names {
-		if err := os.WriteFile(filepath.Join(src, n), []byte(n), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(src, n), []byte(n), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -155,7 +155,7 @@ func TestStartUploadFromLocalPanel(t *testing.T) {
 	a := newTransferApp(t)
 	ctx := t.Context()
 	src := t.TempDir()
-	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	a.leftNav = nav.NewNavigator(models.NewLocalDirFolder(models.Deps{Ctx: ctx}, src))
@@ -180,7 +180,7 @@ func TestMarkedLocalNames(t *testing.T) {
 	ctx := t.Context()
 	src := t.TempDir()
 	for _, n := range []string{"a.txt", "b.txt"} {
-		if err := os.WriteFile(filepath.Join(src, n), []byte(n), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(src, n), []byte(n), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}

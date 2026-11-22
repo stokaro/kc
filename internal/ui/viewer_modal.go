@@ -27,12 +27,12 @@ func newViewer(theme string, onEdit, onOptions, onClose func() tea.Cmd) *TextVie
 }
 
 // NewYAMLViewer preserves backwards compatibility for callers expecting YAML defaults.
-func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onOptions func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
+func NewYAMLViewer(title, text, theme string, onEdit, onOptions, onClose func() tea.Cmd) *TextViewer {
 	return NewTextViewer(title, text, "yaml", "application/yaml", title, theme, onEdit, onOptions, onClose)
 }
 
 // NewTextViewer creates a syntax-highlighted viewer for arbitrary text.
-func NewTextViewer(title, text, lang, mime, filename, theme string, onEdit func() tea.Cmd, onOptions func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
+func NewTextViewer(title, text, lang, mime, filename, theme string, onEdit, onOptions, onClose func() tea.Cmd) *TextViewer {
 	tv := newViewer(theme, onEdit, onOptions, onClose)
 	tv.inner.SetContent(text, viewer.Metadata{
 		Title:    title,

@@ -14,7 +14,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -29,7 +28,8 @@ func createEnvtestObject(t *testing.T, cl *kccluster.Cluster, obj crclient.Objec
 		t.Fatalf("create %T %s: %v", obj, obj.GetName(), err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		// t.Context() is canceled before cleanup functions run.
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, obj, crclient.GracePeriodSeconds(0))
 	})
@@ -37,11 +37,9 @@ func createEnvtestObject(t *testing.T, cl *kccluster.Cluster, obj crclient.Objec
 
 func replicaSetPod(ns, name, nodeName string, labels map[string]string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ns, Name: name, Labels: labels,
-			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs", UID: "rs-uid", Controller: ptr.To(true)}},
-		},
-		Spec: corev1.PodSpec{NodeName: nodeName, Containers: []corev1.Container{{Name: "app", Image: "busybox"}}},
+		Namespace: ns, Name: name, Labels: labels,
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs", UID: "rs-uid", Controller: new(true)}},
+		Spec:            corev1.PodSpec{NodeName: nodeName, Containers: []corev1.Container{{Name: "app", Image: "busybox"}}},
 	}
 }
 
@@ -63,8 +61,8 @@ func TestNodeActionsEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
 	const ns = "node-actions"
 	t.Cleanup(createNamespace(t, cl, ns))
-	createEnvtestObject(t, cl, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "drain-a"}})
-	createEnvtestObject(t, cl, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "drain-b"}})
+	createEnvtestObject(t, cl, &corev1.Node{Name: "drain-a"})
+	createEnvtestObject(t, cl, &corev1.Node{Name: "drain-b"})
 	createEnvtestObject(t, cl, replicaSetPod(ns, "web-1", "drain-a", nil))
 	db := replicaSetPod(ns, "db-1", "drain-b", map[string]string{"app": "db"})
 	createEnvtestObject(t, cl, db)
@@ -76,9 +74,9 @@ func TestNodeActionsEnvtest(t *testing.T) {
 		t.Fatalf("mark db-1 running: %v", err)
 	}
 	pdb := &policyv1.PodDisruptionBudget{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "db"},
+		Namespace: ns, Name: "db",
 		Spec: policyv1.PodDisruptionBudgetSpec{
-			MinAvailable: ptr.To(intstr.FromInt32(1)),
+			MinAvailable: new(intstr.FromInt32(1)),
 			Selector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app": "db"}},
 		},
 	}

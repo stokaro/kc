@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -34,7 +35,7 @@ func (r *recordingOpener) open(ctx context.Context, t logmux.Target, opts *corev
 	r.mu.Lock()
 	r.opened = append(r.opened, t.Name())
 	if r.ctxs == nil {
-		r.ctxs = map[string]context.Context{}
+		r.ctxs = make(map[string]context.Context)
 	}
 	r.ctxs[t.Name()] = ctx
 	r.mu.Unlock()
@@ -50,12 +51,7 @@ func (r *recordingOpener) open(ctx context.Context, t logmux.Target, opts *corev
 func (r *recordingOpener) has(name string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, n := range r.opened {
-		if n == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(r.opened, name)
 }
 
 func (r *recordingOpener) snapshot() []string {
@@ -81,7 +77,7 @@ func runningPod(t *testing.T, cli crclient.Client, ns, name string, lbls map[str
 	t.Helper()
 	ctx := t.Context()
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name, Labels: lbls},
+		Namespace: ns, Name: name, Labels: lbls,
 		Spec: corev1.PodSpec{Containers: []corev1.Container{
 			{Name: "app", Image: "busybox"},
 			{Name: "sidecar", Image: "busybox"},
@@ -105,7 +101,7 @@ func runningPod(t *testing.T, cli crclient.Client, ns, name string, lbls map[str
 // it saw after the deadline.
 func readUntil(t *testing.T, lines <-chan string, want ...string) {
 	t.Helper()
-	missing := map[string]bool{}
+	missing := make(map[string]bool)
 	for _, w := range want {
 		missing[w] = true
 	}
@@ -130,7 +126,7 @@ func readUntil(t *testing.T, lines <-chan string, want ...string) {
 // runs against one envtest do not collide.
 func generatedNamespace(t *testing.T, cli crclient.Client, prefix string) string {
 	t.Helper()
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: prefix}}
+	ns := &corev1.Namespace{GenerateName: prefix}
 	if err := cli.Create(t.Context(), ns); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +168,7 @@ func TestWorkloadLogsFollowsPodsThroughTheSharedCache(t *testing.T) {
 	ns := generatedNamespace(t, cli, "workload-logs-")
 	api := map[string]string{"app": "api"}
 	deploy := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "api"},
+		Namespace: ns, Name: "api",
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: api},
 			Template: corev1.PodTemplateSpec{

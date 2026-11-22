@@ -65,7 +65,9 @@ type CommandWidget struct {
 	lastSize panelcontent.Size
 }
 
-func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
+// NewCommandWidget builds a command widget. It logs through the logger in
+// ctx until StartCommand replaces it with the logger of the start context.
+func NewCommandWidget(ctx context.Context, deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
 	if deps.Config == nil {
 		deps.Config = appconfig.Default()
 	}
@@ -77,7 +79,7 @@ func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConf
 		panelDeps:   deps,
 		config:      config,
 		escTimeout:  escTimeout,
-		log:         ctrllog.Log.WithName("command"),
+		log:         ctrllog.FromContext(ctx).WithName("command"),
 		post:        deps.Post,
 		interactive: config.Interactive,
 		execSlot:    nextCommandSlot(),
@@ -105,6 +107,7 @@ func (w *CommandWidget) Teardown(ctx context.Context) {
 	}
 }
 
+//nolint:gocognit,gocyclo,nestif // the command widget message switch, one case per message type; splitting it is a larger refactor than the lint baseline (#128)
 func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	if m, ok := msg.(tea.WindowSizeMsg); ok {
 		w.lastSize = panelcontent.Size{Width: m.Width, Height: m.Height}
@@ -396,7 +399,7 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 	w.err = nil
 	w.exitKnown = false
 
-	envVars := []string{}
+	envVars := make([]string, 0)
 	for _, kv := range w.cmd.Env {
 		if strings.HasPrefix(kv, "KUBECONFIG=") {
 			envVars = append(envVars, "KUBECONFIG")
@@ -491,10 +494,6 @@ func (w *CommandWidget) SetWatchInterval(ctx context.Context, interval time.Dura
 	}
 	w.watchInterval = interval
 	w.log.Info("command watch interval updated", "name", w.config.Name, "interval", w.watchInterval)
-	return nil
-}
-
-func (w *CommandWidget) restartWatchTimer() tea.Cmd {
 	return nil
 }
 

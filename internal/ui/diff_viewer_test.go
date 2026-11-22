@@ -261,8 +261,7 @@ func TestCtrlXCtrlDComparesPanels(t *testing.T) {
 	if !ok || msg.err != nil {
 		t.Fatalf("load = %+v", msg)
 	}
-	model, _ = app.Update(msg)
-	app = model.(*App)
+	app.Update(msg)
 	text := view.inner.PlainText()
 	for _, want := range []string{
 		"# left:    context mba, gvr apps/v1/deployments, namespace a, name web",

@@ -110,7 +110,7 @@ func (v *execView) resize(width, height int) tea.Cmd {
 	v.width, v.height = width, height
 	v.sizes.Push(width, height-1)
 	model, cmd := v.term.Update(tea.WindowSizeMsg{Width: width, Height: height - 1})
-	v.term = model.(*bubbleterm.Model)
+	v.term = updatedModel(v.term, model)
 	return cmd
 }
 
@@ -122,13 +122,13 @@ func (v *execView) update(msg tea.Msg) tea.Cmd {
 		return writeNow(v.term.SendInput(pasteInput(msg.Content)))
 	case tea.KeyMsg:
 		model, cmd := v.term.Update(msg)
-		v.term = model.(*bubbleterm.Model)
+		v.term = updatedModel(v.term, model)
 		return writeNow(cmd)
 	case tea.MouseMsg:
 		return nil
 	}
 	model, cmd := v.term.Update(msg)
-	v.term = model.(*bubbleterm.Model)
+	v.term = updatedModel(v.term, model)
 	return cmd
 }
 

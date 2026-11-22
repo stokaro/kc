@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"fmt"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -18,7 +17,7 @@ type placeholderWidget struct {
 	crumb   string
 }
 
-func newPlaceholderWidget(panel *Panel, msg string, breadcrumb string) panelcontent.Widget {
+func newPlaceholderWidget(panel *Panel, msg, breadcrumb string) panelcontent.Widget {
 	return &placeholderWidget{panel: panel, message: msg, crumb: breadcrumb}
 }
 
@@ -57,7 +56,7 @@ func (w *placeholderWidget) View(ctx context.Context, frame panelcontent.Frame) 
 		Foreground(lipgloss.Color(uistyles.ColorWhite)).
 		Padding(0, 1)
 	if frame.Focused {
-		style = style.Copy().Bold(true)
+		style = style.Bold(true)
 	}
 	return tea.NewView(style.Render(content))
 }
@@ -74,7 +73,7 @@ func (w *placeholderWidget) FrameInfo(context.Context, panelcontent.FrameInfoReq
 		crumb = w.message
 	}
 	return panelcontent.FrameInfo{
-		Breadcrumb:      fmt.Sprintf("%s", crumb),
+		Breadcrumb:      crumb,
 		SuppressFooter:  true,
 		TopIndicator:    "─",
 		BottomIndicator: "─",

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -119,6 +120,7 @@ func (a *App) handleExecResolved(msg execResolvedMsg) tea.Cmd {
 	}
 
 	session := newExecSession(msg.target, msg.mode)
+	session.interrupts = &a.interrupts
 	target, mode := msg.target, msg.mode
 	return tea.Exec(session, func(err error) tea.Msg {
 		return execFinishedMsg{target: target, mode: mode, err: err, stderr: session.stderrTail()}
@@ -172,8 +174,8 @@ func execFailureMessage(target models.ExecTarget, mode models.ExecMode, err erro
 
 func lastStderrLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if l := strings.TrimSpace(lines[i]); l != "" {
+	for _, line := range slices.Backward(lines) {
+		if l := strings.TrimSpace(line); l != "" {
 			return l
 		}
 	}
@@ -190,6 +192,9 @@ type execSession struct {
 	stdout io.Writer
 	stderr io.Writer
 	tail   tailBuffer
+	// interrupts, when set, is held while kubectl runs: a C-c in the
+	// cooked terminal reaches kc too and must not quit it.
+	interrupts *interruptGate
 }
 
 func newExecSession(target models.ExecTarget, mode models.ExecMode) *execSession {
@@ -220,11 +225,17 @@ func (s *execSession) Run() error {
 		stderr = os.Stderr
 	}
 	_, _ = fmt.Fprintf(stdout, "%s\n", s.banner)
+	// #nosec G204 -- kubectl is fixed; the arguments are built by kc from the
+	// selected object and passed without a shell.
 	cmd := exec.Command("kubectl", s.args...)
 	cmd.Stdin = s.stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = io.MultiWriter(stderr, &s.tail)
 	cmd.Env = os.Environ()
+	if s.interrupts != nil {
+		release := s.interrupts.hold()
+		defer release()
+	}
 	return cmd.Run()
 }
 
