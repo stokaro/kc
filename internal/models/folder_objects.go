@@ -160,6 +160,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		info.Unstructured = unstructuredFromRow(rr)
 		style := applyRowStylers(info)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
+		obj.setRowFacts(rowFactsFor(info, id))
 		obj.SetResourceVerbs(o.verbs)
 		obj.SetInstance(rr.ObjectMeta.UID, o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
@@ -248,6 +249,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 			cells = append(cells, ns)
 		}
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
+		obj.setRowFacts(rowFactsFor(info, id))
 		obj.SetResourceVerbs(o.verbs)
 		obj.SetInstance(item.GetUID(), o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
@@ -491,7 +493,9 @@ type liveObjectRowSource struct {
 	failingSince    time.Time
 	onFolderDirty   func()
 	mu              sync.Mutex
-	rows            []table.Row
+	rows            []table.Row // the rows that pass filter
+	all             []table.Row // every loaded row
+	filter          RowFilter
 	index           map[string]int
 	items           map[string]Item
 	dirty           bool
@@ -791,8 +795,8 @@ func (s *liveObjectRowSource) applyLoadLocked(ctx context.Context, rows []table.
 		return
 	}
 	s.failingSince = time.Time{}
-	s.rows = rows
-	s.rebuildIndexLocked()
+	s.all = rows
+	s.applyFilterLocked()
 	s.dirty = false
 }
 

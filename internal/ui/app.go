@@ -1521,6 +1521,10 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 			objConfig.SortTitles = st.Titles
 		}
 		cancel()
+		if filter, ok := panel.RowFilter(); ok {
+			objConfig.ShowFaultsOnly = true
+			objConfig.FaultsOnly = filter.FaultsOnly
+		}
 	}
 
 	var cmdConfig *ViewOptionsCommandConfig

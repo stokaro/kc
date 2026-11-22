@@ -78,6 +78,9 @@ func (o *ObjectsFolder) KubectlCommand() string {
 	args := []string{"get", kubectlResource(o.gvr)}
 	args = append(args, namespaceArgs(o.namespace, o.resourceNamespaced())...)
 	args = append(args, o.kubectlArgs...)
+	if sel := o.RowFilter().Selector(); sel != "" {
+		args = append(args, "-l", sel)
+	}
 	cmd := kubectlCommand(o.Deps, args...)
 	if o.kubectlNote != "" {
 		cmd += "  # " + o.kubectlNote

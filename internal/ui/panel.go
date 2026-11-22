@@ -1315,6 +1315,15 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 			tint = c
 		}
 		scope, hits := renderScopeLabel(p.scope, borderStyle.Render(border.Bottom), leftWidth, contentWidth/2, tint)
+		if f, ok := p.RowFilter(); ok && f.Active() {
+			from := lipgloss.Width(left) + lipgloss.Width(scope)
+			label := renderRowFilter(f.Label(), borderStyle.Render(border.Bottom), (contentWidth-lipgloss.Width(scope))/2)
+			if label != "" {
+				hits.filterFrom = from + lipgloss.Width(border.Bottom)
+				hits.filterTo = from + lipgloss.Width(label)
+				scope += label
+			}
+		}
 		p.scopeHits = hits
 		left += scope
 		contentWidth -= lipgloss.Width(scope)

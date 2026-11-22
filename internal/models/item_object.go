@@ -16,6 +16,8 @@ type ObjectRow struct {
 	name      string
 	viewFn    ViewContentFunc
 	verbs     []string
+	facts     RowFacts // what a RowFilter looks at
+	hasFacts  bool
 	uid       types.UID
 	origin    ObjectOrigin
 }

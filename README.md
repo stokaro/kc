@@ -78,6 +78,8 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
+| `M-f`      | Filter the rows of an object list (see [Filtering Rows](#filtering-rows)). `Esc f` does the same. |
+| `C-z`      | Show only the rows in a fault state, or all rows again (object lists).         |
 | `M-p`      | Port forward the selected pod, container or service (see below). `Esc p` does the same. |
 | `C-\`      | Hotlist, as in mc: saved panel locations with their context and namespace. `Enter` goes to the highlighted entry, `Ins` adds the active panel's location, `Del` (or `F8`) removes the entry. Typing filters the list. Saved in `~/.kc/hotlist.yaml`. |
 | `M-y`      | Go back in the active panel's history of visited locations (`Esc y` does the same). |
@@ -105,6 +107,17 @@ kc forwards in-process (client-go, websocket with SPDY fallback) and listens on 
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
 
+## Filtering Rows
+
+`M-f` opens the Filter dialog for the object list in the active panel. It takes one of:
+
+- `nginx`: keep the rows whose name matches the regular expression (case-insensitive). In lists across all namespaces the pattern also sees `namespace/name`.
+- `!nginx`: keep the rows whose name does not match.
+- `-l app=web`: keep the rows whose labels match the label selector, in the syntax of `kubectl -l`. The copied kubectl command (`M-c`) gets the same `-l`.
+
+An empty text clears the filter. `C-z`, or "Faults only" in `F2` Options, keeps only the rows in a fault state; it combines with the text filter. Faults are the rows kc colors red: pods that are Pending, Failed or Unknown, not ready, or with a container waiting in CrashLoopBackOff, ImagePullBackOff and the like; Deployments, StatefulSets and ReplicaSets with fewer ready replicas than wanted; DaemonSets with unavailable pods; failed Jobs; nodes that are not Ready; PVCs that are not Bound; failed PVs.
+
+The active filter shows next to the scope in the bottom border (`Filter: !nginx, faults`); a click on it clears it. The filter belongs to the folder: it stays while you look at its objects and come back, and a new listing starts unfiltered. It applies to live updates, and the cursor stays on its row when the row is kept. Marked rows that the filter hides are unmarked.
 ### cd on the shell line
 
 As in mc, `cd` typed on the shell line below the panels moves the active panel instead of running in the shell:
