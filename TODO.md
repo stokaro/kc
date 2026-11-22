@@ -7,7 +7,7 @@ items that have no issue yet.
 - [x] Function bar: compute capability-aware enablement for view/edit/delete/create actions and gray out unavailable ones (`panelFunctionKeys`, covered by `function_bar_test.go`).
 
 ## Milestone 3 — Terminal Follows Navigation
-- Terminal context manager for the integrated PTY session (`internal/ui/termctx`).
+Terminal context manager for the integrated PTY session (`internal/ui/termctx`).
 - [x] Env-based sync (`KUBECONFIG`, `--context`, `--namespace`) for the PTY.
 - [x] Kubeconfig-copy approach, guarded by the terminal mode setting (`termctx.ModeCopy`).
 - [x] Unit tests for the context manager (`termctx/manager_test.go`).
@@ -21,12 +21,12 @@ items that have no issue yet.
 - [ ] Favorites: add and remove favorite resource types from the UI (today only `resources.favorites` in the config).
 
 Dropped as no longer useful:
-- Per-image shell probe cache for podfs: a missing shell now leads to the helper consent row (#21, #26), and the failed exec costs one request per session.
-- Selection sync options: Describe/Manifest already follow the other panel's selection; pinning a panel is covered by #49.
-- API group hierarchy under `/groups/...`: no demand; the root already lists types with their group.
-- Selection replay helper: only one replay site is left (`app_update.go`).
+- [x] Per-image shell probe cache for podfs: a missing shell now leads to the helper consent row (#21, #26), and the failed exec costs one request per session.
+- [x] Selection sync options: Describe/Manifest already follow the other panel's selection; pinning a panel is covered by #49.
+- [x] API group hierarchy under `/groups/...`: no demand; the root already lists types with their group.
+- [x] Selection replay helper: only one replay site is left (`app_update.go`).
 
 ## Definition of Done
-- Non-trivial logic unit-tested per AGENTS.md.
-- Docs updated (README) as features land.
-- UI stays responsive under list updates and watches.
+- [ ] Non-trivial logic unit-tested per AGENTS.md.
+- [ ] Docs updated (README) as features land.
+- [ ] UI stays responsive under list updates and watches.
