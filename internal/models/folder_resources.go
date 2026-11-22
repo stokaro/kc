@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
@@ -18,6 +19,10 @@ import (
 // ResourcesFolder provides shared scaffolding for resource-group folders (namespace and cluster scoped).
 type ResourcesFolder struct {
 	*BaseFolder
+	// items holds every known type, visible or not. finalize replaces the
+	// map as a whole and never changes it afterwards; itemsMu guards the
+	// swap so TypeItem can read it from another goroutine.
+	itemsMu   sync.RWMutex
 	items     map[string]*ResourceGroupItem
 	lastSpecs map[string]resourceGroupSignature
 	overrides *resourceViewOptions
@@ -105,7 +110,7 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 	if len(specs) == 0 {
 		changed := len(f.items) > 0 || len(f.lastSpecs) > 0
 		f.Close()
-		f.items = make(map[string]*ResourceGroupItem)
+		f.setItems(make(map[string]*ResourceGroupItem))
 		f.lastSpecs = make(map[string]resourceGroupSignature)
 		if changed {
 			f.BaseFolder.markDirtyFromSource()
@@ -164,7 +169,7 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 
 	if len(rows) == 0 {
 		f.closeDropped(seen)
-		f.items = seen
+		f.setItems(seen)
 		f.lastSpecs = sigs
 		if changed {
 			f.BaseFolder.markDirtyFromSource()
@@ -183,13 +188,40 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 	}
 
 	f.closeDropped(seen)
-	f.items = seen
+	f.setItems(seen)
 	f.lastSpecs = sigs
 	if changed {
 		f.BaseFolder.markDirtyFromSource()
 		log.Info("resources updated", "count", len(rows))
 	}
 	return rows
+}
+
+func (f *ResourcesFolder) setItems(items map[string]*ResourceGroupItem) {
+	f.itemsMu.Lock()
+	f.items = items
+	f.itemsMu.Unlock()
+}
+
+// TypeItem returns the row of resource type gr together with its row ID. It
+// also finds rows the folder hides (empty types, types whose emptiness is
+// not known yet, forbidden types), because an explicit jump such as cd names
+// the type on purpose. ok is false while the type is unknown to the folder,
+// for example before its first population. Versions are ignored; with
+// several versions of one type the lowest row ID wins.
+func (f *ResourcesFolder) TypeItem(gr schema.GroupResource) (item Item, id string, ok bool) {
+	f.itemsMu.RLock()
+	items := f.items
+	f.itemsMu.RUnlock()
+	for key, it := range items {
+		if it == nil || it.gvr.GroupResource() != gr {
+			continue
+		}
+		if !ok || key < id {
+			item, id, ok = it, key, true
+		}
+	}
+	return item, id, ok
 }
 
 // closeDropped closes items that are no longer part of the folder.
