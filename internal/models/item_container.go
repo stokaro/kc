@@ -24,6 +24,7 @@ type ContainerItem struct {
 	*RowItem
 	enter  func() (Folder, error)
 	viewFn ViewContentFunc
+	ref    podContainerRef
 }
 
 func NewContainerItem(id string, cells []string, path []string, style *lipgloss.Style, view ViewContentFunc, enter func() (Folder, error)) *ContainerItem {
