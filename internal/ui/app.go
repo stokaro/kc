@@ -18,10 +18,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	readmedoc "github.com/sttts/kc"
+	"github.com/sttts/kc/internal/atomicfile"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/execctx"
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
+	"github.com/sttts/kc/internal/objectaction"
 	"github.com/sttts/kc/internal/podfs"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
@@ -53,7 +55,13 @@ type FolderDirtyMsg struct {
 }
 
 func (a *App) hasApplicableCommands(panel *Panel) bool {
-	if panel == nil || len(a.cfg.Commands) == 0 {
+	if panel == nil {
+		return false
+	}
+	if len(a.objectActionsFor(panel).actions) > 0 {
+		return true
+	}
+	if len(a.cfg.Commands) == 0 {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -100,13 +108,6 @@ type restartNamespaceCommandMsg struct {
 }
 
 type startupIntentMsg struct{}
-
-type deleteTarget struct {
-	panelIdx  int
-	gvr       schema.GroupVersionResource
-	namespace string
-	name      string
-}
 
 type cachedView struct {
 	view   string
@@ -162,6 +163,12 @@ type viewerOptionsTarget interface {
 	WrapMode() bool
 }
 
+// logOptionsTarget is a viewer whose stream options F2 can change.
+type logOptionsTarget interface {
+	LogOptions() LogOptions
+	SetLogOptions(LogOptions) tea.Cmd
+}
+
 // App represents the main application state
 type App struct {
 	leftPanel    *Panel
@@ -179,6 +186,7 @@ type App struct {
 	// Data providers
 	kubeMgr           *kubeconfig.Manager
 	cl                *kccluster.Cluster
+	clLease           *kccluster.Lease // holds cl in clPool; see docs/adr/0062-cache-ownership.md
 	clPool            *kccluster.Pool
 	ctx               context.Context
 	cancel            context.CancelFunc
@@ -220,6 +228,7 @@ type App struct {
 	toastLogger            *ToastLogger
 	pendingCmdsMu          sync.Mutex
 	pendingCmds            []tea.Cmd
+	cfgStore               *appconfig.Store // ~/.kc/config.yaml; see configStore
 	leftConfig             *appconfig.Config
 	rightConfig            *appconfig.Config
 	namespaceInput         *NamespaceCreateModel
@@ -248,8 +257,9 @@ type App struct {
 	// panelScope is each panel's namespace scope (models.AllNamespaces for
 	// all). It is kc state; kubeconfig is never changed.
 	panelScope             [2]string
-	activity               *models.Activity       // pauses background refreshes while a dialog is open
-	pendingConfirm         models.ConfirmedAction // waits for the red confirmation
+	activity               *models.Activity     // pauses background refreshes while a dialog is open
+	pendingConfirm         *pendingConfirmation // waits for the red confirmation
+	objectActions          *objectaction.Registry
 	namespaceOverride      string
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
@@ -257,9 +267,12 @@ type App struct {
 	helpViewer             *MarkdownHelpViewer
 	podfsFactory           podfs.Factory
 	folderDirtyCh          chan FolderDirtyMsg
-	readErrCh              chan error // read failures from models, shown as red toasts
-	panelNamespace         [2]string
-	namespaceCommandTarget [2]string
+	// describeRenderer is reused while describeRendererCluster is a.cl.
+	describeRenderer        *describe.Renderer
+	describeRendererCluster *kccluster.Cluster
+	readErrCh               chan error // read failures from models, shown as red toasts
+	panelNamespace          [2]string
+	namespaceCommandTarget  [2]string
 }
 
 const (
@@ -328,12 +341,8 @@ func NewApp() *App {
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
-	// Load config (best-effort)
-	cfg, err := appconfig.Load()
-	if err != nil {
-		cfg = appconfig.Default()
-	}
-	*a.cfg = *cfg
+	loadToast := a.loadConfig()
+	cfg := a.cfg
 	a.modalManager.SyncEscTimeout()
 	leftPercent, rightPercent := normalizePanelWidthPercents(cfg.Panel.Width.LeftPercent, cfg.Panel.Width.RightPercent)
 	a.leftPanelWidthPercent = leftPercent
@@ -351,6 +360,7 @@ func (a *App) Init() tea.Cmd {
 		},
 		a.waitFolderDirtyEvents(),
 		a.waitReadErrors(),
+		loadToast,
 	)
 }
 
@@ -905,14 +915,15 @@ func (a *App) currentClusterKey() kccluster.Key {
 }
 
 func (a *App) namespaceClusterFactory() models.NamespaceClusterFactory {
-	return func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, error) {
+	return func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, func(), error) {
 		if a.clPool == nil {
-			return nil, fmt.Errorf("cluster pool unavailable")
+			return nil, nil, fmt.Errorf("cluster pool unavailable")
 		}
-		if len(selectors) > 0 {
-			return a.clPool.GetWithSelectors(ctx, key, selectors)
+		lease, err := a.clPool.Acquire(ctx, key, selectors)
+		if err != nil {
+			return nil, nil, err
 		}
-		return a.clPool.Get(ctx, key)
+		return lease.Cluster(), lease.Release, nil
 	}
 }
 
@@ -1041,10 +1052,13 @@ func (a *App) setupPanelInputs() {
 		panel.RegisterMode(PanelModeDescribe, func(p *Panel) PanelWidget {
 			deps := p.manifestWidgetDeps()
 			deps.Describe = a.describeFunc()
+			deps.Paused = a.activity.Paused
 			return describewidget.New(deps)
 		})
 		panel.RegisterMode(PanelModeManifest, func(p *Panel) PanelWidget {
-			return manifestwidget.New(p.manifestWidgetDeps())
+			deps := p.manifestWidgetDeps()
+			deps.Paused = a.activity.Paused
+			return manifestwidget.New(deps)
 		})
 	}
 	if a.leftPanel != nil {
@@ -1061,14 +1075,50 @@ func (a *App) setupPanelInputs() {
 	}
 }
 
+// describeFunc prepares describe reads on the UI goroutine: it takes the
+// cluster and the cached renderer now, so the background reads never touch
+// App fields that a context switch replaces.
 func (a *App) describeFunc() panelcontent.DescribeFunc {
-	return func(ctx context.Context, target describe.Target) (describe.Result, error) {
-		renderer, err := a.newDescribeRenderer()
-		if err != nil {
-			return describe.Result{}, err
+	return func(target describe.Target) panelcontent.DescribeReads {
+		cl, root := a.cl, a.ctx
+		renderer, err := a.describeRendererForCluster()
+		return panelcontent.DescribeReads{
+			Describe: func() (describe.Result, error) {
+				if err != nil {
+					return describe.Result{}, err
+				}
+				ctrllog.FromContext(root).WithName("describe").Info("describe",
+					"gvr", target.GVR.String(), "namespace", target.Namespace, "name", target.Name)
+				return renderer.Describe(target)
+			},
+			Version: func() string {
+				if cl == nil {
+					return ""
+				}
+				ctx, cancel := context.WithTimeout(root, requestTimeout)
+				defer cancel()
+				obj, err := cl.GetByGVR(ctx, target.GVR, target.Namespace, target.Name)
+				if err != nil || obj == nil {
+					return ""
+				}
+				return obj.GetResourceVersion()
+			},
 		}
-		return renderer.Describe(target)
 	}
+}
+
+// describeRendererForCluster returns one renderer per cluster connection,
+// so a describe does not rebuild the REST client plumbing.
+func (a *App) describeRendererForCluster() (*describe.Renderer, error) {
+	if a.describeRenderer != nil && a.describeRendererCluster == a.cl {
+		return a.describeRenderer, nil
+	}
+	renderer, err := a.newDescribeRenderer()
+	if err != nil {
+		return nil, err
+	}
+	a.describeRenderer, a.describeRendererCluster = renderer, a.cl
+	return renderer, nil
 }
 
 func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
@@ -1076,6 +1126,11 @@ func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
 		return nil, fmt.Errorf("cluster client unavailable")
 	}
 	cfg := rest.CopyConfig(a.cl.GetConfig())
+	if cfg.Timeout == 0 {
+		// The describer takes no context; the timeout bounds each request so
+		// a hung server cannot hold the panel's only load in flight.
+		cfg.Timeout = requestTimeout
+	}
 	mapper := a.cl.RESTMapper()
 	disco := a.cl.DiscoveryClient()
 	var loader clientcmd.ClientConfig
@@ -1473,7 +1528,7 @@ func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
 	if target.WrapMode() {
 		wrapMode = appconfig.ViewerModeWrap
 	}
-	content := NewViewOptionsModel(ViewOptionsConfig{
+	optsCfg := ViewOptionsConfig{
 		PanelIndex:       -1,
 		SkipPanelSection: true,
 		Viewer: &ViewOptionsViewerConfig{
@@ -1481,7 +1536,17 @@ func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
 			Theme:      currentTheme,
 			WrapMode:   wrapMode,
 		},
-	})
+	}
+	if lt, ok := target.(logOptionsTarget); ok {
+		o := lt.LogOptions()
+		optsCfg.Logs = &ViewOptionsLogsConfig{
+			TailLines:    o.TailLines,
+			SinceSeconds: o.SinceSeconds,
+			Timestamps:   o.Timestamps,
+			Previous:     o.Previous,
+		}
+	}
+	content := NewViewOptionsModel(optsCfg)
 	modal := a.modalManager.modals["viewer_options"]
 	if modal == nil {
 		modal = NewModal("Viewer Options", content)
@@ -1521,6 +1586,8 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 		}
 		return nil
 	}
+	var restart tea.Cmd
+	saveLogs := false
 	apply := msg.Accept || msg.SaveDefault
 	if apply {
 		theme := msg.Viewer.Theme
@@ -1539,15 +1606,44 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 		} else {
 			a.cfg.Viewer.Mode = appconfig.ViewerModeScroll
 		}
-		if msg.SaveDefault {
-			_ = appconfig.Save(a.cfg)
+		if lt, ok := target.(logOptionsTarget); ok && msg.Logs != nil {
+			opts := LogOptions{
+				TailLines:    msg.Logs.TailLines,
+				SinceSeconds: msg.Logs.SinceSeconds,
+				Timestamps:   msg.Logs.Timestamps,
+				Previous:     msg.Logs.Previous,
+			}
+			restart = lt.SetLogOptions(opts)
+			if msg.SaveDefault {
+				// Previous belongs to one container's history, not a default.
+				a.cfg.Viewer.Logs = appconfig.LogsViewerConfig{
+					Tail:       opts.TailLines,
+					Since:      metav1.Duration{Duration: time.Duration(opts.SinceSeconds) * time.Second},
+					Timestamps: opts.Timestamps,
+				}
+				saveLogs = true
+			}
 		}
+	}
+	var cmd tea.Cmd
+	switch {
+	case msg.SaveDefault:
+		theme, mode, logs := a.cfg.Viewer.Theme, a.cfg.Viewer.Mode, a.cfg.Viewer.Logs
+		cmd = a.saveDefaults(func(c *appconfig.Config) {
+			c.Viewer.Theme = theme
+			c.Viewer.Mode = mode
+			if saveLogs {
+				c.Viewer.Logs = logs
+			}
+		})
+	case msg.Accept:
+		cmd = a.sessionOnly()
 	}
 	if msg.Close {
 		a.hideModal()
 	}
 	a.viewerOptionsTarget = nil
-	return nil
+	return tea.Batch(restart, cmd)
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
@@ -1752,14 +1848,9 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	gvr := obj.GVR()
-	name := obj.Name()
-	namespace := obj.Namespace()
-	target := deleteTarget{
-		panelIdx:  panelIdx,
-		gvr:       gvr,
-		namespace: namespace,
-		name:      name,
+	target, err := deleteTargetFor(panelIdx, obj)
+	if err != nil {
+		return a.ShowToast(fmt.Sprintf("Cannot delete %s: %v", kubectlResourceRef(obj.GVR(), obj.Name()), err), 5*time.Second)
 	}
 	a.pendingDelete = &target
 
@@ -1774,14 +1865,14 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 			return nil
 		}
 	}
-	resourceLabel := kubectlResourceRef(gvr, name)
-	a.deleteConfirm.Configure(resourceLabel, namespace)
+	resourceLabel := kubectlResourceRef(target.gvr, target.name)
+	a.deleteConfirm.Configure(resourceLabel, target.namespace, target.context)
 	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
 	modal.SetContent(a.deleteConfirm)
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
 	winW := min(max(50, a.width/2), a.width-4)
-	winH := min(8, a.height-4)
+	winH := min(9, a.height-4)
 	if winW < 40 {
 		winW = 40
 	}
@@ -1820,27 +1911,14 @@ func (a *App) createNamespaceWithName(name string) tea.Cmd {
 	})
 }
 
+// performDelete deletes the confirmed object instance on the cluster it
+// was read from; see executeDelete.
 func (a *App) performDelete(target deleteTarget) tea.Cmd {
+	root := a.ctx
 	return a.withBusy("Delete", 300*time.Millisecond, func() tea.Msg {
-		if a.cl == nil {
-			return resourceDeletedMsg{target: target, err: fmt.Errorf("cluster not ready")}
-		}
-		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+		ctx, cancel := context.WithTimeout(root, requestTimeout)
 		defer cancel()
-		kind, err := a.cl.RESTMapper().KindFor(target.gvr)
-		if err != nil {
-			return resourceDeletedMsg{target: target, err: err}
-		}
-		obj := &unstructured.Unstructured{}
-		obj.SetGroupVersionKind(kind)
-		obj.SetName(target.name)
-		if target.namespace != "" {
-			obj.SetNamespace(target.namespace)
-		}
-		if err := a.cl.GetClient().Delete(ctx, obj); err != nil {
-			return resourceDeletedMsg{target: target, err: err}
-		}
-		return resourceDeletedMsg{target: target}
+		return executeDelete(ctx, target)
 	})
 }
 
@@ -1979,31 +2057,34 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 		}
 		return nil
 	}
-	opts := &corev1.PodLogOptions{
-		Container: spec.Container,
-		Follow:    true,
+	// The viewer always follows; the configured defaults fill in the rest.
+	// Previous comes from the row.
+	spec.Follow = true
+	if a.cfg != nil {
+		spec = logsSpecWithDefaults(spec, a.cfg.Viewer.Logs)
 	}
-	if spec.Follow {
-		opts.Follow = true
-	}
-	tail := spec.TailLines
-	if tail <= 0 {
-		tail = models.DefaultLogsTailLines
-	}
-	opts.TailLines = &tail
-	ctx, cancel := context.WithCancel(a.ctx)
-	req := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts)
-	stream, err := req.Stream(ctx)
-	if err != nil {
-		cancel()
-		if a.toastLogger != nil {
-			a.enqueueCmd(a.toastLogger.Errorf("Logs stream failed: %v", err))
+	parent := a.ctx
+	open := func(spec models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) {
+		ctx, cancel := context.WithCancel(parent)
+		opts := spec.PodLogOptions()
+		ctrllog.FromContext(ctx).WithName("logsViewer").Info("client stream logs",
+			"gvr", "v1/pods", "namespace", spec.Namespace, "pod", spec.Pod, "container", spec.Container,
+			"tailLines", spec.EffectiveTailLines(), "sinceSeconds", spec.SinceSeconds,
+			"timestamps", spec.Timestamps, "previous", spec.Previous, "follow", spec.Follow)
+		stream, err := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts).Stream(ctx)
+		if err != nil {
+			cancel()
+			return nil, nil, err
 		}
-		return nil
+		return stream, cancel, nil
 	}
 	title := fmt.Sprintf("logs:%s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
-	logsViewer := NewLogsViewer(title, stream, cancel, a.viewerTheme())
-	logsViewer.SetCommand(itemViewCommand(item))
+	logsViewer := NewLogsViewer(title, spec, open, a.viewerTheme())
+	if lc, ok := item.(models.LogsCommander); ok {
+		logsViewer.SetCommandBuilder(lc.LogsCommand)
+	} else {
+		logsViewer.SetCommand(itemViewCommand(item))
+	}
 	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
 	logsViewer.SetOnClose(func() tea.Cmd {
@@ -2023,6 +2104,18 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	a.modalManager.Register("logs_viewer", modal)
 	a.showModal("logs_viewer")
 	return logsViewer.Init()
+}
+
+// logsSpecWithDefaults applies the configured viewer.logs defaults to spec.
+func logsSpecWithDefaults(spec models.LogsSpec, cfg appconfig.LogsViewerConfig) models.LogsSpec {
+	if cfg.Tail != 0 {
+		spec.TailLines = cfg.Tail
+	}
+	if secs := int64(cfg.Since.Seconds()); secs > 0 {
+		spec.SinceSeconds = secs
+	}
+	spec.Timestamps = cfg.Timestamps
+	return spec
 }
 
 func (a *App) modalTitleFromItem(item models.Item, fallback string) string {
@@ -2367,7 +2460,12 @@ func (a *App) resolveGetResources(namespace string, order []string) (map[string]
 }
 
 func (a *App) goToResourceFolder(res resolvedResource) error {
-	if a.leftNav == nil {
+	return a.goToResourceFolderIn(0, res)
+}
+
+// goToResourceFolderIn opens the object list of res in panel idx.
+func (a *App) goToResourceFolderIn(idx int, res resolvedResource) error {
+	if a.navigatorFor(idx) == nil {
 		return fmt.Errorf("navigation not ready")
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
@@ -2379,19 +2477,20 @@ func (a *App) goToResourceFolder(res resolvedResource) error {
 		if nsName == "" {
 			nsName = corev1.NamespaceDefault
 		}
-		if a.panelScope[0] != nsName {
-			a.panelScope[0] = nsName
-			a.replaceNavigator(0, a.newScopedNavigator(0))
+		if a.panelScope[idx] != nsName {
+			a.panelScope[idx] = nsName
+			a.replaceNavigator(idx, a.newScopedNavigator(idx))
 		}
 	}
-	for a.leftNav.HasBack() {
-		a.leftNav.Back()
+	nav := a.navigatorFor(idx)
+	for nav.HasBack() {
+		nav.Back()
 	}
 	steps := []navui.GoToStep{{SelectionID: res.rowID, Enter: true}}
-	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
+	if _, err := navui.GoTo(ctx, nav, steps); err != nil {
 		return err
 	}
-	a.syncPanelWithNavigator(0)
+	a.syncPanelWithNavigator(idx)
 	return nil
 }
 
@@ -2659,16 +2758,20 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 	if filename == "" {
 		filename = "resource.txt"
 	}
+	return a.showCopyDialog(viewContentCopyRequest(a.modalTitleFromItem(item, title), filename, body))
+}
+
+// viewContentCopyRequest copies a viewer body as is. The body may be raw
+// bytes (binary ConfigMap and Secret keys), so it must not be transformed.
+func viewContentCopyRequest(subject, filename, body string) *copyRequest {
 	data := []byte(body)
-	subject := a.modalTitleFromItem(item, title)
-	req := &copyRequest{
+	return &copyRequest{
 		subject:  subject,
 		filename: filename,
 		fetch: func(context.Context) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(data)), nil
 		},
 	}
-	return a.showCopyDialog(req)
 }
 
 func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
@@ -2743,22 +2846,9 @@ func (a *App) copyToPath(req *copyRequest, dest string) error {
 		return err
 	}
 	defer reader.Close()
-	file, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	closed := false
-	defer func() {
-		if !closed {
-			_ = file.Close()
-		}
-	}()
-	if _, err := io.Copy(file, reader); err != nil {
-		_ = os.Remove(dest)
-		return err
-	}
-	closed = true
-	return file.Close()
+	// The destination changes only after the whole stream was written, and a
+	// new export is private: it may hold decoded Secret values.
+	return atomicfile.Write(ctx, dest, reader)
 }
 
 type copyRequest struct {
@@ -2806,16 +2896,11 @@ func (a *App) fetchLogsSnapshot(ctx context.Context, spec models.LogsSpec) (io.R
 	if err != nil {
 		return nil, err
 	}
-	opts := &corev1.PodLogOptions{
-		Container: spec.Container,
-		Follow:    false,
-	}
-	if spec.TailLines > 0 {
-		opts.TailLines = &spec.TailLines
-	}
 	if spec.Namespace == "" || spec.Pod == "" {
 		return nil, fmt.Errorf("logs spec incomplete")
 	}
+	opts := spec.PodLogOptions()
+	opts.Follow = false
 	req := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts)
 	return req.Stream(ctx)
 }
@@ -2944,7 +3029,7 @@ func (a *App) initData(ctx context.Context) error {
 		nsLog = "(cluster)"
 	}
 	log.Info("selected context", "name", a.currentCtx.Name, "cluster", a.currentCtx.Cluster, "namespace", nsLog)
-	// Prepare app context and cluster pool; cluster will be started via pool.Get
+	// Prepare app context and cluster pool; cluster will be started via pool.Acquire
 	a.cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
 	a.clPool = kccluster.NewPool(
@@ -2961,13 +3046,15 @@ func (a *App) initData(ctx context.Context) error {
 		ImpersonateGroupsKey: a.impersonationGroupsKey(),
 	}
 	log.Info("acquiring cluster", "key", k)
-	cl, err := a.clPool.Get(a.ctx, k)
+	lease, err := a.clPool.Acquire(a.ctx, k, nil)
 	if err != nil {
 		log.Error(err, "cluster acquisition failed")
-		return fmt.Errorf("cluster pool get: %w", err)
+		return fmt.Errorf("cluster pool acquire: %w", err)
 	}
-	a.cl = cl
-	a.clPool.Pin(k)
+	// The app holds its cluster for as long as it is the current one:
+	// evicting it would cancel the informers the panels still read.
+	a.clLease = lease
+	a.cl = lease.Cluster()
 	if factory, err := podfs.NewFactory(a.cl.GetConfig()); err != nil {
 		log.Error(err, "failed to initialize pod filesystem factory")
 		if a.toastLogger != nil {
@@ -3057,13 +3144,15 @@ func (a *App) initData(ctx context.Context) error {
 func (a *App) goToNamespace(ns string) {
 	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace")
 	log.Info("scoping panels", "namespace", ns)
-	if a.clPool != nil {
-		// Keep at most the cluster-scoped cache plus the current namespace cache.
-		a.clPool.PruneNamespaces(ns)
-	}
 	a.panelScope = [2]string{ns, ns}
 	a.replaceNavigator(0, a.newScopedNavigator(0))
 	a.replaceNavigator(1, a.newScopedNavigator(1))
+	if a.clPool != nil {
+		// Keep at most the cluster-scoped cache plus the current namespace
+		// cache. Prune after the old navigators are closed, so the caches
+		// their folders held are released and can go now.
+		a.clPool.PruneNamespaces(ns)
+	}
 	a.updateTermContextNamespace(ns)
 	a.showNavigatorRoot(0)
 	a.showNavigatorRoot(1)
@@ -3589,7 +3678,8 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 		}
 	}
 
-	if len(available) == 0 {
+	builtin := a.objectActionsFor(p)
+	if len(available) == 0 && len(builtin.actions) == 0 {
 		return nil
 	}
 
@@ -3659,6 +3749,11 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	}, func() tea.Cmd {
 		a.hideModal()
 		return nil
+	})
+
+	selector.AddObjectActions(builtin.actions, func(action objectaction.Action) tea.Cmd {
+		a.hideModal()
+		return a.prepareObjectAction(builtin, action)
 	})
 
 	modal := NewModal("Commands", selector)

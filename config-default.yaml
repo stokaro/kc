@@ -1,6 +1,13 @@
 viewer:
   theme: dracula
   mode: scroll
+  logs:
+    # Recent lines fetched before following; -1 fetches the whole log.
+    tail: 200
+    # Only lines newer than this; 0s means no limit.
+    since: 0s
+    # Prefix every line with its timestamp.
+    timestamps: false
 
 panel:
   scrolling:

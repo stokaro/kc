@@ -40,13 +40,16 @@ func main() {
 	pool.Start()
 	defer pool.Stop()
 
-	// Get (and start) a cluster for this kubeconfig+context
+	// Acquire (and start) a cluster for this kubeconfig+context; the lease
+	// keeps it running until Release.
 	appCtx := context.TODO()
 	key := kccluster.Key{KubeconfigPath: ctx.Kubeconfig.Path, ContextName: ctx.Name}
-	cl, err := pool.Get(appCtx, key)
+	lease, err := pool.Acquire(appCtx, key, nil)
 	if err != nil {
-		log.Fatalf("pool get: %v", err)
+		log.Fatalf("pool acquire: %v", err)
 	}
+	defer lease.Release()
+	cl := lease.Cluster()
 
 	// List namespaces using the cluster helpers
 	gvrNS, err := cl.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
