@@ -1343,7 +1343,7 @@ func (a *App) setPanelMode(ctx context.Context, panel *Panel, mode PanelViewMode
 		a.invalidateView(reason)
 		a.invalidateFunctionBar(reason)
 	}
-	return tea.Batch(cmd, a.followOtherPanelLogs(ctx, panel))
+	return tea.Batch(cmd, a.followOtherPanel(ctx, panel))
 }
 
 func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {
@@ -3349,17 +3349,26 @@ func (a *App) goToNamespace(ns string) {
 	a.updateTermContextNamespace(ns)
 	a.showNavigatorRoot(0)
 	a.showNavigatorRoot(1)
-	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
-		a.setActivePanel(0, "left panel folder nav focus")
-		a.handleFolderNav(back, selID, next)
-	})
-	a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
-		a.setActivePanel(1, "right panel folder nav focus")
-		a.handleFolderNav(back, selID, next)
-	})
+	a.installFolderNavHandlers()
 	a.recordHistory(0)
 	a.recordHistory(1)
 	a.scheduleStartupIntent()
+}
+
+// installFolderNavHandlers makes Enter and Back in a panel navigate that
+// panel. The handler looks the side up when it runs, because swapPanels
+// moves a panel to the other side.
+func (a *App) installFolderNavHandlers() {
+	for _, p := range []*Panel{a.leftPanel, a.rightPanel} {
+		p.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
+			idx, ok := a.panelIndexFor(p)
+			if !ok {
+				return
+			}
+			a.setActivePanel(idx, "panel folder nav focus")
+			a.handleFolderNav(back, selID, next)
+		})
+	}
 }
 
 func (a *App) scheduleStartupIntent() {

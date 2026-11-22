@@ -45,11 +45,6 @@ type nativeSession struct {
 }
 
 func newNativeSession(ctx context.Context, cfg *rest.Config, client kubernetes.Interface, spec SessionSpec) (ExecSession, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	stdinReader, stdinWriter := io.Pipe()
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-
 	req := client.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(spec.Pod).
@@ -66,15 +61,20 @@ func newNativeSession(ctx context.Context, cfg *rest.Config, client kubernetes.I
 
 	exec, err := remotecommand.NewSPDYExecutor(cfg, "POST", req.URL())
 	if err != nil {
-		cancel()
-		_ = stdinReader.Close()
-		_ = stdinWriter.Close()
-		_ = stdoutReader.Close()
-		_ = stdoutWriter.Close()
-		_ = stderrReader.Close()
-		_ = stderrWriter.Close()
 		return nil, fmt.Errorf("podfs: executor: %w", err)
 	}
+	return startNativeSession(ctx, spec, exec, cfg, client)
+}
+
+// startNativeSession runs the session's shell on exec. ctx bounds only the
+// bootstrap: the shell stream outlives it and ends with Close. Callers open
+// a session for one request and cache it, so a stream tied to ctx would be
+// dead by the time the next request uses it.
+func startNativeSession(ctx context.Context, spec SessionSpec, exec remotecommand.Executor, cfg *rest.Config, client kubernetes.Interface) (ExecSession, error) {
+	streamCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
 
 	session := &nativeSession{
 		spec:   spec,
@@ -86,7 +86,7 @@ func newNativeSession(ctx context.Context, cfg *rest.Config, client kubernetes.I
 		cancel: cancel,
 	}
 
-	go session.copyLoop(exec, ctx, stdinReader, stdoutWriter, stderrWriter)
+	go session.copyLoop(exec, streamCtx, stdinReader, stdoutWriter, stderrWriter)
 	go session.stderrDrain(stderrReader)
 	go session.stdoutLoop(stdoutReader)
 
