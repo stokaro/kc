@@ -4,6 +4,7 @@ package ui
 // list widget behind a Panel are unexported.
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -168,7 +169,7 @@ func TestViewOptionsFaultsOnly(t *testing.T) {
 		PanelWidthPercent: -1,
 		Objects:           &ViewOptionsObjectsConfig{ShowFaultsOnly: true},
 	})
-	if !strings.Contains(ansi.Strip(m.View().Content), "Faults only  : No") {
+	if !regexp.MustCompile(`Faults only\s*: No`).MatchString(ansi.Strip(m.View().Content)) {
 		t.Fatalf("dialog has no Faults only row: %q", ansi.Strip(m.View().Content))
 	}
 	for range len(m.entries) {
