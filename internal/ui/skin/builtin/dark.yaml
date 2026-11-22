@@ -1,0 +1,15 @@
+# Panels on a black background, for dark terminal themes.
+panel:
+  background: black
+  foreground: white
+  frame: gray
+  header: yellow
+  marked: bright-yellow
+  cursor:
+    foreground: black
+    background: cyan
+  title:
+    foreground: black
+    background: white
+  context: bright-yellow
+  namespace: bright-cyan

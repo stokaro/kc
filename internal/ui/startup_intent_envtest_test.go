@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	tea "charm.land/bubbletea/v2"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
@@ -18,9 +20,7 @@ import (
 )
 
 func setupAppWithCluster(t *testing.T) (*App, *kccluster.Cluster) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)

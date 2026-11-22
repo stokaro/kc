@@ -91,6 +91,13 @@ func (n *Navigator) Steps() []string {
 	return steps
 }
 
+// BackTo pops folders until only depth steps are left below the root.
+func (n *Navigator) BackTo(depth int) {
+	for len(n.stack) > max(1, depth+1) {
+		n.Back()
+	}
+}
+
 // HasBack reports whether a back action is possible.
 func (n *Navigator) HasBack() bool { return len(n.stack) > 1 }
 
