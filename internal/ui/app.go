@@ -276,6 +276,7 @@ type App struct {
 	// panelScope is each panel's namespace scope (models.AllNamespaces for
 	// all). It is kc state; kubeconfig is never changed.
 	panelScope         [2]string
+	namespaceScopes    namespaceScopes      // namespaces used in this session (issue #56)
 	activity           *models.Activity     // pauses background refreshes while a dialog is open
 	pendingConfirm     *pendingConfirmation // waits for the red confirmation
 	objectActions      *objectaction.Registry
@@ -3302,6 +3303,7 @@ func (a *App) goToNamespace(ns string) {
 	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace")
 	log.Info("scoping panels", "namespace", ns)
 	a.panelScope = [2]string{ns, ns}
+	a.rememberPanelNamespace(ns)
 	a.replaceNavigator(0, a.newScopedNavigator(0))
 	a.replaceNavigator(1, a.newScopedNavigator(1))
 	if a.clPool != nil {
