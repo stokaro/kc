@@ -2,6 +2,8 @@
 
 [![Build Status](https://github.com/stokaro/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/stokaro/kc/actions/workflows/build.yml)
 
+> **Origin:** kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) (upstream). This repository is developed independently and has diverged a lot from it: key bindings, features and internals differ. Report issues for this version at [stokaro/kc](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE) for attribution.
+
 ![Kubernetes Commander TUI](docs/screenshot.png)
 
 A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, Bubble Tea v2 and controller-runtime informers. See `TODO.md` for the plan.

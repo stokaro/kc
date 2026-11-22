@@ -53,8 +53,9 @@ Constraints:
    modifier (they would take typing on the command line), single
    `C-<letter>` keys (kc and the shell line use nearly all of them; mc users
    put their own keys behind `C-x`), `F1` to `F10`, modifiers on function
-   keys, and the built-in keys listed in `builtinHotkeys` (`M-a M-b M-c M-e
-   M-f M-H M-j M-k M-l M-o M-p M-r M-s M-t M-u M-w M-x M-y`, `C-x C-d`).
+   keys, and the built-in keys listed in `builtinHotkeys` (`M-a M-A M-b M-c
+   M-e M-f M-g M-H M-j M-k M-l M-n M-o M-p M-r M-s M-t M-u M-v M-w M-x M-y`,
+   `C-x C-d`).
 
 3. **Validation at load, without changing the configuration.**
    `App.Init` calls `loadCommandHotkeys`, which runs
