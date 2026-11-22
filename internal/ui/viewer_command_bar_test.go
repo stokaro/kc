@@ -28,11 +28,11 @@ func TestViewerCommandBar(t *testing.T) {
 	}
 	_, cmd := v.Update(tea.KeyPressMsg{Code: 'a', Mod: tea.ModAlt})
 	if r := req(cmd); r.Text != "a: 1\nb: 2" || r.What != "output" {
-		t.Fatalf("Alt+A = %#v", r)
+		t.Fatalf("M-a = %#v", r)
 	}
 	_, cmd = v.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModAlt})
 	if r := req(cmd); r.Text != "kubectl get configmap cm -n web -o yaml" {
-		t.Fatalf("Alt+C = %#v", r)
+		t.Fatalf("M-c = %#v", r)
 	}
 	_, cmd = v.Update(tea.MouseReleaseMsg(tea.Mouse{X: 78, Y: 9, Button: tea.MouseLeft}))
 	if r := req(cmd); r.What != "command" {

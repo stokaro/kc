@@ -9,7 +9,7 @@
 - Navigate with arrows; `Enter` opens item; `..` goes up.
 - Function-key bar always visible; actions greyed when not applicable.
 - Selected items are bold yellow; selection clears when changing location.
-- `Alt+I` synchronizes the inactive panel to the active panel’s location.
+- `M-i` synchronizes the inactive panel to the active panel’s location.
 
 ## Navigation Model (Paths)
 - Root shows top entries followed by cluster-scoped resources:
@@ -33,7 +33,7 @@
 
 ## Actions & Keys
 - `F3` View YAML; `F4` Edit; `F7` Create; `F8` Delete with confirmation.
-- `Ctrl+O` toggles full-screen terminal; `Alt+I` syncs panel locations.
+- `Ctrl+O` toggles full-screen terminal; `M-i` syncs panel locations.
 
 ## Terminal Integration
 - Terminal follows kubeconfig, context, and namespace changes.

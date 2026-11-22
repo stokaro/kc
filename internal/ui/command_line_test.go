@@ -15,7 +15,7 @@ func TestRenderCommandLine(t *testing.T) {
 	if lipgloss.Width(line) != 80 {
 		t.Fatalf("width = %d, want 80", lipgloss.Width(line))
 	}
-	if !strings.HasPrefix(plain, " Command: kubectl get pods -n web") || !strings.HasSuffix(plain, "📋 Copy Alt+C ") {
+	if !strings.HasPrefix(plain, " Command: kubectl get pods -n web") || !strings.HasSuffix(plain, "📋 Copy M-c ") {
 		t.Fatalf("unexpected line %q", plain)
 	}
 
@@ -24,7 +24,7 @@ func TestRenderCommandLine(t *testing.T) {
 		t.Fatalf("long command should be truncated to the width: %q", ansi.Strip(long))
 	}
 
-	if plain := ansi.Strip(renderCommandLine("", 40)); strings.Contains(plain, "Alt+C") {
+	if plain := ansi.Strip(renderCommandLine("", 40)); strings.Contains(plain, "M-c") {
 		t.Fatalf("no copy hint without a command: %q", plain)
 	}
 }

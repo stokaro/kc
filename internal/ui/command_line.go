@@ -13,7 +13,7 @@ import (
 	"github.com/sttts/kc/internal/ui/viewer"
 )
 
-// copyCommandKey copies the kubectl command of the active panel. Alt+C is
+// copyCommandKey copies the kubectl command of the active panel. M-c is
 // free in panels and in the shell line, and reads as "copy".
 const copyCommandKey = "alt+c"
 
@@ -103,7 +103,7 @@ func renderCommandLine(command string, width int) string {
 const copyHintIcon = "📋"
 
 func renderCopyHint() string {
-	return commandLineStyle.Render(copyHintIcon+" Copy ") + commandLineKey.Render("Alt+C") + commandLineStyle.Render(" ")
+	return commandLineStyle.Render(copyHintIcon+" Copy ") + commandLineKey.Render("M-c") + commandLineStyle.Render(" ")
 }
 
 // commandLineY is the screen row of the command line, or -1 when hidden.

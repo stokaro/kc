@@ -216,12 +216,12 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			}
 			return a, nil
 		case "c":
-			// Esc c is the meta-key fallback for Alt+C (macOS Option does not
+			// Esc c is the meta-key fallback for M-c (macOS Option does not
 			// send Alt by default).
 			a.escPressed = false
 			return a, a.copyPanelCommand()
 		case "s":
-			// Esc s is the fallback for Alt+S, as in mc.
+			// Esc s is the fallback for M-s, as in mc.
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
