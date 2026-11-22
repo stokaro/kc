@@ -698,6 +698,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.showNamespacePicker(msg)
 	case viewer.CopyRequestMsg:
 		return a, a.copyText(msg.Text, copyWhat(msg))
+	case compareResultMsg:
+		return a, msg.view.apply(msg)
 	case copyResultMsg:
 		if msg.error {
 			return a, a.ShowToast(msg.text, 3*time.Second)
@@ -952,6 +954,10 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case compareResultMsg:
+		// The result names its viewer; it must not be lost when another
+		// dialog (viewer options) is on top while the manifests load.
 		return true
 	}
 	return false

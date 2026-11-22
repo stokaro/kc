@@ -13,6 +13,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	if !isPress {
 		return a, nil
 	}
+	// The key after C-x completes or cancels the prefix, whatever it is.
+	ctrlX := a.ctrlXPending
+	a.ctrlXPending = false
 	// Interactive command focus: route all keys to the active panel widget first.
 	if a.interactiveCommandActive() {
 		if a.activePanel == 0 {
@@ -34,6 +37,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		if handled {
 			return a, nil
 		}
+	}
+	if ctrlX {
+		return a, a.handleCtrlXKey(press.String())
 	}
 	// Prefer modifier-aware matching to cover both KeyMsg and KeyPressMsg forms.
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
@@ -279,6 +285,12 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		if msg.String() == copyCommandKey {
 			return a, a.copyPanelCommand()
+		}
+		// C-x starts a two-key command, as in mc. While the shell line has
+		// typed text, C-x stays with the shell.
+		if msg.String() == ctrlXPrefixKey && (a.terminal == nil || !a.terminal.HasInput()) {
+			a.ctrlXPending = true
+			return a, nil
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys

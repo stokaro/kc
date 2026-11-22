@@ -178,6 +178,8 @@ type App struct {
 	allResources []schema.GroupVersionKind
 	// Esc sequence tracking
 	escPressed bool
+	// ctrlXPending is set after C-x, the prefix of mc's two-key commands.
+	ctrlXPending bool
 	// Data providers
 	kubeMgr           *kubeconfig.Manager
 	cl                *kccluster.Cluster

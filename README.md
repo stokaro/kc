@@ -79,9 +79,12 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
 | `M-a`      | In viewers: copy the whole content.                                             |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
+| `C-x C-d`  | Compare the objects under the cursors of the two panels, as mc's "Compare files". Opens a read-only unified diff of the two YAML manifests. |
 | `C-c`      | Quit.                                                                           |
 
 Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
+
+The compare viewer heads the diff with both identities (context, group/version/resource, namespace, name) and the fields it left out. By default it shows the configuration view: it omits `metadata.uid`, `resourceVersion`, `generation`, `creationTimestamp`, `managedFields`, `selfLink` and `status`, and never reorders lists. `r` switches to the raw view and back, `s` adds or removes `status`, `n`/`Space`/`Enter` go to the next change and `p`/`Backspace` to the previous one (search continues with `Shift-F7`), and `C-r` reads both objects again; until then the diff stays as it was read. The last line shows the matching `diff -u <(kubectl get ...) <(kubectl get ...)` command.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
 
