@@ -20,6 +20,17 @@ func TestKubectlCommand(t *testing.T) {
 	nodePods.kubectlArgs = []string{"--field-selector", "spec.nodeName=n1"}
 	owned := objects(current, podGVR, "web")
 	owned.kubectlNote = "owned by replicasets.apps/web-1"
+	filtered := func(text string) *ObjectsFolder {
+		o := objects(current, podGVR, "web")
+		o.rows = newLiveObjectRowSourceWithHooks(nil, nil, nil)
+		f, err := ParseRowFilter(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.FaultsOnly = true
+		o.rows.setRowFilter(f)
+		return o
+	}
 
 	tests := []struct {
 		name   string
@@ -31,6 +42,9 @@ func TestKubectlCommand(t *testing.T) {
 		{"other context", objects(other, podGVR, "web"), "kubectl --context prod get pods -n web"},
 		{"node pods", nodePods, "kubectl get pods -A --field-selector spec.nodeName=n1"},
 		{"owned children", owned, "kubectl get pods -n web  # owned by replicasets.apps/web-1"},
+		{"label filter", filtered("-l app=web"), "kubectl get pods -n web -l app=web"},
+		{"label set filter", filtered("-l tier in (a, b)"), "kubectl get pods -n web -l 'tier in (a,b)'"},
+		{"name filter is not a kubectl flag", filtered("!web"), "kubectl get pods -n web"},
 		{"namespace resources", &NamespacedResourcesFolder{ResourcesFolder: &ResourcesFolder{BaseFolder: &BaseFolder{Deps: current}}}, "kubectl api-resources --namespaced=true"},
 		{"configmap keys", &ConfigMapKeysFolder{BaseFolder: &BaseFolder{Deps: current}, Namespace: "web", Name: "cfg"}, "kubectl get configmap cfg -n web -o 'jsonpath={.data}'"},
 		{"containers", &PodContainerListFolder{BaseFolder: &BaseFolder{Deps: current}, Namespace: "web", Pod: "p", Kind: containerKindInit},

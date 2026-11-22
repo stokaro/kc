@@ -210,6 +210,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						saveHandled = true
 					}
 				}
+				if m.Objects != nil && m.Accept && m.Objects.HasFaultsOnly {
+					// Faults only is a per-folder view state; Save as
+					// defaults does not store it.
+					a.setPanelFaultsOnly(a.panelByIndex(m.PanelIndex), m.Objects.FaultsOnly)
+				}
 				if m.Objects != nil && (m.Accept || m.SaveDefault) {
 					tableMode := currentTableMode
 					if m.HasTableMode {
@@ -493,6 +498,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.refreshPanelAfterEdit(msg.panelIndex)
+		return a, nil
+	case RowFilterResultMsg:
+		if msg.Close {
+			a.hideModal()
+		}
+		if msg.Confirm {
+			a.applyRowFilterText(msg.Panel, msg.Text)
+		}
 		return a, nil
 	case NamespaceCreateResultMsg:
 		if msg.Close {
@@ -939,7 +952,7 @@ func (a *App) handleCommandWatchTick(msg commandWatchTickMsg) (tea.Model, tea.Cm
 // (no more read errors, panel refreshes or discovery updates).
 func passesModal(msg tea.Msg) bool {
 	switch msg.(type) {
-	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg:
+	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg, RowFilterResultMsg:
 		return true
 	case viewer.CopyRequestMsg:
 		// The app owns the clipboard; the viewer only asks.

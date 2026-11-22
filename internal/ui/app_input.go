@@ -90,6 +90,16 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		}
 
+	case rowFilterKey:
+		if a.panelKeysFree() {
+			return a, a.showRowFilterDialog()
+		}
+
+	case faultsOnlyKey:
+		if a.panelKeysFree() {
+			return a, a.toggleFaultsOnly()
+		}
+
 	case "tab":
 		if a.interactiveCommandActive() {
 			break
@@ -224,6 +234,13 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// Esc s is the fallback for M-s, as in mc.
 			a.escPressed = false
 			a.startQuickSearch()
+			return a, nil
+		case "f":
+			// Esc f is the fallback for M-f.
+			a.escPressed = false
+			if a.panelKeysFree() {
+				return a, a.showRowFilterDialog()
+			}
 			return a, nil
 		case "w":
 			a.escPressed = false

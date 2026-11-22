@@ -44,6 +44,8 @@ type ViewOptionsObjectsPayload struct {
 	ShowTableOption bool
 	Columns         string
 	Order           string
+	HasFaultsOnly   bool
+	FaultsOnly      bool
 }
 
 // ViewOptionsCommandPayload carries command-specific options.
@@ -88,6 +90,10 @@ type ViewOptionsObjectsConfig struct {
 	ShowTableMode bool
 	Columns       string
 	Order         string
+	// ShowFaultsOnly adds the "Faults only" toggle; it is shown for
+	// folders that can filter rows.
+	ShowFaultsOnly bool
+	FaultsOnly     bool
 }
 
 // ViewOptionsCommandConfig configures the Command section.
@@ -162,6 +168,7 @@ const (
 	viewOptionCommandWatch
 	viewOptionViewerTheme
 	viewOptionViewerWrapMode
+	viewOptionObjectFaultsOnly
 )
 
 type viewOptionEntry struct {
@@ -204,6 +211,8 @@ type ViewOptionsModel struct {
 		showTable  bool
 		columnsIdx int
 		orderIdx   int
+		hasFaults  bool
+		faults     bool
 	}
 
 	viewer struct {
@@ -288,6 +297,8 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		model.objects.showTable = cfg.Objects.ShowTableMode
 		model.objects.columnsIdx = objectColumnsIndexFor(cfg.Objects.Columns)
 		model.objects.orderIdx = objectOrderIndexFor(cfg.Objects.Order)
+		model.objects.hasFaults = cfg.Objects.ShowFaultsOnly
+		model.objects.faults = cfg.Objects.FaultsOnly
 
 		model.appendSectionSpacerIfNeeded()
 		model.entries = append(model.entries, viewOptionEntry{
@@ -304,6 +315,9 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectColumns},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectOrder},
 		)
+		if model.objects.hasFaults {
+			model.entries = append(model.entries, viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectFaultsOnly})
+		}
 	}
 
 	if cfg.Command != nil {
@@ -665,6 +679,8 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		} else {
 			m.objects.orderIdx = (m.objects.orderIdx + 1) % len(objOrderKeys)
 		}
+	case viewOptionObjectFaultsOnly:
+		m.objects.faults = !m.objects.faults
 	case viewOptionViewerTheme:
 		if !m.viewer.enabled || len(m.viewer.themeNames) == 0 {
 			return
@@ -749,6 +765,8 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 			ShowTableOption: m.objects.showTable,
 			Columns:         objColumnsKeys[m.objects.columnsIdx],
 			Order:           objOrderKeys[m.objects.orderIdx],
+			HasFaultsOnly:   m.objects.hasFaults,
+			FaultsOnly:      m.objects.faults,
 		}
 	}
 	if m.viewer.enabled {
@@ -801,6 +819,12 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 		return "Columns", objColumnsLabels[m.objects.columnsIdx]
 	case viewOptionObjectOrder:
 		return "Objects order", objOrderLabels[m.objects.orderIdx]
+	case viewOptionObjectFaultsOnly:
+		val := "No"
+		if m.objects.faults {
+			val = "Yes"
+		}
+		return "Faults only", val
 	case viewOptionCommandWatch:
 		if len(commandWatchLabels) == 0 {
 			return "Watch", "-"

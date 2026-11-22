@@ -63,8 +63,9 @@ type panelScopeLabel struct {
 
 // scopeHits are the frame columns of the context and namespace labels.
 type scopeHits struct {
-	ctxFrom, ctxTo int
-	nsFrom, nsTo   int
+	ctxFrom, ctxTo       int
+	nsFrom, nsTo         int
+	filterFrom, filterTo int // the row filter label; a click clears it
 }
 
 var (
@@ -106,7 +107,7 @@ func renderScopeLabel(scope panelScopeLabel, dash string, offset, maxWidth int) 
 }
 
 // scopeHit reports which scope label is at frame column x: "context",
-// "namespace", or "".
+// "namespace", "filter", or "".
 func (p *Panel) scopeHit(x int) string {
 	h := p.scopeHits
 	switch {
@@ -114,6 +115,8 @@ func (p *Panel) scopeHit(x int) string {
 		return "context"
 	case x >= h.nsFrom && x < h.nsTo:
 		return "namespace"
+	case x >= h.filterFrom && x < h.filterTo:
+		return "filter"
 	}
 	return ""
 }
@@ -246,12 +249,16 @@ func (a *App) handleScopeClick(m tea.Mouse) (tea.Cmd, bool) {
 	case "context":
 		a.setActivePanel(idx, "scope click")
 		return a.showContextPicker(), true
+	case "filter":
+		a.setActivePanel(idx, "filter click")
+		a.clearRowFilter(idx)
+		return nil, true
 	}
 	return nil, false
 }
 
 // scopeHitAt returns the panel and the scope label ("context",
-// "namespace" or "") under the mouse.
+// "namespace", "filter" or "") under the mouse.
 func (a *App) scopeHitAt(m tea.Mouse) (int, string) {
 	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
 	if m.Y != panelHeight-1 {

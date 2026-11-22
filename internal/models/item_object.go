@@ -15,6 +15,8 @@ type ObjectRow struct {
 	name      string
 	viewFn    ViewContentFunc
 	verbs     []string
+	facts     RowFacts // what a RowFilter looks at
+	hasFacts  bool
 }
 
 func NewObjectRow(id string, cells []string, path []string, gvr schema.GroupVersionResource, namespace, name string, style *lipgloss.Style) *ObjectRow {
