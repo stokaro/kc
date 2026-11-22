@@ -62,6 +62,8 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		}
 		return a, a.showViewOptionsModalForPanel(a.panelByIndex(1))
+	case accessViewKey:
+		return a, a.showAccessView()
 	case "alt+w":
 		if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
 			return a, tea.Batch(resizeCmds...)
@@ -225,6 +227,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
+		case "k":
+			// Esc k is the fallback for M-k (access view).
+			a.escPressed = false
+			return a, a.showAccessView()
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
