@@ -11,7 +11,7 @@ panel:
     rightPercent: 50
 
 input:
-  escTimeout: 300ms
+  escTimeout: 1s
   mouse:
     doubleClickTimeout: 300ms
 

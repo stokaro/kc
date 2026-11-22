@@ -200,7 +200,7 @@ func Default() *Config {
 		},
 		Input: InputConfig{
 			Mouse:      MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}},
-			EscTimeout: metav1.Duration{Duration: 300 * time.Millisecond},
+			EscTimeout: metav1.Duration{Duration: time.Second},
 		},
 		Kubernetes: KubernetesConfig{
 			Clusters:  ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}},
