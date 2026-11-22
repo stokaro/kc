@@ -114,6 +114,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	case commandWatchTickMsg:
 		model, cmd := a.handleCommandWatchTick(msg)
 		return model, cmd
+	case workloadLogsReadyMsg:
+		return a, tea.Batch(append(cmds, a.showWorkloadLogs(msg))...)
 	case logStreamOpenedMsg, logStreamMsg:
 		// Stream results go to their viewer even when a dialog (F2) covers
 		// it; routed through the top modal they would be dropped and the

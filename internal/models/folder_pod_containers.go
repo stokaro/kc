@@ -57,6 +57,17 @@ func (f *PodContainersFolder) buildRows(ctx context.Context) ([]table.Row, error
 		item.RowItem.details = detail
 		rows = append(rows, item)
 	}
+	spec := WorkloadLogsSpec{
+		Namespace: f.Namespace,
+		Pod:       f.Pod,
+		Follow:    true,
+		TailLines: DefaultLogsTailLines,
+	}
+	logPath := append(append([]string{}, f.Path()...), "logs")
+	logItem := NewWorkloadLogItem(f.Deps, "logs_all", []string{"logs (all containers)"}, logPath, spec)
+	logItem.RowItem.details = "Stream logs of all containers"
+	logItem.SetViewCommand(logItem.WorkloadLogsCommand(spec, spec.LogsSpec(), "", f.Deps.AppConfig.Viewer.Logs.EffectiveMaxRequests()))
+	rows = append(rows, logItem)
 	return rows, nil
 }
 

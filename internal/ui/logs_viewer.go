@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/ui/viewer"
 )
@@ -107,11 +108,30 @@ type LogsViewer struct {
 	onOptions  func() tea.Cmd
 	onClose    func() tea.Cmd
 	bar        viewerCommandBar
+
+	// styled marks a stream whose lines carry ANSI styling (the colored
+	// prefixes of a merged log); search and copy use the stripped text.
+	styled bool
 }
 
 // SetCommand sets the kubectl command shown under the log. A command builder
 // set with SetCommandBuilder replaces it when the options change.
 func (v *LogsViewer) SetCommand(cmd string) { v.bar.command = cmd }
+
+// SetStyledLines marks the stream's lines as carrying ANSI styling.
+func (v *LogsViewer) SetStyledLines(on bool) { v.styled = on }
+
+func (v *LogsViewer) appendLines(lines []string) {
+	if !v.styled {
+		v.inner.AppendLines(lines)
+		return
+	}
+	text := make([]string, len(lines))
+	for i, l := range lines {
+		text[i] = ansi.Strip(l)
+	}
+	v.inner.AppendStyledLines(text, lines)
+}
 
 // SetCommandBuilder sets how the kubectl command under the log is built, and
 // builds it for the current spec.
@@ -238,7 +258,7 @@ func (v *LogsViewer) handleOpened(m logStreamOpenedMsg) tea.Cmd {
 		closeStream(m.reader, m.cancel)
 		v.err = m.err
 		v.done = true
-		v.inner.AppendLines([]string{"[kc] logs stream failed: " + m.err.Error()})
+		v.appendLines([]string{"[kc] logs stream failed: " + m.err.Error()})
 		return nil
 	}
 	v.reader = m.reader
@@ -252,7 +272,7 @@ func (v *LogsViewer) handleChunk(m logStreamMsg) tea.Cmd {
 		return nil
 	}
 	if len(m.lines) > 0 {
-		v.inner.AppendLines(m.lines)
+		v.appendLines(m.lines)
 		if v.autoFollow || v.inner.AtEnd() {
 			v.inner.ScrollToEnd()
 			v.autoFollow = true

@@ -25,10 +25,28 @@ type LogsViewerConfig struct {
 	Since metav1.Duration `json:"since"`
 	// Timestamps prefixes every line with its timestamp.
 	Timestamps bool `json:"timestamps"`
+	// MaxRequests limits the log streams a merged logs viewer (all pods of
+	// a workload, all containers of a pod) runs at once, like kubectl's
+	// --max-log-requests. Further streams wait for a free slot. Zero or
+	// less means DefaultLogsMaxRequests.
+	MaxRequests int `json:"maxRequests"`
 }
 
 // DefaultLogsTail is the default for viewer.logs.tail.
 const DefaultLogsTail int64 = 200
+
+// DefaultLogsMaxRequests is the default for viewer.logs.maxRequests. It
+// matches stern's default for following logs.
+const DefaultLogsMaxRequests = 50
+
+// EffectiveMaxRequests returns MaxRequests, or the default when it is not
+// positive.
+func (c LogsViewerConfig) EffectiveMaxRequests() int {
+	if c.MaxRequests <= 0 {
+		return DefaultLogsMaxRequests
+	}
+	return c.MaxRequests
+}
 
 const (
 	ViewerModeScroll = "scroll"
@@ -398,7 +416,7 @@ func Default() *Config {
 		Viewer: ViewerConfig{
 			Theme: "dracula",
 			Mode:  ViewerModeScroll,
-			Logs:  LogsViewerConfig{Tail: DefaultLogsTail},
+			Logs:  LogsViewerConfig{Tail: DefaultLogsTail, MaxRequests: DefaultLogsMaxRequests},
 		},
 		Panel: PanelConfig{
 			Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}},
