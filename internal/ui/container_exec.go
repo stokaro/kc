@@ -70,10 +70,21 @@ func (a *App) resolveExecTarget(folder models.Folder, item models.Item, mode mod
 	}
 }
 
+// errExecReadOnly refuses a shell or attach session in a read-only context.
+var errExecReadOnly = errors.New("disabled in read-only mode: a shell or attach can change anything in the container")
+
 // execGate is the single place that decides whether kc may open a session.
-// Read-only mode (#42) and the access checks for create on pods/exec and
-// pods/attach (#102) plug in here; today every session is allowed.
-func (a *App) execGate(models.ExecTarget, models.ExecMode) error {
+// Read-only mode refuses both shell and attach: kc cannot see what is typed
+// in the session. The access checks for create on pods/exec and pods/attach
+// (#102) can plug in here as well.
+func (a *App) execGate(target models.ExecTarget, _ models.ExecMode) error {
+	context := target.Cluster.ContextName
+	if context == "" {
+		context = a.currentContextName()
+	}
+	if a.readOnlyFor(context) {
+		return errExecReadOnly
+	}
 	return nil
 }
 

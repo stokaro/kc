@@ -236,7 +236,7 @@ The overview reads its own cluster-wide informer cache. It starts when `/overvie
 
 ## Read-only mode
 
-In read-only mode kc does not change the cluster: `F4` (edit), `F7` (create namespace) and `F8` (delete) are grayed out, the pod filesystem offers no debug helper for a container without a shell, custom commands marked `dangerous: true` are hidden from the `F9` menu, and port forwards (`M-p`), the node shell and the CronJob actions of the `F2` menu (Run now, Suspend/Resume) are refused. Pressing a grayed key shows "Read-only mode: ... is disabled". The panel frame shows a red `RO` before the context name.
+In read-only mode kc does not change the cluster: `F4` (edit), `F7` (create namespace) and `F8` (delete) are grayed out, the pod filesystem offers no debug helper for a container without a shell, custom commands marked `dangerous: true` are hidden from the `F9` menu, and port forwards (`M-p`), shell and attach in a container (`M-x`, `M-t`), the node shell and the CronJob actions of the `F2` menu (Run now, Suspend/Resume) are refused. Pressing a grayed key shows "Read-only mode: ... is disabled". The panel frame shows a red `RO` before the context name.
 
 Turn it on per context in `~/.kc/config.yaml`, with exact names or globs (`*` matches any run of characters, including `/` in EKS ARNs; `?` one character):
 
