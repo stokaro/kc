@@ -14,11 +14,12 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Hierarchy-first navigation:** resource groups → object folders → virtual subfolders (pod containers, ConfigMap/Secret keys, etc.). Every row is keyed by full `group/version/resource`.
 - **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices) via per-object child folders so related resources stay discoverable in the tree.
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
+- **CPU and memory usage:** when the cluster serves `metrics.k8s.io` (metrics-server), pod lists show `CPU`, `MEM`, `%CPU/R` (of requests) and `%MEM/L` (of limits), and node lists show `CPU`, `%CPU`, `MEM` and `%MEM` (of allocatable). Wide mode adds `%CPU/L` and `%MEM/R` for pods and `CPU/A` and `MEM/A` for nodes. kc reads the metrics every 15 seconds, only while such a list is on screen and no dialog is open. `n/a` means no metrics for the object yet, no request or limit to compare with, or metrics kc may not read.
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
-- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
+- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts; `F2` sets tail lines, the since window, timestamps and the previous container instance, and restarts the stream. A container that restarted also gets a `logs (previous)` row.
 - **Container internals:** each pod container exposes `/logs` plus a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
-- **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker.
-- **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
+- **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker. kc writes the export to a temporary file next to the destination and replaces the destination only when the whole content arrived, so a failed export leaves an existing file as it was. New files are created with mode 0600; a replaced file keeps its owner permissions and loses group and other access. kc refuses to write through a symbolic link. Binary ConfigMap and Secret keys show their size, detected content type and a hex dump in `F3`; `F5` saves the original bytes.
+- **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. In the option dialogs, `Enter` applies a change to the current session and `C-s` saves it as the default.
 
 ## Getting Started
 
@@ -71,8 +72,8 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
-| `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
-| `F9`       | Menu – Open custom commands menu.                                               |
+| `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. |
+| `F9`       | Menu – Built-in object actions and custom commands.                             |
 | `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
@@ -90,6 +91,23 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 ## Context and Namespace
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
+
+Everything kc starts runs against the context and identity the panels show: the integrated shell, `F4` (`kubectl edit`) and custom commands. `--as`, `--as-uid` and `--as-group` are applied on top of the context's own credentials (token, client certificate or exec plugin). `F4` passes them as kubectl flags. The shell and custom commands get `KUBECONFIG` pointing at a kubeconfig that kc generates in a private temp directory (mode 0600) and removes on exit. With `terminal.mode: overlay` (the default) that file only sets the current context, the namespace and, when you impersonate, the user entry, and your own kubeconfig files follow it in `KUBECONFIG`; with `terminal.mode: copy` it is a full copy of the file that defines the context. The shell keeps the same `KUBECONFIG` path for its whole life, so it follows context and namespace changes from its next command on. `terminal.follow: false` leaves the shell's environment alone.
+
+## Node Shell
+
+With `nodeShell.enabled: true` (optionally limited to `nodeShell.contexts`), entering a node shows `Start a node shell...` under `/pods`. `Enter` opens a red confirmation that names the context, node, namespace, pod and image and shows a similar `kubectl debug node/...` command. After `Start`, kc creates a privileged pod on the node (`nodeName`, host PID, network and IPC namespaces, tolerating every taint) and opens a root shell in the host namespaces (`nsenter -t 1 -m -u -i -n -p`) full screen. `exit` or `C-]` ends the shell; kc then deletes the pod, and also when kc quits. While the shell is open kc keeps a second exec stream as a heartbeat; if kc dies, the pod stops about a minute later, and after `nodeShell.maxDuration` in any case. A stopped pod stays as a `Completed` object; leftovers carry the label `app.kubernetes.io/component=kc-node-shell`. Pod security admission must allow privileged pods in `nodeShell.namespace` (`pod-security.kubernetes.io/enforce=privileged`); otherwise the create fails and kc shows the error.
+
+## Object Actions
+
+The **F9** menu starts with built-in actions for the selected object, above the custom commands. Each action opens a red confirmation dialog that names the context, namespace and object and shows the equivalent kubectl command.
+
+For CronJobs (`batch/v1`):
+
+- **Run now...** creates a Job from the CronJob's job template, like `kubectl create job --from=cronjob/<name>`. The Job is named `<cronjob>-manual-<suffix>`, carries the `cronjob.kubernetes.io/instantiate: manual` annotation and is owned by the CronJob. The other panel then shows the new Job.
+- **Suspend/Resume...** sets `spec.suspend`. The dialog says which of the two it does.
+
+An action is hidden when the resource does not offer the API verb it needs (`patch` for Suspend/Resume).
 
 ## Custom Commands
 
@@ -133,19 +151,37 @@ commands:
 
 ### Templating
 Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `{{.Version}}`, `{{.Resource}}`.
+The execution context is available as `{{.Context}}`, `{{.As}}`, `{{.AsUID}}` and `{{.AsGroups}}` (a list), for tools that do not read `KUBECONFIG`. Commands already run with `KUBECONFIG` set to kc's selected context and the namespace of the selected item (else the panel's), so `kubectl` needs no extra flags. Commands without a selected item are run as written, without template expansion.
+
+A command acts on the marked rows when any are marked, otherwise on the highlighted row. `.Items` lists them in panel order, each with its own `Name`, `Namespace`, `Group`, `Version` and `Resource`; the top-level variables repeat the first item. Commands with `supportsMultiSelection: true` are offered for several marked rows; other commands are hidden from the F9 menu then.
+
+```yaml
+  - name: "Describe marked pods"
+    command: "{{range .Items}}kubectl describe {{.Resource}} {{.Name}} -n {{.Namespace}}; {{end}}"
+    type: "sticky"
+    supportsMultiSelection: true
+    showFor:
+      resources: ["pods"]
+```
 
 ## Configuration
 
 `~/.kc/config.yaml` stores all user preferences. Key sections:
 
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
+- `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer opens with. `F2` in the viewer changes them for that viewer; `C-s` there saves them as the defaults.
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns` – object list sort and wide/normal column display. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells and `<none>` come last. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace, and `namespace` orders the groups.
-- `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
+- `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation, and how long a cluster cache stays running after the last open folder that uses it is closed.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
+- `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
+
+`C-s` ("Save as defaults") in an option dialog reads the file again and writes only the settings that dialog shows, so custom commands and keys kc does not know stay as they are. The file is replaced atomically and keeps its permissions; a symbolic link is written through to its target. The command line says whether the settings were saved or apply to this session only.
+
+If the file cannot be read or parsed, kc starts with the defaults and shows the file path and the error on the command line. It never writes over that file: `C-s` is refused until the file loads again. Fix the file (or move it away to start from scratch) and press `C-s` again, or restart kc to load it.
 
 ### Full configuration (defaults + inline docs)
 
@@ -155,6 +191,13 @@ Copy/paste into `~/.kc/config.yaml` to start customizing:
 viewer:
   theme: dracula
   mode: scroll
+  logs:
+    # Recent lines fetched before following; -1 fetches the whole log.
+    tail: 200
+    # Only lines newer than this; 0s means no limit.
+    since: 0s
+    # Prefix every line with its timestamp.
+    timestamps: false
 
 panel:
   scrolling:
@@ -194,6 +237,21 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+
+nodeShell:
+  # Off by default. "Start a node shell..." inside a node creates a
+  # privileged pod with the host PID, network and IPC namespaces on that
+  # node and opens a root shell in the host namespaces.
+  enabled: false
+  # Limit the node shell to these kube contexts; empty means all contexts.
+  # contexts: [kind-dev]
+  # The image needs sh and nsenter.
+  image: docker.io/library/busybox:1.36.1
+  # Namespace of the shell pod; pod security admission must allow
+  # privileged pods there.
+  namespace: default
+  # activeDeadlineSeconds of the pod: it stops after this time even in use.
+  maxDuration: 8h
 ```
 
 ## Contributing / Source

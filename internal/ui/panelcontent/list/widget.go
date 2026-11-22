@@ -1,6 +1,7 @@
 package list
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
@@ -121,14 +122,32 @@ func (w *Widget) SelectedItems(ctx context.Context) []Item {
 		if len(ids) == 0 {
 			return nil
 		}
-		selected := make([]Item, 0, len(ids))
+		// The table keeps marks in a set; report them in the order the
+		// panel shows them, so commands see a stable, visible order.
+		type marked struct {
+			index int
+			id    string
+			item  Item
+		}
+		rows := make([]marked, 0, len(ids))
 		for _, id := range ids {
 			item, ok := w.folder.ItemByID(ctx, id)
 			if !ok || item == nil {
 				continue
 			}
+			index, _, found := w.folder.Find(ctx, id)
+			if !found {
+				index = math.MaxInt
+			}
 			name := displayNameFromItem(item)
-			selected = append(selected, Item{Item: item, Name: name, Selected: true})
+			rows = append(rows, marked{index: index, id: id, item: Item{Item: item, Name: name, Selected: true}})
+		}
+		slices.SortFunc(rows, func(a, b marked) int {
+			return cmp.Or(cmp.Compare(a.index, b.index), strings.Compare(a.id, b.id))
+		})
+		selected := make([]Item, 0, len(rows))
+		for _, r := range rows {
+			selected = append(selected, r.item)
 		}
 		return selected
 	}

@@ -40,6 +40,10 @@ type ObjectsFolder struct {
 	// kubectlArgs and kubectlNote refine KubectlCommand for filtered folders.
 	kubectlArgs []string
 	kubectlNote string
+
+	// release gives up the scoped cluster the folder reads, if it holds one.
+	// Close calls it; until then the pool keeps that cluster running.
+	release func()
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -63,7 +67,7 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	columnsMode := cfg.Objects.Columns
 	order := o.requestedOrder()
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
-		return o.rowsFromRowList(rl, columnsMode, order), nil
+		return o.rowsFromRowList(o.withUsageColumns(rl), columnsMode, order), nil
 	} else if err != nil && apierrors.IsForbidden(err) {
 		return nil, err
 	}
@@ -74,10 +78,24 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	return o.rowsFromList(list, order), nil
 }
 
-// Close stops the folder's watch; navigators call it when they drop the folder.
+// origin names the cluster connection this folder lists from.
+func (o *ObjectsFolder) origin() ObjectOrigin {
+	ctxName := o.Deps.CtxName
+	if ctxName == "" {
+		ctxName = o.Deps.ClusterKey.ContextName
+	}
+	return ObjectOrigin{Cluster: o.Deps.Cl, Context: ctxName}
+}
+
+// Close stops the folder's watch and releases the scoped cluster it holds;
+// navigators call it when they drop the folder. Calling it again is a no-op.
 func (o *ObjectsFolder) Close() {
 	if o.rows != nil {
 		o.rows.Close()
+	}
+	if r := o.release; r != nil {
+		o.release = nil
+		r()
 	}
 }
 
@@ -143,6 +161,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		style := applyRowStylers(info)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
+		obj.SetInstance(rr.ObjectMeta.UID, o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
@@ -230,6 +249,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		}
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
+		obj.SetInstance(item.GetUID(), o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
