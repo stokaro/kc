@@ -27,6 +27,10 @@ const (
 	usagePollInterval = 15 * time.Second
 	// usagePollTimeout bounds one poll: the metrics LIST and the cache read.
 	usagePollTimeout = 10 * time.Second
+	// usageForbiddenInterval spaces polls that the API server answered
+	// with forbidden: the grant rarely changes within minutes, and a 403
+	// every 15 seconds only adds load and audit noise.
+	usageForbiddenInterval = 5 * time.Minute
 )
 
 // usageSnapshot is the result of one poll.
@@ -187,10 +191,14 @@ func (p *usagePoller) run() {
 		// Readers that went away while others stay get the same last wake-up.
 		notifyAll(idle)
 
+		wait := m.interval
 		if !deps.Activity.Paused() {
 			ctx, cancel := context.WithTimeout(deps.Ctx, usagePollTimeout)
 			snap := m.fetch(ctx, deps, p.key.kind, p.key.namespace, p.key.metricsOnly)
 			cancel()
+			if snap != nil && apierrors.IsForbidden(snap.err) {
+				wait = max(wait, usageForbiddenInterval)
+			}
 			if snap != nil {
 				snap.at = m.now()
 				p.mu.Lock()
@@ -201,7 +209,7 @@ func (p *usagePoller) run() {
 			}
 		}
 
-		timer := time.NewTimer(m.interval)
+		timer := time.NewTimer(wait)
 		select {
 		case <-deps.Ctx.Done():
 			timer.Stop()
