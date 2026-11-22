@@ -222,6 +222,7 @@ type App struct {
 	toastLogger            *ToastLogger
 	pendingCmdsMu          sync.Mutex
 	pendingCmds            []tea.Cmd
+	cfgStore               *appconfig.Store // ~/.kc/config.yaml; see configStore
 	leftConfig             *appconfig.Config
 	rightConfig            *appconfig.Config
 	namespaceInput         *NamespaceCreateModel
@@ -330,12 +331,8 @@ func NewApp() *App {
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
-	// Load config (best-effort)
-	cfg, err := appconfig.Load()
-	if err != nil {
-		cfg = appconfig.Default()
-	}
-	*a.cfg = *cfg
+	loadToast := a.loadConfig()
+	cfg := a.cfg
 	a.modalManager.SyncEscTimeout()
 	leftPercent, rightPercent := normalizePanelWidthPercents(cfg.Panel.Width.LeftPercent, cfg.Panel.Width.RightPercent)
 	a.leftPanelWidthPercent = leftPercent
@@ -353,6 +350,7 @@ func (a *App) Init() tea.Cmd {
 		},
 		a.waitFolderDirtyEvents(),
 		a.waitReadErrors(),
+		loadToast,
 	)
 }
 
@@ -1585,15 +1583,23 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 		} else {
 			a.cfg.Viewer.Mode = appconfig.ViewerModeScroll
 		}
-		if msg.SaveDefault {
-			_ = appconfig.Save(a.cfg)
-		}
+	}
+	var cmd tea.Cmd
+	switch {
+	case msg.SaveDefault:
+		theme, mode := a.cfg.Viewer.Theme, a.cfg.Viewer.Mode
+		cmd = a.saveDefaults(func(c *appconfig.Config) {
+			c.Viewer.Theme = theme
+			c.Viewer.Mode = mode
+		})
+	case msg.Accept:
+		cmd = a.sessionOnly()
 	}
 	if msg.Close {
 		a.hideModal()
 	}
 	a.viewerOptionsTarget = nil
-	return nil
+	return cmd
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
