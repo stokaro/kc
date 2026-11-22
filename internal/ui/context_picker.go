@@ -83,10 +83,11 @@ func (a *App) showContextPicker() tea.Cmd {
 // contextSwitchedMsg carries a cluster acquired for a new context.
 type contextSwitchedMsg struct {
 	target *kubeconfig.Context
-	key    kccluster.Key
-	cl     *kccluster.Cluster
-	infos  []kccluster.ResourceInfo
-	err    error
+	// lease holds the new context's cluster. applyContextSwitch takes it
+	// over or releases it.
+	lease *kccluster.Lease
+	infos []kccluster.ResourceInfo
+	err   error
 }
 
 // switchContext connects to target in the background; applyContextSwitch
@@ -105,12 +106,12 @@ func (a *App) switchContext(target *kubeconfig.Context) tea.Cmd {
 	pool, root := a.clPool, a.ctx
 	load := func() tea.Msg {
 		ctrllog.FromContext(root).WithName("context").Info("acquiring cluster", "context", target.Name)
-		cl, err := pool.Get(root, key)
+		lease, err := pool.Acquire(root, key, nil)
 		if err != nil {
 			return contextSwitchedMsg{target: target, err: err}
 		}
-		infos, err := cl.GetResourceInfos()
-		return contextSwitchedMsg{target: target, key: key, cl: cl, infos: infos, err: err}
+		infos, err := lease.Cluster().GetResourceInfos()
+		return contextSwitchedMsg{target: target, lease: lease, infos: infos, err: err}
 	}
 	return tea.Batch(a.ShowInfo("Connecting to "+target.Name+"...", 10*time.Second), load)
 }
@@ -120,15 +121,18 @@ func (a *App) switchContext(target *kubeconfig.Context) tea.Cmd {
 func (a *App) applyContextSwitch(msg contextSwitchedMsg) tea.Cmd {
 	if msg.err != nil {
 		a.pendingJump = nil
+		msg.lease.Release()
 		return a.ShowToast(fmt.Sprintf("Cannot switch to %s: %v", msg.target.Name, msg.err), 5*time.Second)
 	}
-	oldKey := a.currentClusterKey()
+	// Take over the new lease before releasing the old one, so switching to
+	// the same context never leaves its cluster unheld. The old cluster's
+	// folders are closed by goToNamespace below; after that nothing holds it
+	// and the pool evicts it after the TTL.
+	old := a.clLease
+	a.clLease = msg.lease
 	a.currentCtx = msg.target
-	a.cl = msg.cl
-	a.clPool.Pin(msg.key)
-	if oldKey != msg.key {
-		a.clPool.Unpin(oldKey)
-	}
+	a.cl = msg.lease.Cluster()
+	old.Release()
 	if factory, err := podfs.NewFactory(a.cl.GetConfig()); err == nil {
 		a.podfsFactory = factory
 	}
