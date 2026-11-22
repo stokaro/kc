@@ -250,6 +250,7 @@ type App struct {
 	// panelScope is each panel's namespace scope (models.AllNamespaces for
 	// all). It is kc state; kubeconfig is never changed.
 	panelScope             [2]string
+	namespaceScopes        namespaceScopes        // recent namespaces and holds on namespace caches (issue #56)
 	activity               *models.Activity       // pauses background refreshes while a dialog is open
 	pendingConfirm         models.ConfirmedAction // waits for the red confirmation
 	namespaceOverride      string
@@ -890,6 +891,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		PodFSFactory:     a.podfsFactory,
 		ReportError:      a.reportReadError,
 		Activity:         a.activity,
+		HoldScope:        a.holdScope,
 	}
 }
 
@@ -3230,6 +3232,7 @@ func (a *App) goToNamespace(ns string) {
 		a.clPool.PruneNamespaces(ns)
 	}
 	a.panelScope = [2]string{ns, ns}
+	a.rememberPanelNamespace(ns)
 	a.replaceNavigator(0, a.newScopedNavigator(0))
 	a.replaceNavigator(1, a.newScopedNavigator(1))
 	a.updateTermContextNamespace(ns)

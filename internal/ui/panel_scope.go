@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -128,7 +129,8 @@ type namespacesLoadedMsg struct {
 var namespacesGVR = schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}
 
 // loadNamespacesForPicker lists namespaces off the UI thread; the picker
-// opens when they arrive.
+// opens when they arrive. A user who may not list namespaces gets the
+// picker at once, with typed entry.
 func (a *App) loadNamespacesForPicker(idx int) tea.Cmd {
 	cl := a.cl
 	if cl == nil {
@@ -138,6 +140,9 @@ func (a *App) loadNamespacesForPicker(idx int) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(parent, requestTimeout)
 		defer cancel()
+		if err := namespaceListAllowed(ctx, cl); err != nil {
+			return namespacesLoadedMsg{panel: idx, err: err}
+		}
 		list, err := cl.ListByGVR(ctx, namespacesGVR, "")
 		if err != nil {
 			return namespacesLoadedMsg{panel: idx, err: err}
@@ -166,14 +171,21 @@ func namespaceChoices(names []string, current string) []scopeChoice {
 	return choices
 }
 
-// showNamespacePicker opens the namespace picker for a panel.
+// showNamespacePicker opens the namespace picker for a panel. When the
+// namespaces could not be listed, it offers the known ones and takes a
+// typed name.
 func (a *App) showNamespacePicker(msg namespacesLoadedMsg) tea.Cmd {
-	if msg.err != nil {
-		return a.ShowToast("Could not list namespaces: "+msg.err.Error(), 3*time.Second)
-	}
 	idx := msg.panel
 	current := a.panelScope[idx]
-	picker := NewScopePickerModel(namespaceChoices(msg.names, current), current, func(c scopeChoice) tea.Cmd {
+	names := msg.names
+	var toast tea.Cmd
+	if msg.err != nil {
+		names = fallbackNamespaceNames(a.contextNamespace(), a.panelScope, a.namespaceScopes.recent)
+		if !errors.Is(msg.err, errNamespaceListForbidden) {
+			toast = a.ShowToast("Could not list namespaces: "+msg.err.Error(), 3*time.Second)
+		}
+	}
+	picker := NewScopePickerModel(namespaceChoices(names, current), current, func(c scopeChoice) tea.Cmd {
 		a.hideModal()
 		a.setPanelScope(idx, c.Value)
 		return nil
@@ -181,12 +193,17 @@ func (a *App) showNamespacePicker(msg namespacesLoadedMsg) tea.Cmd {
 		a.hideModal()
 		return nil
 	})
-	modal := NewModal("Namespace", picker)
+	title := "Namespace"
+	if msg.err != nil {
+		picker.AllowTypedEntry()
+		title = "Namespace (type a name)"
+	}
+	modal := NewModal(title, picker)
 	modal.SetCloseOnSingleEsc(true)
 	a.modalManager.Register("namespace_picker", modal)
-	a.configureModalWindow(modal, picker, idx, "", 40, min(len(msg.names)+3, 20))
+	a.configureModalWindow(modal, picker, idx, "", 40, min(len(names)+4, 20))
 	a.showModal("namespace_picker")
-	return nil
+	return toast
 }
 
 // setPanelScope changes one panel's namespace scope. A panel showing a
@@ -208,6 +225,7 @@ func (a *App) setPanelScope(idx int, ns string) {
 		}
 	}
 	a.panelScope[idx] = ns
+	a.rememberPanelNamespace(ns)
 	newNav := a.newScopedNavigator(idx)
 	a.replaceNavigator(idx, newNav)
 	if keep != nil {
