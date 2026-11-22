@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
 	kctesting "github.com/sttts/kc/internal/testing"
@@ -18,21 +20,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func TestFoldersProduceExpectedRows(t *testing.T) {
 	t.Parallel()
 
-	env := &envtest.Environment{}
-	cfg, err := env.Start()
-	if err != nil || cfg == nil {
-		if err != nil && strings.Contains(err.Error(), "operation not permitted") {
-			t.Skipf("envtest unavailable: %v", err)
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = env.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -182,15 +175,7 @@ func assertRows(t *testing.T, name string, f interface {
 func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 	t.Parallel()
 
-	env := &envtest.Environment{}
-	cfg, err := env.Start()
-	if err != nil || cfg == nil {
-		if err != nil && strings.Contains(err.Error(), "operation not permitted") {
-			t.Skipf("envtest unavailable: %v", err)
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = env.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	cl, err := kccluster.New(cfg)
 	if err != nil {
