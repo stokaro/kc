@@ -53,7 +53,8 @@ type transferJob struct {
 // transferSource opens the container filesystem session a copy reads.
 // *models.PodContainerFSFolder implements it.
 type transferSource interface {
-	TransferSession(ctx context.Context) (podfs.ExecSession, error)
+	// TransferSession holds the session until release is called.
+	TransferSession(ctx context.Context) (sess podfs.ExecSession, release func(), err error)
 	InvalidateSession()
 }
 
@@ -284,11 +285,12 @@ func (a *App) runTransfer(job *transferJob) tea.Cmd {
 	}
 	run := func() tea.Msg {
 		sessCtx, cancelSess := context.WithTimeout(ctx, transferSessionTimeout)
-		sess, err := source.TransferSession(sessCtx)
+		sess, release, err := source.TransferSession(sessCtx)
 		cancelSess()
 		if err != nil {
 			return transferDoneMsg{gen: gen, err: err}
 		}
+		defer release()
 		var results []filexfer.Result
 		if upload != nil {
 			dst, ok := sess.(filexfer.Destination)

@@ -140,11 +140,11 @@ func TestPodFSRowsCarryEntriesAndTransferReusesConsent(t *testing.T) {
 	factory := &consentFactory{sess: session}
 	deps := Deps{Ctx: t.Context(), PodFSFactory: factory}
 	deps.ClusterKey.ContextName = "kind"
-	handle := newContainerSessionHandle(factory, "ns", "pod", "app")
+	handle := newContainerSessionHandle(t.Context(), factory, "ns", "pod", "app")
 	folder := NewPodContainerFSFolder(deps, []string{"containers", "app", "root"}, "/", handle, false)
 
 	// Without consent the copy must not add a helper.
-	if _, err := folder.TransferSession(t.Context()); !errors.Is(err, ErrHelperConsentNeeded) {
+	if _, _, err := folder.TransferSession(t.Context()); !errors.Is(err, ErrHelperConsentNeeded) {
 		t.Fatalf("TransferSession without consent = %v", err)
 	}
 	for _, spec := range factory.specs {
@@ -165,10 +165,11 @@ func TestPodFSRowsCarryEntriesAndTransferReusesConsent(t *testing.T) {
 		t.Fatalf("entries = %v", got)
 	}
 	opened := len(factory.specs)
-	sess, err := folder.TransferSession(t.Context())
+	sess, release, err := folder.TransferSession(t.Context())
 	if err != nil || sess != session {
 		t.Fatalf("TransferSession = %v, %v; want the listing's session", sess, err)
 	}
+	release()
 	if len(factory.specs) != opened {
 		t.Fatalf("the copy opened a new session instead of reusing the listing's")
 	}

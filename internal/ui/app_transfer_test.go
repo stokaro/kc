@@ -48,10 +48,13 @@ func (f *transferFS) Close() error { return nil }
 type fakeTransferSource struct {
 	sess        podfs.ExecSession
 	invalidated atomic.Bool
+	// held counts sessions handed out and not released yet.
+	held atomic.Int32
 }
 
-func (s *fakeTransferSource) TransferSession(context.Context) (podfs.ExecSession, error) {
-	return s.sess, nil
+func (s *fakeTransferSource) TransferSession(context.Context) (podfs.ExecSession, func(), error) {
+	s.held.Add(1)
+	return s.sess, func() { s.held.Add(-1) }, nil
 }
 func (s *fakeTransferSource) InvalidateSession() { s.invalidated.Store(true) }
 
@@ -99,6 +102,10 @@ func TestTransferDialogRunsCopyAndShowsResults(t *testing.T) {
 	a.Update(done)
 	if model.phase != transferPhaseDone {
 		t.Fatalf("phase = %v after the result", model.phase)
+	}
+	// A held session never closes for being idle; the copy must let go.
+	if n := src.held.Load(); n != 0 {
+		t.Fatalf("%d filesystem sessions still held after the copy", n)
 	}
 	var got []string
 	for _, r := range model.results {

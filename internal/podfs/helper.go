@@ -149,6 +149,12 @@ const (
 	helperHeartbeat   = "/tmp/.kc-fs-alive"
 )
 
+// SessionIdleTimeout is how long a caller keeps an unused session open
+// before closing it. It matches the helper's idle timeout: a session
+// through the helper is dead by then anyway, and a direct one goes idle on
+// the same schedule.
+const SessionIdleTimeout = helperIdleTimeout * time.Second
+
 // helperScript keeps the helper alive while kc uses it and exits once it
 // has been idle for helperIdleTimeout seconds, so its extra rights do not
 // outlive the browsing. The marker comment lets a session recognize the

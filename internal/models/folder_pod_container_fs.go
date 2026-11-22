@@ -47,7 +47,7 @@ type PodContainerDetailFolder struct {
 
 func NewPodContainerDetailFolder(deps Deps, folderPath []string, namespace, pod, container string, kind containerKind) *PodContainerDetailFolder {
 	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, folderPath)
-	handle := newContainerSessionHandle(deps.PodFSFactory, namespace, pod, container)
+	handle := newContainerSessionHandle(deps.Ctx, deps.PodFSFactory, namespace, pod, container)
 	folder := &PodContainerDetailFolder{
 		BaseFolder: base,
 		Namespace:  namespace,
@@ -246,7 +246,10 @@ func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error
 	}
 	sessionCtx, cancelSession := context.WithTimeout(ctx, fsSessionTimeout)
 	defer cancelSession()
-	sess, err := f.session.Session(sessionCtx)
+	sess, release, err := f.session.acquire(sessionCtx)
+	// The listing holds the session until it returns; release is replaced
+	// when the retry below takes a new one.
+	defer func() { release() }()
 	if err != nil && errors.Is(err, podfs.ErrHelperNeeded) {
 		return f.helperConsentRows(), nil
 	}
@@ -270,8 +273,9 @@ func (f *PodContainerFSFolder) loadRows(ctx context.Context) ([]table.Row, error
 	defer cancelList()
 	entries, err := sess.List(listCtx, f.dir)
 	if err != nil && isTransientSessionError(err) {
+		release()
 		f.session.Invalidate()
-		if sess, err = f.session.Session(sessionCtx); err == nil {
+		if sess, release, err = f.session.acquire(sessionCtx); err == nil {
 			entries, err = sess.List(listCtx, f.dir)
 		}
 	}
@@ -573,6 +577,10 @@ func podFSFileViewContent(folder *PodContainerFSFolder, fsPath string, size int6
 type containerSessionHandle struct {
 	factory podfs.Factory
 	spec    podfs.SessionSpec
+	// root is Deps.Ctx: when kc exits, the open shell closes with it.
+	root context.Context
+	// idle is how long the shell stays open with no operation using it.
+	idle time.Duration
 
 	mu      sync.Mutex
 	session podfs.ExecSession
@@ -581,6 +589,15 @@ type containerSessionHandle struct {
 	helperContainer string
 	// allowHelper records the user's consent to add a debug helper.
 	allowHelper bool
+	// users counts the operations that hold the session (see acquire).
+	users int
+	// idleTimer closes the session once no operation holds it for idle.
+	idleTimer *time.Timer
+	// idleGen moves on every acquire, so a timer that fired while an
+	// operation took the session leaves it open.
+	idleGen uint64
+	// stopRoot removes the hook that closes the session when root ends.
+	stopRoot func() bool
 }
 
 // approveHelper lets the next session add a debug helper.
@@ -602,12 +619,16 @@ func (h *containerSessionHandle) execTarget(p string) (container, execPath strin
 	return h.spec.Container, p
 }
 
-func newContainerSessionHandle(factory podfs.Factory, namespace, pod, container string) *containerSessionHandle {
+// newContainerSessionHandle returns the handle that opens and caches the
+// filesystem session of one container. root is Deps.Ctx.
+func newContainerSessionHandle(root context.Context, factory podfs.Factory, namespace, pod, container string) *containerSessionHandle {
 	if factory == nil {
 		return nil
 	}
 	handle := &containerSessionHandle{
 		factory: factory,
+		root:    root,
+		idle:    podfs.SessionIdleTimeout,
 		spec: podfs.SessionSpec{
 			Namespace: namespace,
 			Pod:       pod,
@@ -617,14 +638,13 @@ func newContainerSessionHandle(factory podfs.Factory, namespace, pod, container 
 	return handle
 }
 
-func (h *containerSessionHandle) Session(ctx context.Context) (podfs.ExecSession, error) {
-	if h == nil {
-		return nil, fmt.Errorf("pod filesystem unavailable")
-	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
+// openLocked returns the cached session or opens one. h.mu must be held.
+func (h *containerSessionHandle) openLocked(ctx context.Context) (podfs.ExecSession, error) {
 	if h.session != nil {
 		return h.session, nil
+	}
+	if err := h.root.Err(); err != nil {
+		return nil, fmt.Errorf("pod filesystem closed: %w", err)
 	}
 	spec := h.spec
 	spec.AllowHelper = h.allowHelper
@@ -645,7 +665,25 @@ func (h *containerSessionHandle) Session(ctx context.Context) (podfs.ExecSession
 		h.helperContainer = hc.HelperContainer()
 	}
 	h.session = session
+	h.stopRoot = context.AfterFunc(h.root, func() { _ = h.Close() })
 	return session, nil
+}
+
+// closeLocked closes the cached session, if any. h.mu must be held.
+func (h *containerSessionHandle) closeLocked() error {
+	h.stopIdleLocked()
+	if h.session == nil {
+		return nil
+	}
+	err := h.session.Close()
+	h.session = nil
+	h.helper = false
+	h.helperContainer = ""
+	if h.stopRoot != nil {
+		h.stopRoot()
+		h.stopRoot = nil
+	}
+	return err
 }
 
 func (h *containerSessionHandle) Close() error {
@@ -654,14 +692,7 @@ func (h *containerSessionHandle) Close() error {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.session == nil {
-		return nil
-	}
-	err := h.session.Close()
-	h.session = nil
-	h.helper = false
-	h.helperContainer = ""
-	return err
+	return h.closeLocked()
 }
 
 func (h *containerSessionHandle) Invalidate() {
@@ -669,12 +700,7 @@ func (h *containerSessionHandle) Invalidate() {
 		return
 	}
 	h.mu.Lock()
-	if h.session != nil {
-		_ = h.session.Close()
-		h.session = nil
-		h.helper = false
-		h.helperContainer = ""
-	}
+	_ = h.closeLocked()
 	h.mu.Unlock()
 }
 
@@ -759,7 +785,7 @@ func (f *PodContainerFSFolder) readFileContent(ctx context.Context, fsPath strin
 	}
 	for range 2 {
 		sessionCtx, cancelSession := context.WithTimeout(ctx, fsSessionTimeout)
-		sess, err := f.session.Session(sessionCtx)
+		sess, release, err := f.session.acquire(sessionCtx)
 		if err != nil {
 			cancelSession()
 			return nil, err
@@ -767,6 +793,7 @@ func (f *PodContainerFSFolder) readFileContent(ctx context.Context, fsPath strin
 		readCtx, cancelRead := context.WithTimeout(ctx, fsDefaultTimeout)
 		reader, err := sess.ReadFile(readCtx, fsPath, limit)
 		if err != nil {
+			release()
 			cancelRead()
 			cancelSession()
 			if isTransientSessionError(err) || isContextError(err) {
@@ -777,6 +804,7 @@ func (f *PodContainerFSFolder) readFileContent(ctx context.Context, fsPath strin
 		}
 		data, readErr := io.ReadAll(reader)
 		reader.Close()
+		release()
 		cancelRead()
 		cancelSession()
 		if readErr != nil {
