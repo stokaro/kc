@@ -14,12 +14,12 @@ import (
 
 func TestRowStylerReadyCondition(t *testing.T) {
 	pod := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "v1",
 			"kind":       "Pod",
-			"status": map[string]interface{}{
-				"conditions": []interface{}{
-					map[string]interface{}{"type": "Ready", "status": "False"},
+			"status": map[string]any{
+				"conditions": []any{
+					map[string]any{"type": "Ready", "status": "False"},
 				},
 			},
 		},
@@ -41,23 +41,23 @@ func TestRowStylerReadyCondition(t *testing.T) {
 }
 
 func TestRowStylerCordonedNode(t *testing.T) {
-	ready := []interface{}{map[string]interface{}{"type": "Ready", "status": "True"}}
+	ready := []any{map[string]any{"type": "Ready", "status": "True"}}
 	tests := []struct {
 		name string
-		spec map[string]interface{}
+		spec map[string]any
 		want *lipgloss.Style
 	}{
-		{name: "schedulable", spec: map[string]interface{}{}, want: nil},
-		{name: "unschedulable false", spec: map[string]interface{}{"unschedulable": false}, want: nil},
-		{name: "cordoned", spec: map[string]interface{}{"unschedulable": true}, want: NotReadyStyle()},
+		{name: "schedulable", spec: map[string]any{}, want: nil},
+		{name: "unschedulable false", spec: map[string]any{"unschedulable": false}, want: nil},
+		{name: "cordoned", spec: map[string]any{"unschedulable": true}, want: NotReadyStyle()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := &unstructured.Unstructured{Object: map[string]interface{}{
+			node := &unstructured.Unstructured{Object: map[string]any{
 				"apiVersion": "v1",
 				"kind":       "Node",
 				"spec":       tt.spec,
-				"status":     map[string]interface{}{"conditions": ready},
+				"status":     map[string]any{"conditions": ready},
 			}}
 			info := RowStyleInfo{
 				GVR:          schema.GroupVersionResource{Version: "v1", Resource: "nodes"},
@@ -79,10 +79,10 @@ func TestRowStylerCordonedNode(t *testing.T) {
 
 func TestRowStylerJobStatus(t *testing.T) {
 	job := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "batch/v1",
 			"kind":       "Job",
-			"status": map[string]interface{}{
+			"status": map[string]any{
 				"succeeded": int64(1),
 			},
 		},
@@ -97,12 +97,12 @@ func TestRowStylerJobStatus(t *testing.T) {
 	if got := applyRowStylers(info); got != JobSuccessStyle() {
 		t.Fatalf("expected success style for succeeded job")
 	}
-	job.Object["status"] = map[string]interface{}{"failed": int64(5)}
-	job.Object["spec"] = map[string]interface{}{"backoffLimit": int64(3)}
+	job.Object["status"] = map[string]any{"failed": int64(5)}
+	job.Object["spec"] = map[string]any{"backoffLimit": int64(3)}
 	if got := applyRowStylers(info); got != JobFailedStyle() {
 		t.Fatalf("expected failure style when backoff exceeded")
 	}
-	job.Object["status"] = map[string]interface{}{"failed": int64(1)}
+	job.Object["status"] = map[string]any{"failed": int64(1)}
 	if got := applyRowStylers(info); got != info.BaseStyle {
 		t.Fatalf("expected base style while job still retrying")
 	}
@@ -110,10 +110,10 @@ func TestRowStylerJobStatus(t *testing.T) {
 
 func TestUnstructuredFromRow(t *testing.T) {
 	row := &tablecache.Row{}
-	pod := map[string]interface{}{
+	pod := map[string]any{
 		"apiVersion": "v1",
 		"kind":       "Pod",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"name":      "table-pod",
 			"namespace": "default",
 		},
@@ -142,13 +142,13 @@ func TestUnstructuredFromRow(t *testing.T) {
 
 func TestDeploymentStyler(t *testing.T) {
 	deploy := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "apps/v1",
 			"kind":       "Deployment",
-			"spec": map[string]interface{}{
+			"spec": map[string]any{
 				"replicas": int64(3),
 			},
-			"status": map[string]interface{}{
+			"status": map[string]any{
 				"readyReplicas":     int64(2),
 				"availableReplicas": int64(2),
 			},
@@ -164,11 +164,11 @@ func TestDeploymentStyler(t *testing.T) {
 	if got := applyRowStylers(info); got != NotReadyStyle() {
 		t.Fatalf("expected deployment to be marked not ready")
 	}
-	deploy.Object["status"] = map[string]interface{}{
+	deploy.Object["status"] = map[string]any{
 		"readyReplicas":     int64(3),
 		"availableReplicas": int64(3),
-		"conditions": []interface{}{
-			map[string]interface{}{"type": "Available", "status": "True"},
+		"conditions": []any{
+			map[string]any{"type": "Available", "status": "True"},
 		},
 	}
 	if got := applyRowStylers(info); got != info.BaseStyle {
@@ -178,10 +178,10 @@ func TestDeploymentStyler(t *testing.T) {
 
 func TestDaemonSetStyler(t *testing.T) {
 	ds := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "apps/v1",
 			"kind":       "DaemonSet",
-			"status": map[string]interface{}{
+			"status": map[string]any{
 				"desiredNumberScheduled": int64(4),
 				"numberReady":            int64(3),
 				"numberAvailable":        int64(3),
@@ -198,7 +198,7 @@ func TestDaemonSetStyler(t *testing.T) {
 	if got := applyRowStylers(info); got != NotReadyStyle() {
 		t.Fatalf("expected daemonset to be marked not ready when ready<desired")
 	}
-	ds.Object["status"] = map[string]interface{}{
+	ds.Object["status"] = map[string]any{
 		"desiredNumberScheduled": int64(3),
 		"numberReady":            int64(3),
 		"numberAvailable":        int64(3),

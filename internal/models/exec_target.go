@@ -194,7 +194,7 @@ func (t ExecTarget) impersonationArgs() []string {
 		args = append(args, "--as", u)
 	}
 	if g := strings.TrimSpace(t.Cluster.ImpersonateGroupsKey); g != "" {
-		for _, group := range strings.Split(g, ",") {
+		for group := range strings.SplitSeq(g, ",") {
 			if group = strings.TrimSpace(group); group != "" {
 				args = append(args, "--as-group", group)
 			}

@@ -8,7 +8,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
@@ -32,7 +31,7 @@ func TestStartInformerForResourceEmitsSyncedAndWatches(t *testing.T) {
 	go cl.Start(ctx)
 
 	nsName := fmt.Sprintf("watch-%d", time.Now().UnixNano())
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+	ns := &corev1.Namespace{Name: nsName}
 	if err := cl.GetClient().Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatalf("create namespace: %v", err)
 	}
@@ -77,10 +76,8 @@ func TestStartInformerForResourceEmitsSyncedAndWatches(t *testing.T) {
 	waitEvent("Synced")
 
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "watch-pod",
-			Namespace: nsName,
-		},
+		Name:      "watch-pod",
+		Namespace: nsName,
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
 				Name:  "pause",
@@ -94,17 +91,15 @@ func TestStartInformerForResourceEmitsSyncedAndWatches(t *testing.T) {
 
 	waitEvent("Add")
 
-	otherNS := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName + "-other"}}
+	otherNS := &corev1.Namespace{Name: nsName + "-other"}
 	if err := cl.GetClient().Create(ctx, otherNS); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatalf("create other namespace: %v", err)
 	}
 
 	otherPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "other-pod",
-			Namespace: otherNS.Name,
-		},
-		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.9"}}},
+		Name:      "other-pod",
+		Namespace: otherNS.Name,
+		Spec:      corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.9"}}},
 	}
 	if err := cl.GetClient().Create(ctx, otherPod); err != nil {
 		t.Fatalf("create other pod: %v", err)

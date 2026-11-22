@@ -23,7 +23,7 @@ var deploymentGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Re
 func TestPodReferences(t *testing.T) {
 	t.Parallel()
 	cmEnv := func(name string) corev1.EnvVar {
-		return corev1.EnvVar{Name: "A", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: name}, Key: "k"}}}
+		return corev1.EnvVar{Name: "A", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{Name: name, Key: "k"}}}
 	}
 	cases := []struct {
 		name string
@@ -50,16 +50,16 @@ func TestPodReferences(t *testing.T) {
 			pod: corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "web"},
 				Spec: corev1.PodSpec{Volumes: []corev1.Volume{
-					{Name: "c", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "cm"}}}},
-					{Name: "s", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "sec"}}},
-					{Name: "p", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "data"}}},
-					{Name: "scratch", VolumeSource: corev1.VolumeSource{Ephemeral: &corev1.EphemeralVolumeSource{}}},
-					{Name: "proj", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{
-						{ConfigMap: &corev1.ConfigMapProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "pcm"}}},
-						{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "psec"}}},
+					{Name: "c", ConfigMap: &corev1.ConfigMapVolumeSource{Name: "cm"}},
+					{Name: "s", Secret: &corev1.SecretVolumeSource{SecretName: "sec"}},
+					{Name: "p", PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "data"}},
+					{Name: "scratch", Ephemeral: &corev1.EphemeralVolumeSource{}},
+					{Name: "proj", Projected: &corev1.ProjectedVolumeSource{Sources: []corev1.VolumeProjection{
+						{ConfigMap: &corev1.ConfigMapProjection{Name: "pcm"}},
+						{Secret: &corev1.SecretProjection{Name: "psec"}},
 						{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Path: "token"}},
-					}}}},
-					{Name: "e", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+					}}},
+					{Name: "e", EmptyDir: &corev1.EmptyDirVolumeSource{}},
 				}},
 			},
 			want: []PodReference{
@@ -74,17 +74,17 @@ func TestPodReferences(t *testing.T) {
 		{
 			name: "env and envFrom in init, regular and ephemeral containers",
 			pod: corev1.Pod{Spec: corev1.PodSpec{
-				InitContainers: []corev1.Container{{Name: "init", EnvFrom: []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "init-sec"}}}}}},
+				InitContainers: []corev1.Container{{Name: "init", EnvFrom: []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{Name: "init-sec"}}}}},
 				Containers: []corev1.Container{{Name: "app",
-					EnvFrom: []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "app-cm"}}}},
+					EnvFrom: []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{Name: "app-cm"}}},
 					Env: []corev1.EnvVar{
 						{Name: "PLAIN", Value: "x"},
 						cmEnv("key-cm"),
-						{Name: "S", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "key-sec"}, Key: "k"}}},
+						{Name: "S", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Name: "key-sec", Key: "k"}}},
 						{Name: "F", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"}}},
 					},
 				}},
-				EphemeralContainers: []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug", Env: []corev1.EnvVar{cmEnv("debug-cm")}}}},
+				EphemeralContainers: []corev1.EphemeralContainer{{Name: "debug", Env: []corev1.EnvVar{cmEnv("debug-cm")}}},
 			}},
 			want: []PodReference{
 				{GVR: secretGVR, Name: "init-sec", Via: "envFrom"},
@@ -102,7 +102,7 @@ func TestPodReferences(t *testing.T) {
 		{
 			name: "same object and way once, another way again",
 			pod: corev1.Pod{Spec: corev1.PodSpec{
-				Volumes: []corev1.Volume{{Name: "c", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "cm"}}}}},
+				Volumes: []corev1.Volume{{Name: "c", ConfigMap: &corev1.ConfigMapVolumeSource{Name: "cm"}}},
 				Containers: []corev1.Container{
 					{Name: "a", Env: []corev1.EnvVar{cmEnv("cm")}},
 					{Name: "b", Env: []corev1.EnvVar{cmEnv("cm")}},
@@ -255,8 +255,8 @@ func TestCheckOwners(t *testing.T) {
 	t.Parallel()
 	r := newFakeReader(t, map[schema.GroupVersionResource][]runtime.Object{
 		deploymentGVR: {
-			&metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "live", UID: "u-live"}},
-			&metav1.PartialObjectMetadata{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "recreated", UID: "u-new"}},
+			&metav1.PartialObjectMetadata{Namespace: "shop", Name: "live", UID: "u-live"},
+			&metav1.PartialObjectMetadata{Namespace: "shop", Name: "recreated", UID: "u-new"},
 		},
 	})
 	in := []RelatedRef{
@@ -294,25 +294,25 @@ func (r *errGetReader) GetByGVR(context.Context, schema.GroupVersionResource, st
 }
 
 func pod(ns, name string, labels map[string]string, spec corev1.PodSpec) *corev1.Pod {
-	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name, Labels: labels}, Spec: spec}
+	return &corev1.Pod{Namespace: ns, Name: name, Labels: labels, Spec: spec}
 }
 
 func TestUsedByFinders(t *testing.T) {
 	t.Parallel()
-	cmVolume := corev1.PodSpec{Volumes: []corev1.Volume{{Name: "c", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "cfg"}}}}},
-		Containers: []corev1.Container{{Name: "a", EnvFrom: []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "cfg"}}}}}}}
+	cmVolume := corev1.PodSpec{Volumes: []corev1.Volume{{Name: "c", ConfigMap: &corev1.ConfigMapVolumeSource{Name: "cfg"}}},
+		Containers: []corev1.Container{{Name: "a", EnvFrom: []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{Name: "cfg"}}}}}}
 	pathType := networkingv1.PathTypePrefix
 	ingressTo := func(name, svc string) *networkingv1.Ingress {
 		return &networkingv1.Ingress{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: name},
-			Spec: networkingv1.IngressSpec{Rules: []networkingv1.IngressRule{{Host: "shop.example", IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{
+			Namespace: "shop", Name: name,
+			Spec: networkingv1.IngressSpec{Rules: []networkingv1.IngressRule{{Host: "shop.example", HTTP: &networkingv1.HTTPIngressRuleValue{Paths: []networkingv1.HTTPIngressPath{
 				{Path: "/api", PathType: &pathType, Backend: networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: svc}}},
-			}}}}}},
+			}}}}},
 		}
 	}
 	defaultBackend := &networkingv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "fallback"},
-		Spec:       networkingv1.IngressSpec{DefaultBackend: &networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: "web"}}},
+		Namespace: "shop", Name: "fallback",
+		Spec: networkingv1.IngressSpec{DefaultBackend: &networkingv1.IngressBackend{Service: &networkingv1.IngressServiceBackend{Name: "web"}}},
 	}
 	objs := map[schema.GroupVersionResource][]runtime.Object{
 		podGVR: {
@@ -321,20 +321,20 @@ func TestUsedByFinders(t *testing.T) {
 			pod("other", "uses-cfg-elsewhere", nil, cmVolume),
 		},
 		serviceGVR: {
-			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web"}, Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "web"}}},
-			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "db"}, Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "db"}}},
-			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "manual"}},
+			&corev1.Service{Namespace: "shop", Name: "web", Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "web"}}},
+			&corev1.Service{Namespace: "shop", Name: "db", Spec: corev1.ServiceSpec{Selector: map[string]string{"app": "db"}}},
+			&corev1.Service{Namespace: "shop", Name: "manual"},
 		},
 		ingressGVR: {ingressTo("front", "web"), ingressTo("admin", "db"), defaultBackend},
 		pvGVR: {
-			&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-bound"}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "shop", Name: "data", UID: "claim-uid"}}},
-			&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-stale"}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "shop", Name: "data", UID: "old-uid"}}},
-			&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-other"}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "shop", Name: "other"}}},
-			&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-free"}},
+			&corev1.PersistentVolume{Name: "pv-bound", Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "shop", Name: "data", UID: "claim-uid"}}},
+			&corev1.PersistentVolume{Name: "pv-stale", Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "shop", Name: "data", UID: "old-uid"}}},
+			&corev1.PersistentVolume{Name: "pv-other", Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "shop", Name: "other"}}},
+			&corev1.PersistentVolume{Name: "pv-free"},
 		},
 		pvcGVR: {
-			&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "data", UID: types.UID("claim-uid")}, Spec: corev1.PersistentVolumeClaimSpec{VolumeName: "pv-bound"}},
-			&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "other"}, Spec: corev1.PersistentVolumeClaimSpec{VolumeName: "pv-else"}},
+			&corev1.PersistentVolumeClaim{Namespace: "shop", Name: "data", UID: types.UID("claim-uid"), Spec: corev1.PersistentVolumeClaimSpec{VolumeName: "pv-bound"}},
+			&corev1.PersistentVolumeClaim{Namespace: "shop", Name: "other", Spec: corev1.PersistentVolumeClaimSpec{VolumeName: "pv-else"}},
 		},
 	}
 	cases := []struct {

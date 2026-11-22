@@ -109,7 +109,7 @@ func configMapKeyViewContent(deps Deps, namespace, name, key string) ViewContent
 // arbitrary bytes, and F5 writes the body unchanged. Binary values are
 // marked with binaryMIME so the viewer shows a summary and a hex dump
 // instead of writing the bytes to the terminal.
-func configMapKeyView(obj map[string]interface{}, name, key string) (title, body, lang, mime, filename string, err error) {
+func configMapKeyView(obj map[string]any, name, key string) (title, body, lang, mime, filename string, err error) {
 	title = fmt.Sprintf("%s:%s", name, key)
 	filename = fmt.Sprintf("%s_%s", name, key)
 	if v, found, _ := unstructured.NestedFieldNoCopy(obj, "data", key); found {

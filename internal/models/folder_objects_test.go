@@ -112,13 +112,9 @@ func TestObjectsFolderInstallsAgeHooks(t *testing.T) {
 		},
 		Items: []tablecache.Row{
 			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:              "pod-a",
-					CreationTimestamp: metav1.NewTime(created),
-				},
-				TableRow: metav1.TableRow{
-					Cells: []interface{}{"/pod-a", "1s"},
-				},
+				Name:              "pod-a",
+				CreationTimestamp: metav1.NewTime(created),
+				Cells:             []any{"/pod-a", "1s"},
 			},
 		},
 	}
@@ -161,15 +157,13 @@ func TestObjectsFolderMarksDeletingRowsRed(t *testing.T) {
 		},
 		Items: []tablecache.Row{
 			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:              "delete-me",
-					DeletionTimestamp: &now,
-				},
-				TableRow: metav1.TableRow{Cells: []interface{}{"/delete-me"}},
+				Name:              "delete-me",
+				DeletionTimestamp: &now,
+				Cells:             []any{"/delete-me"},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "regular"},
-				TableRow:   metav1.TableRow{Cells: []interface{}{"/regular"}},
+				Name:  "regular",
+				Cells: []any{"/regular"},
 			},
 		},
 	}
@@ -220,12 +214,12 @@ func TestObjectsFolderReadyStylerFromTableRows(t *testing.T) {
 			{Name: "Name"},
 		},
 	}
-	podObj := map[string]interface{}{
+	podObj := map[string]any{
 		"apiVersion": "v1",
 		"kind":       "Pod",
-		"status": map[string]interface{}{
-			"conditions": []interface{}{
-				map[string]interface{}{"type": "Ready", "status": "False"},
+		"status": map[string]any{
+			"conditions": []any{
+				map[string]any{"type": "Ready", "status": "False"},
 			},
 		},
 	}
@@ -234,11 +228,9 @@ func TestObjectsFolderReadyStylerFromTableRows(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	row := tablecache.Row{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "default"},
-		TableRow: metav1.TableRow{
-			Cells:  []interface{}{"/pod"},
-			Object: runtime.RawExtension{Raw: raw},
-		},
+		Name: "pod", Namespace: "default",
+		Cells:  []any{"/pod"},
+		Object: runtime.RawExtension{Raw: raw},
 	}
 	row.SetTableTarget(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
 	rl.Items = append(rl.Items, row)

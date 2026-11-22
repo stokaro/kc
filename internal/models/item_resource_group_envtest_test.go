@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -49,7 +48,7 @@ func createNamespace(t *testing.T, cl *kccluster.Cluster, name string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	ns := &corev1.Namespace{Name: name}
 	if err := cl.GetClient().Create(ctx, ns); err != nil {
 		t.Fatalf("create namespace: %v", err)
 	}
@@ -65,11 +64,9 @@ func createConfigMap(t *testing.T, cl *kccluster.Cluster, namespace, name string
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Data: map[string]string{"k": "v"},
+		Name:      name,
+		Namespace: namespace,
+		Data:      map[string]string{"k": "v"},
 	}
 	if err := cl.GetClient().Create(ctx, cm); err != nil {
 		t.Fatalf("create configmap %s/%s: %v", namespace, name, err)

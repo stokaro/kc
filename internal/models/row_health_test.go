@@ -9,18 +9,18 @@ import (
 	"github.com/stokaro/kc/internal/models"
 )
 
-type obj = map[string]interface{}
+type obj = map[string]any
 
-func conditions(pairs ...string) []interface{} {
-	out := make([]interface{}, 0, len(pairs)/2)
+func conditions(pairs ...string) []any {
+	out := make([]any, 0, len(pairs)/2)
 	for i := 0; i+1 < len(pairs); i += 2 {
 		out = append(out, obj{"type": pairs[i], "status": pairs[i+1]})
 	}
 	return out
 }
 
-func waiting(reason string) []interface{} {
-	return []interface{}{obj{"name": "app", "state": obj{"waiting": obj{"reason": reason}}}}
+func waiting(reason string) []any {
+	return []any{obj{"name": "app", "state": obj{"waiting": obj{"reason": reason}}}}
 }
 
 func TestClassifyRowHealth(t *testing.T) {

@@ -165,9 +165,7 @@ func pollNodeStats(ctx context.Context, fetch statsFetcher, nodes []string, maxN
 	)
 	sem := make(chan struct{}, overviewStatsInFlight)
 	for _, node := range nodes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			select {
 			case sem <- struct{}{}:
 			case <-ctx.Done():
@@ -192,7 +190,7 @@ func pollNodeStats(ctx context.Context, fetch statsFetcher, nodes []string, maxN
 				return
 			}
 			res.stats[node] = s
-		}()
+		})
 	}
 	wg.Wait()
 	if len(res.stats) == 0 {

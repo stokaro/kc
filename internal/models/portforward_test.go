@@ -7,7 +7,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -53,7 +52,7 @@ func TestPortForwardTargetFor(t *testing.T) {
 
 func runningPod(name string, labels map[string]string) corev1.Pod {
 	return corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns", Labels: labels},
+		Name: name, Namespace: "ns", Labels: labels,
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
 			Name:  "app",
 			Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}},
@@ -69,7 +68,7 @@ func TestResolvePortForward(t *testing.T) {
 	pending := runningPod("web-1", map[string]string{"app": "web"})
 	pending.Status.Phase = corev1.PodPending
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "ns"},
+		Name: "web", Namespace: "ns",
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{"app": "web"},
 			Ports:    []corev1.ServicePort{{Name: "http", Port: 80, TargetPort: intstr.FromString("http")}},

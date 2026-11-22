@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -32,9 +31,9 @@ func TestOverviewEngineOnARealCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	cordoned := func(name string) *corev1.Node {
-		return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: corev1.NodeSpec{Unschedulable: true}}
+		return &corev1.Node{Name: name, Spec: corev1.NodeSpec{Unschedulable: true}}
 	}
-	for _, n := range []*corev1.Node{cordoned("overview-cordoned-1"), {ObjectMeta: metav1.ObjectMeta{Name: "overview-open"}}} {
+	for _, n := range []*corev1.Node{cordoned("overview-cordoned-1"), {Name: "overview-open"}} {
 		if err := cli.Create(ctx, n); err != nil {
 			t.Fatal(err)
 		}

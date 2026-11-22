@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -45,7 +46,7 @@ func NewLocalDirFolder(deps Deps, dir string) *LocalDirFolder {
 
 func localFolderPath(dir string) []string {
 	parts := []string{"local"}
-	for _, p := range strings.Split(filepath.ToSlash(dir), "/") {
+	for p := range strings.SplitSeq(filepath.ToSlash(dir), "/") {
 		if p != "" {
 			parts = append(parts, p)
 		}
@@ -74,8 +75,8 @@ func LocalAncestors(deps Deps, dir string) []*LocalDirFolder {
 		}
 	}
 	out := make([]*LocalDirFolder, 0, len(chain))
-	for i := len(chain) - 1; i >= 0; i-- {
-		out = append(out, NewLocalDirFolder(deps, chain[i]))
+	for _, c := range slices.Backward(chain) {
+		out = append(out, NewLocalDirFolder(deps, c))
 	}
 	return out
 }

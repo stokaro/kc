@@ -149,13 +149,13 @@ func containerViewContent(deps Deps, namespace, pod, container string, kind cont
 // selects (spec.containers, spec.initContainers or spec.ephemeralContainers).
 // Every entry, ephemeral ones included, carries its name in a top-level
 // "name" field; none of them has metadata of its own.
-func findContainer(obj map[string]interface{}, kind containerKind, name string) map[string]interface{} {
+func findContainer(obj map[string]any, kind containerKind, name string) map[string]any {
 	arr, found, _ := unstructured.NestedSlice(obj, "spec", containerField(kind))
 	if !found {
 		return nil
 	}
 	for _, c := range arr {
-		m, ok := c.(map[string]interface{})
+		m, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -197,7 +197,7 @@ func isProbablyText(b []byte) bool {
 	return true
 }
 
-func decodeConfigMap(obj map[string]interface{}) (*corev1.ConfigMap, error) {
+func decodeConfigMap(obj map[string]any) (*corev1.ConfigMap, error) {
 	var cm corev1.ConfigMap
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj, &cm); err != nil {
 		return nil, err
@@ -205,7 +205,7 @@ func decodeConfigMap(obj map[string]interface{}) (*corev1.ConfigMap, error) {
 	return &cm, nil
 }
 
-func decodeSecret(obj map[string]interface{}) (*corev1.Secret, error) {
+func decodeSecret(obj map[string]any) (*corev1.Secret, error) {
 	var sec corev1.Secret
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj, &sec); err != nil {
 		return nil, err

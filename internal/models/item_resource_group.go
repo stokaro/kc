@@ -371,7 +371,7 @@ func (r *ResourceGroupItem) countFromInformerLocked(informer crcache.Informer) (
 	}
 }
 
-func (r *ResourceGroupItem) countObjects(items []interface{}) int {
+func (r *ResourceGroupItem) countObjects(items []any) int {
 	if items == nil {
 		return 0
 	}
@@ -689,13 +689,13 @@ func (r *ResourceGroupItem) ensureInformerHandler(informer crcache.Informer) {
 	r.watchOnce.Do(func() {
 		crlog.FromContext(r.deps.Ctx).Info("resource group registering informer handler", "gvr", r.gvr.String(), "namespace", r.namespace)
 		reg, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
+			AddFunc: func(obj any) {
 				r.onInformerEvent(obj)
 			},
-			UpdateFunc: func(_, newObj interface{}) {
+			UpdateFunc: func(_, newObj any) {
 				r.onInformerEvent(newObj)
 			},
-			DeleteFunc: func(obj interface{}) {
+			DeleteFunc: func(obj any) {
 				r.onInformerEvent(obj)
 			},
 		})
@@ -715,7 +715,7 @@ func (r *ResourceGroupItem) ensureInformerHandler(informer crcache.Informer) {
 	})
 }
 
-func (r *ResourceGroupItem) onInformerEvent(obj interface{}) {
+func (r *ResourceGroupItem) onInformerEvent(obj any) {
 	if r.namespace != "" {
 		if acc, ok := accessorForEvent(obj); ok && acc != nil && acc.GetNamespace() != r.namespace {
 			return
@@ -860,14 +860,8 @@ func (r *ResourceGroupItem) peekBaseInterval() time.Duration {
 
 func (r *ResourceGroupItem) peekTimeout() time.Duration {
 	// Timeout requests before they stall; cap the timeout so throttling does not block the UI.
-	base := r.peekBaseInterval()
-	if base > 10*time.Second {
-		base = 10 * time.Second
-	}
-	timeout := base
-	if timeout > 15*time.Second {
-		timeout = 15 * time.Second
-	}
+	base := min(r.peekBaseInterval(), 10*time.Second)
+	timeout := min(base, 15*time.Second)
 	if timeout < 2*time.Second {
 		timeout = 2 * time.Second
 	}
@@ -876,10 +870,7 @@ func (r *ResourceGroupItem) peekTimeout() time.Duration {
 
 func (r *ResourceGroupItem) resetPeekBackoffLocked() {
 	base := r.peekBaseInterval()
-	cap := base * 16
-	if cap < 30*time.Second {
-		cap = 30 * time.Second
-	}
+	cap := max(base*16, 30*time.Second)
 	r.peekBackoff = wait.Backoff{
 		Duration: base,
 		Factor:   2.0,

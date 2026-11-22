@@ -447,7 +447,7 @@ func withNamespaceColumn[T any](row []T, v T) []T {
 	return append(out, row[1:]...)
 }
 
-func buildCells(cells []interface{}, vis []int, hasChild bool) []string {
+func buildCells(cells []any, vis []int, hasChild bool) []string {
 	out := make([]string, len(vis))
 	for i := range vis {
 		idx := vis[i]
@@ -848,10 +848,7 @@ func (s *liveObjectRowSource) Lines(ctx context.Context, top, num int) []table.R
 	if top < 0 {
 		top = 0
 	}
-	end := top + num
-	if end > len(rows) {
-		end = len(rows)
-	}
+	end := min(top+num, len(rows))
 	return rows[top:end]
 }
 
@@ -866,10 +863,7 @@ func (s *liveObjectRowSource) Above(ctx context.Context, id string, n int) []tab
 		s.mu.Unlock()
 		return nil
 	}
-	start := idx - n
-	if start < 0 {
-		start = 0
-	}
+	start := max(idx-n, 0)
 	rows := append([]table.Row(nil), s.rows[start:idx]...)
 	s.mu.Unlock()
 	if len(rows) == 0 {
@@ -894,10 +888,7 @@ func (s *liveObjectRowSource) Below(ctx context.Context, id string, n int) []tab
 		s.mu.Unlock()
 		return nil
 	}
-	end := start + n
-	if end > len(s.rows) {
-		end = len(s.rows)
-	}
+	end := min(start+n, len(s.rows))
 	rows := append([]table.Row(nil), s.rows[start:end]...)
 	s.mu.Unlock()
 	return rows
@@ -1003,7 +994,7 @@ func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace
 		Remove() error
 	}
 	reg, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
+		AddFunc: func(obj any) {
 			if !matchesFiltered(obj, namespace, name, filter) {
 				return
 			}
@@ -1011,7 +1002,7 @@ func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace
 				onEvent()
 			}
 		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj any) {
 			if !matchesFiltered(newObj, namespace, name, filter) {
 				return
 			}
@@ -1019,7 +1010,7 @@ func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace
 				onEvent()
 			}
 		},
-		DeleteFunc: func(obj interface{}) {
+		DeleteFunc: func(obj any) {
 			if !matchesFiltered(obj, namespace, name, filter) {
 				return
 			}
@@ -1082,7 +1073,7 @@ func watchDuration(deps Deps) time.Duration {
 	return 2 * time.Minute
 }
 
-func accessorForEvent(obj interface{}) (metav1.Object, bool) {
+func accessorForEvent(obj any) (metav1.Object, bool) {
 	switch o := obj.(type) {
 	case toolscache.DeletedFinalStateUnknown:
 		return accessorForEvent(o.Obj)
@@ -1095,7 +1086,7 @@ func accessorForEvent(obj interface{}) (metav1.Object, bool) {
 	}
 }
 
-func matchesTarget(obj interface{}, namespace, name string) bool {
+func matchesTarget(obj any, namespace, name string) bool {
 	accessor, ok := accessorForEvent(obj)
 	if !ok || accessor == nil {
 		return false
@@ -1109,7 +1100,7 @@ func matchesTarget(obj interface{}, namespace, name string) bool {
 	return true
 }
 
-func matchesFiltered(obj interface{}, namespace, name string, filter func(metav1.Object) bool) bool {
+func matchesFiltered(obj any, namespace, name string, filter func(metav1.Object) bool) bool {
 	if !matchesTarget(obj, namespace, name) {
 		return false
 	}

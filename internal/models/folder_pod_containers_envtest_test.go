@@ -7,7 +7,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -115,7 +114,7 @@ func createPodWithEphemeralContainers(t *testing.T, cl *kccluster.Cluster, names
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Name: name, Namespace: namespace,
 		Spec: corev1.PodSpec{
 			Containers:     []corev1.Container{{Name: "app", Image: "example.com/app:1"}},
 			InitContainers: []corev1.Container{{Name: "migrate", Image: "example.com/migrate:1"}},
@@ -132,13 +131,11 @@ func createPodWithEphemeralContainers(t *testing.T, cl *kccluster.Cluster, names
 	})
 	for _, n := range []string{"debugger", "kc-fs-helper-app-0", "kc-fs-ptrace-app-0"} {
 		pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers, corev1.EphemeralContainer{
-			EphemeralContainerCommon: corev1.EphemeralContainerCommon{
-				Name:                     n,
-				Image:                    "busybox:1.36",
-				TerminationMessagePolicy: corev1.TerminationMessageReadFile,
-				ImagePullPolicy:          corev1.PullIfNotPresent,
-			},
-			TargetContainerName: "app",
+			Name:                     n,
+			Image:                    "busybox:1.36",
+			TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+			ImagePullPolicy:          corev1.PullIfNotPresent,
+			TargetContainerName:      "app",
 		})
 	}
 	if err := c.SubResource("ephemeralcontainers").Update(ctx, pod); err != nil {

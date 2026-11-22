@@ -44,14 +44,14 @@ func TestNodePodsFolderFiltersByNodeName(t *testing.T) {
 	folder := NewNodePodsFolder(deps, path, "node-a")
 
 	matching := &unstructured.Unstructured{}
-	matching.Object = map[string]interface{}{
-		"spec": map[string]interface{}{
+	matching.Object = map[string]any{
+		"spec": map[string]any{
 			"nodeName": "node-a",
 		},
 	}
 	other := &unstructured.Unstructured{}
-	other.Object = map[string]interface{}{
-		"spec": map[string]interface{}{
+	other.Object = map[string]any{
+		"spec": map[string]any{
 			"nodeName": "node-b",
 		},
 	}

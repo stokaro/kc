@@ -747,7 +747,7 @@ func (f *PodContainerFSFolder) readFileContent(ctx context.Context, fsPath strin
 	if f.session == nil {
 		return nil, fmt.Errorf("pod filesystem unavailable")
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	for range 2 {
 		sessionCtx, cancelSession := context.WithTimeout(ctx, fsSessionTimeout)
 		sess, err := f.session.Session(sessionCtx)
 		if err != nil {

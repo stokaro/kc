@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -53,7 +52,7 @@ func TestConfigMapKeyEntries(t *testing.T) {
 
 // configMapObject converts a typed ConfigMap the way the API server
 // returns it: binaryData values become base64 strings.
-func configMapObject(t *testing.T, cm *corev1.ConfigMap) map[string]interface{} {
+func configMapObject(t *testing.T, cm *corev1.ConfigMap) map[string]any {
 	t.Helper()
 	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(cm)
 	if err != nil {
@@ -65,7 +64,7 @@ func configMapObject(t *testing.T, cm *corev1.ConfigMap) map[string]interface{} 
 func TestConfigMapKeyView(t *testing.T) {
 	t.Parallel()
 	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "cfg", Namespace: "web"},
+		Name: "cfg", Namespace: "web",
 		Data: map[string]string{
 			"app.conf": "key: value\n",
 			"esc.txt":  "red \x1b[31m",
@@ -112,7 +111,7 @@ func TestConfigMapKeyView(t *testing.T) {
 
 func TestConfigMapKeyViewRefusesBadBase64(t *testing.T) {
 	t.Parallel()
-	obj := map[string]interface{}{"binaryData": map[string]interface{}{"k": "not base64!"}}
+	obj := map[string]any{"binaryData": map[string]any{"k": "not base64!"}}
 	if _, _, _, _, _, err := configMapKeyView(obj, "cfg", "k"); err == nil {
 		t.Fatal("want an error for invalid base64")
 	}

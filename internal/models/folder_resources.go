@@ -403,15 +403,7 @@ func makeResourceGroupSignature(spec resourceGroupSpec, visible bool, index int)
 }
 
 func joinStrings(parts []string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	const sep = "\x00"
-	joined := parts[0]
-	for i := 1; i < len(parts); i++ {
-		joined += sep + parts[i]
-	}
-	return joined
+	return strings.Join(parts, "\x00")
 }
 
 func (f *ResourcesFolder) ensureResourceGroupItem(spec resourceGroupSpec) (*ResourceGroupItem, bool) {

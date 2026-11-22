@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -127,13 +126,13 @@ func TestPodContainersFolderHasAllContainersLogsRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "workload-logs-row-"}}
+	ns := &corev1.Namespace{GenerateName: "workload-logs-row-"}
 	if err := cli.Create(ctx, ns); err != nil {
 		t.Fatal(err)
 	}
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns.Name, Name: "api-1"},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "busybox"}}},
+		Namespace: ns.Name, Name: "api-1",
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "busybox"}}},
 	}
 	if err := cli.Create(ctx, pod); err != nil {
 		t.Fatal(err)

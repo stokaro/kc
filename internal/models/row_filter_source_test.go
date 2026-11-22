@@ -105,7 +105,7 @@ func TestObjectsFolderRowsCarryFilterFacts(t *testing.T) {
 	gvr := schema.GroupVersionResource{Version: "v1", Resource: "pods"}
 	folder := NewObjectsFolder(Deps{}, gvr, "default", []string{"namespaces", "default", "pods"}, nil)
 	list := &unstructured.UnstructuredList{}
-	pending := unstructured.Unstructured{Object: map[string]interface{}{"status": map[string]interface{}{"phase": "Pending"}}}
+	pending := unstructured.Unstructured{Object: map[string]any{"status": map[string]any{"phase": "Pending"}}}
 	pending.SetName("pending")
 	pending.SetLabels(map[string]string{"app": "web"})
 	list.Items = append(list.Items, pending)

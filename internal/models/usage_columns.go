@@ -149,7 +149,7 @@ func mergeUsageColumns(rl *tablecache.RowList, kind usageKind, namespace string,
 	out.Items = make([]tablecache.Row, len(rl.Items))
 	for i := range rl.Items {
 		row := rl.Items[i]
-		cells := make([]interface{}, width, width+len(cols))
+		cells := make([]any, width, width+len(cols))
 		copy(cells, row.Cells)
 		// Nodes are keyed by name only: tablecache may guess a namespace
 		// for cluster-scoped rows from their second cell.
@@ -185,7 +185,7 @@ func mergeUsageColumns(rl *tablecache.RowList, kind usageKind, namespace string,
 // which for limits means the pod has none.
 func containerResources(pod *unstructured.Unstructured, field string) (cpu, mem int64, cpuComplete, memComplete bool) {
 	cpuComplete, memComplete = true, true
-	add := func(c map[string]interface{}) {
+	add := func(c map[string]any) {
 		res, _, _ := unstructured.NestedStringMap(c, "resources", field)
 		if q, err := resource.ParseQuantity(res["cpu"]); err == nil {
 			cpu += q.MilliValue()
@@ -200,13 +200,13 @@ func containerResources(pod *unstructured.Unstructured, field string) (cpu, mem 
 	}
 	containers, _, _ := unstructured.NestedSlice(pod.Object, "spec", "containers")
 	for _, c := range containers {
-		if m, ok := c.(map[string]interface{}); ok {
+		if m, ok := c.(map[string]any); ok {
 			add(m)
 		}
 	}
 	inits, _, _ := unstructured.NestedSlice(pod.Object, "spec", "initContainers")
 	for _, c := range inits {
-		m, ok := c.(map[string]interface{})
+		m, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -268,7 +268,7 @@ func usageFromMap(usage map[string]string) (cpu, mem int64) {
 func podMetricsUsage(pm *unstructured.Unstructured) (cpu, mem int64) {
 	containers, _, _ := unstructured.NestedSlice(pm.Object, "containers")
 	for _, c := range containers {
-		m, ok := c.(map[string]interface{})
+		m, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -289,7 +289,7 @@ func buildContainerUsage(metrics []unstructured.Unstructured) map[string][]conta
 		containers, _, _ := unstructured.NestedSlice(pm.Object, "containers")
 		list := make([]containerUsage, 0, len(containers))
 		for _, c := range containers {
-			m, ok := c.(map[string]interface{})
+			m, ok := c.(map[string]any)
 			if !ok {
 				continue
 			}
