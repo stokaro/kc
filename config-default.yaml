@@ -114,12 +114,12 @@ overview:
   podsWarnPercent: 90
   # A ResourceQuota is flagged when any used value reaches this percent.
   quotaWarnPercent: 80
-  # Measured CPU and memory usage of a node (metrics.k8s.io), in percent
-  # of allocatable.
+  # Measured CPU and memory usage (metrics.k8s.io): of the pods on a node,
+  # in percent of allocatable, and of the node itself, of capacity.
   usageWarnPercent: 80
   usageFailPercent: 90
-  # A node is "under-req" when its usage is at least this many times its
-  # requests and reaches underRequestedMinPercent of allocatable.
+  # A node is "under-req" when its pods use at least this many times what
+  # they request and reach underRequestedMinPercent of allocatable.
   underRequestedFactor: 2
   underRequestedMinPercent: 25
   # A container near its memory limit (OOM soon) or at its CPU limit

@@ -261,7 +261,7 @@ kc needs get, list and watch on Secrets in all namespaces for this, because its 
 
 ## Cluster Overview
 
-The first row of every panel root is `/overview`: one row per finding about the panel's context and namespace scope, in four sections. `M-i` opens it from any list for that list's namespace, and `kc overview` starts there. Capacity compares the measured CPU and memory usage of each node (metrics.k8s.io), the requests and limits of the pods on it and its allocatable; a node is `under-req` when it uses well above what its pods request, so the scheduler thinks it is emptier than it is. It also shows pods per node against allocatable pods, and node and image filesystem use from the kubelet stats summary. Health lists nodes that are not ready, under pressure or cordoned; pods that are not ready, pending, crash looping, failing to pull images or to start, OOMKilled or restarting; workloads that are unavailable or rolling out; failed Jobs and CronJobs; Pending or Lost claims and Released or Failed volumes. Risks lists PodDisruptionBudgets that allow no eviction, pods without requests or without a memory limit, containers near their memory limit or at their CPU limit (measured), PersistentVolumeClaims near full (kubelet stats), single-replica workloads without a PDB, ResourceQuotas near their limit, HPAs at their maximum or without metrics, and cert-manager Certificates that are not Ready or expire within `overview.certificateExpiryDays` (14 days; the row is dim when cert-manager is not installed). Activity lists warning events and pod restarts inside the window.
+The first row of every panel root is `/overview`: one row per finding about the panel's context and namespace scope, in four sections. `M-i` opens it from any list for that list's namespace, and `kc overview` starts there. Capacity shows CPU and memory per node with the same bases as the Info panel mode, for example `pods 22% req 25% lim 116% of alloc, node 40% of cap`: the measured usage of the pods on the node (PodMetrics, every namespace), their requests and their limits against allocatable, and the node's own usage (NodeMetrics, system daemons included) against capacity. Percentages are truncated, as `kubectl describe node` prints them. A node is `under-req` when its pods use well above what they request, so the scheduler thinks it is emptier than it is; usage outside pods does not count for it. A row's state is its worst node, and F3 lists the formulas and the kubectl commands for each input. It also shows pods per node against allocatable pods, and node and image filesystem use from the kubelet stats summary. Health lists nodes that are not ready, under pressure or cordoned; pods that are not ready, pending, crash looping, failing to pull images or to start, OOMKilled or restarting; workloads that are unavailable or rolling out; failed Jobs and CronJobs; Pending or Lost claims and Released or Failed volumes. Risks lists PodDisruptionBudgets that allow no eviction, pods without requests or without a memory limit, containers near their memory limit or at their CPU limit (measured), PersistentVolumeClaims near full (kubelet stats), single-replica workloads without a PDB, ResourceQuotas near their limit, HPAs at their maximum or without metrics, and cert-manager Certificates that are not Ready or expire within `overview.certificateExpiryDays` (14 days; the row is dim when cert-manager is not installed). Activity lists warning events and pod restarts inside the window.
 
 Each row has a value and a state, colored like rows of object lists: normal is ok, the not-ready color a warning, the failed color failed, and dim when kc cannot read the source (the reason is in `F3`, for example "metrics.k8s.io is not served by this cluster" or "forbidden: nodes/proxy"). `Enter` lists exactly the objects behind a row, with the reason for each, and `/..` returns. `Enter` on a warning event opens the object it is about in the other panel. `F3` explains how the value is computed and shows the kubectl commands that show the same inputs. Capacity rows always cover every node and every pod on it; the other rows follow the namespace scope.
 
@@ -403,7 +403,7 @@ Read-only mode refuses `M-n` before the menu opens.
 - `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
 - `panel.skin`, `contexts` – panel colors and per-context frame colors (see [Panel colors](#panel-colors)).
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
-- `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests, limits and measured usage against allocatable, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
+- `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, measured pod and node usage, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
 - `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
@@ -556,12 +556,12 @@ overview:
   podsWarnPercent: 90
   # A ResourceQuota is flagged when any used value reaches this percent.
   quotaWarnPercent: 80
-  # Measured CPU and memory usage of a node (metrics.k8s.io), in percent
-  # of allocatable.
+  # Measured CPU and memory usage (metrics.k8s.io): of the pods on a node,
+  # in percent of allocatable, and of the node itself, of capacity.
   usageWarnPercent: 80
   usageFailPercent: 90
-  # A node is "under-req" when its usage is at least this many times its
-  # requests and reaches underRequestedMinPercent of allocatable.
+  # A node is "under-req" when its pods use at least this many times what
+  # they request and reach underRequestedMinPercent of allocatable.
   underRequestedFactor: 2
   underRequestedMinPercent: 25
   # A container near its memory limit (OOM soon) or at its CPU limit

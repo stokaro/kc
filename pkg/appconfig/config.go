@@ -232,13 +232,14 @@ type OverviewConfig struct {
 	// QuotaWarnPercent flags a ResourceQuota when any used value reaches
 	// this percent of its hard limit.
 	QuotaWarnPercent int `json:"quotaWarnPercent"`
-	// UsageWarnPercent and UsageFailPercent compare the measured CPU and
-	// memory usage of a node (metrics.k8s.io) with its allocatable.
+	// UsageWarnPercent and UsageFailPercent judge the measured CPU and
+	// memory usage (metrics.k8s.io): of the pods on a node against its
+	// allocatable, and of the node itself against its capacity.
 	UsageWarnPercent int `json:"usageWarnPercent"`
 	UsageFailPercent int `json:"usageFailPercent"`
-	// UnderRequestedFactor marks a node "under-requested" when its measured
-	// usage is at least this many times what its pods request, and the
-	// usage reaches UnderRequestedMinPercent of allocatable. The scheduler
+	// UnderRequestedFactor marks a node "under-requested" when the measured
+	// usage of its pods is at least this many times what they request, and
+	// that usage reaches UnderRequestedMinPercent of allocatable. The scheduler
 	// then keeps placing pods on a node that is busier than it thinks.
 	UnderRequestedFactor     float64 `json:"underRequestedFactor"`
 	UnderRequestedMinPercent int     `json:"underRequestedMinPercent"`

@@ -117,7 +117,7 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 	}
 	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps) }
 	e.measure = func() *overviewMeasured {
-		return measuredUsage(deps, namespace, false, e, func() { e.dirty.Store(true) })
+		return measuredUsage(deps, namespace, e, func() { e.dirty.Store(true) })
 	}
 	e.statsEvery = overviewStatsEvery
 	var once sync.Once
@@ -341,7 +341,7 @@ func (e *overviewEngine) pollStats(ctx context.Context, nodes []string) {
 // measuredLocked joins the latest usage and stats into what one recompute
 // uses. e.mu must be held.
 func (e *overviewEngine) measuredLocked() *overviewMeasured {
-	m := &overviewMeasured{nodesReason: "not measured", podsReason: "not measured"}
+	m := &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", clusterPodsReason: "not measured"}
 	if e.lastMeasure != nil {
 		cp := *e.lastMeasure
 		m = &cp
