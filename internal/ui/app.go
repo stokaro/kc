@@ -1343,7 +1343,7 @@ func (a *App) setPanelMode(ctx context.Context, panel *Panel, mode PanelViewMode
 		a.invalidateView(reason)
 		a.invalidateFunctionBar(reason)
 	}
-	return tea.Batch(cmd, a.followOtherPanelLogs(ctx, panel))
+	return tea.Batch(cmd, a.followOtherPanel(ctx, panel))
 }
 
 func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {
