@@ -116,6 +116,11 @@ string handling, invalid JSON must stay visible, and the change must move onto
   match; this applies to every viewer.
 - `Esc v`, `Esc g` and `Esc A` are not fallbacks inside the viewer: the modal
   takes `Esc` first, as it does for `M-a` today.
+- The #76 and #32 follow-ups below were done when this change was merged
+  onto main. For #32, `logmux.ParseFormatted` splits the colored
+  `[pod/container]` prefix off each merged line, and `Format.SourceStyle`
+  shows the source in the color `logmux` gives it. The status puts the view
+  status before the stream state: `tail 200, formatted, 12 lines (ended)`.
 - Follow-up after #76 merges (it rewrites `logs_viewer.go`):
   - in `handleChunk`, replace `v.inner.AppendLines(m.lines)` with
     `v.appendRecords(m.lines)`; route the `[kc] logs stream failed` line the

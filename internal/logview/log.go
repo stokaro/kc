@@ -110,6 +110,9 @@ func (l *Log) SetQuery(q *Query) {
 	}
 }
 
+// SetFormat replaces the format. Call Lines to get the new display.
+func (l *Log) SetFormat(f Format) { l.format = f }
+
 // Reset drops all records and keeps the settings, for a restarted stream.
 func (l *Log) Reset() {
 	l.records = nil

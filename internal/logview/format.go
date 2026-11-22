@@ -36,6 +36,10 @@ type Format struct {
 	Columns []Column
 	// Color adds ANSI colors: level by severity, time and keys dimmed.
 	Color bool
+	// SourceStyle, when set, renders the `[pod/container]` prefix of a
+	// record with a source, for example in the source's own color. It
+	// returns the prefix without the space after it.
+	SourceStyle func(Source) string
 }
 
 // DefaultFormat shows time, level and message first, with the key names
@@ -83,12 +87,20 @@ func (f Format) Raw(r *Record) string {
 	if r.Source == (Source{}) {
 		return displayText(r.Raw)
 	}
-	return "[" + escapeControl(r.Source.String()) + "] " + displayText(r.Raw)
+	return f.source(r.Source) + " " + displayText(r.Raw)
+}
+
+// source renders the prefix of a record with a source.
+func (f Format) source(src Source) string {
+	if f.SourceStyle != nil {
+		return f.SourceStyle(src)
+	}
+	return "[" + escapeControl(src.String()) + "]"
 }
 
 func (f Format) writeHead(b *strings.Builder, r *Record) {
 	if r.Source != (Source{}) {
-		b.WriteString("[" + escapeControl(r.Source.String()) + "] ")
+		b.WriteString(f.source(r.Source) + " ")
 	}
 	if r.Prefix != "" && r.obj != nil {
 		f.dim(b, r.Prefix)

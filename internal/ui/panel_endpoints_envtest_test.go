@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	tea "charm.land/bubbletea/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
@@ -20,9 +22,7 @@ import (
 // Test that entering a namespaced endpoints list yields server-side columns
 // beyond just Name when at least one endpoints object exists.
 func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 
 	// Seed kube-system/kubernetes Endpoints
 	scheme := runtime.NewScheme()

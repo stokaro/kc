@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"context"
 	"io"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/logmux"
 	"github.com/sttts/kc/internal/logview"
+	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/ui/viewer"
 )
 
@@ -31,9 +34,14 @@ func streamAll(t *testing.T, v *LogsViewer) {
 	t.Fatal("stream did not end")
 }
 
+// readerOpener opens r once; the viewer reads it like a pod log.
+func readerOpener(r io.ReadCloser) logStreamOpener {
+	return func(models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) { return r, nil, nil }
+}
+
 func newTestLogsViewer(t *testing.T, content string) *LogsViewer {
 	t.Helper()
-	v := NewLogsViewer("logs:ns/p/c", io.NopCloser(strings.NewReader(content)), nil, "")
+	v := NewLogsViewer("logs:ns/p/c", models.LogsSpec{}, readerOpener(io.NopCloser(strings.NewReader(content))), "")
 	v.SetDimensions(80, 20)
 	v.inner.Resize(80, 18)
 	return v
@@ -83,11 +91,12 @@ func TestLogsViewerFormatsAndTogglesRaw(t *testing.T) {
 func TestLogsViewerFilterKeepsRecordsAndStream(t *testing.T) {
 	pr, pw := io.Pipe()
 	t.Cleanup(func() { _ = pw.Close() })
-	v := NewLogsViewer("logs:ns/p/c", pr, nil, "")
+	v := NewLogsViewer("logs:ns/p/c", models.LogsSpec{}, readerOpener(pr), "")
 	v.SetDimensions(80, 20)
 	v.inner.Resize(80, 18)
 
-	cmd := v.Init()
+	// Open the stream; the first read waits for a line.
+	_, cmd := v.Update(v.Init()())
 	feed := func(line string) {
 		t.Helper()
 		done := make(chan tea.Msg)
@@ -243,15 +252,26 @@ func TestLogsFilterDialog(t *testing.T) {
 	}
 }
 
-func TestLogsFilterDialogPassesStreamOn(t *testing.T) {
-	v := newTestLogsViewer(t, "{\"msg\":\"a\"}\n{\"msg\":\"b\"}\n")
-	d := newLogsFilterDialog(v, nil)
-	cmd := v.Init()
-	for cmd != nil {
-		_, cmd = d.Update(cmd())
+// A merged log keeps the [pod/container] prefix as the record's source: the
+// JSON after it is formatted, the prefix stays in front, and the original
+// records are copied without it.
+func TestLogsViewerMergedLogFormatsJSONAfterThePrefix(t *testing.T) {
+	src := logmux.Target{Pod: "api-1", Container: "app"}
+	content := logmux.Format(logmux.Line{Target: src, Text: `{"level":"error","msg":"boom"}`}, true) + "\n" +
+		logmux.Format(logmux.Line{Notice: true, Text: "+ api-1/app"}, true) + "\n"
+	v := newTestLogsViewer(t, content)
+	v.SetStyledLines(true)
+	streamAll(t, v)
+
+	want := []string{"[api-1/app] ERROR boom", "[kc] + api-1/app"}
+	if got := plainLines(v); !equalLines(got, want) {
+		t.Fatalf("merged view =\n%q\nwant\n%q", got, want)
 	}
-	if got := v.inner.PlainText(); got != "a\nb" {
-		t.Fatalf("lines read behind the dialog = %q", got)
+	if view := v.View().Content; !strings.Contains(view, logmux.StyledPrefix(src)) {
+		t.Fatalf("the prefix is not shown in its color:\n%q", view)
+	}
+	if got := v.log.Originals(); got[0] != `{"level":"error","msg":"boom"}` {
+		t.Fatalf("original record = %q, want the line without the prefix", got[0])
 	}
 }
 
@@ -276,7 +296,7 @@ func TestAppLogsFilterDialogOverViewer(t *testing.T) {
 		t.Fatalf("the dialog is not drawn:\n%s", got)
 	}
 
-	app.Update(logStreamMsg{lines: []string{`{"level":"info","msg":"a"}`, `{"level":"error","msg":"b"}`}})
+	app.Update(logStreamMsg{viewer: v, gen: v.gen, lines: []string{`{"level":"info","msg":"a"}`, `{"level":"error","msg":"b"}`}})
 	if got := v.log.Len(); got != 2 {
 		t.Fatalf("the viewer kept %d lines behind the dialog, want 2", got)
 	}
@@ -285,7 +305,7 @@ func TestAppLogsFilterDialogOverViewer(t *testing.T) {
 		app.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 	_, cmd := app.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if res := findMsg[logsFilterResultMsg](cmd); res == nil {
+	if res := findCmdMsg[logsFilterResultMsg](cmd); res == nil {
 		t.Fatal("Enter must answer the dialog")
 	} else {
 		app.Update(*res)
@@ -298,8 +318,8 @@ func TestAppLogsFilterDialogOverViewer(t *testing.T) {
 	}
 }
 
-// findMsg runs cmd, and the commands of a batch, and returns the first T.
-func findMsg[T any](cmd tea.Cmd) *T {
+// findCmdMsg runs cmd, and the commands of a batch, and returns the first T.
+func findCmdMsg[T any](cmd tea.Cmd) *T {
 	if cmd == nil {
 		return nil
 	}
@@ -308,7 +328,7 @@ func findMsg[T any](cmd tea.Cmd) *T {
 		return &msg
 	case tea.BatchMsg:
 		for _, c := range msg {
-			if got := findMsg[T](c); got != nil {
+			if got := findCmdMsg[T](c); got != nil {
 				return got
 			}
 		}

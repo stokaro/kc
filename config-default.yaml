@@ -1,6 +1,16 @@
 viewer:
   theme: dracula
   mode: scroll
+  logs:
+    # Recent lines fetched before following; -1 fetches the whole log.
+    tail: 200
+    # Only lines newer than this; 0s means no limit.
+    since: 0s
+    # Prefix every line with its timestamp.
+    timestamps: false
+    # Log streams a merged logs viewer (all pods of a workload, all
+    # containers of a pod) runs at once; more wait for a free slot.
+    maxRequests: 50
 
 panel:
   scrolling:
@@ -9,6 +19,8 @@ panel:
   width:
     leftPercent: 50
     rightPercent: 50
+  # Panel colors: a built-in skin (mc, dark) or ~/.kc/skins/<name>.yaml.
+  skin: mc
 
 input:
   escTimeout: 1s
@@ -32,12 +44,66 @@ resources:
   favorites: []
 
 objects:
-  # Object list ordering: name | -name | creation | -creation
+  # Object list sort: a column key (name, age, status, restarts, ...) or creation; "-" sorts descending
   order: name
   # Columns mode for server-side Tables:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+
+nodeShell:
+  # Off by default. "Start a node shell..." inside a node creates a
+  # privileged pod with the host PID, network and IPC namespaces on that
+  # node and opens a root shell in the host namespaces.
+  enabled: false
+  # Limit the node shell to these kube contexts; empty means all contexts.
+  # contexts: [kind-dev]
+  # The image needs sh and nsenter.
+  image: docker.io/library/busybox:1.36.1
+  # Namespace of the shell pod; pod security admission must allow
+  # privileged pods there.
+  namespace: default
+  # activeDeadlineSeconds of the pod: it stops after this time even in use.
+  maxDuration: 8h
+
+portForward:
+  # Local address port forwards listen on (M-p). 127.0.0.1 keeps them
+  # reachable from this machine only; "localhost" listens on both loopback
+  # addresses like kubectl; 0.0.0.0 exposes them to the network.
+  address: 127.0.0.1
+
+# Columns per resource type, keyed by group/version/resource (v1/pods for
+# the core group). An entry with jsonPath adds a column computed from the
+# object, like `kubectl get -o custom-columns`; wide: true shows it only in
+# wide mode. An entry with hide: true hides the server column of that name;
+# name "*" hides all server columns except Name. Example:
+#
+# columns:
+#   apps/v1/deployments:
+#     - name: IMAGE
+#       jsonPath: .spec.template.spec.containers[*].image
+#     - name: Up-to-date
+#       hide: true
+#   v1/pods:
+#     - name: NODE-IP
+#       jsonPath: .status.hostIP
+#       wide: true
+columns: {}
+
+overview:
+  # How far back warning events and container restarts count.
+  window: 1h
+  # Restarts (the last one inside window) that make a pod "restarting".
+  restartThreshold: 3
+  # CPU and memory requests on a node, in percent of allocatable.
+  requestsWarnPercent: 80
+  requestsFailPercent: 95
+  # Limits above this percent of allocatable mark a node overcommitted.
+  limitsWarnPercent: 100
+  # Pods on a node, in percent of allocatable pods.
+  podsWarnPercent: 90
+  # A ResourceQuota is flagged when any used value reaches this percent.
+  quotaWarnPercent: 80
 
 commands:
   - name: Top Nodes
@@ -60,3 +126,32 @@ commands:
     watchInterval: 5s
     debounce: 500ms
     onExit: keep-open
+  # Optional per command, unset in the defaults:
+  #   hotkey: M-1        # mc notation: M-<key>, C-M-<key>, F11-F24, C-x <key>
+  #   prompts:           # one dialog before running; read as {{.Input.<name>}}
+  #     - name: replicas
+  #       label: Replicas
+  #       default: "1"
+  #       choices: []
+  #   confirm: true      # or a message; red dialog with the rendered command
+
+# Tint the panel frame and the context label per kubeconfig context. The
+# first matching entry wins. match is a name or a glob ("*" and "?"); regex is
+# a Go regular expression. Colors: ANSI names (red, bright-cyan), 0-255 or
+# #rrggbb. Example:
+#   contexts:
+#     - match: "*prod*"
+#       color: red
+#     - regex: "^kind-"
+#       color: green
+contexts: []
+
+# Read-only mode: kc refuses edits (F4), deletes (F8), namespace creation
+# (F7), the pod filesystem debug helper and commands marked dangerous.
+# --readonly turns it on for every context, --write turns it off.
+readOnly:
+  # true makes every context read-only.
+  enabled: false
+  # Context names or globs ("*" any run of characters, "?" one), for
+  # example "*prod*". A pattern must match the whole name.
+  contexts: []

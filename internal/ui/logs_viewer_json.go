@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/sttts/kc/internal/logmux"
 	"github.com/sttts/kc/internal/logview"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
@@ -56,8 +57,17 @@ func (v *LogsViewer) handleLogViewKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 }
 
 // appendRecords keeps lines as records and shows those that pass the filter.
+// In a merged log each line's prefix becomes its source.
 func (v *LogsViewer) appendRecords(lines []string) bool {
-	shown := v.log.Append(logview.Source{}, lines...)
+	var shown []string
+	if v.merged {
+		for _, line := range lines {
+			src, text := mergedLineSource(line)
+			shown = append(shown, v.log.Append(src, text)...)
+		}
+	} else {
+		shown = v.log.Append(logview.Source{}, lines...)
+	}
 	if len(shown) == 0 {
 		return false
 	}
@@ -85,6 +95,21 @@ func (v *LogsViewer) Query() string { return v.log.Query().String() }
 
 // LogMode returns whether the viewer shows records raw or formatted.
 func (v *LogsViewer) LogMode() logview.Mode { return v.log.Mode() }
+
+// mergedLineSource splits a merged log line into its source and text. kc's
+// own notices (`[kc] ...`) and lines without a prefix keep no source.
+func mergedLineSource(line string) (logview.Source, string) {
+	t, text, ok := logmux.ParseFormatted(line)
+	if !ok {
+		return logview.Source{}, line
+	}
+	return logview.Source{Pod: t.Pod, Container: t.Container}, text
+}
+
+// mergedSourceStyle colors a source prefix as logmux.Format does.
+func mergedSourceStyle(src logview.Source) string {
+	return logmux.StyledPrefix(logmux.Target{Pod: src.Pod, Container: src.Container})
+}
 
 // SetOnFilter sets what M-g does; the app opens the filter dialog.
 func (v *LogsViewer) SetOnFilter(fn func() tea.Cmd) { v.onFilter = fn }
@@ -202,9 +227,6 @@ func (d *logsFilterDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d.done()
 		}
 		return d, nil
-	case logStreamMsg:
-		_, cmd := d.viewer.Update(m)
-		return d, cmd
 	}
 	_, cmd := d.input.Update(msg)
 	return d, cmd
