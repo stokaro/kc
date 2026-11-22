@@ -39,6 +39,9 @@ func extraObjectRows(deps Deps, gvr schema.GroupVersionResource, namespace, name
 	fns := append([]ObjectRowsFunc(nil), objectRows[gvr]...)
 	objectRowsMu.RUnlock()
 	var rows []table.Row
+	if fn, ok := builtinObjectRows(gvr); ok {
+		rows = append(rows, fn(deps, namespace, name, path)...)
+	}
 	for _, fn := range fns {
 		rows = append(rows, fn(deps, namespace, name, path)...)
 	}
