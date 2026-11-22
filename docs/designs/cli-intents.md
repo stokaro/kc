@@ -13,10 +13,11 @@
   - Mixed pairs like `kc get pod/foo svc/bar` → navigate to the shallowest shared folder and highlight each requested row.
   - `kc logs <pod> [-c <container>] [--follow]` → open the pod/container logs viewer.
 - Honor `-n/--namespace` everywhere a kubectl command would, falling back to the context/default namespace when omitted.
+- Honor `--context` and `-A/--all-namespaces` at startup (`docs/adr/0072-startup-context-and-scope.md`). `RunConfig.Context` picks the context before kc connects; `RunConfig.AllNamespaces` starts both panels in `models.AllNamespaces`, and `kc get` resolves its type rows in that scope.
 
 ## High-Level Design
 ### CLI Parsing
-- Keep the current global flags (`--version`, `--kubeconfig`, `-n/--namespace`) and introduce subcommands implemented with kong:
+- Keep the current global flags (`--version`, `--kubeconfig`, `--context`, `-n/--namespace`, `-A/--all-namespaces`) and introduce subcommands implemented with kong:
   - `kc get [flags] <resource> [name]`
   - `kc logs [flags] <pod>`
 - Each subcommand owns the kubectl-compatible flags it needs. Unknown flags are collected for future compatibility but ignored for now.

@@ -33,17 +33,19 @@ var (
 )
 
 type cliFlags struct {
-	Kubeconfig string         `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
-	Namespace  string         `help:"Namespace to open on startup" short:"n"`
-	PprofAddr  string         `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
-	Verbosity  int            `help:"klog verbosity level (same as --v)" name:"v"`
-	As         string         `help:"Username to impersonate for the operation (regular user or service account)"`
-	AsGroup    []string       `help:"Group to impersonate for the operation (repeatable)"`
-	AsUID      string         `help:"UID to impersonate for the operation"`
-	Root       rootCommand    `cmd:"" hidden:"true" default:"1"`
-	Get        getCommand     `cmd:"get" help:"Mirror kubectl get"`
-	Logs       logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
-	Version    versionCommand `cmd:"version" help:"Show version information"`
+	Kubeconfig    string         `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
+	Context       string         `help:"Kubeconfig context to open (kubeconfig is not changed)"`
+	Namespace     string         `help:"Namespace to open on startup" short:"n"`
+	AllNamespaces bool           `help:"Open all namespaces (wins over -n, as in kubectl)" short:"A" name:"all-namespaces"`
+	PprofAddr     string         `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
+	Verbosity     int            `help:"klog verbosity level (same as --v)" name:"v"`
+	As            string         `help:"Username to impersonate for the operation (regular user or service account)"`
+	AsGroup       []string       `help:"Group to impersonate for the operation (repeatable)"`
+	AsUID         string         `help:"UID to impersonate for the operation"`
+	Root          rootCommand    `cmd:"" hidden:"true" default:"1"`
+	Get           getCommand     `cmd:"get" help:"Mirror kubectl get"`
+	Logs          logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
+	Version       versionCommand `cmd:"version" help:"Show version information"`
 }
 
 type rootCommand struct{}
@@ -151,15 +153,9 @@ func main() {
 	}()
 
 	// Run the application
-	runCfg := ui.RunConfig{
-		Namespace:          ns,
-		StartupIntent:      intent,
-		DebugLogPath:       debugLogPath,
-		SwitchToFileLogger: switchToUILogger,
-		ImpersonateUser:    strings.TrimSpace(cli.As),
-		ImpersonateUID:     strings.TrimSpace(cli.AsUID),
-		ImpersonateGroups:  append([]string(nil), cli.AsGroup...),
-	}
+	runCfg := newRunConfig(&cli, intent, ns)
+	runCfg.DebugLogPath = debugLogPath
+	runCfg.SwitchToFileLogger = switchToUILogger
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -174,6 +170,9 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 
 	switch {
 	case commandMatches(cmd, "", "kc", "kc root", "root"):
+		if cli.AllNamespaces {
+			return intent, "", nil
+		}
 		return intent, strings.TrimSpace(cli.Namespace), nil
 	case commandMatches(cmd, "kc get", "get"):
 		if len(cli.Get.Targets) == 0 {
@@ -184,6 +183,12 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 			return intent, "", err
 		}
 		ns := selectNamespace(cli.Namespace, "")
+		if cli.AllNamespaces {
+			if err := checkAllNamespacesGet(getIntent); err != nil {
+				return intent, "", err
+			}
+			ns = ""
+		}
 		intent.Verb = ui.KubectlVerbGet
 		intent.Namespace = ns
 		intent.Get = getIntent
@@ -191,6 +196,9 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 	case commandMatches(cmd, "kc logs", "logs"):
 		if strings.TrimSpace(cli.Logs.Pod) == "" {
 			return intent, "", errors.New("kc logs requires a pod name")
+		}
+		if cli.AllNamespaces {
+			return intent, "", errAllNamespacesLogs
 		}
 		logsIntent := &ui.LogsIntent{
 			Pod:       strings.TrimSpace(cli.Logs.Pod),

@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -269,6 +270,41 @@ func TestStartupIntentLogsEnvtest(t *testing.T) {
 		t.Fatalf("expected left panel selection on logs entry")
 	} else if path := "/" + strings.Join(item.Path(), "/"); !strings.HasSuffix(path, "/logs/latest") {
 		t.Fatalf("selected item path = %q, want logs/latest entry", path)
+	}
+}
+
+// TestStartupIntentGetAllNamespacesEnvtest mirrors kc -A get pods: the
+// left panel lists pods across all namespaces and keeps that scope.
+func TestStartupIntentGetAllNamespacesEnvtest(t *testing.T) {
+	app, cl := setupAppWithCluster(t)
+	ns := "intent-all"
+	t.Cleanup(createNamespace(t, cl, ns))
+	t.Cleanup(createPod(t, cl, ns, "pod-all", nil))
+
+	waitForNamespaceReady(t, app, ns)
+	app.allNamespaces = true
+	app.goToNamespace(app.initialNamespace())
+
+	app.startupIntent = StartupIntent{
+		Verb: KubectlVerbGet,
+		Get: &GetIntent{
+			Tokens: []GetToken{{Value: "pods", ExplicitResource: true}},
+		},
+	}
+	app.startupIntentApplied = false
+	runStartupSelect(app, app.applyStartupIntent())
+
+	if got := app.leftPanel.GetCurrentPath(); got != "/pods" {
+		t.Fatalf("left panel path = %q, want /pods", got)
+	}
+	for idx := range 2 {
+		if got := app.panelScope[idx]; got != models.AllNamespaces {
+			t.Fatalf("panel %d scope = %q, want all namespaces", idx, got)
+		}
+	}
+	nav, ok := app.leftNav.Current().(interface{ Namespace() string })
+	if !ok || nav.Namespace() != models.AllNamespaces {
+		t.Fatalf("left folder %T is not the all-namespaces pod list", app.leftNav.Current())
 	}
 }
 
