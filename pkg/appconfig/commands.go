@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sttts/kc/internal/cmdtemplate"
+	yaml "sigs.k8s.io/yaml"
 )
 
 // CommandPrompt is one named input of a custom command. The dialog shows
@@ -57,6 +58,22 @@ func (c *CommandConfirm) UnmarshalJSON(data []byte) error {
 	s = strings.TrimSpace(s)
 	*c = CommandConfirm{Enabled: s != "", Message: s}
 	return nil
+}
+
+// unmarshalOverDefaults decodes a configuration file onto cfg, which holds
+// the defaults. encoding/json decodes a list into the existing elements, so
+// the user's first command would inherit the fields of the first default
+// command (watchInterval, interactive, onExit, ...) that it does not set.
+// The default commands are therefore kept only when the file has no
+// commands; `commands: []` means none.
+func unmarshalOverDefaults(data []byte, cfg *Config) error {
+	defaults := cfg.Commands
+	cfg.Commands = nil
+	err := yaml.Unmarshal(data, cfg)
+	if cfg.Commands == nil {
+		cfg.Commands = defaults
+	}
+	return err
 }
 
 // MaxCommandPrompts bounds the prompts of one command, so the dialog fits

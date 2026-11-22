@@ -288,7 +288,7 @@ func Load() (*Config, error) {
 		return cfg, err
 	}
 	// First try strict unmarshal (lower-case tags)
-	if err := yaml.Unmarshal(data, cfg); err == nil {
+	if err := unmarshalOverDefaults(data, cfg); err == nil {
 		if cfg.Viewer.Theme == "" {
 			cfg.Viewer.Theme = "dracula"
 		}
