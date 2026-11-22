@@ -11,6 +11,9 @@ storeprovider
 /kc
 /cmd/kc/kc
 
+# goreleaser output
+/dist/
+
 # Test binary, built with `go test -c`
 *.test
 
