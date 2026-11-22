@@ -9,8 +9,8 @@ The configuration is `.goreleaser.yaml`; the workflow is `.github/workflows/rele
 These steps need admin rights on the `stokaro` organization and are not automated.
 
 1. Make GitHub Actions run in `stokaro/kc`. Runs that stay queued forever usually mean the organization has no Actions minutes or no payment method (Organization settings, Billing and plans), or that Actions are disabled (Repository settings, Actions, General). Nothing below works until a workflow run starts.
-2. Create the public repository `stokaro/homebrew-kc` with a `main` branch. An initial README is enough; GoReleaser writes `Casks/kc.rb` into it.
-3. Create a fine-grained personal access token (or a GitHub App installation token) with "Contents: read and write" on `stokaro/homebrew-kc` only. Store it in `stokaro/kc` as the repository secret `HOMEBREW_TAP_GITHUB_TOKEN`. The release job stops at its first step when the secret is missing, before anything is published.
+2. The public repository `stokaro/homebrew-kc` exists with a `main` branch and a README; GoReleaser writes `Casks/kc.rb` into it.
+3. Share the organization variable `PUBLISH_APP_ID` and the organization secret `PUBLISH_APP_KEY` with `stokaro/kc` (Organization settings, Secrets and variables, Actions, each entry's repository access). They belong to the `ptah-publish` GitHub App, which is installed on all `stokaro` repositories with "Contents: read and write"; ptah writes its own tap with it. The release job mints a token for `stokaro/homebrew-kc` only. Without the app, a repository secret `HOMEBREW_TAP_GITHUB_TOKEN` (a fine-grained token with "Contents: read and write" on `stokaro/homebrew-kc`) works as a fallback. The release job stops at its first steps when neither is set, before anything is published.
 4. Optional: add the Apple signing and notarization secrets (see below). Without them the macOS binaries are not notarized, and the cask removes the quarantine attribute so they still start.
 
 No other secret is needed. The GitHub Release is created with the workflow's own `GITHUB_TOKEN`, and the checksum file is signed with cosign through the workflow's OIDC identity, so there is no signing key to store.
@@ -19,7 +19,8 @@ No other secret is needed. The GitHub Release is created with the workflow's own
 
 | Secret | Required | Purpose |
 | --- | --- | --- |
-| `HOMEBREW_TAP_GITHUB_TOKEN` | yes | Pushes `Casks/kc.rb` to `stokaro/homebrew-kc`. |
+| `PUBLISH_APP_ID` (organization variable) and `PUBLISH_APP_KEY` (organization secret) | yes, or the fallback below | The `ptah-publish` GitHub App; the release job mints a token for `stokaro/homebrew-kc` that pushes `Casks/kc.rb`. |
+| `HOMEBREW_TAP_GITHUB_TOKEN` | only without the app | Fallback personal access token for the tap. |
 | `MACOS_SIGN_P12` | no | Base64 of the exported Developer ID Application `.p12` certificate. |
 | `MACOS_SIGN_PASSWORD` | no | Password used when exporting the `.p12` file. |
 | `MACOS_NOTARY_KEY` | no | Base64 of the App Store Connect API key (`.p8`). |
@@ -45,7 +46,7 @@ The repository has the upstream tags up to `v0.8.0`. The first release of this f
    git push origin v0.9.0
    ```
 
-3. The tag starts the `release` job of `.github/workflows/release.yml`. It checks that the tap token exists, builds and archives the binaries, writes `kc_checksums.txt` and signs it with cosign (`kc_checksums.txt.sigstore.json`), notarizes the macOS binaries when the Apple secrets exist, publishes the GitHub Release, and pushes the cask to the tap.
+3. The tag starts the `release` job of `.github/workflows/release.yml`. It mints the tap token from the GitHub App (or takes the fallback secret) and stops when there is none, builds and archives the binaries, writes `kc_checksums.txt` and signs it with cosign (`kc_checksums.txt.sigstore.json`), notarizes the macOS binaries when the Apple secrets exist, publishes the GitHub Release, and pushes the cask to the tap.
 4. Check the result on a machine without a kubeconfig:
 
    ```bash
