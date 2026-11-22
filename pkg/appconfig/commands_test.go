@@ -93,6 +93,30 @@ func TestValidateCommandsHotkeys(t *testing.T) {
 	}
 }
 
+// The keys of the node actions (#114) and of the JSON logs viewer (#112)
+// are kc's own; a user hotkey on them is ignored.
+func TestValidateCommandsRefusesLaterBuiltinKeys(t *testing.T) {
+	t.Parallel()
+	for key, what := range map[string]string{
+		"M-n": "node actions",
+		"M-v": "raw or formatted logs",
+		"M-g": "log filter",
+		"M-A": "copy original log records",
+	} {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			cmds := []appconfig.CommandConfig{{Name: "mine", Command: "echo", Type: appconfig.CommandTypeGlobal, Hotkey: key}}
+			keys, err := appconfig.ValidateCommands(cmds)
+			if len(keys) != 0 {
+				t.Fatalf("hotkeys = %v, want none", keys)
+			}
+			if want := "hotkey " + key + " is kc's key for " + what; err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("error = %v, want it to contain %q", err, want)
+			}
+		})
+	}
+}
+
 func TestValidateCommandsPromptsAndConfirm(t *testing.T) {
 	t.Parallel()
 	prompt := func(name string) appconfig.CommandPrompt { return appconfig.CommandPrompt{Name: name} }
