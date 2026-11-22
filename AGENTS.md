@@ -60,6 +60,7 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 - With neither variable, envtest tests skip when the control plane cannot start. New envtest tests start it through `internal/testing/kcenvtest` (`kcenvtest.Main` in `TestMain` plus `kcenvtest.Require`, or `kcenvtest.Start` per test), never by calling `envtest.Environment.Start` directly. See `docs/adr/0060-require-envtest-in-ci.md`.
 - With coverage: `go test ./... -cover`
 - Static checks: `go vet ./...`
+- Lint: `make lint` (golangci-lint and nolintguard, pinned in the `go.mod` tool block). It reports only code that differs from `origin/main`; `make lint-all` shows the whole tree, including the findings recorded as a baseline. `make lint-fix` applies automatic fixes. Config: `.golangci.yml`; decisions: `docs/adr/0118-lint-setup.md`.
 - Tidy modules (after dep changes): `go mod tidy`
 
 ### Headless Bubbleterm Wrapper
@@ -77,6 +78,7 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 ## Coding Style & Naming Conventions
 - Format: `go fmt ./...` (CI expects gofmt-clean code).
 - Lint mindset: prefer small packages, clear interfaces, early returns.
+- `make lint` enforces several rules from this file: Bubble Tea and Bubbles v2 imports only, no `io/ioutil`, `ctrllog` as the alias for `sigs.k8s.io/controller-runtime/pkg/log`, no global controller-runtime logger outside `cmd/kc`, no `context.Background()`/`context.TODO()` in tests. Every `//nolint` must name a linter and give a reason (`//nolint:unused // why`); gosec and revive suppressions use `// #nosec G204 -- why` and `//revive:disable-next-line:<rule> why` instead.
 - Naming: package names lower-case, no underscores; exported identifiers `CamelCase`, unexported `camelCase`.
 - Errors: wrap with `%w` (e.g., `fmt.Errorf("reading config: %w", err)`).
 - Files: group closely related types; avoid large god files.
@@ -129,7 +131,7 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 - Keep changes focused; include or update tests and docs relevant to your change.
 
 ### Build & Test Before Commit
-- Build and test when you changed code or tests. At minimum: `go build ./...` and `go test ./...` (or the impacted packages when the full suite is costly). Do not commit if build or tests fail.
+- Build and test when you changed code or tests. At minimum: `go build ./...`, `go test ./...` and `make lint` (or the impacted packages when the full suite is costly). Do not commit if build or tests fail.
 - Repeated/fixup commits without new code changes don’t need another build/test cycle.
 - Docs-only commits do not require build/test.
 - Before committing, run `git status` to ensure there are no unintended or forgotten changes; stage only what belongs in the focused commit.
