@@ -1,9 +1,11 @@
 package list
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -39,6 +41,7 @@ type Widget struct {
 
 	bt            *table.BigTable
 	lastColTitles []string
+	lastHeader    []string // lastColTitles with the sort mark
 
 	positionMemory map[string]PositionInfo
 }
@@ -119,14 +122,32 @@ func (w *Widget) SelectedItems(ctx context.Context) []Item {
 		if len(ids) == 0 {
 			return nil
 		}
-		selected := make([]Item, 0, len(ids))
+		// The table keeps marks in a set; report them in the order the
+		// panel shows them, so commands see a stable, visible order.
+		type marked struct {
+			index int
+			id    string
+			item  Item
+		}
+		rows := make([]marked, 0, len(ids))
 		for _, id := range ids {
 			item, ok := w.folder.ItemByID(ctx, id)
 			if !ok || item == nil {
 				continue
 			}
+			index, _, found := w.folder.Find(ctx, id)
+			if !found {
+				index = math.MaxInt
+			}
 			name := displayNameFromItem(item)
-			selected = append(selected, Item{Item: item, Name: name, Selected: true})
+			rows = append(rows, marked{index: index, id: id, item: Item{Item: item, Name: name, Selected: true}})
+		}
+		slices.SortFunc(rows, func(a, b marked) int {
+			return cmp.Or(cmp.Compare(a.index, b.index), strings.Compare(a.id, b.id))
+		})
+		selected := make([]Item, 0, len(rows))
+		for _, r := range rows {
+			selected = append(selected, r.item)
 		}
 		return selected
 	}
@@ -374,21 +395,14 @@ func (w *Widget) RefreshFolder(ctx context.Context) {
 		return
 	}
 	_ = w.folderLen(ctx)
-	newCols := w.folder.Columns()
-	titles := columnsToTitles(newCols)
-	same := len(titles) == len(w.lastColTitles)
-	if same {
-		for i := range titles {
-			if titles[i] != w.lastColTitles[i] {
-				same = false
-				break
-			}
-		}
-	}
-	if !same {
+	rawCols := w.folder.Columns()
+	newCols := headerColumns(w.folder, rawCols)
+	header := columnsToTitles(newCols)
+	if !slices.Equal(header, w.lastHeader) {
 		bt := table.NewBigTable(newCols, newDisplayList(w.folder), max(1, w.width), max(1, w.height))
 		bt.SetMode(ctx, w.tableMode)
-		w.lastColTitles = titles
+		w.lastColTitles = columnsToTitles(rawCols)
+		w.lastHeader = header
 		w.decorateBigTable(ctx, &bt)
 		w.bt = &bt
 	} else {
@@ -448,7 +462,40 @@ func (w *Widget) SetObjectOrder(ctx context.Context, order string) {
 	w.RefreshFolder(ctx)
 }
 
+// ObjectOrder returns the order the panel asks object lists for.
 func (w *Widget) ObjectOrder() string { return w.objOrder }
+
+// SortState describes the sort of an object list.
+type SortState struct {
+	// Keys are the order keys of the columns, Titles their titles.
+	Keys   []string
+	Titles []string
+	// Applied is the order the rows are sorted by.
+	Applied string
+}
+
+// SortState returns the shown folder's sort. ok is false when the folder
+// cannot sort by column.
+func (w *Widget) SortState() (SortState, bool) {
+	if !w.useFolder || w.folder == nil {
+		return SortState{}, false
+	}
+	sortable, ok := w.folder.(models.ObjectSortable)
+	if !ok {
+		return SortState{}, false
+	}
+	st := SortState{Keys: sortable.SortKeys(), Applied: sortable.ObjectOrder()}
+	cols := w.folder.Columns()
+	st.Titles = make([]string, len(st.Keys))
+	for i, k := range st.Keys {
+		st.Titles[i] = k
+		// A load between the two reads can change the columns.
+		if len(cols) == len(st.Keys) {
+			st.Titles[i] = strings.TrimSpace(cols[i].Title)
+		}
+	}
+	return st, true
+}
 
 func (w *Widget) applyObjectOrderToFolder() {
 	if !w.useFolder || w.folder == nil {
@@ -1098,8 +1145,10 @@ func (w *Widget) ensureBigTable(ctx context.Context) {
 		return
 	}
 	_ = w.folderLen(ctx)
-	cols := w.folder.Columns()
-	w.lastColTitles = columnsToTitles(cols)
+	rawCols := w.folder.Columns()
+	cols := headerColumns(w.folder, rawCols)
+	w.lastColTitles = columnsToTitles(rawCols)
+	w.lastHeader = columnsToTitles(cols)
 	bt := table.NewBigTable(cols, newDisplayList(w.folder), max(1, w.width), max(1, w.height))
 	bt.SetMode(ctx, w.tableMode)
 	w.decorateBigTable(ctx, &bt)
@@ -1148,6 +1197,32 @@ func (w *Widget) selectionSnapshot(ctx context.Context) panelcontent.Selection {
 		selection.Item = current.Item
 	}
 	return selection
+}
+
+// Sort marks after the title of the sorted column: ascending and descending
+// by value, the signs mc's UTF-8 skins use.
+const (
+	sortMarkAsc  = "↑"
+	sortMarkDesc = "↓"
+)
+
+// headerColumns returns cols with the sort mark on the sorted column.
+func headerColumns(f models.Folder, cols []table.Column) []table.Column {
+	sortable, ok := f.(models.ObjectSortable)
+	if !ok {
+		return cols
+	}
+	mark, ok := sortable.SortMark()
+	if !ok || mark.Column < 0 || mark.Column >= len(cols) {
+		return cols
+	}
+	out := append([]table.Column(nil), cols...)
+	sign := sortMarkAsc
+	if mark.Desc {
+		sign = sortMarkDesc
+	}
+	out[mark.Column].Title = strings.TrimRight(out[mark.Column].Title, " ") + sign
+	return out
 }
 
 func columnsToTitles(cols []table.Column) []string {

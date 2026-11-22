@@ -13,13 +13,15 @@ import (
 
 var podGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 
-// NodePodsFolder lists pods scheduled on a specific node using a selector-scoped cluster.
+// NewNodePodsFolder lists pods scheduled on a specific node using a
+// selector-scoped cluster. The folder holds that cluster until Close.
 func NewNodePodsFolder(deps Deps, path []string, nodeName string) *ObjectsFolder {
 	selectors := map[schema.GroupVersionResource]crcache.ByObject{
 		podGVR: {Field: fields.OneTermEqualSelector("spec.nodeName", nodeName)},
 	}
-	scoped := deps.ForSelectorScope(selectors)
+	scoped, release := deps.ForSelectorScope(selectors)
 	folder := NewObjectsFolder(scoped, podGVR, "", path, nil)
+	folder.release = release
 	folder.kubectlArgs = []string{"--field-selector", "spec.nodeName=" + nodeName}
 	folder.FilterUnstructured = func(u *unstructured.Unstructured) bool {
 		if u == nil {
@@ -54,5 +56,5 @@ func (f *NodeChildFolder) populate(ctx context.Context) ([]table.Row, error) {
 			return NewNodePodsFolder(f.Deps, podsPath, f.nodeName), nil
 		},
 	)
-	return []table.Row{item}, nil
+	return append([]table.Row{item}, f.nodeShellRows()...), nil
 }

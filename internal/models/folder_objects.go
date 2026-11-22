@@ -3,7 +3,6 @@ package models
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +28,8 @@ type ObjectsFolder struct {
 	rows               *liveObjectRowSource
 	objectOrder        string
 	hasObjOrder        bool
+	sortMu             sync.Mutex
+	sortState          folderSortState
 	verbs              []string
 	ageMu              sync.Mutex
 	ageHooks           []*ageCellHook
@@ -39,6 +40,10 @@ type ObjectsFolder struct {
 	// kubectlArgs and kubectlNote refine KubectlCommand for filtered folders.
 	kubectlArgs []string
 	kubectlNote string
+
+	// release gives up the scoped cluster the folder reads, if it holds one.
+	// Close calls it; until then the pool keeps that cluster running.
+	release func()
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -60,12 +65,9 @@ func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace stri
 func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	cfg := o.Deps.AppConfig
 	columnsMode := cfg.Objects.Columns
-	order := cfg.Objects.Order
-	if o.hasObjOrder && o.objectOrder != "" {
-		order = o.objectOrder
-	}
+	order := o.requestedOrder()
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
-		return o.rowsFromRowList(rl, columnsMode, order), nil
+		return o.rowsFromRowList(o.withUsageColumns(rl), columnsMode, order), nil
 	} else if err != nil && apierrors.IsForbidden(err) {
 		return nil, err
 	}
@@ -76,10 +78,24 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	return o.rowsFromList(list, order), nil
 }
 
-// Close stops the folder's watch; navigators call it when they drop the folder.
+// origin names the cluster connection this folder lists from.
+func (o *ObjectsFolder) origin() ObjectOrigin {
+	ctxName := o.Deps.CtxName
+	if ctxName == "" {
+		ctxName = o.Deps.ClusterKey.ContextName
+	}
+	return ObjectOrigin{Cluster: o.Deps.Cl, Context: ctxName}
+}
+
+// Close stops the folder's watch and releases the scoped cluster it holds;
+// navigators call it when they drop the folder. Calling it again is a no-op.
 func (o *ObjectsFolder) Close() {
 	if o.rows != nil {
 		o.rows.Close()
+	}
+	if r := o.release; r != nil {
+		o.release = nil
+		r()
 	}
 }
 
@@ -101,13 +117,22 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		c := rl.Columns[vis[i]]
 		cols[i] = table.Column{Title: c.Name}
 	}
+	keys := make([]string, len(vis))
+	for i := range vis {
+		keys[i] = appconfig.ObjectsOrderKey(rl.Columns[vis[i]].Name)
+	}
+	if len(keys) > 0 {
+		keys[0] = sortKeyName
+	}
 	if namespaced {
 		cols = withNamespaceColumn(cols, table.Column{Title: "Namespace"})
+		keys = withNamespaceColumn(keys, sortKeyNamespace)
 	}
 	o.SetColumns(cols)
 	ageCols := ageColumnIndices(cols)
 
-	idxs := orderRowIndices(rl.Items, order, namespaced)
+	idxs, sortBy := orderRowIndices(rl.Items, rl.Columns, order, namespaced)
+	o.setSortState(sortBy, keys)
 	rows := make([]table.Row, 0, len(idxs))
 	var hooks []*ageCellHook
 	gvStr := o.gvr.GroupVersion().String()
@@ -136,6 +161,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		style := applyRowStylers(info)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
+		obj.SetInstance(rr.ObjectMeta.UID, o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
@@ -164,24 +190,36 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 	if namespaced {
 		o.SetColumns([]table.Column{{Title: " Name"}, {Title: "Namespace"}})
 	}
-	ids := make([]string, 0, len(list.Items))
-	byID := make(map[string]*unstructured.Unstructured, len(list.Items))
+	keys := []string{sortKeyName}
+	if namespaced {
+		keys = append(keys, sortKeyNamespace)
+	}
+	// Without a server table only the metadata can be sorted by.
+	items := make([]*unstructured.Unstructured, 0, len(list.Items))
+	metas := make([]tablecache.Row, 0, len(list.Items))
 	for i := range list.Items {
 		if o.FilterUnstructured != nil && !o.FilterUnstructured(&list.Items[i]) {
 			continue
 		}
-		_, id := o.objectNamespaceAndID(namespaced, list.Items[i].GetNamespace(), list.Items[i].GetName())
-		ids = append(ids, id)
-		byID[id] = &list.Items[i]
+		var r tablecache.Row
+		r.Name = list.Items[i].GetName()
+		r.CreationTimestamp = list.Items[i].GetCreationTimestamp()
+		if namespaced {
+			r.Namespace = list.Items[i].GetNamespace()
+		}
+		items = append(items, &list.Items[i])
+		metas = append(metas, r)
 	}
-	sort.Strings(ids)
-	rows := make([]table.Row, 0, len(ids))
+	idxs, sortBy := orderRowIndices(metas, nil, order, namespaced)
+	o.setSortState(sortBy, keys)
+	rows := make([]table.Row, 0, len(idxs))
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
 	ctor, hasChild := o.childConstructor()
-	for _, id := range ids {
-		item := byID[id]
+	for _, ii := range idxs {
+		item := items[ii]
 		name := item.GetName()
+		_, id := o.objectNamespaceAndID(namespaced, item.GetNamespace(), name)
 		ns, _ := o.objectNamespaceAndID(namespaced, item.GetNamespace(), name)
 		basePath := append(append([]string{}, o.Path()...), name)
 		title := name
@@ -211,6 +249,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		}
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.SetResourceVerbs(o.verbs)
+		obj.SetInstance(item.GetUID(), o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
@@ -286,12 +325,77 @@ func (o *ObjectsFolder) childConstructor() (ChildConstructor, bool) {
 // ApplyObjectOrder overrides the object ordering strategy until changed again.
 func (o *ObjectsFolder) ApplyObjectOrder(order string) {
 	order = normalizeObjectOrder(order)
-	if order == "" {
-		return
-	}
+	o.sortMu.Lock()
+	changed := !o.hasObjOrder || o.objectOrder != order
 	o.objectOrder = order
 	o.hasObjOrder = true
-	o.Refresh()
+	o.sortMu.Unlock()
+	if changed {
+		o.Refresh()
+	}
+}
+
+// folderSortState is the sort of the last listing.
+type folderSortState struct {
+	applied bool
+	sortBy  objectSort
+	keys    []string
+}
+
+// requestedOrder is the order set on the folder, or else the configured one.
+func (o *ObjectsFolder) requestedOrder() string {
+	o.sortMu.Lock()
+	defer o.sortMu.Unlock()
+	if o.hasObjOrder && o.objectOrder != "" {
+		return o.objectOrder
+	}
+	if o.Deps.AppConfig != nil {
+		return normalizeObjectOrder(o.Deps.AppConfig.Objects.Order)
+	}
+	return appconfig.ObjectsOrderName
+}
+
+func (o *ObjectsFolder) setSortState(sortBy objectSort, keys []string) {
+	o.sortMu.Lock()
+	o.sortState = folderSortState{applied: true, sortBy: sortBy, keys: keys}
+	o.sortMu.Unlock()
+}
+
+// SortKeys returns the order key of each column, in column order.
+func (o *ObjectsFolder) SortKeys() []string {
+	o.sortMu.Lock()
+	defer o.sortMu.Unlock()
+	if !o.sortState.applied {
+		return []string{sortKeyName}
+	}
+	return append([]string(nil), o.sortState.keys...)
+}
+
+// ObjectOrder returns the order the rows are sorted by. Before the first
+// listing it is the requested order.
+func (o *ObjectsFolder) ObjectOrder() string {
+	o.sortMu.Lock()
+	st := o.sortState
+	o.sortMu.Unlock()
+	if !st.applied {
+		return o.requestedOrder()
+	}
+	return st.sortBy.order()
+}
+
+// SortMark returns the shown column the rows are sorted by.
+func (o *ObjectsFolder) SortMark() (SortMark, bool) {
+	o.sortMu.Lock()
+	defer o.sortMu.Unlock()
+	if !o.sortState.applied {
+		return SortMark{}, false
+	}
+	for i, k := range o.sortState.keys {
+		if k == o.sortState.sortBy.key {
+			return SortMark{Column: i, Desc: o.sortState.sortBy.desc}, true
+		}
+	}
+	return SortMark{}, false
 }
 
 func visibleColumns(cols []metav1.TableColumnDefinition, mode string) []int {
@@ -304,60 +408,8 @@ func visibleColumns(cols []metav1.TableColumnDefinition, mode string) []int {
 	return vis
 }
 
-// orderRowIndices sorts the rows by order. Across namespaces
-// (byNamespace) the rows are grouped by namespace first, as kubectl get -A
-// prints them, and order applies inside each namespace.
-func orderRowIndices(items []tablecache.Row, order string, byNamespace bool) []int {
-	idxs := make([]int, len(items))
-	for i := range items {
-		idxs[i] = i
-	}
-	nameOf := func(rr *tablecache.Row) string {
-		if rr == nil {
-			return ""
-		}
-		n := rr.Name
-		if n == "" && len(rr.Cells) > 0 {
-			if s, ok := rr.Cells[0].(string); ok {
-				n = strings.TrimPrefix(s, "/")
-			}
-		}
-		return strings.ToLower(n)
-	}
-	switch order {
-	case appconfig.ObjectsOrderNameDesc:
-		sort.Slice(idxs, func(i, j int) bool { return nameOf(&items[idxs[i]]) > nameOf(&items[idxs[j]]) })
-	case appconfig.ObjectsOrderCreation:
-		sort.Slice(idxs, func(i, j int) bool {
-			return items[idxs[i]].ObjectMeta.CreationTimestamp.Time.Before(items[idxs[j]].ObjectMeta.CreationTimestamp.Time)
-		})
-	case appconfig.ObjectsOrderCreationDesc:
-		sort.Slice(idxs, func(i, j int) bool {
-			return items[idxs[i]].ObjectMeta.CreationTimestamp.Time.After(items[idxs[j]].ObjectMeta.CreationTimestamp.Time)
-		})
-	default:
-		sort.Slice(idxs, func(i, j int) bool { return nameOf(&items[idxs[i]]) < nameOf(&items[idxs[j]]) })
-	}
-	if byNamespace {
-		sort.SliceStable(idxs, func(i, j int) bool {
-			return items[idxs[i]].ObjectMeta.Namespace < items[idxs[j]].ObjectMeta.Namespace
-		})
-	}
-	return idxs
-}
-
 func normalizeObjectOrder(order string) string {
-	switch strings.ToLower(strings.TrimSpace(order)) {
-	case "", appconfig.ObjectsOrderName:
-		return appconfig.ObjectsOrderName
-	case appconfig.ObjectsOrderNameDesc:
-		return appconfig.ObjectsOrderNameDesc
-	case appconfig.ObjectsOrderCreation:
-		return appconfig.ObjectsOrderCreation
-	case appconfig.ObjectsOrderCreationDesc:
-		return appconfig.ObjectsOrderCreationDesc
-	}
-	return appconfig.ObjectsOrderName
+	return appconfig.NormalizeObjectsOrder(order)
 }
 
 // NormalizeObjectOrder exposes the canonical form of object ordering for other packages.
