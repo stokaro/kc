@@ -163,7 +163,10 @@ func downloadEntry(ctx context.Context, src Source, root *os.Root, req Request, 
 		return res
 	}
 
-	skipped, staging, err := downloadDir(ctx, src, root, req.Dir, e, counter, info, exists)
+	if !exists {
+		info = nil
+	}
+	skipped, staging, err := downloadDir(ctx, src, root, req.Dir, e, counter, info)
 	if err != nil {
 		return fail(err, staging)
 	}
@@ -174,9 +177,11 @@ func downloadEntry(ctx context.Context, src Source, root *os.Root, req Request, 
 // downloadDir copies the directory e. It is built in a private staging
 // directory next to the destination and moved into place only when it is
 // complete, so a failed or canceled copy leaves nothing that looks finished.
-// It returns the staging name, which error messages replace with e.Name.
-func downloadDir(ctx context.Context, src Source, root *os.Root, dir string, e podfs.FileEntry, counter *Counter, info fs.FileInfo, exists bool) (skipped []string, staging string, err error) {
-	if exists && !info.IsDir() {
+// existing is the file at the destination, nil when there is none. It
+// returns the staging name, which error messages replace with e.Name.
+func downloadDir(ctx context.Context, src Source, root *os.Root, dir string, e podfs.FileEntry, counter *Counter, existing fs.FileInfo) (skipped []string, staging string, err error) {
+	exists := existing != nil
+	if exists && !existing.IsDir() {
 		return nil, "", fmt.Errorf("%s: exists and is not a directory", e.Name)
 	}
 	staging = "." + e.Name + ".kc-partial-" + randomSuffix()

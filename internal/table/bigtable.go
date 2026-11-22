@@ -776,7 +776,7 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) (idx, cuts, widths []int) {
 	for i := 0; i < n && remaining > 0; i++ {
 		if i > 0 {
 			var stop bool
-			pos, remaining, stop = scrollSeparator(pos, remaining, xOff, sep, len(widths) > 0)
+			pos, remaining, stop = scrollSeparator(pos, remaining, xOff, sep, len(widths))
 			if stop {
 				break
 			}
@@ -831,16 +831,17 @@ func clampScrollOffset(xOff, total, vw int) int {
 
 // scrollSeparator accounts for the separator before a column. Left of the
 // viewport it moves pos past the separator when xOff is beyond it. Inside
-// the viewport, after the first visible column, the separator uses sep
-// columns of the remaining width. stop is true when no width is left.
-func scrollSeparator(pos, remaining, xOff, sep int, visible bool) (newPos, newRemaining int, stop bool) {
+// the viewport, after the first visible column (shown counts the visible
+// columns so far), the separator uses sep columns of the remaining width.
+// stop is true when no width is left.
+func scrollSeparator(pos, remaining, xOff, sep, shown int) (newPos, newRemaining int, stop bool) {
 	if pos < xOff {
 		if pos+sep <= xOff {
 			pos += sep
 		}
 		return pos, remaining, false
 	}
-	if !visible {
+	if shown == 0 {
 		return pos, remaining, false
 	}
 	if remaining == 0 {
