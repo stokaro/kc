@@ -2,11 +2,13 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/sttts/kc/internal/models"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 )
@@ -25,6 +27,7 @@ type ViewOptionsCommittedMsg struct {
 	Objects           *ViewOptionsObjectsPayload
 	Command           *ViewOptionsCommandPayload
 	Viewer            *ViewOptionsViewerPayload
+	Logs              *ViewOptionsLogsPayload
 	SaveDefault       bool
 	Accept            bool
 	Close             bool
@@ -59,6 +62,14 @@ type ViewOptionsViewerPayload struct {
 	WrapMode string
 }
 
+// ViewOptionsLogsPayload carries the logs viewer stream options.
+type ViewOptionsLogsPayload struct {
+	TailLines    int64
+	SinceSeconds int64
+	Timestamps   bool
+	Previous     bool
+}
+
 // ViewOptionsConfig seeds the sectioned view options model.
 type ViewOptionsConfig struct {
 	PanelIndex       int
@@ -74,6 +85,16 @@ type ViewOptionsConfig struct {
 	Objects   *ViewOptionsObjectsConfig
 	Command   *ViewOptionsCommandConfig
 	Viewer    *ViewOptionsViewerConfig
+	Logs      *ViewOptionsLogsConfig
+}
+
+// ViewOptionsLogsConfig configures the Logs section. TailLines -1 means the
+// whole log, SinceSeconds 0 no limit.
+type ViewOptionsLogsConfig struct {
+	TailLines    int64
+	SinceSeconds int64
+	Timestamps   bool
+	Previous     bool
 }
 
 // ViewOptionsResourcesConfig configures the Resources section.
@@ -89,7 +110,12 @@ type ViewOptionsResourcesConfig struct {
 type ViewOptionsObjectsConfig struct {
 	ShowTableMode bool
 	Columns       string
-	Order         string
+	// Order is the order the list is sorted by, e.g. "-age".
+	Order string
+	// SortKeys and SortTitles list the columns "Sort by" offers. Without
+	// them it offers Name only.
+	SortKeys   []string
+	SortTitles []string
 	// ShowFaultsOnly adds the "Faults only" toggle; it is shown for
 	// folders that can filter rows.
 	ShowFaultsOnly bool
@@ -146,6 +172,63 @@ var commandWatchLabels = []string{
 	"1m",
 }
 
+// logsTailChoices are the tail options; -1 fetches the whole log.
+var logsTailChoices = []int64{50, 100, 200, 500, 1000, 5000, -1}
+
+// logsSinceChoices are the since windows in seconds; 0 means no limit.
+var logsSinceChoices = []int64{0, 60, 300, 900, 1800, 3600}
+
+// withChoice returns choices with current added in order when it is
+// missing, so a configured value outside the list shows and survives a
+// commit. Negative values sort last.
+func withChoice(choices []int64, current int64) ([]int64, int) {
+	for i, c := range choices {
+		if c == current {
+			return choices, i
+		}
+	}
+	less := func(a, b int64) bool {
+		if a < 0 {
+			return false
+		}
+		if b < 0 {
+			return true
+		}
+		return a < b
+	}
+	out := make([]int64, 0, len(choices)+1)
+	idx := -1
+	for _, c := range choices {
+		if idx < 0 && less(current, c) {
+			idx = len(out)
+			out = append(out, current)
+		}
+		out = append(out, c)
+	}
+	if idx < 0 {
+		idx = len(out)
+		out = append(out, current)
+	}
+	return out, idx
+}
+
+func cycleIndex(idx, n, delta int) int {
+	if n == 0 {
+		return 0
+	}
+	if delta < 0 {
+		return (idx - 1 + n) % n
+	}
+	return (idx + 1) % n
+}
+
+func onOff(on bool) string {
+	if on {
+		return "On"
+	}
+	return "Off"
+}
+
 type viewOptionEntryKind int
 
 const (
@@ -165,9 +248,14 @@ const (
 	viewOptionObjectTableMode
 	viewOptionObjectColumns
 	viewOptionObjectOrder
+	viewOptionObjectReverse
 	viewOptionCommandWatch
 	viewOptionViewerTheme
 	viewOptionViewerWrapMode
+	viewOptionLogsTail
+	viewOptionLogsSince
+	viewOptionLogsTimestamps
+	viewOptionLogsPrevious
 	viewOptionObjectFaultsOnly
 )
 
@@ -210,7 +298,10 @@ type ViewOptionsModel struct {
 		enabled    bool
 		showTable  bool
 		columnsIdx int
-		orderIdx   int
+		sortKeys   []string
+		sortTitles []string
+		sortIdx    int
+		reverse    bool
 		hasFaults  bool
 		faults     bool
 	}
@@ -225,6 +316,16 @@ type ViewOptionsModel struct {
 	command struct {
 		enabled  bool
 		watchIdx int
+	}
+
+	logs struct {
+		enabled    bool
+		tails      []int64
+		tailIdx    int
+		sinces     []int64
+		sinceIdx   int
+		timestamps bool
+		previous   bool
 	}
 }
 
@@ -296,7 +397,8 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		model.objects.enabled = true
 		model.objects.showTable = cfg.Objects.ShowTableMode
 		model.objects.columnsIdx = objectColumnsIndexFor(cfg.Objects.Columns)
-		model.objects.orderIdx = objectOrderIndexFor(cfg.Objects.Order)
+		model.objects.sortKeys, model.objects.sortTitles, model.objects.sortIdx, model.objects.reverse =
+			objectSortChoices(cfg.Objects.SortKeys, cfg.Objects.SortTitles, cfg.Objects.Order)
 		model.objects.hasFaults = cfg.Objects.ShowFaultsOnly
 		model.objects.faults = cfg.Objects.FaultsOnly
 
@@ -314,6 +416,7 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		model.entries = append(model.entries,
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectColumns},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectOrder},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectReverse},
 		)
 		if model.objects.hasFaults {
 			model.entries = append(model.entries, viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectFaultsOnly})
@@ -359,6 +462,26 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 			kind:   viewOptionEntryOption,
 			option: viewOptionViewerWrapMode,
 		})
+	}
+
+	if cfg.Logs != nil {
+		model.logs.enabled = true
+		tail := cfg.Logs.TailLines
+		if tail < 0 {
+			tail = -1
+		}
+		model.logs.tails, model.logs.tailIdx = withChoice(logsTailChoices, tail)
+		model.logs.sinces, model.logs.sinceIdx = withChoice(logsSinceChoices, nonNegative(cfg.Logs.SinceSeconds))
+		model.logs.timestamps = cfg.Logs.Timestamps
+		model.logs.previous = cfg.Logs.Previous
+		model.appendSectionSpacerIfNeeded()
+		model.entries = append(model.entries,
+			viewOptionEntry{kind: viewOptionEntrySection, title: "Logs:"},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsTail},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsSince},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsTimestamps},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionLogsPrevious},
+		)
 	}
 
 	if len(model.entries) == 0 {
@@ -468,13 +591,45 @@ func objectColumnsIndexFor(columns string) int {
 	return 0
 }
 
-func objectOrderIndexFor(order string) int {
-	for i, key := range objOrderKeys {
-		if strings.EqualFold(key, order) {
-			return i
+// objectSortChoices returns the columns "Sort by" cycles through, the one
+// order sorts by, and whether order is descending, like mc's Sort order
+// dialog with its Reverse box. A key the columns lack (a wide column in
+// normal mode) is kept as an extra choice, so the dialog does not change
+// the order unasked.
+func objectSortChoices(keys, titles []string, order string) ([]string, []string, int, bool) {
+	order = appconfig.NormalizeObjectsOrder(order)
+	desc := strings.HasPrefix(order, "-")
+	key := strings.TrimPrefix(order, "-")
+	if key == appconfig.ObjectsOrderCreation {
+		key, desc = "age", !desc
+	}
+	if len(keys) == 0 {
+		keys, titles = []string{appconfig.ObjectsOrderName}, []string{"Name"}
+	}
+	keys = append([]string(nil), keys...)
+	labels := make([]string, len(keys))
+	for i := range keys {
+		labels[i] = keys[i]
+		if i < len(titles) && titles[i] != "" {
+			labels[i] = titles[i]
 		}
 	}
-	return 0
+	idx := slices.Index(keys, key)
+	if idx < 0 {
+		keys = append(keys, key)
+		labels = append(labels, key)
+		idx = len(keys) - 1
+	}
+	return keys, labels, idx, desc
+}
+
+// objectOrder composes the order the Objects section selects.
+func (m *ViewOptionsModel) objectOrder() string {
+	key := m.objects.sortKeys[m.objects.sortIdx]
+	if m.objects.reverse {
+		return "-" + key
+	}
+	return key
 }
 
 func commandWatchIndexFor(interval time.Duration) int {
@@ -668,17 +823,17 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 			m.objects.columnsIdx = 0
 		}
 	case viewOptionObjectOrder:
-		if len(objOrderKeys) == 0 {
+		n := len(m.objects.sortKeys)
+		if n == 0 {
 			return
 		}
 		if delta < 0 {
-			m.objects.orderIdx--
-			if m.objects.orderIdx < 0 {
-				m.objects.orderIdx = len(objOrderKeys) - 1
-			}
+			m.objects.sortIdx = (m.objects.sortIdx - 1 + n) % n
 		} else {
-			m.objects.orderIdx = (m.objects.orderIdx + 1) % len(objOrderKeys)
+			m.objects.sortIdx = (m.objects.sortIdx + 1) % n
 		}
+	case viewOptionObjectReverse:
+		m.objects.reverse = !m.objects.reverse
 	case viewOptionObjectFaultsOnly:
 		m.objects.faults = !m.objects.faults
 	case viewOptionViewerTheme:
@@ -702,6 +857,14 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		} else {
 			m.viewer.wrapMode = appconfig.ViewerModeWrap
 		}
+	case viewOptionLogsTail:
+		m.logs.tailIdx = cycleIndex(m.logs.tailIdx, len(m.logs.tails), delta)
+	case viewOptionLogsSince:
+		m.logs.sinceIdx = cycleIndex(m.logs.sinceIdx, len(m.logs.sinces), delta)
+	case viewOptionLogsTimestamps:
+		m.logs.timestamps = !m.logs.timestamps
+	case viewOptionLogsPrevious:
+		m.logs.previous = !m.logs.previous
 	case viewOptionCommandWatch:
 		if len(commandWatchDurations) == 0 {
 			return
@@ -764,7 +927,7 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 		msg.Objects = &ViewOptionsObjectsPayload{
 			ShowTableOption: m.objects.showTable,
 			Columns:         objColumnsKeys[m.objects.columnsIdx],
-			Order:           objOrderKeys[m.objects.orderIdx],
+			Order:           m.objectOrder(),
 			HasFaultsOnly:   m.objects.hasFaults,
 			FaultsOnly:      m.objects.faults,
 		}
@@ -781,6 +944,14 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 		msg.Viewer = &ViewOptionsViewerPayload{
 			Theme:    theme,
 			WrapMode: mode,
+		}
+	}
+	if m.logs.enabled {
+		msg.Logs = &ViewOptionsLogsPayload{
+			TailLines:    m.logs.tails[m.logs.tailIdx],
+			SinceSeconds: m.logs.sinces[m.logs.sinceIdx],
+			Timestamps:   m.logs.timestamps,
+			Previous:     m.logs.previous,
 		}
 	}
 	if m.command.enabled {
@@ -818,7 +989,12 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 	case viewOptionObjectColumns:
 		return "Columns", objColumnsLabels[m.objects.columnsIdx]
 	case viewOptionObjectOrder:
-		return "Objects order", objOrderLabels[m.objects.orderIdx]
+		return "Sort by", m.objects.sortTitles[m.objects.sortIdx]
+	case viewOptionObjectReverse:
+		if m.objects.reverse {
+			return "Reverse", "Yes"
+		}
+		return "Reverse", "No"
 	case viewOptionObjectFaultsOnly:
 		val := "No"
 		if m.objects.faults {
@@ -841,6 +1017,20 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 			val = "Wrap"
 		}
 		return "Line mode", val
+	case viewOptionLogsTail:
+		if tail := m.logs.tails[m.logs.tailIdx]; tail > 0 {
+			return "Tail lines", fmt.Sprintf("%d", tail)
+		}
+		return "Tail lines", "All"
+	case viewOptionLogsSince:
+		if since := models.FormatLogsSince(m.logs.sinces[m.logs.sinceIdx]); since != "" {
+			return "Since", since
+		}
+		return "Since", "Off"
+	case viewOptionLogsTimestamps:
+		return "Timestamps", onOff(m.logs.timestamps)
+	case viewOptionLogsPrevious:
+		return "Previous", onOff(m.logs.previous)
 	default:
 		return "", ""
 	}

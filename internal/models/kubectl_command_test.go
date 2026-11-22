@@ -46,7 +46,7 @@ func TestKubectlCommand(t *testing.T) {
 		{"label set filter", filtered("-l tier in (a, b)"), "kubectl get pods -n web -l 'tier in (a,b)'"},
 		{"name filter is not a kubectl flag", filtered("!web"), "kubectl get pods -n web"},
 		{"namespace resources", &NamespacedResourcesFolder{ResourcesFolder: &ResourcesFolder{BaseFolder: &BaseFolder{Deps: current}}}, "kubectl api-resources --namespaced=true"},
-		{"configmap keys", &ConfigMapKeysFolder{BaseFolder: &BaseFolder{Deps: current}, Namespace: "web", Name: "cfg"}, "kubectl get configmap cfg -n web -o 'jsonpath={.data}'"},
+		{"configmap keys", &ConfigMapKeysFolder{BaseFolder: &BaseFolder{Deps: current}, Namespace: "web", Name: "cfg"}, `kubectl get configmap cfg -n web -o 'jsonpath={.data}{"\n"}{.binaryData}'`},
 		{"containers", &PodContainerListFolder{BaseFolder: &BaseFolder{Deps: current}, Namespace: "web", Pod: "p", Kind: containerKindInit},
 			`kubectl get pod p -n web -o 'jsonpath={range .spec.initContainers[*]}{.name}{"\n"}{end}'`},
 	}
@@ -71,6 +71,21 @@ func TestViewCommands(t *testing.T) {
 	deps := Deps{CtxName: "dev", KubectlContext: "dev"}
 	if got := keyViewCommand(deps, "secret", "web", "tls", "tls.crt", true); got != `kubectl get secret tls -n web -o 'jsonpath={.data.tls\.crt}' | base64 -d` {
 		t.Fatalf("secret key: %s", got)
+	}
+	for _, tt := range []struct {
+		name   string
+		key    string
+		binary bool
+		want   string
+	}{
+		{"text key", "app.conf", false, `kubectl get configmap cfg -n web -o 'jsonpath={.data.app\.conf}'`},
+		{"binary key", "logo.png", true, `kubectl get configmap cfg -n web -o 'jsonpath={.binaryData.logo\.png}' | base64 -d`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := configMapKeyViewCommand(deps, "web", "cfg", tt.key, tt.binary); got != tt.want {
+				t.Fatalf("got  %s\nwant %s", got, tt.want)
+			}
+		})
 	}
 	spec := LogsSpec{Namespace: "web", Pod: "p", Container: "app", Follow: true, TailLines: 200}
 	if got := logsCommand(deps, spec); got != "kubectl logs p -n web -c app --tail=200 -f" {
