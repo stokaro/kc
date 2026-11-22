@@ -34,6 +34,7 @@
 ## Actions & Keys
 - `F3` View YAML; `F4` Edit; `F7` Create; `F8` Delete with confirmation.
 - `C-o` toggles full-screen terminal; `M-i` syncs panel locations.
+- `M-f` port-forwards a pod, container or service; `/port-forwards` at the root lists active forwards, `F8` stops one.
 
 ## Terminal Integration
 - Terminal follows kubeconfig, context, and namespace changes.

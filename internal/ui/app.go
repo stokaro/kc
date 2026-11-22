@@ -23,6 +23,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/podfs"
+	"github.com/sttts/kc/internal/portforward"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
@@ -252,6 +253,8 @@ type App struct {
 	panelScope             [2]string
 	activity               *models.Activity       // pauses background refreshes while a dialog is open
 	pendingConfirm         models.ConfirmedAction // waits for the red confirmation
+	portForwards           *portforward.Registry  // forwards of this process, across contexts
+	pendingPortForward     *models.PortForwardPlan
 	namespaceOverride      string
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
@@ -890,6 +893,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		PodFSFactory:     a.podfsFactory,
 		ReportError:      a.reportReadError,
 		Activity:         a.activity,
+		PortForwards:     a.portForwards,
 	}
 }
 
@@ -1181,6 +1185,9 @@ func (a *App) panelActionHandlers() PanelActionHandlers {
 			return a.createNamespaceForPanel(p)
 		},
 		PanelActionDelete: func(p *Panel) tea.Cmd {
+			if cmd, ok := a.stopSelectionForPanel(p); ok {
+				return cmd
+			}
 			return a.deleteResourceForPanel(p)
 		},
 		PanelActionMenu: func(p *Panel) tea.Cmd {
@@ -3062,6 +3069,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 			app.discoveryCancel()
 			app.discoveryCancel = nil
 		}
+		app.stopPortForwards()
 		if app.clPool != nil {
 			app.clPool.Stop()
 		}
@@ -3115,6 +3123,8 @@ func (a *App) initData(ctx context.Context) error {
 	// Prepare app context and cluster pool; cluster will be started via pool.Get
 	a.cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
+	// Forwards live as long as the app context; StopAll ends them on exit.
+	a.portForwards = a.newPortForwardRegistry()
 	a.clPool = kccluster.NewPool(
 		a.cfg.Kubernetes.Clusters.TTL.Duration,
 		a.cfg.Kubernetes.Discovery.Refresh.Duration,
