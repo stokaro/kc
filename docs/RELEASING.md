@@ -1,67 +1,97 @@
 # Releasing kc
 
-> **Note:** this guide describes the release setup inherited from the [upstream project](https://github.com/sttts/kc). The Homebrew tap `sttts/homebrew-kc` belongs to upstream; this repository does not publish to it. Releases for this repository are not set up yet.
+This document is for maintainers. kc uses [GoReleaser](https://goreleaser.com) to build archives for Linux and macOS (amd64 and arm64), publish GitHub Releases to [`stokaro/kc`](https://github.com/stokaro/kc/releases), and update the Homebrew cask in the tap [`stokaro/homebrew-kc`](https://github.com/stokaro/homebrew-kc). Users install it with `brew install --cask stokaro/kc/kc`. The decisions behind this setup are in [`docs/adr/0119-release-pipeline.md`](adr/0119-release-pipeline.md).
 
-This repo uses [Goreleaser](https://goreleaser.com) to produce cross-platform tarballs, publish GitHub Releases, and update the Homebrew tap in [`sttts/homebrew-kc`](https://github.com/sttts/homebrew-kc).
+The configuration is `.goreleaser.yaml`; the workflow is `.github/workflows/release.yml`.
 
-## Prerequisites
+## One-time setup
 
-1. Install Goreleaser locally (`brew install goreleaser` or download a binary).
-2. Import the GPG key used for signing, and store its passphrase in a secure location.
-3. Ensure your git workspace is clean and tagged (`git tag v0.1.0 && git push origin v0.1.0`). Pushing the tag triggers the release workflow automatically.
+These steps need admin rights on the `stokaro` organization and are not automated.
 
-## CI automation
+1. Make GitHub Actions run in `stokaro/kc`. Runs that stay queued forever usually mean the organization has no Actions minutes or no payment method (Organization settings, Billing and plans), or that Actions are disabled (Repository settings, Actions, General). Nothing below works until a workflow run starts.
+2. Create the public repository `stokaro/homebrew-kc` with a `main` branch. An initial README is enough; GoReleaser writes `Casks/kc.rb` into it.
+3. Create a fine-grained personal access token (or a GitHub App installation token) with "Contents: read and write" on `stokaro/homebrew-kc` only. Store it in `stokaro/kc` as the repository secret `HOMEBREW_TAP_GITHUB_TOKEN`. The release job stops at its first step when the secret is missing, before anything is published.
+4. Optional: add the Apple signing and notarization secrets (see below). Without them the macOS binaries are not notarized, and the cask removes the quarantine attribute so they still start.
 
-Every push of a `v*` tag triggers `.github/workflows/release.yml`, which:
+No other secret is needed. The GitHub Release is created with the workflow's own `GITHUB_TOKEN`, and the checksum file is signed with cosign through the workflow's OIDC identity, so there is no signing key to store.
 
-1. Builds linux/darwin binaries for amd64/arm64.
-2. Archives each build, generates checksums, and signs both archives and checksum files with the configured GPG key.
-3. Publishes the GitHub Release for the tag.
-4. Updates `sttts/homebrew-kc` with the refreshed formula so `brew install sttts/homebrew-kc/kc` picks up the new version.
+## Secrets
 
-### Required secrets
+| Secret | Required | Purpose |
+| --- | --- | --- |
+| `HOMEBREW_TAP_GITHUB_TOKEN` | yes | Pushes `Casks/kc.rb` to `stokaro/homebrew-kc`. |
+| `MACOS_SIGN_P12` | no | Base64 of the exported Developer ID Application `.p12` certificate. |
+| `MACOS_SIGN_PASSWORD` | no | Password used when exporting the `.p12` file. |
+| `MACOS_NOTARY_KEY` | no | Base64 of the App Store Connect API key (`.p8`). |
+| `MACOS_NOTARY_KEY_ID` | no | Key ID of the App Store Connect API key. |
+| `MACOS_NOTARY_ISSUER_ID` | no | Issuer ID (UUID) of that API key. |
 
-Configure these repository secrets for the workflow:
+Notarization runs only when both `MACOS_SIGN_P12` and `MACOS_NOTARY_KEY` are set and not empty.
 
-| Secret | Purpose |
-| --- | --- |
-| `RELEASE_GITHUB_TOKEN` | Personal access token with `repo` scope; needed to create releases and push to `sttts/homebrew-kc`. |
-| `RELEASE_GPG_PRIVATE_KEY` | ASCII-armored private key used for signing archives/checksums. |
-| `RELEASE_GPG_PASSPHRASE` | Passphrase for the key above (leave empty if the key is unencrypted). |
-| `MACOS_SIGN_P12` | Base64 of the exported Developer ID Application `.p12` certificate. |
-| `MACOS_SIGN_PASSWORD` | Password used when exporting the `.p12` file. |
-| `MACOS_NOTARY_KEY` | Base64 of the App Store Connect API key (`.p8`). |
-| `MACOS_NOTARY_KEY_ID` | The key ID of the App Store Connect API key. |
-| `MACOS_NOTARY_ISSUER_ID` | Issuer ID (UUID) from App Store Connect for that API key. |
+The secrets `RELEASE_GITHUB_TOKEN`, `RELEASE_GPG_PRIVATE_KEY` and `RELEASE_GPG_PASSPHRASE` from the upstream setup are no longer used and can be deleted.
 
-### Apple signing & notarization
+## Versions
 
-macOS binaries are signed with a Developer ID Application certificate and then notarized via App Store Connect so Gatekeeper trusts the downloaded archives. To configure this:
+The repository has the upstream tags up to `v0.8.0`. The first release of this fork must be newer, for example `v0.9.0`, so Homebrew and `@latest` see it as the newest version. GoReleaser takes the version from the tag and writes it into the binary, and `kc --version` prints it. A tag with a suffix such as `v0.9.0-rc.1` is published as a prerelease.
 
-1. In Apple Developer portal create/download a **Developer ID Application** certificate. Import it into Keychain, export it as a password-protected `.p12`, then base64-encode it (`base64 -w0 Certificates.p12 > macos_sign_p12.txt`). Store the contents in `MACOS_SIGN_P12` and the export password in `MACOS_SIGN_PASSWORD`.
-2. In App Store Connect create an **API key** with download/notarization access. Note the `Issuer ID` and `Key ID`, and base64-encode the downloaded `.p8` (`base64 -w0 ApiKey_ABC123.p8 > macos_notary_key.txt`). Store those values in `MACOS_NOTARY_KEY`, `MACOS_NOTARY_KEY_ID`, and `MACOS_NOTARY_ISSUER_ID`.
-3. Once configured, every tagged release will codesign and notarize the macOS binaries. After installation you can verify with `spctl -a -vv /opt/homebrew/bin/kc`.
+## Cutting a release
 
-### Verification / dry runs
+1. Make sure `main` is green. A pull request that touched the release files has run the `goreleaser check and snapshot` job of the release workflow.
+2. Tag the commit on `main` and push the tag:
 
-Before cutting a tag, run `goreleaser release --snapshot --clean` locally. It exercises the same pipeline without touching GitHub or Homebrew. Ensure `GPG_PASSPHRASE_FILE` and the key are available locally when doing so.
+   ```bash
+   git switch main && git pull
+   git tag -a v0.9.0 -m "kc v0.9.0"
+   git push origin v0.9.0
+   ```
 
-## Publishing manually (optional)
+3. The tag starts the `release` job of `.github/workflows/release.yml`. It checks that the tap token exists, builds and archives the binaries, writes `kc_checksums.txt` and signs it with cosign (`kc_checksums.txt.sigstore.json`), notarizes the macOS binaries when the Apple secrets exist, publishes the GitHub Release, and pushes the cask to the tap.
+4. Check the result on a machine without a kubeconfig:
 
-If you ever need to rebuild a release locally (e.g., CI outage), run:
+   ```bash
+   brew install --cask stokaro/kc/kc
+   kc --version
+   ```
+
+   The first line must show the tag without the `v`, for example `kc Version: 0.9.0`.
+
+If the job fails after the GitHub Release was created, fix the cause and re-run the failed job. To start over, delete the GitHub Release and the tag, then push the tag again.
+
+## Checking the configuration without publishing
+
+The release workflow runs on every pull request that changes `.goreleaser.yaml`, the workflow itself, `cmd/kc`, `go.mod`, `go.sum`, `LICENSE` or `README.md`. It runs `goreleaser check` (which also fails on deprecated settings), builds a snapshot of all four archives without signing or publishing, runs the extracted linux/amd64 binary with `--version` and `version --client` with an empty home directory and no kubeconfig, and checks that the generated cask points to `stokaro/kc`.
+
+To do the same locally:
 
 ```bash
-GORELEASER_GITHUB_TOKEN=<token> GPG_PASSPHRASE_FILE=/tmp/gpg-passphrase goreleaser release --clean
+goreleaser check
+goreleaser release --snapshot --clean --skip=publish,sign
+mkdir -p /tmp/kc-smoke/home
+tar -xzf dist/kc_*_darwin_arm64.tar.gz -C /tmp/kc-smoke kc   # pick your platform
+env -i HOME=/tmp/kc-smoke/home KUBECONFIG=/tmp/kc-smoke/home/missing PATH=/usr/bin:/bin /tmp/kc-smoke/kc --version
+cat dist/homebrew/Casks/kc.rb
 ```
 
-Make sure the GPG key is imported (`gpg --import`) and `/tmp/gpg-passphrase` contains the passphrase text.
+A snapshot never touches GitHub or the tap. Its version is `0.0.0-SNAPSHOT-<commit>`. Without `goreleaser` installed, use `go run github.com/goreleaser/goreleaser/v2@latest` instead.
 
-## Formula updates
+## Apple signing and notarization
 
-After the release finishes, users can install via:
+macOS binaries can be signed with a Developer ID Application certificate and notarized through App Store Connect so Gatekeeper trusts them.
+
+1. In the Apple Developer portal, create a **Developer ID Application** certificate. Import it into Keychain, export it as a password-protected `.p12`, and base64-encode it (`base64 -i Certificates.p12 | tr -d '\n' > macos_sign_p12.txt`). Store the content in `MACOS_SIGN_P12` and the export password in `MACOS_SIGN_PASSWORD`.
+2. In App Store Connect, create an **API key** with notarization access. Note the issuer ID and key ID, and base64-encode the `.p8` file the same way. Store the values in `MACOS_NOTARY_KEY`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER_ID`.
+3. Notarization waits up to 20 minutes, the most GoReleaser allows. After installing, check a binary with `spctl -a -vv "$(command -v kc)"`.
+
+## Publishing manually
+
+If CI is down, run the release from a clean checkout of the tag with cosign installed:
+
 ```bash
-brew tap sttts/homebrew-kc
-brew install sttts/homebrew-kc/kc
+GITHUB_TOKEN=<token with contents:write on stokaro/kc> \
+HOMEBREW_TAP_GITHUB_TOKEN=<tap token> \
+  goreleaser release --clean
 ```
 
-Keep this document updated whenever the release process changes.
+Outside GitHub Actions, cosign asks for an interactive Sigstore login to sign the checksum file. The certificate then names that account instead of the workflow, so the `cosign verify-blob` command in the README does not accept it. Prefer re-running the workflow.
+
+Keep this document up to date whenever the release process changes.
