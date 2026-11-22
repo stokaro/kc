@@ -72,7 +72,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
 | `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. |
-| `F9`       | Menu – Open custom commands menu.                                               |
+| `F9`       | Menu – Built-in object actions and custom commands.                             |
 | `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
@@ -88,6 +88,17 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 ## Context and Namespace
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
+
+## Object Actions
+
+The **F9** menu starts with built-in actions for the selected object, above the custom commands. Each action opens a red confirmation dialog that names the context, namespace and object and shows the equivalent kubectl command.
+
+For CronJobs (`batch/v1`):
+
+- **Run now...** creates a Job from the CronJob's job template, like `kubectl create job --from=cronjob/<name>`. The Job is named `<cronjob>-manual-<suffix>`, carries the `cronjob.kubernetes.io/instantiate: manual` annotation and is owned by the CronJob. The other panel then shows the new Job.
+- **Suspend/Resume...** sets `spec.suspend`. The dialog says which of the two it does.
+
+An action is hidden when the resource does not offer the API verb it needs (`patch` for Suspend/Resume).
 
 ## Custom Commands
 

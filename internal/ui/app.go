@@ -23,6 +23,7 @@ import (
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
+	"github.com/sttts/kc/internal/objectaction"
 	"github.com/sttts/kc/internal/podfs"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
@@ -55,7 +56,13 @@ type FolderDirtyMsg struct {
 }
 
 func (a *App) hasApplicableCommands(panel *Panel) bool {
-	if panel == nil || len(a.cfg.Commands) == 0 {
+	if panel == nil {
+		return false
+	}
+	if len(a.objectActionsFor(panel).actions) > 0 {
+		return true
+	}
+	if len(a.cfg.Commands) == 0 {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -252,8 +259,9 @@ type App struct {
 	// panelScope is each panel's namespace scope (models.AllNamespaces for
 	// all). It is kc state; kubeconfig is never changed.
 	panelScope             [2]string
-	activity               *models.Activity       // pauses background refreshes while a dialog is open
-	pendingConfirm         models.ConfirmedAction // waits for the red confirmation
+	activity               *models.Activity     // pauses background refreshes while a dialog is open
+	pendingConfirm         *pendingConfirmation // waits for the red confirmation
+	objectActions          *objectaction.Registry
 	namespaceOverride      string
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
@@ -2548,7 +2556,12 @@ func (a *App) resolveGetResources(namespace string, order []string) (map[string]
 }
 
 func (a *App) goToResourceFolder(res resolvedResource) error {
-	if a.leftNav == nil {
+	return a.goToResourceFolderIn(0, res)
+}
+
+// goToResourceFolderIn opens the object list of res in panel idx.
+func (a *App) goToResourceFolderIn(idx int, res resolvedResource) error {
+	if a.navigatorFor(idx) == nil {
 		return fmt.Errorf("navigation not ready")
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
@@ -2560,19 +2573,20 @@ func (a *App) goToResourceFolder(res resolvedResource) error {
 		if nsName == "" {
 			nsName = corev1.NamespaceDefault
 		}
-		if a.panelScope[0] != nsName {
-			a.panelScope[0] = nsName
-			a.replaceNavigator(0, a.newScopedNavigator(0))
+		if a.panelScope[idx] != nsName {
+			a.panelScope[idx] = nsName
+			a.replaceNavigator(idx, a.newScopedNavigator(idx))
 		}
 	}
-	for a.leftNav.HasBack() {
-		a.leftNav.Back()
+	nav := a.navigatorFor(idx)
+	for nav.HasBack() {
+		nav.Back()
 	}
 	steps := []navui.GoToStep{{SelectionID: res.rowID, Enter: true}}
-	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
+	if _, err := navui.GoTo(ctx, nav, steps); err != nil {
 		return err
 	}
-	a.syncPanelWithNavigator(0)
+	a.syncPanelWithNavigator(idx)
 	return nil
 }
 
@@ -3832,7 +3846,8 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 		}
 	}
 
-	if len(available) == 0 {
+	builtin := a.objectActionsFor(p)
+	if len(available) == 0 && len(builtin.actions) == 0 {
 		return nil
 	}
 
@@ -3902,6 +3917,11 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	}, func() tea.Cmd {
 		a.hideModal()
 		return nil
+	})
+
+	selector.AddObjectActions(builtin.actions, func(action objectaction.Action) tea.Cmd {
+		a.hideModal()
+		return a.prepareObjectAction(builtin, action)
 	})
 
 	modal := NewModal("Commands", selector)
