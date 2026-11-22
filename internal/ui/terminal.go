@@ -436,9 +436,17 @@ func (t *Terminal) IsProcessExited() bool {
 	return t.shellExited
 }
 
-// HasInput returns whether the terminal has non-empty input
+// HasInput returns whether the terminal has non-empty input. When kc knows
+// the shell line, an erased line counts as empty; otherwise any key typed
+// since the last Enter or C-c counts.
 func (t *Terminal) HasInput() bool {
-	return t.hasTyped
+	if !t.hasTyped {
+		return false
+	}
+	if line, ok := t.line.current(); ok {
+		return line != ""
+	}
+	return true
 }
 
 // ClearTyped resets the typed flag (used to return focus to panels).
