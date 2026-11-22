@@ -181,8 +181,11 @@ linters:
           arguments:
             - '^[_a-z][_a-z0-9]*.go$'
           disabled: false
+        # Off: in this TUI most bool parameters are data or setters
+        # (SetFocus(bool), renderButton(label, focused, ...)), and splitting
+        # them makes the code harder to read. See docs/adr/0128-lint-baseline-removed.md.
         - name: flag-parameter
-          disabled: false
+          disabled: true
         - name: function-result-limit
           arguments:
             - 3
@@ -316,17 +319,12 @@ linters:
         linters:
           - revive
     paths:
-      - 'third_party$'
+      - '(^|/)third_party/'
       - 'builtin$'
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  # Only code that differs from the merge base with main is reported. The
-  # findings already on main are a baseline, tracked in stokaro/kc#128
-  # (see docs/adr/0118-lint-setup.md). `make lint-all`
-  # reports the whole tree.
-  new-from-merge-base: origin/main
 
 formatters:
   enable:
@@ -341,5 +339,5 @@ formatters:
   exclusions:
     generated: lax
     paths:
-      - 'third_party$'
+      - '(^|/)third_party/'
       - 'builtin$'

@@ -1042,8 +1042,6 @@ func (p *Panel) renderFooter(ctx context.Context, suppress bool) string {
 
 // renderFooterWithWidth renders the widget's footer. The footer status is
 // rendered on the frame, so it is not repeated here.
-//
-//revive:disable-next-line:flag-parameter suppress comes from panelcontent.FrameInfo.SuppressFooter.
 func (p *Panel) renderFooterWithWidth(ctx context.Context, suppress bool, width int) string {
 	if suppress {
 		return ""
@@ -1166,7 +1164,6 @@ func (p *Panel) forwardSizeToWidget(ctx context.Context, size panelcontent.Size)
 	return nil
 }
 
-//revive:disable-next-line:flag-parameter focused and hasFooter pick the border color and the bottom line only.
 func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title string, width, height int, focused, hasFooter bool) string {
 	if title == "" {
 		title = "/"

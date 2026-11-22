@@ -290,8 +290,6 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 // only unique within a namespace.
 //
 // namespaced is the result of resourceNamespaced, computed once per listing.
-//
-//revive:disable-next-line:flag-parameter namespaced is data computed once per listing, not a mode switch
 func (o *ObjectsFolder) objectNamespaceAndID(namespaced bool, objectNamespace, name string) (namespace, id string) {
 	if o.namespace != "" {
 		return o.namespace, name
@@ -450,7 +448,6 @@ func withNamespaceColumn[T any](row []T, v T) []T {
 	return append(out, row[1:]...)
 }
 
-//revive:disable-next-line:flag-parameter hasChild is a property of the resource that marks the name cell, not a mode switch
 func buildCells(cells []any, vis []int, hasChild bool) []string {
 	out := make([]string, len(vis))
 	for i := range vis {

@@ -1,6 +1,6 @@
 # 0118. Lint setup adapted from ptah
 
-- Status: Accepted
+- Status: Accepted; decision 4 (baseline) superseded by 0128
 - Date: 2026-11-22
 - Issue: #118
 
