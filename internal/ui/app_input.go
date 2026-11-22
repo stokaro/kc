@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/models"
 )
 
 func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, tea.Cmd) {
@@ -13,6 +14,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	if !isPress {
 		return a, nil
 	}
+	// The key after C-x completes or cancels the prefix, whatever it is.
+	ctrlX := a.ctrlXPending
+	a.ctrlXPending = false
 	// The open menu bar takes every key until it closes.
 	if a.menuBar.IsOpen() {
 		return a, a.handleMenuBarKey(press)
@@ -38,6 +42,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		if handled {
 			return a, nil
 		}
+	}
+	if ctrlX {
+		return a, a.handleCtrlXKey(press.String())
 	}
 	// Prefer modifier-aware matching to cover both KeyMsg and KeyPressMsg forms.
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
@@ -86,8 +93,45 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		a.swapPanels()
 		return a, nil
 
+	case hotlistKey:
+		if !a.showTerminal {
+			return a, a.showHotlist()
+		}
+	case "alt+y":
+		if !a.showTerminal {
+			return a, a.historyBack()
+		}
+	case "alt+u":
+		if !a.showTerminal {
+			return a, a.historyForward()
+		}
+	case "alt+H", "alt+shift+h", "alt+shift+H":
+		if !a.showTerminal {
+			return a, a.showHistoryList()
+		}
+
 	case "ctrl+s", "alt+s":
 		if a.startQuickSearch() {
+			return a, nil
+		}
+
+	case rowFilterKey:
+		if a.panelKeysFree() {
+			return a, a.showRowFilterDialog()
+		}
+
+	case faultsOnlyKey:
+		if a.panelKeysFree() {
+			return a, a.toggleFaultsOnly()
+		}
+
+	case sortNextKey:
+		if a.changeObjectSort(nextSortOrder) {
+			return a, nil
+		}
+
+	case sortReverseKey:
+		if a.changeObjectSort(reverseSortOrder) {
 			return a, nil
 		}
 
@@ -216,11 +260,58 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			// send Alt by default).
 			a.escPressed = false
 			return a, a.copyPanelCommand()
+		case "p":
+			// Esc p is the fallback for M-p (port forward).
+			a.escPressed = false
+			return a, a.portForwardForPanel(a.activePanelRef())
 		case "s":
 			// Esc s is the fallback for M-s, as in mc.
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
+		case "j":
+			// Esc j and Esc b are the fallbacks for M-j and M-b.
+			a.escPressed = false
+			if !a.showTerminal {
+				return a, a.openRelated(models.RelatedOwners)
+			}
+		case "b":
+			a.escPressed = false
+			if !a.showTerminal {
+				return a, a.openRelated(models.RelatedUsedBy)
+			}
+		case "f":
+			// Esc f is the fallback for M-f.
+			a.escPressed = false
+			if a.panelKeysFree() {
+				return a, a.showRowFilterDialog()
+			}
+			return a, nil
+		case "y", "u", "H":
+			// Esc y, Esc u and Esc H are the fallbacks for M-y, M-u and
+			// M-H, as in mc.
+			a.escPressed = false
+			if a.showTerminal {
+				break
+			}
+			switch keyStr {
+			case "y":
+				return a, a.historyBack()
+			case "u":
+				return a, a.historyForward()
+			}
+			return a, a.showHistoryList()
+		case "o":
+			// Esc o and Esc r are the fallbacks for M-o and M-r.
+			a.escPressed = false
+			if a.changeObjectSort(nextSortOrder) {
+				return a, nil
+			}
+		case "r":
+			a.escPressed = false
+			if a.changeObjectSort(reverseSortOrder) {
+				return a, nil
+			}
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
@@ -256,6 +347,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		// If user typed in the 2-line terminal, Enter and C-c must be SENT to the terminal,
 		// then reset typed state to return focus to the panels.
 		if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() && !a.interactiveCommandActive() {
+			if msg.String() == "enter" {
+				if cmd, ok := a.interceptShellCd(); ok {
+					return a, cmd
+				}
+			}
 			cmd := a.updateTerminal(msg, "panel forwarded to terminal")
 			a.terminal.ClearTyped() // reset typed; next keys route to panels
 			return a, cmd
@@ -275,6 +371,21 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		if msg.String() == copyCommandKey {
 			return a, a.copyPanelCommand()
+		}
+		// C-x starts a two-key command, as in mc. While the shell line has
+		// typed text, C-x stays with the shell.
+		if msg.String() == ctrlXPrefixKey && (a.terminal == nil || !a.terminal.HasInput()) {
+			a.ctrlXPending = true
+			return a, nil
+		}
+		if msg.String() == portForwardKey {
+			return a, a.portForwardForPanel(a.activePanelRef())
+		}
+		switch msg.String() {
+		case ownersKey:
+			return a, a.openRelated(models.RelatedOwners)
+		case usedByKey:
+			return a, a.openRelated(models.RelatedUsedBy)
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys

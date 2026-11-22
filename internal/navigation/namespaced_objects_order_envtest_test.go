@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
@@ -16,17 +18,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
-	// Start envtest
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err != nil || cfg == nil {
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = testEnv.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	// Seed namespace and three configmaps with staggered creation times
 	scheme := runtime.NewScheme()

@@ -13,6 +13,9 @@ import (
 
 // View renders the application
 func (a *App) View() tea.View {
+	if a.nodeShell != nil {
+		return a.renderNodeShell()
+	}
 	if view, cursor, ok := a.mainViewCache.get(); ok {
 		v := viewWithCursor(view, cursor)
 		v.AltScreen = true

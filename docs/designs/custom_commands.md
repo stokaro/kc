@@ -54,6 +54,7 @@ commands:
 ```
 
 ## Applicability Rules (F2 user menu)
+Built-in object actions (`internal/objectaction`, see `docs/adr/0036-object-action-registry.md`) come first, under "Object Actions", when exactly one object is selected. The rules below apply to the configured commands.
 - **global**: always visible; no selection required.
 - **namespace**: visible when the panel has an active namespace, even without a selected object; if an object is selected, still honor filters.
 - **selector / sticky**: require a selected object; hidden otherwise.
