@@ -239,8 +239,7 @@ func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logStreamMsg:
 		return v, v.handleChunk(m)
 	case tea.KeyMsg:
-		switch m.String() {
-		case "end":
+		if m.String() == "end" {
 			if !v.autoFollow {
 				v.autoFollow = true
 				v.inner.ScrollToEnd()

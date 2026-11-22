@@ -200,7 +200,7 @@ func (m *portForwardModel) description(value string) string {
 
 func (m *portForwardModel) Init() tea.Cmd          { return m.modal.Init() }
 func (m *portForwardModel) SetDimensions(w, h int) { m.modal.SetDimensions(w, h) }
-func (m *portForwardModel) PreferredSize(maxW, maxH int) (int, int) {
+func (m *portForwardModel) PreferredSize(maxW, maxH int) (width, height int) {
 	return m.modal.PreferredSize(maxW, maxH)
 }
 func (m *portForwardModel) FooterHints() []FooterHint { return m.modal.FooterHints() }

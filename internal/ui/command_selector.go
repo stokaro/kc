@@ -106,8 +106,7 @@ func (m *CommandSelectorModel) TargetNamespace() string { return m.targetNamespa
 func (m *CommandSelectorModel) TargetLeft() bool { return m.targetLeft }
 
 func (m *CommandSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	if msg, ok := msg.(tea.KeyMsg); ok {
 		switch msg.String() {
 		case "esc":
 			if m.onCancel != nil {
@@ -159,10 +158,7 @@ func (m *CommandSelectorModel) View() tea.View {
 		Bold(true)
 
 	start := m.scroll
-	end := start + visible
-	if end > len(m.entries) {
-		end = len(m.entries)
-	}
+	end := min(start+visible, len(m.entries))
 
 	for i := start; i < end; i++ {
 		entry := m.entries[i]
@@ -230,7 +226,7 @@ func (m *CommandSelectorModel) moveSelection(delta int) {
 }
 
 func buildCommandEntries(commands []appconfig.CommandConfig) []commandSelectorEntry {
-	grouped := map[appconfig.CommandType][]appconfig.CommandConfig{}
+	grouped := make(map[appconfig.CommandType][]appconfig.CommandConfig)
 	for _, c := range commands {
 		grouped[c.Type] = append(grouped[c.Type], c)
 	}
@@ -283,7 +279,7 @@ func firstSelectable(entries []commandSelectorEntry) int {
 }
 
 // PreferredSize implements ModalSizer to suggest a compact size.
-func (m *CommandSelectorModel) PreferredSize(maxContentWidth, maxContentHeight int) (int, int) {
+func (m *CommandSelectorModel) PreferredSize(maxContentWidth, maxContentHeight int) (width, height int) {
 	maxLen := 0
 	for _, e := range m.entries {
 		if e.header != "" {
@@ -300,8 +296,8 @@ func (m *CommandSelectorModel) PreferredSize(maxContentWidth, maxContentHeight i
 			}
 		}
 	}
-	width := min(maxContentWidth, maxLen+2)
-	height := min(maxContentHeight, max(len(m.entries), 6))
+	width = min(maxContentWidth, maxLen+2)
+	height = min(maxContentHeight, max(len(m.entries), 6))
 	return width, height
 }
 

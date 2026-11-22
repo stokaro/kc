@@ -67,6 +67,7 @@ func (t *Terminal) Init() tea.Cmd {
 	}
 
 	// Create shell command
+	// #nosec G204 G702 -- the embedded terminal runs the user's own $SHELL.
 	cmd := exec.Command(shell)
 	env := t.env
 	if len(env) == 0 {
@@ -112,8 +113,7 @@ func (t *Terminal) SetEnv(env []string) { t.env = append([]string(nil), env...) 
 // Update handles messages and updates the terminal state
 func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle window resize events
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
+	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		msg.Width = max(1, msg.Width)
 		msg.Height = max(1, msg.Height)
 
@@ -121,13 +121,14 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.height = msg.Height
 		if t.terminal != nil {
 			model, cmd := t.terminal.Update(msg)
-			t.terminal = model.(*bubbleterm.Model)
+			t.terminal = updatedModel(t.terminal, model)
 			return t, cmd
 		}
 		return t, nil
 	}
 
 	// Always update bubbleterm first to check process status
+	//nolint:nestif // paste, mouse and key input to the PTY differ only in small steps
 	if t.terminal != nil {
 		if paste, ok := msg.(tea.PasteMsg); ok {
 			if t.showPanels {
@@ -142,17 +143,14 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// mouse escape sequences into the PTY (which shows up as garbage
 		// in the 2-line terminal view). In fullscreen terminal mode, let
 		// mouse events pass through to bubbleterm only if the app requested it.
-		if mm, ok := msg.(tea.MouseMsg); ok {
-			if t.showPanels {
-				// Panels visible → ignore mouse for PTY; panels handle mouse themselves
-				_ = mm
-				return t, nil
-			}
-			// Fullscreen terminal: forward Bubble Tea mouse events to bubbleterm;
-			// bubbleterm and the underlying app decide whether to act on them.
+		// In fullscreen mode bubbleterm and the app in the terminal decide
+		// whether to act on mouse events.
+		if _, ok := msg.(tea.MouseMsg); ok && t.showPanels {
+			// Panels visible → ignore mouse for PTY; panels handle mouse themselves
+			return t, nil
 		}
 		model, cmd := t.terminal.Update(translateKeyForTerminal(msg))
-		t.terminal = model.(*bubbleterm.Model)
+		t.terminal = updatedModel(t.terminal, model)
 		if _, isKey := msg.(tea.KeyMsg); isKey {
 			t.trackTyped(msg)
 			return t, writeNow(cmd)
@@ -347,45 +345,10 @@ func pasteInput(content string) string {
 	return "\x1b[200~" + content + "\x1b[201~"
 }
 
-type legacyKeyPressMsg struct {
-	key  tea.Key
-	text string
-}
-
-func (m legacyKeyPressMsg) String() string { return m.text }
-
-func (m legacyKeyPressMsg) Key() tea.Key { return m.key }
-
-func (m legacyKeyPressMsg) Keystroke() string {
-	if len(m.text) == 1 {
-		return m.text
-	}
-	return m.key.Keystroke()
-}
-
-type legacyKeyReleaseMsg struct {
-	key  tea.Key
-	text string
-}
-
-func (m legacyKeyReleaseMsg) String() string { return m.text }
-
-func (m legacyKeyReleaseMsg) Key() tea.Key { return m.key }
-
-func (m legacyKeyReleaseMsg) Keystroke() string {
-	if len(m.text) == 1 {
-		return m.text
-	}
-	return m.key.Keystroke()
-}
-
+// translateKeyForTerminal returns the message unchanged: Bubble Tea v2 key
+// messages reach the terminal as they are.
 func translateKeyForTerminal(msg tea.Msg) tea.Msg {
-	switch msg.(type) {
-	case tea.KeyMsg, tea.KeyPressMsg, tea.KeyReleaseMsg:
-		return msg
-	default:
-		return msg
-	}
+	return msg
 }
 
 // SetShowPanels sets whether panels are visible

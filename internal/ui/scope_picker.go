@@ -115,6 +115,7 @@ func (m *ScopePickerModel) move(d int) {
 	m.ensureVisible()
 }
 
+//nolint:gocyclo // one short case per key
 func (m *ScopePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch mm := msg.(type) {
 	case tea.MouseWheelMsg:

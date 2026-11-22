@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,10 +68,8 @@ func TestPlanCopy(t *testing.T) {
 	}
 	have := func(names ...string) func(string) (string, error) {
 		return func(n string) (string, error) {
-			for _, x := range names {
-				if x == n {
-					return "/usr/bin/" + n, nil
-				}
+			if slices.Contains(names, n) {
+				return "/usr/bin/" + n, nil
 			}
 			return "", errors.New("not found")
 		}

@@ -159,7 +159,8 @@ func TestExecFailureMessage(t *testing.T) {
 func TestExecSessionRunsKubectl(t *testing.T) {
 	dir := t.TempDir()
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + filepath.Join(dir, "args") + "\necho 'Error from server (NotFound): pods \"web-0\" not found' >&2\nexit 1\n"
-	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(script), 0o755); err != nil {
+	// #nosec G306 -- the fake kubectl must be executable.
+	if err := os.WriteFile(filepath.Join(dir, "kubectl"), []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)

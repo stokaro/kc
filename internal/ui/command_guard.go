@@ -154,7 +154,7 @@ func (a *App) commandConfirmation(cmd appconfig.CommandConfig, items []models.It
 	}
 	width := max(30, a.width-12)
 	c.Notes = append(c.Notes, "Command:")
-	for _, line := range strings.Split(rendered, "\n") {
+	for line := range strings.SplitSeq(rendered, "\n") {
 		c.Notes = append(c.Notes, wrapCommandLine(line, width)...)
 	}
 	return c, nil

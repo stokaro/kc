@@ -54,8 +54,8 @@ type typeLateFolder struct {
 func newTypeFolder(path ...string) *typeLateFolder {
 	return &typeLateFolder{
 		lateFolder: newLateFolder(path...),
-		types:      map[schema.GroupResource]models.Item{},
-		ids:        map[schema.GroupResource]string{},
+		types:      make(map[schema.GroupResource]models.Item),
+		ids:        make(map[schema.GroupResource]string),
 	}
 }
 

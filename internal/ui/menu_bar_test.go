@@ -78,7 +78,7 @@ func TestMenuBarTable(t *testing.T) {
 	app := newMenuTestApp(t)
 	shortcut := regexp.MustCompile(`^(F[0-9]+|(C-x )?[CM]-(F[0-9]+|.)|[+*-])$`)
 	menus := app.menuBarMenus()
-	titles := map[rune]string{}
+	titles := make(map[rune]string)
 	for _, m := range menus {
 		if h := m.Hotkey(); h == 0 {
 			t.Errorf("menu %q has no hotkey", m.Title)
@@ -87,7 +87,7 @@ func TestMenuBarTable(t *testing.T) {
 		} else {
 			titles[h] = m.Title
 		}
-		hot := map[rune]string{}
+		hot := make(map[rune]string)
 		for _, it := range m.Items {
 			if it.IsSeparator() {
 				continue

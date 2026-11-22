@@ -50,7 +50,7 @@ func (a *App) openOverview() tea.Cmd {
 	idx := a.activePanel
 	return a.NavigatePanel(idx, overviewPath(a.overviewNamespace(idx)), func(err error) tea.Cmd {
 		if err != nil {
-			a.notifyIntentError("overview: %v", err)
+			a.notifyIntentErrorf("overview: %v", err)
 		}
 		return nil
 	})
@@ -66,7 +66,7 @@ func (a *App) applyStartupIntentOverview() tea.Cmd {
 	a.setActivePanel(0, "startup overview focus left")
 	return a.NavigatePanel(0, overviewPath(a.startupIntentNamespace()), func(err error) tea.Cmd {
 		if err != nil {
-			a.notifyIntentError("kc overview: %v", err)
+			a.notifyIntentErrorf("kc overview: %v", err)
 		}
 		return nil
 	})

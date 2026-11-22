@@ -197,7 +197,7 @@ func (m *CommandPromptModel) FooterHints() []FooterHint {
 
 // size is the content size the dialog wants: a label and a field line per
 // prompt, a blank line and the buttons.
-func (m *CommandPromptModel) size() (int, int) {
+func (m *CommandPromptModel) size() (width, height int) {
 	w := 40
 	for i := range m.fields {
 		f := &m.fields[i]

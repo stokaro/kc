@@ -48,7 +48,7 @@ func (s stubObject) SupportsVerb(verb string) bool {
 	return false
 }
 
-func (s stubObject) ViewContent() (string, string, string, string, string, error) {
+func (s stubObject) ViewContent() (title, body, lang, mime, filename string, err error) {
 	return "title", "body", "yaml", "application/yaml", "title.yaml", nil
 }
 

@@ -29,13 +29,13 @@ func (a *App) interceptShellCd() (tea.Cmd, bool) {
 	}
 	ctrllog.FromContext(a.ctx).WithName("shellCd").Info("cd from the shell line", "line", line, "panel", a.activePanel)
 	// The typed text is in the shell's line editor; C-u discards it there.
-	clear := a.terminal.DiscardLine()
+	discard := a.terminal.DiscardLine()
 	a.invalidateView("shell cd")
 	a.invalidateTerminalArea("shell cd")
 	if err != nil {
-		return tea.Batch(clear, a.ShowToast("cd: "+err.Error(), cdErrorToast)), true
+		return tea.Batch(discard, a.ShowToast("cd: "+err.Error(), cdErrorToast)), true
 	}
-	return tea.Batch(clear, a.runCd(req)), true
+	return tea.Batch(discard, a.runCd(req)), true
 }
 
 // runCd moves the active panel as req says.

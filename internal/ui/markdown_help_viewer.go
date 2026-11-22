@@ -13,10 +13,6 @@ import (
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
-var helpLineStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color(uistyles.ColorModalBg)).
-	Foreground(lipgloss.Color(uistyles.ColorModalFg))
-
 // MarkdownHelpViewer renders embedded markdown content inside a windowed modal.
 type MarkdownHelpViewer struct {
 	markdown string
@@ -78,14 +74,14 @@ func (v *MarkdownHelpViewer) render() {
 	style := styles.LightStyleConfig
 	bg := uistyles.ColorModalBg
 	fg := uistyles.ColorModalFg
-	style.Document.StylePrimitive.BackgroundColor = stringPtr(bg)
-	style.Document.StylePrimitive.Color = stringPtr(fg)
-	style.Paragraph.StylePrimitive.BackgroundColor = stringPtr(bg)
-	style.Paragraph.StylePrimitive.Color = stringPtr(fg)
-	style.List.StyleBlock.StylePrimitive.BackgroundColor = stringPtr(bg)
-	style.List.StyleBlock.StylePrimitive.Color = stringPtr(fg)
-	style.BlockQuote.StylePrimitive.BackgroundColor = stringPtr(bg)
-	style.BlockQuote.StylePrimitive.Color = stringPtr(fg)
+	style.Document.StylePrimitive.BackgroundColor = new(bg)
+	style.Document.StylePrimitive.Color = new(fg)
+	style.Paragraph.StylePrimitive.BackgroundColor = new(bg)
+	style.Paragraph.StylePrimitive.Color = new(fg)
+	style.List.StyleBlock.StylePrimitive.BackgroundColor = new(bg)
+	style.List.StyleBlock.StylePrimitive.Color = new(fg)
+	style.BlockQuote.StylePrimitive.BackgroundColor = new(bg)
+	style.BlockQuote.StylePrimitive.Color = new(fg)
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithStyles(style),
 		glamour.WithWordWrap(wrap),
@@ -109,10 +105,7 @@ func (v *MarkdownHelpViewer) clampScroll() {
 		v.scroll = 0
 		return
 	}
-	maxScroll := len(v.rendered) - v.height
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := max(len(v.rendered)-v.height, 0)
 	if v.scroll > maxScroll {
 		v.scroll = maxScroll
 	}
@@ -215,17 +208,6 @@ func padANSI(line string, width int) string {
 	return wrapWithModalColors(line)
 }
 
-func stringPtr(val string) *string {
-	return &val
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func wrapWithModalColors(s string) string {
 	bgSeq := ansiBackgroundSeq(uistyles.ColorModalBg)
 	fgSeq := ansiForegroundSeq(uistyles.ColorModalFg)
@@ -279,7 +261,7 @@ func parseHexColor(hex string) ([3]int, bool) {
 	if len(hex) != 7 {
 		return rgb, false
 	}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		val, err := strconv.ParseInt(hex[1+i*2:3+i*2], 16, 0)
 		if err != nil {
 			return rgb, false

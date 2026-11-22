@@ -38,9 +38,8 @@ func TestCommandOptionsChangedMsgAppliesWatchInterval(t *testing.T) {
 		Close:         true,
 	}
 
-	if _, cmd := app.Update(msg); cmd != nil {
-		// We don't need to execute the returned command (tea.Tick) for state assertions.
-	}
+	// The returned command (tea.Tick) is not needed for the state assertions.
+	app.Update(msg)
 
 	if got := app.leftPanel.CommandWatchInterval(ctx); got != 2*time.Second {
 		t.Fatalf("expected command watch interval 2s, got %s", got)

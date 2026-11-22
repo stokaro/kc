@@ -226,6 +226,7 @@ var clipboardTools = [][]string{
 }
 
 func runWithInput(text string, argv ...string) error {
+	// #nosec G204 -- argv is one of the fixed clipboardTools entries.
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()

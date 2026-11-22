@@ -123,7 +123,7 @@ func ParsePanelPath(s string) (PanelPath, error) {
 	case s == "." || strings.HasPrefix(s, "./"):
 		p.Anchor = AnchorCurrentStrict
 	}
-	for _, seg := range strings.Split(s, "/") {
+	for seg := range strings.SplitSeq(s, "/") {
 		if seg == "" || seg == "." {
 			continue
 		}
@@ -148,6 +148,8 @@ const shellSyntax = ";&|<>$`(){}\\'\"*?[]!#="
 // parseCdLine parses a shell line. It returns errNotCd when the line is not
 // a plain cd that kc takes over; any other error is a cd usage error to
 // show to the user.
+//
+//nolint:gocyclo // a hand-written tokenizer for the cd line; covered by table tests
 func parseCdLine(line string) (cdRequest, error) {
 	fields := strings.Fields(line)
 	if len(fields) == 0 || fields[0] != "cd" {

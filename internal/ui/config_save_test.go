@@ -72,7 +72,7 @@ func TestBrokenConfigIsReportedAndNotOverwritten(t *testing.T) {
 	t.Parallel()
 	p := filepath.Join(t.TempDir(), "config.yaml")
 	original := []byte("commands:\n  - name: Mine\n    command: echo\nviewer: [\n")
-	if err := os.WriteFile(p, original, 0o644); err != nil {
+	if err := os.WriteFile(p, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	app, loadCmd := newConfigApp(t, p)
@@ -105,7 +105,7 @@ func TestBrokenConfigIsReportedAndNotOverwritten(t *testing.T) {
 func TestSaveDefaultsKeepsCustomCommands(t *testing.T) {
 	t.Parallel()
 	p := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(p, []byte("viewer:\n  theme: monokai\ncommands:\n  - name: Mine\n    command: echo\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("viewer:\n  theme: monokai\ncommands:\n  - name: Mine\n    command: echo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	app, loadCmd := newConfigApp(t, p)
