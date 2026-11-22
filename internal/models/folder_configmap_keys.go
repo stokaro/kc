@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"sort"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -31,7 +32,7 @@ type ConfigMapKeysFolder struct {
 
 // NewConfigMapKeysFolder constructs the ConfigMap data keys folder.
 func NewConfigMapKeysFolder(deps Deps, parentPath []string, namespace, name string) *ConfigMapKeysFolder {
-	path := append(append([]string{}, parentPath...), "data")
+	path := append(slices.Clone(parentPath), "data")
 	cols := []table.Column{{Title: " Name"}, {Title: " Type"}, {Title: " Size"}}
 	base := NewBaseFolder(deps, cols, path)
 	folder := &ConfigMapKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
@@ -40,7 +41,7 @@ func NewConfigMapKeysFolder(deps Deps, parentPath []string, namespace, name stri
 	return folder
 }
 
-func (f *ConfigMapKeysFolder) Parent() (schema.GroupVersionResource, string, string) {
+func (f *ConfigMapKeysFolder) Parent() (gvr schema.GroupVersionResource, namespace, name string) {
 	return configMapGVR, f.Namespace, f.Name
 }
 
@@ -60,7 +61,7 @@ func (f *ConfigMapKeysFolder) buildRows(ctx context.Context) ([]table.Row, error
 	rows := make([]table.Row, 0, len(entries))
 	style := WhiteStyle()
 	for _, e := range entries {
-		rowPath := append(append([]string{}, f.Path()...), e.key)
+		rowPath := append(slices.Clone(f.Path()), e.key)
 		item := NewSimpleItem(e.key, []string{e.key, e.kind, formatBytes(int64(e.size))}, rowPath, style)
 		item.WithViewContent(configMapKeyViewContent(f.Deps, f.Namespace, f.Name, e.key))
 		item.SetViewCommand(configMapKeyViewCommand(f.Deps, f.Namespace, f.Name, e.key, e.kind == configMapKeyBinary))
@@ -109,6 +110,8 @@ func configMapKeyViewContent(deps Deps, namespace, name, key string) ViewContent
 // arbitrary bytes, and F5 writes the body unchanged. Binary values are
 // marked with binaryMIME so the viewer shows a summary and a hex dump
 // instead of writing the bytes to the terminal.
+//
+//revive:disable-next-line:function-result-limit returns the ViewContentFunc results, which the Viewable interface fixes
 func configMapKeyView(obj map[string]any, name, key string) (title, body, lang, mime, filename string, err error) {
 	title = fmt.Sprintf("%s:%s", name, key)
 	filename = fmt.Sprintf("%s_%s", name, key)

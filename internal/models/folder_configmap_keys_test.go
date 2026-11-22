@@ -21,7 +21,7 @@ func TestConfigMapKeyEntries(t *testing.T) {
 		binaryData map[string][]byte
 		want       []configMapKeyEntry
 	}{
-		{name: "empty", want: []configMapKeyEntry{}},
+		{name: "empty", want: make([]configMapKeyEntry, 0)},
 		{
 			name: "text only",
 			data: map[string]string{"b": "BB", "a": "A"},
@@ -85,8 +85,8 @@ func TestConfigMapKeyView(t *testing.T) {
 		{key: "esc.txt", wantBody: []byte("red \x1b[31m"), wantMIME: binaryMIME},
 		{key: "logo.png", wantBody: cm.BinaryData["logo.png"], wantMIME: binaryMIME},
 		{key: "blob.v1.2", wantBody: nonUTF8, wantMIME: binaryMIME},
-		{key: "empty.bin", wantBody: []byte{}, wantMIME: binaryMIME},
-		{key: "missing", wantBody: []byte{}, wantMIME: ""},
+		{key: "empty.bin", wantBody: make([]byte, 0), wantMIME: binaryMIME},
+		{key: "missing", wantBody: make([]byte, 0), wantMIME: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {

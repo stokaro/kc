@@ -47,7 +47,7 @@ func TestFormatQuantities(t *testing.T) {
 }
 
 func container(name string, requests, limits map[string]any) map[string]any {
-	res := map[string]any{}
+	res := make(map[string]any)
 	if requests != nil {
 		res["requests"] = requests
 	}

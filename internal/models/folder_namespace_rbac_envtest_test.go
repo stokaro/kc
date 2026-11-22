@@ -44,7 +44,7 @@ func (e *namespaceUserEnv) errors() []error {
 func (e *namespaceUserEnv) openHolds() map[kccluster.Key]int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	out := map[kccluster.Key]int{}
+	out := make(map[kccluster.Key]int)
 	for k, n := range e.holds {
 		if n != 0 {
 			out[k] = n
@@ -84,7 +84,7 @@ func newNamespaceUserEnv(t *testing.T, user string, grantNamespaces ...string) *
 	}
 	t.Cleanup(sharedLease.Release)
 	shared := sharedLease.Cluster()
-	e := &namespaceUserEnv{admin: admin, shared: shared, holds: map[kccluster.Key]int{}}
+	e := &namespaceUserEnv{admin: admin, shared: shared, holds: make(map[kccluster.Key]int)}
 	e.deps = Deps{
 		Cl:         shared,
 		Ctx:        ctx,

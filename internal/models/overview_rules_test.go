@@ -28,7 +28,7 @@ func ago(d time.Duration) metav1.Time { return metav1.NewTime(overviewTestNow.Ad
 
 func om(ns, name string) metav1.ObjectMeta { return metav1.ObjectMeta{Namespace: ns, Name: name} }
 
-func readyNode(name string, cpu, mem string, pods int64) *corev1.Node {
+func readyNode(name, cpu, mem string, pods int64) *corev1.Node {
 	return &corev1.Node{
 		Name: name,
 		Status: corev1.NodeStatus{

@@ -183,6 +183,8 @@ func mergeUsageColumns(rl *tablecache.RowList, kind usageKind, namespace string,
 // Metrics cover the same containers, so usage compares like with like.
 // complete is false when a counted container does not set the resource,
 // which for limits means the pod has none.
+//
+//revive:disable-next-line:function-result-limit two sums and a completeness flag for each; the named results document them
 func containerResources(pod *unstructured.Unstructured, field string) (cpu, mem int64, cpuComplete, memComplete bool) {
 	cpuComplete, memComplete = true, true
 	add := func(c map[string]any) {
@@ -312,7 +314,7 @@ func nodeMetricsUsage(nm *unstructured.Unstructured) (cpu, mem int64) {
 // buildUsageValues joins metrics with the objects from the shared cache.
 // Objects without metrics get no entry, and show as n/a. objects may be nil
 // when the cache could not be read; percentages are n/a then.
-func buildUsageValues(kind usageKind, metrics []unstructured.Unstructured, objects []unstructured.Unstructured) map[string]usageValues {
+func buildUsageValues(kind usageKind, metrics, objects []unstructured.Unstructured) map[string]usageValues {
 	alloc := make(map[string]usageValues, len(objects))
 	for i := range objects {
 		o := &objects[i]

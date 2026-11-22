@@ -47,7 +47,7 @@ func TestRowStylerCordonedNode(t *testing.T) {
 		spec map[string]any
 		want *lipgloss.Style
 	}{
-		{name: "schedulable", spec: map[string]any{}, want: nil},
+		{name: "schedulable", spec: make(map[string]any), want: nil},
 		{name: "unschedulable false", spec: map[string]any{"unschedulable": false}, want: nil},
 		{name: "cordoned", spec: map[string]any{"unschedulable": true}, want: NotReadyStyle()},
 	}

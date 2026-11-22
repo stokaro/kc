@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -15,7 +16,7 @@ type ContextRootFolder struct {
 
 // NewContextRootFolder scaffolds a context-specific root folder using the provided path.
 func NewContextRootFolder(deps Deps, path []string) *ContextRootFolder {
-	localPath := append([]string{}, path...)
+	localPath := append(make([]string, 0, len(path)), path...)
 	cluster := NewClusterResourcesFolder(deps, localPath)
 	folder := &ContextRootFolder{ClusterResourcesFolder: cluster}
 	cluster.BaseFolder.SetPopulate(folder.populate)
@@ -26,7 +27,7 @@ func (f *ContextRootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	nameStyle := WhiteStyle()
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-	nsPath := append(append([]string{}, f.Path()...), "namespaces")
+	nsPath := append(slices.Clone(f.Path()), "namespaces")
 	nsPathCopy := append([]string(nil), nsPath...)
 	namespacesSpec := resourceGroupSpec{
 		id:        "namespaces",

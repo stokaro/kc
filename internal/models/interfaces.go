@@ -182,7 +182,7 @@ type Countable interface {
 // KeyFolder identifies key/value listings such as ConfigMap or Secret data folders.
 type KeyFolder interface {
 	Folder
-	Parent() (schema.GroupVersionResource, string, string)
+	Parent() (gvr schema.GroupVersionResource, namespace, name string)
 }
 
 // Back identifies the synthetic ".." entry.
@@ -213,6 +213,7 @@ type BackItem struct{}
 var _ Item = BackItem{}
 var _ Back = BackItem{}
 
+//revive:disable-next-line:function-result-limit the table.Row interface in internal/table fixes these four results
 func (BackItem) Columns() (string, []string, []*lipgloss.Style, bool) {
 	style := GreenStyle()
 	return "__back__", []string{"/.."}, []*lipgloss.Style{style}, true

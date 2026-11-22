@@ -51,7 +51,7 @@ func explainRoot(t *testing.T, gvk schema.GroupVersionKind) *explain.Node {
 
 func rowsOf(t *testing.T, f models.Folder) map[string][]string {
 	t.Helper()
-	out := map[string][]string{}
+	out := make(map[string][]string)
 	for _, r := range f.Lines(t.Context(), 0, f.Len(t.Context())) {
 		id, cells, _, _ := r.Columns()
 		out[id] = cells

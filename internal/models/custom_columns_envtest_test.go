@@ -54,7 +54,7 @@ func TestCustomColumnsFromSharedCache(t *testing.T) {
 	want := map[string][]string{"cm1": {"/cm1", "blue"}, "cm2": {"/cm2", "<none>"}}
 	var got map[string][]string
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		got = map[string][]string{}
+		got = make(map[string][]string)
 		n := folder.Len(ctx)
 		for _, r := range folder.Lines(ctx, 0, n) {
 			id, cells, _, _ := r.Columns()

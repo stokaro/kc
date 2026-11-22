@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -65,7 +66,7 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 		id := fmt.Sprintf("%s/%s/%s", entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
 		gvLabel := groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version)
 		cells := []string{"/" + entry.info.Resource, gvLabel, ""}
-		basePath := append(append([]string{}, f.Path()...), entry.info.Resource)
+		basePath := append(slices.Clone(f.Path()), entry.info.Resource)
 		cellsCopy := append([]string(nil), cells...)
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr

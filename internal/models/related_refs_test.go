@@ -214,7 +214,7 @@ type fakeReader struct {
 
 func newFakeReader(t *testing.T, objs map[schema.GroupVersionResource][]runtime.Object) *fakeReader {
 	t.Helper()
-	r := &fakeReader{objs: map[schema.GroupVersionResource][]*unstructured.Unstructured{}}
+	r := &fakeReader{objs: make(map[schema.GroupVersionResource][]*unstructured.Unstructured)}
 	for gvr, list := range objs {
 		for _, o := range list {
 			m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(o)
@@ -289,7 +289,7 @@ type errGetReader struct{ err error }
 func (r *errGetReader) ListByGVR(context.Context, schema.GroupVersionResource, string) (*unstructured.UnstructuredList, error) {
 	return nil, r.err
 }
-func (r *errGetReader) GetByGVR(context.Context, schema.GroupVersionResource, string, string) (*unstructured.Unstructured, error) {
+func (r *errGetReader) GetByGVR(_ context.Context, _ schema.GroupVersionResource, _, _ string) (*unstructured.Unstructured, error) {
 	return nil, r.err
 }
 

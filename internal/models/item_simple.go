@@ -8,7 +8,7 @@ type SimpleItem struct {
 	viewFn ViewContentFunc
 }
 
-func NewSimpleItem(id string, cells []string, path []string, style *lipgloss.Style) *SimpleItem {
+func NewSimpleItem(id string, cells, path []string, style *lipgloss.Style) *SimpleItem {
 	return &SimpleItem{RowItem: NewRowItem(id, cells, path, style)}
 }
 
@@ -17,7 +17,8 @@ func (s *SimpleItem) WithViewContent(fn ViewContentFunc) *SimpleItem {
 	return s
 }
 
-func (s *SimpleItem) ViewContent() (string, string, string, string, string, error) {
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (s *SimpleItem) ViewContent() (title, body, lang, mime, filename string, err error) {
 	if s.viewFn == nil {
 		return "", "", "", "", "", ErrNoViewContent
 	}

@@ -23,7 +23,7 @@ func (f *fakeUsage) fetch(_ context.Context, _ Deps, kind usageKind, namespace s
 	f.mu.Lock()
 	f.scope = append(f.scope, kind.String()+":"+namespace)
 	f.mu.Unlock()
-	return &usageSnapshot{served: true, values: map[string]usageValues{}}
+	return &usageSnapshot{served: true, values: make(map[string]usageValues)}
 }
 
 func newTestUsage(f *fakeUsage) *UsageMetrics {

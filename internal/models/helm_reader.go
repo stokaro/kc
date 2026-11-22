@@ -68,7 +68,7 @@ type decodedRelease struct {
 }
 
 func newHelmReader(deps Deps) *helmReader {
-	r := &helmReader{deps: deps, decoded: map[string]decodedRelease{}}
+	r := &helmReader{deps: deps, decoded: make(map[string]decodedRelease)}
 	r.peek = r.peekSecrets
 	return r
 }

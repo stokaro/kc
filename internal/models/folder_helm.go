@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,7 +26,7 @@ var helmNoticeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5C5C"))
 // Helm releases of namespace (AllNamespaces for all). Nothing is read until
 // it is entered.
 func newHelmEntryItem(deps Deps, namespace string, parent []string) *ChildResourceItem {
-	path := append(append([]string{}, parent...), "helm")
+	path := append(slices.Clone(parent), "helm")
 	item := NewChildResourceItem(helmEntryID, []string{"/helm", helm.SecretType, ""}, path, func() (Folder, error) {
 		return NewHelmReleasesFolder(deps, namespace, path), nil
 	})
@@ -54,7 +55,7 @@ func helmNotice(id, short, detail string, path []string, columns int) *SimpleIte
 func helmNoticeStyled(id, short, detail string, path []string, columns int, style *lipgloss.Style) *SimpleItem {
 	cells := make([]string, columns)
 	cells[0] = short
-	item := NewSimpleItem(id, cells, append(append([]string{}, path...), id), style)
+	item := NewSimpleItem(id, cells, append(slices.Clone(path), id), style)
 	item.SetDetails(detail)
 	item.WithViewContent(func() (string, string, string, string, string, error) {
 		return "Helm", detail + "\n", "", "", "helm-notice.txt", nil
@@ -186,7 +187,7 @@ func newHelmReleaseItem(deps Deps, reader *helmReader, h helm.History, parent []
 		updated = formatHelmTime(rel.Info.LastDeployed)
 	}
 	cells := []string{"/" + h.Release, h.Namespace, strconv.Itoa(latest.Revision), status, chart, appVersion, updated}
-	path := append(append([]string{}, parent...), h.Release)
+	path := append(slices.Clone(parent), h.Release)
 	item := &HelmReleaseItem{
 		RowItem:   NewRowItem(h.Namespace+"/"+h.Release, cells, path, WhiteStyle()),
 		deps:      deps,
@@ -212,7 +213,9 @@ func (i *HelmReleaseItem) Enter() (Folder, error) {
 
 // ViewContent shows the stored status of the newest revision, like
 // "helm status".
-func (i *HelmReleaseItem) ViewContent() (string, string, string, string, string, error) {
+//
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (i *HelmReleaseItem) ViewContent() (title, body, lang, mime, filename string, err error) {
 	return i.release + " (stored release)", i.summary, "", "", i.release + "-status.txt", nil
 }
 

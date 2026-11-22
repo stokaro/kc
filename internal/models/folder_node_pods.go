@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
@@ -55,7 +56,7 @@ func NewNodeChildFolder(deps Deps, nodeName string, path []string) *NodeChildFol
 }
 
 func (f *NodeChildFolder) populate(ctx context.Context) ([]table.Row, error) {
-	podsPath := append(append([]string{}, f.Path()...), "pods")
+	podsPath := append(slices.Clone(f.Path()), "pods")
 	item := NewChildResourceItem(
 		fmt.Sprintf("%s/%s", f.nodeName, podGVR.String()),
 		[]string{"/pods"},
