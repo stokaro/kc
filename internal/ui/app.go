@@ -1960,6 +1960,9 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	if _, isBack := item.(models.Back); isBack {
 		return nil
 	}
+	if wl, ok := item.(models.WorkloadLogsProvider); ok {
+		return a.openWorkloadLogs(item, wl)
+	}
 	if logs, ok := item.(models.LogsProvider); ok {
 		return a.openLogsViewer(item, logs.LogsSpec())
 	}

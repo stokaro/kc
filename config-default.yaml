@@ -1,6 +1,10 @@
 viewer:
   theme: dracula
   mode: scroll
+  logs:
+    # Log streams a merged logs viewer (all pods of a workload, all
+    # containers of a pod) runs at once; more wait for a free slot.
+    maxRequests: 50
 
 panel:
   scrolling:

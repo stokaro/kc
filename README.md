@@ -17,6 +17,7 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
 - **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
 - **Container internals:** each pod container exposes `/logs` plus a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
+- **Merged logs:** Deployments, StatefulSets, DaemonSets, ReplicaSets and Jobs have a `logs` row, and every pod a `logs (all containers)` row. `F3` on it streams the logs of all matching pods and containers into one viewer, each line prefixed with a colored `[pod/container]`, like `kubectl logs -l <selector> --all-containers --prefix -f`. Pods that start or go away are followed; `[kc] +` and `[kc] -` lines mark each stream.
 - **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker.
 - **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
 
@@ -137,6 +138,7 @@ Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `
 `~/.kc/config.yaml` stores all user preferences. Key sections:
 
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
+- `viewer.logs.maxRequests` – how many log streams a merged logs viewer (all pods of a workload, all containers of a pod) runs at once (default 50, like stern); further streams wait for a free slot.
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace.
@@ -153,6 +155,10 @@ Copy/paste into `~/.kc/config.yaml` to start customizing:
 viewer:
   theme: dracula
   mode: scroll
+  logs:
+    # Log streams a merged logs viewer (all pods of a workload, all
+    # containers of a pod) runs at once; more wait for a free slot.
+    maxRequests: 50
 
 panel:
   scrolling:

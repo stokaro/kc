@@ -14,8 +14,31 @@ import (
 )
 
 type ViewerConfig struct {
-	Theme string `json:"theme"`
-	Mode  string `json:"mode"`
+	Theme string           `json:"theme"`
+	Mode  string           `json:"mode"`
+	Logs  LogsViewerConfig `json:"logs"`
+}
+
+// LogsViewerConfig holds logs viewer settings.
+type LogsViewerConfig struct {
+	// MaxRequests limits the log streams a merged logs viewer (all pods of
+	// a workload, all containers of a pod) runs at once, like kubectl's
+	// --max-log-requests. Further streams wait for a free slot. Zero or
+	// less means DefaultLogsMaxRequests.
+	MaxRequests int `json:"maxRequests"`
+}
+
+// DefaultLogsMaxRequests is the default for viewer.logs.maxRequests. It
+// matches stern's default for following logs.
+const DefaultLogsMaxRequests = 50
+
+// EffectiveMaxRequests returns MaxRequests, or the default when it is not
+// positive.
+func (c LogsViewerConfig) EffectiveMaxRequests() int {
+	if c.MaxRequests <= 0 {
+		return DefaultLogsMaxRequests
+	}
+	return c.MaxRequests
 }
 
 const (
@@ -192,7 +215,11 @@ type TableConfig struct {
 
 func Default() *Config {
 	return &Config{
-		Viewer: ViewerConfig{Theme: "dracula", Mode: ViewerModeScroll},
+		Viewer: ViewerConfig{
+			Theme: "dracula",
+			Mode:  ViewerModeScroll,
+			Logs:  LogsViewerConfig{MaxRequests: DefaultLogsMaxRequests},
+		},
 		Panel: PanelConfig{
 			Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}},
 			Table:     TableConfig{Mode: TableModeScroll},

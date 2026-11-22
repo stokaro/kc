@@ -93,6 +93,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commandWatchTickMsg:
 		model, cmd := a.handleCommandWatchTick(msg)
 		return model, cmd
+	case workloadLogsReadyMsg:
+		return a, tea.Batch(append(cmds, a.showWorkloadLogs(msg))...)
 	case tea.WindowSizeMsg:
 		msg.Width = max(40, msg.Width)
 		msg.Height = max(5, msg.Height)
