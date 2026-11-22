@@ -53,10 +53,10 @@ func (f *nativeFactory) NewSession(ctx context.Context, spec SessionSpec) (ExecS
 	if !shouldFallback(err) || f.helper == nil || !f.helper.available() {
 		return nil, err
 	}
-	if !spec.AllowHelper {
-		return nil, fmt.Errorf("%w: %w", ErrHelperNeeded, err)
-	}
 	helperSpec, helperErr := f.helper.ensureHelper(ctx, spec)
+	if errors.Is(helperErr, ErrHelperNeeded) {
+		return nil, fmt.Errorf("%w: %w", helperErr, err)
+	}
 	if helperErr != nil {
 		return nil, helperErr
 	}

@@ -74,6 +74,15 @@ func (m *helperManager) ensureHelper(ctx context.Context, spec SessionSpec) (Ses
 		// Reuse a helper that is still running; one that exited after
 		// going idle cannot restart, so the next one gets a new name.
 		helperName, running := pickHelper(pod, prefix, spec.Container)
+		if !running && !spec.AllowHelper {
+			// Reusing a running helper leaves the pod as it is; adding one
+			// changes it for good and needs the user's consent.
+			name, ok := runningHelper(pod, spec.Container, m.cfg.ptracePrefix, m.cfg.namePrefix)
+			if !ok {
+				return spec, ErrHelperNeeded
+			}
+			helperName, running = name, true
+		}
 		if !running {
 			if err := m.createHelper(ctx, pods, pod, spec.Container, helperName, ptrace); err != nil {
 				lastErr = err
@@ -147,6 +156,17 @@ const (
 // helper's own command line.
 var helperScript = fmt.Sprintf(`touch %[1]s; while [ $(( $(date +%%s) - $(stat -c %%Y %[1]s 2>/dev/null || echo 0) )) -lt %[2]d ]; do sleep 5; done # %[3]s`,
 	helperHeartbeat, helperIdleTimeout, helperSleepMarker)
+
+// runningHelper finds a running (or starting) helper for container under
+// any of the prefixes.
+func runningHelper(pod *corev1.Pod, container string, prefixes ...string) (string, bool) {
+	for _, prefix := range prefixes {
+		if name, running := pickHelper(pod, prefix, container); running {
+			return name, true
+		}
+	}
+	return "", false
+}
 
 // pickHelper returns the helper to use for container: a running (or
 // starting) one with prefix, or the next unused name.
