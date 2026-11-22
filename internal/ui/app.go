@@ -1094,6 +1094,7 @@ func (a *App) setupPanelInputs() {
 		panel.RegisterMode(PanelModeManifest, func(p *Panel) PanelWidget {
 			return manifestwidget.New(p.manifestWidgetDeps())
 		})
+		panel.RegisterMode(PanelModeLogs, a.newPanelLogsWidget)
 	}
 	if a.leftPanel != nil {
 		a.leftPanel.SetEnvironmentSupplier(envSupplier)
@@ -1222,7 +1223,7 @@ func maskCapabilitiesForMode(mode PanelViewMode, commandFocused bool, caps Panel
 	switch mode {
 	case PanelModeList:
 		return caps
-	case PanelModeDescribe, PanelModeManifest:
+	case PanelModeDescribe, PanelModeManifest, PanelModeLogs:
 		// Read-only; allow help/options/menu only.
 		caps.CanView = false
 		caps.CanCopy = false
@@ -1259,7 +1260,7 @@ func (a *App) setPanelMode(ctx context.Context, panel *Panel, mode PanelViewMode
 		a.invalidateView(reason)
 		a.invalidateFunctionBar(reason)
 	}
-	return cmd
+	return tea.Batch(cmd, a.followOtherPanelLogs(ctx, panel))
 }
 
 func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {

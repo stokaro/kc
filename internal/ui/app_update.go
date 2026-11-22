@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
+	logswidget "github.com/sttts/kc/internal/ui/panelcontent/logs"
 	"github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -588,6 +589,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.performDelete(*target)
 		}
 		return a, nil
+	case logswidget.Msg:
+		return a, a.deliverPanelLogs(msg)
 	case PanelSelectionChangedMsg:
 		if panel := msg.Panel; panel != nil {
 			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -598,13 +601,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if other != nil {
 					ctxOther, cancelOther := context.WithTimeout(a.ctx, panelContextTimeout)
 					other.NotifySelection(ctxOther, msg.Selection)
+					cmds = append(cmds, other.FollowLogs(ctxOther, msg.Selection))
 					cancelOther()
 				}
 			}
 		}
 		a.invalidateFunctionBar("selection changed")
 		a.invalidateView("selection changed")
-		return a, nil
+		return a, tea.Batch(cmds...)
 	case PanelModeSelectedMsg:
 		if panel := a.panelByIndex(msg.PanelIndex); panel != nil {
 			log := ctrllog.FromContext(a.ctx).WithName("panelMode").WithValues("panelIdx", msg.PanelIndex, "mode", msg.Mode)
@@ -952,6 +956,10 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case logswidget.Msg:
+		// A Logs panel keeps streaming behind a dialog; a dropped read
+		// result would end its read loop.
 		return true
 	}
 	return false
