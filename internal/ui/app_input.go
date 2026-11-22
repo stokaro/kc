@@ -85,6 +85,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		a.swapPanels()
 		return a, nil
 
+	case "alt+l":
+		return a, a.toggleLocalPanel()
+
 	case "ctrl+s", "alt+s":
 		if a.startQuickSearch() {
 			return a, nil
@@ -225,6 +228,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
+		case "l":
+			// Esc l is the fallback for M-l.
+			a.escPressed = false
+			return a, a.toggleLocalPanel()
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {

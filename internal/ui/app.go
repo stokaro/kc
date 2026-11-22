@@ -230,6 +230,8 @@ type App struct {
 	pendingCopy            *copyRequest
 	pendingDelete          *deleteTarget
 	lastCopyDir            string
+	transfer               *transferJob // the open copy dialog, if any
+	transferGen            int
 	namespaceCreatePanel   int
 	leftPanelWidthPercent  int
 	rightPanelWidthPercent int
@@ -921,6 +923,9 @@ func (a *App) namespaceClusterFactory() models.NamespaceClusterFactory {
 func (a *App) navigatorPath(nav *navui.Navigator) string {
 	if nav == nil {
 		return "/"
+	}
+	if dp, ok := nav.Current().(interface{ DisplayPath() string }); ok {
+		return dp.DisplayPath()
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
@@ -2770,6 +2775,12 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 	}
 	if _, isBack := item.(models.Back); isBack {
 		return nil
+	}
+	if cmd, ok := a.startTransfer(panel); ok {
+		return cmd
+	}
+	if _, ok := item.(*models.PodFSDirItem); ok {
+		return a.ShowToast("To copy a directory, open a local directory in the other panel with M-l", 4*time.Second)
 	}
 
 	if logs, ok := item.(models.LogsProvider); ok {

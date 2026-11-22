@@ -690,6 +690,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.showConfirm(msg.Action)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
+		return a, a.handleTransferMsg(msg)
 	case startupSelectMsg:
 		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
 	case contextSwitchedMsg:
@@ -952,6 +954,10 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
+		// The copy dialog drives itself; a swallowed tick would freeze its
+		// progress and a swallowed result would leave it open for good.
 		return true
 	}
 	return false

@@ -18,6 +18,7 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
 - **Container internals:** each pod container exposes `/logs` plus a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
 - **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker.
+- **Copy from containers:** `M-l` opens a local directory in the active panel (the directory of the last copy, or the working directory; `Back` walks up the tree and, from `/`, returns to the cluster). With a container's `/root` folder in one panel and a local directory in the other, `F5` copies the marked files and directories (or the one under the cursor) into the local directory, recursively. The dialog names the pod, container, source and destination first; when entries exist already, you choose between skipping them and overwriting (files are replaced, directories merged). The copy runs in the background with a file and byte count; `Esc` or `C-c` cancels it. At the end the dialog lists each entry as copied, skipped, failed or canceled. kc streams `tar` from the container like `kubectl cp`, and reads file by file through the filesystem session when the image has no `tar` or the files are read through the debug helper (which it never adds without asking). A directory is assembled in a hidden `.<name>.kc-partial-*` directory and moved into place only when complete, so a failed or canceled entry leaves nothing behind. Names that would leave the destination (`..`, absolute paths) are refused; symbolic links, devices and pipes are listed as left out, not copied. Copies get the owner permission bits of the source only (a 0644 file becomes 0600, 0755 becomes 0700); directories are 0700. Copying into a container is not supported yet.
 - **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
 
 ## Getting Started
@@ -69,7 +70,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F2`       | Options – context-aware panel options or viewer theme dialog.                   |
 | `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, etc. Closes the viewer again. |
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
-| `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
+| `F5`       | Copy – download the current YAML/log/file to the local filesystem. From a container folder to a local panel (`M-l`), copy the marked files and directories. |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
 | `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
 | `F9`       | Menu – Open custom commands menu.                                               |
@@ -78,6 +79,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `C-o`      | Toggle the integrated terminal.                                                 |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
 | `M-a`      | In viewers: copy the whole content.                                             |
+| `M-l`      | Open a local directory in the active panel, or leave it again. `Esc l` does the same. |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `C-c`      | Quit.                                                                           |
 

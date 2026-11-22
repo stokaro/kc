@@ -95,6 +95,10 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 				caps.CanView = true
 				caps.CanCopy = true
 			}
+			if _, ok := item.(models.FSEntryItem); ok {
+				// Directories copy too, to a local panel.
+				caps.CanCopy = true
+			}
 			if obj, ok := item.(models.ObjectItem); ok {
 				if env.AllowEditObjects && obj.SupportsVerb("update") {
 					caps.CanEdit = true
