@@ -96,14 +96,43 @@ jobs:
       contents: write
       id-token: write
     steps:
+      # The cask is pushed to stokaro/homebrew-kc as the organization's
+      # ptah-publish GitHub App (contents: write), the same app ptah uses for
+      # its tap. Its ID and key are the organization variable PUBLISH_APP_ID
+      # and secret PUBLISH_APP_KEY, which must be shared with this repository.
+      # The token is limited to the tap and lives an hour; this job is capped
+      # at 40 minutes. Minting it first means a broken key fails before
+      # anything is published.
+      - name: Mint a GitHub App token for the tap
+        id: app-token
+        if: vars.PUBLISH_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.PUBLISH_APP_ID }}
+          private-key: ${{ secrets.PUBLISH_APP_KEY }}
+          owner: stokaro
+          repositories: homebrew-kc
+
       # GoReleaser reaches the tap only after the GitHub Release is published.
-      # Without the token the release would end half done, so stop here first.
-      - name: The Homebrew tap token must be present
+      # Without a credential the release would end half done, so stop here
+      # first. A HOMEBREW_TAP_GITHUB_TOKEN secret is the fallback when the app
+      # is not configured.
+      - name: The Homebrew tap credential must be present
+        id: tap-token
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          PAT: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
-          if [ -z "$TAP_TOKEN" ]; then
-            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is not set. The cask would not reach stokaro/homebrew-kc. See docs/RELEASING.md."
+          set -eu
+          if [ -n "$APP_TOKEN" ]; then
+            echo "value=$APP_TOKEN" >> "$GITHUB_OUTPUT"
+            echo "the cask is written as the GitHub App"
+          elif [ -n "$PAT" ]; then
+            echo "::add-mask::$PAT"
+            echo "value=$PAT" >> "$GITHUB_OUTPUT"
+            echo "the cask is written with HOMEBREW_TAP_GITHUB_TOKEN"
+          else
+            echo "::error::no tap credential: share the organization variable PUBLISH_APP_ID and secret PUBLISH_APP_KEY with stokaro/kc, or set HOMEBREW_TAP_GITHUB_TOKEN. See docs/RELEASING.md."
             exit 1
           fi
 
@@ -125,7 +154,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.value }}
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
