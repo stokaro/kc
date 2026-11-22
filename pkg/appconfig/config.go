@@ -158,15 +158,16 @@ type ResourcesViewConfig struct {
 }
 
 type Config struct {
-	Viewer     ViewerConfig        `json:"viewer"`
-	Panel      PanelConfig         `json:"panel"`
-	Input      InputConfig         `json:"input"`
-	Kubernetes KubernetesConfig    `json:"kubernetes"`
-	Resources  ResourcesViewConfig `json:"resources"`
-	Objects    ObjectsConfig       `json:"objects"`
-	Terminal   TerminalConfig      `json:"terminal"`
-	NodeShell  NodeShellConfig     `json:"nodeShell"`
-	Commands   []CommandConfig     `json:"commands"`
+	Viewer      ViewerConfig        `json:"viewer"`
+	Panel       PanelConfig         `json:"panel"`
+	Input       InputConfig         `json:"input"`
+	Kubernetes  KubernetesConfig    `json:"kubernetes"`
+	Resources   ResourcesViewConfig `json:"resources"`
+	Objects     ObjectsConfig       `json:"objects"`
+	Terminal    TerminalConfig      `json:"terminal"`
+	NodeShell   NodeShellConfig     `json:"nodeShell"`
+	PortForward PortForwardConfig   `json:"portForward"`
+	Commands    []CommandConfig     `json:"commands"`
 	// Contexts color panels per kubeconfig context; the first matching
 	// entry wins.
 	Contexts []ContextColorConfig `json:"contexts"`
@@ -226,6 +227,16 @@ func normalizeNodeShell(c *NodeShellConfig) {
 		c.MaxDuration = metav1.Duration{Duration: DefaultNodeShellMaxDuration}
 	}
 }
+
+// PortForwardConfig controls port forwards started from kc.
+type PortForwardConfig struct {
+	// Address is the local address forwards listen on: an IP address or
+	// "localhost" (both loopback addresses, as kubectl does).
+	Address string `json:"address"`
+}
+
+// DefaultPortForwardAddress keeps forwards reachable from this machine only.
+const DefaultPortForwardAddress = "127.0.0.1"
 
 type CommandType string
 
@@ -343,6 +354,7 @@ func Default() *Config {
 			Namespace:   DefaultNodeShellNamespace,
 			MaxDuration: metav1.Duration{Duration: DefaultNodeShellMaxDuration},
 		},
+		PortForward: PortForwardConfig{Address: DefaultPortForwardAddress},
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
@@ -440,6 +452,10 @@ func normalizeLoaded(cfg *Config) {
 		cfg.Objects.Columns = ColumnsModeNormal
 	}
 	normalizeNodeShell(&cfg.NodeShell)
+	cfg.PortForward.Address = strings.TrimSpace(cfg.PortForward.Address)
+	if cfg.PortForward.Address == "" {
+		cfg.PortForward.Address = DefaultPortForwardAddress
+	}
 
 	// Normalize commands
 	for i := range cfg.Commands {

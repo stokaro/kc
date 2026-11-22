@@ -63,6 +63,12 @@ nodeShell:
   # activeDeadlineSeconds of the pod: it stops after this time even in use.
   maxDuration: 8h
 
+portForward:
+  # Local address port forwards listen on (M-p). 127.0.0.1 keeps them
+  # reachable from this machine only; "localhost" listens on both loopback
+  # addresses like kubectl; 0.0.0.0 exposes them to the network.
+  address: 127.0.0.1
+
 commands:
   - name: Top Nodes
     command: kubectl top nodes

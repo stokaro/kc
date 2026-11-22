@@ -730,6 +730,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleKeyMsg(msg, cmds)
 	case models.ConfirmRequest:
 		return a, a.showConfirm(msg.Action)
+	case portForwardPlanMsg, portForwardInputMsg, portForwardStartedMsg:
+		return a, a.handlePortForwardMsg(msg)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
 	case models.NodeShellRequest:
@@ -1014,6 +1016,10 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case portForwardPlanMsg, portForwardInputMsg, portForwardStartedMsg:
+		// The dialog answers itself; a forward that finished starting
+		// reports even when another dialog opened meanwhile.
 		return true
 	case configSavedMsg:
 		// C-s keeps the options dialog open; its result must still show.

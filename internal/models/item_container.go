@@ -24,6 +24,13 @@ type ContainerItem struct {
 	*RowItem
 	enter  func() (Folder, error)
 	viewFn ViewContentFunc
+	// namespace and pod name the pod of the container; empty when unknown.
+	namespace, pod string
+}
+
+// SetPod records the pod the container belongs to.
+func (c *ContainerItem) SetPod(namespace, pod string) {
+	c.namespace, c.pod = namespace, pod
 }
 
 func NewContainerItem(id string, cells []string, path []string, style *lipgloss.Style, view ViewContentFunc, enter func() (Folder, error)) *ContainerItem {

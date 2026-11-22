@@ -99,6 +99,9 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 				caps.CanView = true
 				caps.CanCopy = true
 			}
+			if _, ok := item.(models.Stoppable); ok {
+				caps.CanDelete = true
+			}
 			if obj, ok := item.(models.ObjectItem); ok {
 				if env.AllowEditObjects && obj.SupportsVerb("update") {
 					caps.CanEdit = true

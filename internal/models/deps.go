@@ -7,6 +7,7 @@ import (
 
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/podfs"
+	"github.com/sttts/kc/internal/portforward"
 	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -50,6 +51,9 @@ type Deps struct {
 	ReportError func(error)
 	// Activity pauses background count refreshes; nil never pauses.
 	Activity *Activity
+	// PortForwards holds the port forwards of this kc process; nil
+	// disables port forwarding.
+	PortForwards *portforward.Registry
 	// Usage adds CPU and memory columns to pod and node lists; nil adds none.
 	Usage *UsageMetrics
 }

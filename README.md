@@ -72,12 +72,13 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
-| `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. |
+| `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. In `/port-forwards` it stops the selected forward. |
 | `F9`       | Menu – Built-in object actions and custom commands.                             |
 | `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
+| `M-p`      | Port forward the selected pod, container or service (see below). `Esc p` does the same. |
 | `C-\`      | Hotlist, as in mc: saved panel locations with their context and namespace. `Enter` goes to the highlighted entry, `Ins` adds the active panel's location, `Del` (or `F8`) removes the entry. Typing filters the list. Saved in `~/.kc/hotlist.yaml`. |
 | `M-y`      | Go back in the active panel's history of visited locations (`Esc y` does the same). |
 | `M-u`      | Go forward in that history (`Esc u`).                                           |
@@ -93,6 +94,12 @@ Viewers show the kubectl command that prints the same content on their last line
 Each panel keeps its own history of the last 50 locations. A location is the context, the panel's namespace scope and the rows entered from the panel root, so going back can switch the namespace scope or, for an entry from another context, the context; a context switch puts the other panel at its root, as the context picker does. When a list is still loading, kc waits up to ten seconds for the row it needs.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
+
+## Port Forwarding
+
+`M-p` (or `Esc p`) on a pod, a container of a pod, or a service opens a dialog with one field, `local:remote`, prefilled with the first declared TCP port. It takes kubectl's syntax: `8080:80`, `8080` (same port on both sides), `:80` (any free local port), and port names such as `8080:http`. The dialog lists the declared ports and shows the equivalent `kubectl port-forward` command. For a service, kc picks a running pod behind it (ready pods first) and maps the service port to its target port, as kubectl does; the forward stays on that pod.
+
+kc forwards in-process (client-go, websocket with SPDY fallback) and listens on `127.0.0.1` unless `portForward.address` says otherwise. While forwards run, the panel root shows `/port-forwards` with their count. It lists every forward of this kc process across contexts: `F3` shows its details and kubectl command, `F8` stops it. Forwards keep running when you switch context or namespace, end with a red message when the pod goes away, and all stop when kc exits.
 
 ## Context and Namespace
 
@@ -183,6 +190,7 @@ A command acts on the marked rows when any are marked, otherwise on the highligh
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 - `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
 - `panel.skin`, `contexts` – panel colors and per-context frame colors (see [Panel colors](#panel-colors)).
+- `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -272,6 +280,12 @@ nodeShell:
   namespace: default
   # activeDeadlineSeconds of the pod: it stops after this time even in use.
   maxDuration: 8h
+
+portForward:
+  # Local address port forwards listen on (M-p). 127.0.0.1 keeps them
+  # reachable from this machine only; "localhost" listens on both loopback
+  # addresses like kubectl; 0.0.0.0 exposes them to the network.
+  address: 127.0.0.1
 ```
 
 ### Panel colors
