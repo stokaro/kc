@@ -91,7 +91,7 @@ func TestCommandHotkeyConfirmsWithRenderedCommand(t *testing.T) {
 	})
 	pressHotkeyApp(t, app, tea.Key{Code: '1', Mod: tea.ModAlt})
 	view := modalText(t, app, commandConfirmModal)
-	for _, want := range []string{"Drain everything?", "echo drain-all-nodes", "[ Run ]", "[ Cancel ]"} {
+	for _, want := range []string{"Drain everything?", "echo drain-all-nodes", "[ Run ] [< Cancel >]"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("confirmation lacks %q:\n%s", want, view)
 		}
@@ -132,7 +132,7 @@ func TestCommandPromptsBindIntoConfirmationAndRun(t *testing.T) {
 	}
 	pressHotkeyApp(t, app, tea.Key{Code: '1', Text: "1"})
 	view := modalText(t, app, commandPromptModal)
-	for _, want := range []string{"Replicas:", "mode:", "< safe >", "[ OK ]"} {
+	for _, want := range []string{"Replicas:", "mode:", "< safe >", "[< OK >] [ Cancel ]"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("prompt dialog lacks %q:\n%s", want, view)
 		}

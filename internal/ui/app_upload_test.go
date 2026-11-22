@@ -79,15 +79,11 @@ func TestUploadDialogConfirmsInRedAndCopies(t *testing.T) {
 	if modal := a.modalManager.modals[transferModalKey]; modal == nil || !modal.danger {
 		t.Fatalf("an upload must ask in a red dialog")
 	}
-	labels := model.labels()
-	if got := strings.Join(labels, ","); got != "Skip existing,Overwrite,Cancel" {
-		t.Fatalf("labels = %s", got)
-	}
-	if labels[model.focus] != "Cancel" {
-		t.Fatalf("focus on %q, want Cancel so Enter alone writes nothing", labels[model.focus])
+	if got := model.form.FocusedButton(); got != transferCancel {
+		t.Fatalf("focus on %q, want Cancel so Enter alone writes nothing", got)
 	}
 	body := strings.Join(model.lines(), "\n")
-	for _, want := range []string{"Copy into the container?", "Same as:", "kubectl cp "} {
+	for _, want := range []string{"Copy into the container?", "Same as:", "kubectl cp ", "1 of the entries exist", "[ ] Overwrite existing entries", "[ OK ] [< Cancel >]"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("dialog lacks %q:\n%s", want, body)
 		}

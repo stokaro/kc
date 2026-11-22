@@ -2,20 +2,27 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
+	textinput "charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/filexfer"
 	"github.com/stokaro/kc/internal/models"
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/stokaro/kc/internal/ui/dialog"
 )
 
 // transferChoiceMsg answers the copy dialog: start with policy, or not.
+// dest is the local target directory of a copy from a container, as the
+// user left it in the "to:" line; it is empty for a copy into one.
 type transferChoiceMsg struct {
 	ok     bool
 	policy filexfer.Policy
+	dest   string
 }
 
 // transferCancelMsg asks the running copy to stop.
@@ -36,14 +43,29 @@ const (
 // scroll the rest.
 const transferMaxResultRows = 12
 
-// TransferModel is the copy dialog. It shows where the files come from and
-// where they go, then the progress, then one line per copied entry.
+// Button IDs of the copy dialog.
+const (
+	transferOK     = "ok"
+	transferCancel = "cancel"
+)
+
+// TransferModel is the copy dialog, laid out like mc's Copy dialog: what
+// is copied, the "to:" target, the overwrite option and the buttons. Then
+// it shows the progress, then one line per copied entry.
 type TransferModel struct {
-	phase     transferPhase
-	details   [][2]string
-	conflicts int
+	phase   transferPhase
+	details [][2]string
+	// dest is the "to:" line of a copy from a container; conflictsAt
+	// counts the entries that exist in a directory, to keep the note
+	// under it current while the user edits it.
+	dest        textinput.Model
+	conflictsAt func(dir string) int
+	conflicts   int
+	overwrite   bool
+	errMsg      string
 	// upload marks a copy into a container: a red dialog with Cancel
-	// focused, the kubectl cp equivalent, and target for the refusal check.
+	// as the default button, the kubectl cp equivalent, and target for
+	// the refusal check. Its target directory is fixed.
 	upload   bool
 	commands []string
 	target   models.ContainerFSSource
@@ -55,64 +77,95 @@ type TransferModel struct {
 	scroll    int
 
 	width, height int
-	focus         int
-	buttons       []buttonRect
+	form          dialog.Form
+	rules         []int
 }
 
-// NewTransferModel builds the dialog for a copy of details, where conflicts
-// entries exist at the destination already.
-func NewTransferModel(details [][2]string, conflicts int) *TransferModel {
-	return &TransferModel{details: details, conflicts: conflicts}
+// NewTransferModel builds the dialog for a copy of details into the local
+// directory dest. conflictsAt, when set, counts the entries that already
+// exist in a directory.
+func NewTransferModel(details [][2]string, dest string, conflictsAt func(string) int) *TransferModel {
+	skin := dialog.Normal()
+	m := &TransferModel{details: details, conflictsAt: conflictsAt, form: dialog.Form{Skin: skin}}
+	m.dest = dialog.NewInput(skin, dest)
+	m.recount()
+	m.syncItems()
+	m.form.FocusFirst()
+	return m
 }
 
 // NewUploadModel builds the dialog for a copy into the container dest.
-// commands are the equivalent kubectl cp lines. Cancel has the focus, so
-// Enter alone never writes into the container.
+// commands are the equivalent kubectl cp lines. Cancel is the default
+// button and has the focus, so Enter alone never writes into the container.
 func NewUploadModel(details [][2]string, conflicts int, commands []string, dest models.ContainerFSSource) *TransferModel {
-	m := &TransferModel{details: details, conflicts: conflicts, upload: true, commands: commands, target: dest}
-	m.focus = len(m.labels()) - 1
+	m := &TransferModel{
+		details: details, conflicts: conflicts, upload: true, commands: commands, target: dest,
+		form: dialog.Form{Skin: dialog.Danger(), AltOnly: true},
+	}
+	m.syncItems()
+	m.form.FocusButton(transferCancel)
 	return m
 }
 
 func (m *TransferModel) Init() tea.Cmd          { return nil }
 func (m *TransferModel) SetDimensions(w, h int) { m.width, m.height = w, h }
 
+// RuleRows implements ModalRules.
+func (m *TransferModel) RuleRows() []int { return m.rules }
+
 // start switches the dialog to the progress view.
 func (m *TransferModel) start(progress func() filexfer.Progress) {
-	m.phase, m.progress, m.focus = transferPhaseRunning, progress, 0
+	m.phase, m.progress = transferPhaseRunning, progress
+	m.dest.Blur()
+	m.syncItems()
+	m.form.FocusFirst()
 }
 
 // finish switches the dialog to the result view.
 func (m *TransferModel) finish(results []filexfer.Result, err error) {
-	m.phase, m.results, m.runErr, m.focus, m.scroll = transferPhaseDone, results, err, 0, 0
+	m.phase, m.results, m.runErr, m.scroll = transferPhaseDone, results, err, 0
+	m.syncItems()
+	m.form.FocusFirst()
 }
 
-func (m *TransferModel) labels() []string {
-	switch m.phase {
-	case transferPhaseConfirm:
-		if m.conflicts > 0 {
-			return []string{"Skip existing", "Overwrite", "Cancel"}
-		}
-		return []string{"Copy", "Cancel"}
-	case transferPhaseRunning:
-		return []string{"Cancel"}
-	default:
-		return []string{"OK"}
+func (m *TransferModel) recount() {
+	if m.conflictsAt != nil {
+		m.conflicts = m.conflictsAt(m.destDir())
 	}
 }
 
-// press runs the button at index i.
-func (m *TransferModel) press(i int) tea.Cmd {
+// destDir is the "to:" line as an absolute directory.
+func (m *TransferModel) destDir() string {
+	dir := expandedPath(m.dest.Value())
+	if abs, err := filepath.Abs(dir); err == nil && dir != "" {
+		return abs
+	}
+	return dir
+}
+
+func (m *TransferModel) policy() filexfer.Policy {
+	if m.overwrite {
+		return filexfer.Overwrite
+	}
+	return filexfer.SkipExisting
+}
+
+// press runs the button id.
+func (m *TransferModel) press(id string) tea.Cmd {
 	switch m.phase {
 	case transferPhaseConfirm:
-		labels := m.labels()
-		switch labels[i] {
-		case "Skip existing", "Copy":
-			return transferMsg(transferChoiceMsg{ok: true, policy: filexfer.SkipExisting})
-		case "Overwrite":
-			return transferMsg(transferChoiceMsg{ok: true, policy: filexfer.Overwrite})
+		if id != transferOK {
+			return transferMsg(transferChoiceMsg{ok: false})
 		}
-		return transferMsg(transferChoiceMsg{ok: false})
+		if m.upload {
+			return transferMsg(transferChoiceMsg{ok: true, policy: m.policy()})
+		}
+		dir := m.destDir()
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			m.errMsg = "Not a local directory: " + dir
+			return nil
+		}
+		return transferMsg(transferChoiceMsg{ok: true, policy: m.policy(), dest: dir})
 	case transferPhaseRunning:
 		return m.cancel()
 	default:
@@ -147,36 +200,36 @@ func (m *TransferModel) escape() tea.Cmd {
 func (m *TransferModel) HandleModalEscape(tea.KeyMsg) (bool, tea.Cmd) { return true, m.escape() }
 
 func (m *TransferModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		n := len(m.labels())
-		switch msg.String() {
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		switch key.String() {
 		case "ctrl+c", "ctrl+g":
 			return m, m.escape()
-		case "tab", "right":
-			m.focus = (m.focus + 1) % n
-		case "shift+tab", "left":
-			m.focus = (m.focus + n - 1) % n
-		case "up":
-			if m.scroll > 0 {
-				m.scroll--
-			}
-		case "down":
-			if m.scroll < len(m.results)-transferMaxResultRows {
-				m.scroll++
-			}
-		case "enter":
-			return m, m.press(min(m.focus, n-1))
-		}
-	case tea.MouseReleaseMsg:
-		mouse := msg.Mouse()
-		for i, r := range m.buttons {
-			if mouse.Button == tea.MouseLeft && r.contains(mouse.X, mouse.Y) {
-				return m, m.press(i)
+		case "up", "down":
+			if m.phase == transferPhaseDone {
+				m.scrollResults(key.String() == "down")
+				return m, nil
 			}
 		}
 	}
-	return m, nil
+	m.syncItems()
+	ev, cmd := m.form.Update(msg)
+	if ev.Edited {
+		m.errMsg = ""
+		m.recount()
+	}
+	if ev.Pressed != "" {
+		return m, m.press(ev.Pressed)
+	}
+	return m, cmd
+}
+
+func (m *TransferModel) scrollResults(down bool) {
+	if down && m.scroll < len(resultLines(m.results))-transferMaxResultRows {
+		m.scroll++
+	}
+	if !down && m.scroll > 0 {
+		m.scroll--
+	}
 }
 
 func (m *TransferModel) title() string {
@@ -198,26 +251,18 @@ func (m *TransferModel) title() string {
 	return "Copy finished: " + summarizeResults(m.results)
 }
 
-// lines renders the body without the buttons.
-func (m *TransferModel) lines() []string {
-	out := []string{" " + m.title(), ""}
-	out = append(out, detailLines(m.details)...)
+// syncItems rebuilds the form for the current phase.
+func (m *TransferModel) syncItems() {
+	items := []dialog.Item{dialog.Text{Text: m.title(), Bold: true}, dialog.Text{}}
+	text := func(lines ...string) {
+		for _, l := range lines {
+			items = append(items, dialog.Text{Text: l})
+		}
+	}
+	text(detailLines(m.details)...)
 	switch m.phase {
 	case transferPhaseConfirm:
-		if m.conflicts > 0 {
-			out = append(out, "", fmt.Sprintf(" %d of the entries exist in the destination.", m.conflicts),
-				" Overwrite replaces files and merges directories.")
-		}
-		if m.upload {
-			out = append(out, "", " Writes into the container. Symbolic links and special",
-				" files are left out.")
-			if len(m.commands) > 0 {
-				out = append(out, "", " Same as:")
-				for _, c := range m.commands {
-					out = append(out, " "+c)
-				}
-			}
-		}
+		items = m.confirmItems(items)
 	case transferPhaseRunning:
 		var p filexfer.Progress
 		if m.progress != nil {
@@ -227,26 +272,80 @@ func (m *TransferModel) lines() []string {
 		if p.Total > 0 {
 			current = fmt.Sprintf("%s (%d of %d)", p.Current, p.Index, p.Total)
 		}
-		out = append(out, "")
-		out = append(out, detailLines([][2]string{
+		text("")
+		text(detailLines([][2]string{
 			{"Entry", current},
 			{"Files", fmt.Sprintf("%d", p.Files)},
 			{"Bytes", formatTransferBytes(p.Bytes)},
 		})...)
-		out = append(out, "", " Esc or C-c cancels; nothing of the current entry is kept.")
+		text("", "Esc or C-c cancels; nothing of the current entry is kept.")
+		items = append(items, dialog.Rule{}, dialog.Buttons{{ID: transferCancel, Label: "&Cancel", Default: true}})
 	case transferPhaseDone:
-		out = append(out, "")
+		text("")
 		if m.runErr != nil {
-			out = append(out, " "+m.runErr.Error())
+			items = append(items, dialog.Text{Text: m.runErr.Error(), Error: true})
 		}
 		rows := resultLines(m.results)
 		end := min(len(rows), m.scroll+transferMaxResultRows)
-		out = append(out, rows[min(m.scroll, end):end]...)
+		text(rows[min(m.scroll, end):end]...)
 		if len(rows) > transferMaxResultRows {
-			out = append(out, fmt.Sprintf(" (%d-%d of %d, up/down scroll)", m.scroll+1, end, len(rows)))
+			text(fmt.Sprintf("(%d-%d of %d, up/down scroll)", m.scroll+1, end, len(rows)))
+		}
+		items = append(items, dialog.Rule{}, dialog.Buttons{{ID: transferOK, Label: "&OK", Default: true}})
+	}
+	m.form.Items = items
+}
+
+func (m *TransferModel) confirmItems(items []dialog.Item) []dialog.Item {
+	text := func(lines ...string) {
+		for _, l := range lines {
+			items = append(items, dialog.Text{Text: l})
 		}
 	}
-	return append(out, "")
+	note := ""
+	if m.conflicts > 0 {
+		note = fmt.Sprintf("%d of the entries exist in the destination.", m.conflicts)
+	}
+	if m.upload {
+		text("", "Writes into the container. Symbolic links and special",
+			"files are left out.")
+		if len(m.commands) > 0 {
+			text("", "Same as:")
+			text(m.commands...)
+		}
+		if note != "" {
+			// The target is fixed, so the option only shows when it matters.
+			text("", note)
+			items = append(items, dialog.Rule{},
+				dialog.Check{ID: "overwrite", Label: "Over&write existing entries", On: &m.overwrite})
+		}
+		return append(items, dialog.Rule{}, dialog.Buttons{
+			{ID: transferOK, Label: "&OK"},
+			{ID: transferCancel, Label: "&Cancel", Default: true},
+		})
+	}
+	text("to:")
+	items = append(items, dialog.Input{Model: &m.dest})
+	if m.errMsg != "" {
+		items = append(items, dialog.Text{Text: m.errMsg, Error: true})
+	} else {
+		text(note)
+	}
+	return append(items,
+		dialog.Rule{},
+		dialog.Check{ID: "overwrite", Label: "Over&write existing entries", On: &m.overwrite},
+		dialog.Rule{},
+		dialog.Buttons{
+			{ID: transferOK, Label: "&OK", Default: true},
+			{ID: transferCancel, Label: "&Cancel"},
+		})
+}
+
+// lines is the dialog's text, for tests and the size.
+func (m *TransferModel) lines() []string {
+	m.syncItems()
+	content, _, _ := m.form.View(max(m.width, 40))
+	return strings.Split(ansi.Strip(content), "\n")
 }
 
 func detailLines(details [][2]string) []string {
@@ -256,7 +355,7 @@ func detailLines(details [][2]string) []string {
 	}
 	out := make([]string, 0, len(details))
 	for _, d := range details {
-		out = append(out, " "+d[0]+":"+strings.Repeat(" ", labelW-len(d[0])+2)+d[1])
+		out = append(out, d[0]+":"+strings.Repeat(" ", labelW-len(d[0])+2)+d[1])
 	}
 	return out
 }
@@ -276,9 +375,9 @@ func resultLines(results []filexfer.Result) []string {
 				detail += fmt.Sprintf(", %d left out", len(r.Notes))
 			}
 		}
-		out = append(out, fmt.Sprintf(" %-8s %s  %s", r.Status, r.Name+strings.Repeat(" ", nameW-lipgloss.Width(r.Name)), detail))
+		out = append(out, fmt.Sprintf("%-8s %s  %s", r.Status, r.Name+strings.Repeat(" ", nameW-lipgloss.Width(r.Name)), detail))
 		for _, n := range r.Notes {
-			out = append(out, "          "+n)
+			out = append(out, "         "+n)
 		}
 	}
 	return out
@@ -317,59 +416,13 @@ func formatTransferBytes(n int64) string {
 
 // size is the content size the dialog needs.
 func (m *TransferModel) size() (width, height int) {
-	w := 0
-	for _, l := range m.lines() {
-		w = max(w, lipgloss.Width(l)+1)
-	}
-	return max(w, 44), len(m.lines()) + 1
+	m.syncItems()
+	return max(m.form.Width(lipgloss.Width(m.dest.Value())+4), 50), m.form.Height()
 }
 
 func (m *TransferModel) View() tea.View {
-	bg := lipgloss.Color(uistyles.ColorModalBg)
-	fg := lipgloss.Color(uistyles.ColorModalFg)
-	selBg := lipgloss.Color(uistyles.ColorModalButtonSelBg)
-	selFg := fg
-	if m.upload {
-		bg, fg = lipgloss.Color(uistyles.ColorDangerBg), lipgloss.Color(uistyles.ColorDangerFg)
-		selBg, selFg = fg, lipgloss.Color(uistyles.ColorBlack)
-	}
-	row := lipgloss.NewStyle().Background(bg).Foreground(fg).Width(m.width)
-	var out []string
-	for i, l := range m.lines() {
-		style := row
-		if i == 0 {
-			style = style.Bold(true)
-		}
-		out = append(out, style.Render(truncateStringToWidth(l, m.width)))
-	}
-	labels := m.labels()
-	normal := lipgloss.NewStyle().Background(bg).Foreground(fg)
-	focused := lipgloss.NewStyle().Background(selBg).Foreground(selFg).Bold(true)
-	rendered := make([]string, len(labels))
-	total := 0
-	for i, l := range labels {
-		rendered[i] = "[ " + l + " ]"
-		total += lipgloss.Width(rendered[i])
-	}
-	total += 2 * (len(labels) - 1)
-	x := max(0, (m.width-total)/2)
-	y := len(out)
-	m.buttons = make([]buttonRect, len(labels))
-	var b strings.Builder
-	b.WriteString(normal.Render(strings.Repeat(" ", x)))
-	for i, l := range rendered {
-		style := normal
-		if i == m.focus {
-			style = focused
-		}
-		m.buttons[i] = buttonRect{x: x, y: y, w: lipgloss.Width(l), h: 1}
-		b.WriteString(style.Render(l))
-		x += lipgloss.Width(l)
-		if i < len(rendered)-1 {
-			b.WriteString(normal.Render("  "))
-			x += 2
-		}
-	}
-	out = append(out, row.Render(b.String()))
-	return tea.NewView(strings.Join(out, "\n"))
+	m.syncItems()
+	content, cursor, rules := m.form.View(max(m.width, 1))
+	m.rules = rules
+	return viewWithCursor(content, cursor)
 }

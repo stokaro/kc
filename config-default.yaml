@@ -21,6 +21,10 @@ viewer:
     # Log streams a merged logs viewer (all pods of a workload, all
     # containers of a pod) runs at once; more wait for a free slot.
     maxRequests: 50
+    # Lines one logs viewer or Logs panel keeps, and their estimated memory
+    # in MiB; older lines are dropped and the footer counts them.
+    maxLines: 100000
+    maxMemoryMiB: 64
 
 panel:
   scrolling:

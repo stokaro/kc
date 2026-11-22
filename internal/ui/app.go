@@ -310,6 +310,9 @@ type App struct {
 	// call; cd - goes there.
 	prevLocation [2]*PanelPath
 	explainDocs  *explain.Loader // OpenAPI v3 documents for M-e, per cluster and group-version
+	// relatedCancel cancels the owners, used-by or requires lookup in
+	// flight; a new lookup replaces it. See app_related.go.
+	relatedCancel context.CancelFunc
 
 	// interrupts is held while kubectl owns the terminal, so the SIGINT
 	// of its C-c does not quit kc; see interrupt_gate.go.
@@ -1060,7 +1063,7 @@ func (a *App) setupModals() {
 
 	// Copy-to-local modal
 	copyModel := NewCopyToLocalModel()
-	copyModal := NewModal("Copy to Local File", copyModel)
+	copyModal := NewModal("Copy", copyModel)
 	copyModal.SetCloseOnSingleEsc(true)
 	a.modalManager.Register("copy_local", copyModal)
 	a.copyInput = copyModel
@@ -2100,6 +2103,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	}
 	title := fmt.Sprintf("logs:%s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
 	logsViewer := NewLogsViewer(title, spec, open, a.viewerTheme())
+	logsViewer.SetLimits(a.logLimits())
 	if lc, ok := item.(models.LogsCommander); ok {
 		logsViewer.SetCommandBuilder(lc.LogsCommand)
 	} else {
@@ -2820,7 +2824,7 @@ func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
 	if modal == nil {
 		return nil
 	}
-	dir := a.defaultCopyDir()
+	dir := a.copyDialogDir()
 	target := filepath.Join(dir, req.filename)
 	a.copyInput.Configure(req.subject, target)
 	a.configureModalWindow(modal, a.copyInput, -1, "", 0, 0)
