@@ -27,6 +27,7 @@ type overviewNodeSummary struct {
 type overviewPodUsage struct {
 	namespace, name, node string
 	cpu, mem              int64
+	owners                []InfoWorkload // the controller chain, nearest first
 }
 
 // summarizeNodes returns the load of every node, or nil when nodes or pods
@@ -59,8 +60,8 @@ func summarizeNodes(rc *ruleContext) []overviewNodeSummary {
 }
 
 // summarizePods returns the measured usage of the pods in scope that have
-// not terminated, the most memory first.
-func summarizePods(rc *ruleContext) []overviewPodUsage {
+// not terminated, the most memory first. byPod holds each pod's workloads.
+func summarizePods(rc *ruleContext, byPod map[string][]InfoWorkload) []overviewPodUsage {
 	if rc.m.pods == nil {
 		return nil
 	}
@@ -73,7 +74,7 @@ func summarizePods(rc *ruleContext) []overviewPodUsage {
 		if !ok {
 			return
 		}
-		u := overviewPodUsage{namespace: p.Namespace, name: p.Name, node: p.Spec.NodeName}
+		u := overviewPodUsage{namespace: p.Namespace, name: p.Name, node: p.Spec.NodeName, owners: byPod[usageObjectKey(p.Namespace, p.Name)]}
 		for _, c := range used {
 			u.cpu += c.cpu
 			u.mem += c.mem
@@ -121,6 +122,8 @@ type InfoSummary struct {
 	Err string
 	// Node is the node the summary is about; empty for the whole scope.
 	Node string
+	// Workload is the workload the summary is about, if any.
+	Workload *InfoWorkload
 	// UsageAt is when CPU and memory usage were measured; zero when not.
 	UsageAt time.Time
 	Bars    []InfoBar
@@ -149,11 +152,21 @@ func NewOverviewInfo(deps Deps, namespace string) *OverviewInfo {
 // Close stops the engine.
 func (o *OverviewInfo) Close() { o.engine.close() }
 
-// Summary returns the bars and top consumers of the whole scope, or of node
-// when it is not empty. It counts as a read of the engine and does no I/O.
-func (o *OverviewInfo) Summary(node string) InfoSummary {
+// InfoFocus narrows the Info summary: to one workload, else to one node,
+// else the whole scope.
+type InfoFocus struct {
+	Node     string
+	Workload *InfoWorkload
+}
+
+// Summary returns the bars and top consumers of what focus names. It counts
+// as a read of the engine and does no I/O.
+func (o *OverviewInfo) Summary(focus InfoFocus) InfoSummary {
 	report, err := o.engine.snapshot()
-	return infoSummary(report, err, o.engine.cfg, node)
+	if focus.Workload != nil {
+		return workloadInfoSummary(report, err, o.engine.cfg, *focus.Workload)
+	}
+	return infoSummary(report, err, o.engine.cfg, focus.Node)
 }
 
 func infoSummary(report *overviewReport, err error, cfgIn appconfig.OverviewConfig, node string) InfoSummary {

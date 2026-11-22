@@ -18,7 +18,7 @@ func (a *App) newPanelInfoWidget(p *Panel) PanelWidget {
 
 // infoTarget is what the Info mode of panel shows: the namespace scope of
 // the other panel (the namespace of the list it shows, as M-i uses), and
-// the node under its cursor when it is on a node. It runs on the UI
+// the node or workload under its cursor when it is on one. It runs on the UI
 // goroutine and does no I/O; the engine behind Open starts on first read.
 func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 	idx, ok := a.panelIndexFor(panel)
@@ -38,8 +38,13 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 	}
 	if op := a.panelByIndex(other); op != nil {
 		if item, ok := op.SelectedNavItem(ctx); ok {
-			if obj, ok := item.(models.ObjectItem); ok && obj.GVR() == infoNodesGVR {
-				t.Node = obj.Name()
+			if obj, ok := item.(models.ObjectItem); ok {
+				switch gvr := obj.GVR(); {
+				case gvr == infoNodesGVR:
+					t.Node = obj.Name()
+				case models.IsInfoWorkload(gvr) && obj.Namespace() != "":
+					t.Workload = &models.InfoWorkload{GVR: gvr, Namespace: obj.Namespace(), Name: obj.Name()}
+				}
 			}
 		}
 	}

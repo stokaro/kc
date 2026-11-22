@@ -119,10 +119,10 @@ func TestOverviewInfoStartsAndCloses(t *testing.T) {
 	if info.engine.isRunning() {
 		t.Fatal("the engine runs before the first read")
 	}
-	s := info.Summary("")
+	s := info.Summary(InfoFocus{})
 	// Without a cluster the engine fails to connect and says so.
 	for i := 0; i < 100 && s.Err == ""; i++ {
-		s = info.Summary("")
+		s = info.Summary(InfoFocus{})
 		if s.Err == "" {
 			time.Sleep(10 * time.Millisecond)
 		}
