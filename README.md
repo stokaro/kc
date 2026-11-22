@@ -188,7 +188,7 @@ The menu bar titles stay on the top row, as in mc, and the panels start under th
 
 Options > Menu bar visible (or `layout.menuBarVisible: false` in the config) hides the bar and gives the row to the panels; `F9` then draws the bar over the top row only while it is open. The entry saves the setting to `~/.kc/config.yaml`. The fullscreen terminal (`C-o`) and fullscreen viewers cover the bar, as in mc.
 
-- **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
+- **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info, and Local files, which lists the local filesystem like `M-l`; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
 - **File**: view, edit, copy, create namespace, delete, port forward, owners and used by, explain, marking and selecting rows, quick search, exit.
 - **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
 - **Options**: panel width, the options of each panel, and whether the menu bar stays visible.
