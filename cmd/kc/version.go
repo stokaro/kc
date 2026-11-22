@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"runtime/debug"
 
+	"github.com/alecthomas/kong"
 	"github.com/stokaro/kc"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
@@ -25,15 +26,36 @@ type versionInfo struct {
 	serverVersion *apimachineryversion.Info
 }
 
-func runVersionCommand(ctx context.Context) error {
+// versionFlag implements `kc --version`. It prints the client version and
+// exits while kong parses the command line, before kc reads a kubeconfig,
+// sets up logging or opens a connection. Package managers run it as their
+// install check, so it must work on a machine without cluster access.
+type versionFlag bool
+
+// BeforeReset is the kong hook that runs before flag values are applied.
+func (versionFlag) BeforeReset(app *kong.Kong) error {
+	printVersionInfo(app.Stdout, clientVersionInfo())
+	app.Exit(0)
+	return nil
+}
+
+// runVersionCommand implements `kc version`. With clientOnly it prints the
+// client version and never loads a kubeconfig. Otherwise it also asks the
+// cluster for its version and fails, like `kubectl version`, when it cannot.
+func runVersionCommand(ctx context.Context, stdout, stderr io.Writer, clientOnly bool) error {
+	if clientOnly {
+		printVersionInfo(stdout, clientVersionInfo())
+		return nil
+	}
 	discoveryClient, err := buildDiscoveryClient(ctx)
 	info, serverErr := collectVersionInfo(ctx, discoveryClient)
 	if err != nil {
 		serverErr = err
 	}
-	printVersionInfo(os.Stdout, info)
+	printVersionInfo(stdout, info)
 	if serverErr != nil {
-		fmt.Fprintf(os.Stderr, "Error fetching server version: %v\n", serverErr)
+		fmt.Fprintf(stderr, "Error fetching server version: %v\n", serverErr)
+		fmt.Fprintln(stderr, "Use 'kc version --client' to print only the client version.")
 		return serverErr
 	}
 	return nil
@@ -61,13 +83,42 @@ func buildDiscoveryClient(ctx context.Context) (serverVersionGetter, error) {
 	}, nil
 }
 
-func collectVersionInfo(ctx context.Context, discoveryClient serverVersionGetter) (versionInfo, error) {
-	info := versionInfo{
-		kcVersion: version,
-		commit:    commit,
-		date:      date,
+// clientVersionInfo returns what kc knows about itself without any I/O.
+func clientVersionInfo() versionInfo {
+	bi, _ := debug.ReadBuildInfo()
+	v, c, d := resolveBuildVersion(version, commit, date, bi)
+	return versionInfo{
+		kcVersion: v,
+		commit:    c,
+		date:      d,
 		clientGo:  kc.ClientGoVersion(),
 	}
+}
+
+// resolveBuildVersion fills in values that the release build did not set
+// through -ldflags. A binary from `go install ...@vX.Y.Z` has no ldflags, but
+// the toolchain records the module version, and a build from a git checkout
+// records the commit and its time.
+func resolveBuildVersion(v, c, d string, bi *debug.BuildInfo) (string, string, string) {
+	if bi == nil {
+		return v, c, d
+	}
+	if v == "dev" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		v = bi.Main.Version
+	}
+	for _, s := range bi.Settings {
+		switch {
+		case s.Key == "vcs.revision" && c == "unknown" && s.Value != "":
+			c = s.Value
+		case s.Key == "vcs.time" && d == "unknown" && s.Value != "":
+			d = s.Value
+		}
+	}
+	return v, c, d
+}
+
+func collectVersionInfo(ctx context.Context, discoveryClient serverVersionGetter) (versionInfo, error) {
+	info := clientVersionInfo()
 
 	if discoveryClient == nil {
 		return info, nil

@@ -40,6 +40,7 @@ type cliFlags struct {
 	As         string         `help:"Username to impersonate for the operation (regular user or service account)"`
 	AsGroup    []string       `help:"Group to impersonate for the operation (repeatable)"`
 	AsUID      string         `help:"UID to impersonate for the operation"`
+	ShowVer    versionFlag    `name:"version" help:"Print the kc version and exit; does not contact the cluster"`
 	Root       rootCommand    `cmd:"" hidden:"true" default:"1"`
 	Get        getCommand     `cmd:"get" help:"Mirror kubectl get"`
 	Logs       logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
@@ -59,7 +60,9 @@ type logsCommand struct {
 	Pod       string `arg:"" help:"Pod name"`
 }
 
-type versionCommand struct{}
+type versionCommand struct {
+	Client bool `help:"Print only the client version; do not read a kubeconfig or contact the cluster"`
+}
 
 // cutoverWriter routes writes to stderr+file until cutover is called, after which
 // only the file is used. Shared across zap, klog, and stdlib log so all loggers
@@ -104,11 +107,7 @@ func (w *cutoverWriter) Sync() error {
 
 func main() {
 	var cli cliFlags
-	ctx := kong.Parse(&cli,
-		kong.Name("kc"),
-		kong.Description("Kubernetes Commander (kc) - A TUI for Kubernetes."),
-		kong.UsageOnError(),
-	)
+	ctx := kong.Parse(&cli, cliOptions()...)
 
 	if kcPath := strings.TrimSpace(cli.Kubeconfig); kcPath != "" {
 		_ = os.Setenv("KUBECONFIG", kcPath)
@@ -124,8 +123,7 @@ func main() {
 	startPprofServer(strings.TrimSpace(cli.PprofAddr))
 
 	if commandMatches(ctx.Command(), "kc version", "version") {
-		if err := runVersionCommand(context.Background()); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if err := runVersionCommand(context.Background(), os.Stdout, os.Stderr, cli.Version.Client); err != nil {
 			os.Exit(1)
 		}
 		return
@@ -163,6 +161,15 @@ func main() {
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// cliOptions returns the kong options main parses the command line with.
+func cliOptions() []kong.Option {
+	return []kong.Option{
+		kong.Name("kc"),
+		kong.Description("Kubernetes Commander (kc) - A TUI for Kubernetes."),
+		kong.UsageOnError(),
 	}
 }
 
