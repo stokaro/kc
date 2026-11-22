@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/sttts/kc/internal/logview"
 	"github.com/sttts/kc/internal/ui/viewer"
 )
 
@@ -31,7 +32,10 @@ type LogsViewer struct {
 	err        error
 	onOptions  func() tea.Cmd
 	onClose    func() tea.Cmd
+	onFilter   func() tea.Cmd
 	bar        viewerCommandBar
+	// log keeps every line read; the widget shows log's display lines.
+	log *logview.Log
 }
 
 // SetCommand sets the kubectl command shown under the log.
@@ -45,7 +49,9 @@ func NewLogsViewer(title string, reader io.ReadCloser, cancel context.CancelFunc
 		MimeType: "text/plain",
 		Filename: strings.ReplaceAll(title, "/", "_") + ".log",
 	})
+	w.SetLines(nil)
 	lv := &LogsViewer{
+		log:        logview.NewLog(logview.DefaultFormat()),
 		inner:      w,
 		reader:     reader,
 		buffer:     bufio.NewReader(reader),
@@ -69,13 +75,17 @@ func (v *LogsViewer) SetDimensions(w, h int) {
 }
 
 func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok {
+		if cmd, handled := v.handleLogViewKey(key); handled {
+			return v, cmd
+		}
+	}
 	if cmd, handled := v.bar.handle(msg, v.inner, v.width, v.height); handled {
 		return v, cmd
 	}
 	switch m := msg.(type) {
 	case logStreamMsg:
-		if len(m.lines) > 0 {
-			v.inner.AppendLines(m.lines)
+		if len(m.lines) > 0 && v.appendRecords(m.lines) {
 			if v.autoFollow || v.inner.AtEnd() {
 				v.inner.ScrollToEnd()
 				v.autoFollow = true
@@ -143,7 +153,7 @@ func (v *LogsViewer) FooterHints() []FooterHint {
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "n", Label: "Next", Enabled: v.inner.HasSearchMatches()},
 		{Key: "End", Label: "Follow", Enabled: !v.autoFollow},
-	}, viewerCopyHints(v.bar.command != "")...)
+	}, v.logViewHints()...)
 }
 
 func (v *LogsViewer) FooterStatus(width int) string {
@@ -151,6 +161,9 @@ func (v *LogsViewer) FooterStatus(width int) string {
 		return ""
 	}
 	base := v.inner.FooterStatusText(width)
+	if base == "" {
+		base = truncateStringToWidth(v.logViewStatus(), width)
+	}
 	return lipgloss.NewStyle().Width(width).Render(base)
 }
 

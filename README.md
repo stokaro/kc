@@ -15,7 +15,7 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices) via per-object child folders so related resources stay discoverable in the tree.
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
-- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
+- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts; JSON lines are shown as time, level, message and key=value fields, with display filters and field extraction.
 - **Container internals:** each pod container exposes `/logs` plus a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
 - **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker.
 - **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
@@ -77,13 +77,34 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
-| `M-a`      | In viewers: copy the whole content.                                             |
+| `M-a`      | In viewers: copy the whole content. In the logs viewer: copy the shown lines.   |
+| `M-A`      | In the logs viewer: copy the original records that pass the filter, unchanged.  |
+| `M-v`      | In the logs viewer: switch between the formatted and the raw view.              |
+| `M-g`      | In the logs viewer: open the filter dialog.                                     |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `C-c`      | Quit.                                                                           |
 
 Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
+
+### JSON logs
+
+The logs viewer keeps every line it reads. Lines that hold one JSON object (optionally after the `--timestamps` time) are shown formatted: time, level (colored by severity), message, then the other fields as `key=value`, with nested objects as dotted keys. Other lines, including broken JSON, are shown as they are. `M-v` switches to the raw lines and back; the filter, the search and follow mode stay.
+
+`M-g` opens the filter. It takes space-separated terms; a line is shown when it matches every term and no `!` term. The footer shows how many lines pass.
+
+| Term                | Matches                                                                 |
+|---------------------|-------------------------------------------------------------------------|
+| `timeout`           | lines that contain the text, in any case                                |
+| `"conn refused"`    | lines that contain the quoted text                                      |
+| `/5\d\d/`           | lines that match the regular expression (RE2)                           |
+| `level=error,warn`  | JSON lines whose field equals one of the values, in any case            |
+| `msg~^GET`          | JSON lines whose field matches the regular expression                   |
+| `!term`             | drops the lines that match `term`                                       |
+| `.msg .http.status` | shows only these fields of JSON lines (a line without them is shown whole) |
+
+Field names are paths: `http.status`, `items[0].name`, `["key with spaces"]`; `http.status` also finds a literal `http.status` key. Field terms never match a text line. Filtering only changes what is shown: the stream is not reopened, and clearing the filter brings every line back. An invalid term is reported in the dialog. `M-a` copies the shown lines, `M-A` the original records.
 
 ## Context and Namespace
 
