@@ -104,15 +104,26 @@ type ResourcesViewConfig struct {
 }
 
 type Config struct {
-	Viewer     ViewerConfig        `json:"viewer"`
-	Panel      PanelConfig         `json:"panel"`
-	Input      InputConfig         `json:"input"`
-	Kubernetes KubernetesConfig    `json:"kubernetes"`
-	Resources  ResourcesViewConfig `json:"resources"`
-	Objects    ObjectsConfig       `json:"objects"`
-	Terminal   TerminalConfig      `json:"terminal"`
-	Commands   []CommandConfig     `json:"commands"`
+	Viewer      ViewerConfig        `json:"viewer"`
+	Panel       PanelConfig         `json:"panel"`
+	Input       InputConfig         `json:"input"`
+	Kubernetes  KubernetesConfig    `json:"kubernetes"`
+	Resources   ResourcesViewConfig `json:"resources"`
+	Objects     ObjectsConfig       `json:"objects"`
+	Terminal    TerminalConfig      `json:"terminal"`
+	PortForward PortForwardConfig   `json:"portForward"`
+	Commands    []CommandConfig     `json:"commands"`
 }
+
+// PortForwardConfig controls port forwards started from kc.
+type PortForwardConfig struct {
+	// Address is the local address forwards listen on: an IP address or
+	// "localhost" (both loopback addresses, as kubectl does).
+	Address string `json:"address"`
+}
+
+// DefaultPortForwardAddress keeps forwards reachable from this machine only.
+const DefaultPortForwardAddress = "127.0.0.1"
 
 type CommandType string
 
@@ -214,8 +225,9 @@ func Default() *Config {
 			// Favorites empty by default so we can seed them from discovery's "all" category.
 			Favorites: nil,
 		},
-		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
-		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
+		Objects:     ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
+		Terminal:    TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
+		PortForward: PortForwardConfig{Address: DefaultPortForwardAddress},
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
@@ -300,6 +312,10 @@ func Load() (*Config, error) {
 		}
 		if cfg.Terminal.Mode != TerminalModeCopy && cfg.Terminal.Mode != TerminalModeOverlay {
 			cfg.Terminal.Mode = TerminalModeOverlay
+		}
+		cfg.PortForward.Address = strings.TrimSpace(cfg.PortForward.Address)
+		if cfg.PortForward.Address == "" {
+			cfg.PortForward.Address = DefaultPortForwardAddress
 		}
 		if cfg.Kubernetes.Clusters.TTL.Duration == 0 {
 			cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute}

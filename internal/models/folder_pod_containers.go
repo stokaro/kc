@@ -117,6 +117,7 @@ func (f *PodContainerListFolder) buildRows(ctx context.Context) ([]table.Row, er
 			return NewPodContainerDetailFolder(f.Deps, sectionPath, f.Namespace, f.Pod, name, kind), nil
 		})
 		item.RowItem.details = c.Detail
+		item.SetPod(f.Namespace, f.Pod)
 		item.SetViewCommand(kubectlCommand(f.Deps, "get", "pod", f.Pod, "-n", f.Namespace, "-o",
 			`jsonpath={.spec.`+containerField(kind)+`[?(@.name=="`+name+`")]}`))
 		rows = append(rows, item)
