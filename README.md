@@ -15,10 +15,10 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices) via per-object child folders so related resources stay discoverable in the tree.
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
-- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
+- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts; `F2` sets tail lines, the since window, timestamps and the previous container instance, and restarts the stream. A container that restarted also gets a `logs (previous)` row.
 - **Container internals:** each pod container exposes `/logs` plus a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
-- **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker.
-- **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
+- **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker. kc writes the export to a temporary file next to the destination and replaces the destination only when the whole content arrived, so a failed export leaves an existing file as it was. New files are created with mode 0600; a replaced file keeps its owner permissions and loses group and other access. kc refuses to write through a symbolic link. Binary ConfigMap and Secret keys show their size, detected content type and a hex dump in `F3`; `F5` saves the original bytes.
+- **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. In the option dialogs, `Enter` applies a change to the current session and `C-s` saves it as the default.
 
 ## Getting Started
 
@@ -71,7 +71,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
-| `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
+| `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. |
 | `F9`       | Menu – Built-in object actions and custom commands.                             |
 | `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
@@ -148,13 +148,18 @@ Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `
 `~/.kc/config.yaml` stores all user preferences. Key sections:
 
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
+- `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer opens with. `F2` in the viewer changes them for that viewer; `C-s` there saves them as the defaults.
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace.
-- `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
+- `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation, and how long a cluster cache stays running after the last open folder that uses it is closed.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
+
+`C-s` ("Save as defaults") in an option dialog reads the file again and writes only the settings that dialog shows, so custom commands and keys kc does not know stay as they are. The file is replaced atomically and keeps its permissions; a symbolic link is written through to its target. The command line says whether the settings were saved or apply to this session only.
+
+If the file cannot be read or parsed, kc starts with the defaults and shows the file path and the error on the command line. It never writes over that file: `C-s` is refused until the file loads again. Fix the file (or move it away to start from scratch) and press `C-s` again, or restart kc to load it.
 
 ### Full configuration (defaults + inline docs)
 
@@ -164,6 +169,13 @@ Copy/paste into `~/.kc/config.yaml` to start customizing:
 viewer:
   theme: dracula
   mode: scroll
+  logs:
+    # Recent lines fetched before following; -1 fetches the whole log.
+    tail: 200
+    # Only lines newer than this; 0s means no limit.
+    since: 0s
+    # Prefix every line with its timestamp.
+    timestamps: false
 
 panel:
   scrolling:
