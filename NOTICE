@@ -1,0 +1,11 @@
+kc (Kubernetes Commander)
+https://github.com/stokaro/kc
+
+This product is a derivative work of Kubernetes Commander
+(https://github.com/sttts/kc), originally written by Stefan Schimanski
+and licensed under the Apache License, Version 2.0.
+
+This repository started as a fork of that project and has been modified
+substantially since. Key bindings, features and internals differ from the
+original. The modifications are also licensed under the Apache License,
+Version 2.0. See the LICENSE file for the full license text.

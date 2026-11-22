@@ -1,5 +1,7 @@
 # Releasing kc
 
+> **Note:** this guide describes the release setup inherited from the [upstream project](https://github.com/sttts/kc). The Homebrew tap `sttts/homebrew-kc` belongs to upstream; this repository does not publish to it. Releases for this repository are not set up yet.
+
 This repo uses [Goreleaser](https://goreleaser.com) to produce cross-platform tarballs, publish GitHub Releases, and update the Homebrew tap in [`sttts/homebrew-kc`](https://github.com/sttts/homebrew-kc).
 
 ## Prerequisites

@@ -1,6 +1,8 @@
 # Kubernetes Commander (kc)
 
-[![Build Status](https://github.com/sttts/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/sttts/kc/actions/workflows/build.yml)
+[![Build Status](https://github.com/stokaro/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/stokaro/kc/actions/workflows/build.yml)
+
+> **Origin:** kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) (upstream). This repository is developed independently and has diverged a lot from it: key bindings, features and internals differ. Report issues for this version at [stokaro/kc](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE) for attribution.
 
 ![Kubernetes Commander TUI](docs/screenshot.png)
 
@@ -40,6 +42,8 @@ go build -o kc ./cmd/kc
 
 ### Install via Homebrew
 
+> **Note:** this tap belongs to the upstream project and installs the original Kubernetes Commander, not this version. This repository does not publish its own packages yet; build from source as shown above.
+
 ```bash
 brew tap sttts/homebrew-kc
 # macOS (notarized GUI build)
@@ -51,7 +55,7 @@ brew install sttts/homebrew-kc/kc
 
 ## Releases
 
-Binaries are published by the maintainers via GitHub Releases and the Homebrew tap. Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, notarizes the macOS artifacts, and refreshes the Homebrew tap. See `docs/RELEASING.md` for the Apple signing credentials required for CI.
+This repository does not publish releases yet; the Homebrew tap above is upstream's. Upstream publishes binaries via GitHub Releases and the Homebrew tap. Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, notarizes the macOS artifacts, and refreshes the Homebrew tap. See `docs/RELEASING.md` for the Apple signing credentials required for CI.
 
 ### Kubectl-style shortcuts
 
