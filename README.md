@@ -132,6 +132,17 @@ commands:
 ### Templating
 Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `{{.Version}}`, `{{.Resource}}`.
 
+A command acts on the marked rows when any are marked, otherwise on the highlighted row. `.Items` lists them in panel order, each with its own `Name`, `Namespace`, `Group`, `Version` and `Resource`; the top-level variables repeat the first item. Commands with `supportsMultiSelection: true` are offered for several marked rows; other commands are hidden from the F9 menu then.
+
+```yaml
+  - name: "Describe marked pods"
+    command: "{{range .Items}}kubectl describe {{.Resource}} {{.Name}} -n {{.Namespace}}; {{end}}"
+    type: "sticky"
+    supportsMultiSelection: true
+    showFor:
+      resources: ["pods"]
+```
+
 ## Configuration
 
 `~/.kc/config.yaml` stores all user preferences. Key sections:
