@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"image/color"
+	"slices"
 	"strings"
 	"time"
 
@@ -994,15 +995,9 @@ func (p *Panel) renderHeader(breadcrumb, status string) string {
 	if statusWidth < 0 {
 		statusWidth = 0
 	}
-	available := p.width - statusWidth - 1
-	if available < 0 {
-		available = 0
-	}
+	available := max(p.width-statusWidth-1, 0)
 	left = p.ellipsizePath(breadcrumb, available)
-	padding := p.width - lipgloss.Width(left) - statusWidth
-	if padding < 1 {
-		padding = 1
-	}
+	padding := max(p.width-lipgloss.Width(left)-statusWidth, 1)
 	line := left + strings.Repeat(" ", padding) + status
 	return headerStyle.Render(line)
 }
@@ -1028,8 +1023,8 @@ func (p *Panel) ellipsizePath(path string, width int) string {
 	}
 	// Rebuild from right until fits
 	acc := ""
-	for i := len(filtered) - 1; i >= 0; i-- {
-		candidate := "/" + filtered[i] + acc
+	for _, f := range slices.Backward(filtered) {
+		candidate := "/" + f + acc
 		if len(candidate)+3 <= width {
 			acc = candidate
 		} else {
@@ -1298,10 +1293,7 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	leftWidth := lipgloss.Width(left)
 	rightWidth := lipgloss.Width(right)
 	indicatorWidth := lipgloss.Width(indicator)
-	contentWidth := width - leftWidth - rightWidth - indicatorWidth - connectorWidth
-	if contentWidth < 0 {
-		contentWidth = 0
-	}
+	contentWidth := max(width-leftWidth-rightWidth-indicatorWidth-connectorWidth, 0)
 	// The scope goes on the outermost bottom border only: the one that also
 	// carries the mode label.
 	if strings.TrimSpace(mode) != "" && p.search.active {
@@ -1354,10 +1346,7 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 		renderedText = style.Render(text)
 		textWidth = lipgloss.Width(renderedText)
 	}
-	fillerWidth := contentWidth - textWidth
-	if fillerWidth < 0 {
-		fillerWidth = 0
-	}
+	fillerWidth := max(contentWidth-textWidth, 0)
 	filler := ""
 	if fillerWidth > 0 {
 		filler = borderStyle.Render(strings.Repeat(border.Bottom, fillerWidth))
@@ -1397,8 +1386,8 @@ func (p *Panel) ellipsizeBreadcrumbTitle(labelStyle lipgloss.Style, title string
 		}
 	}
 	acc := ""
-	for i := len(segs) - 1; i >= 0; i-- {
-		candidate := "/" + segs[i] + acc
+	for _, seg := range slices.Backward(segs) {
+		candidate := "/" + seg + acc
 		test := "..." + candidate
 		if lipgloss.Width(labelStyle.Render(test)) <= maxWidth {
 			acc = candidate
@@ -1450,13 +1439,6 @@ func truncateStringToWidth(s string, maxWidth int) string {
 		b.WriteRune(r)
 	}
 	return b.String()
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // renderItem renders a single item

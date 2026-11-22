@@ -56,7 +56,7 @@ func TestTranslateKeyForTerminal(t *testing.T) {
 func TestTranslateKeyForTerminalStress10k(t *testing.T) {
 	const iterations = 10_000
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		r := rune('!' + (i % 94)) // printable ASCII range 33-126
 		msg := tea.KeyPressMsg(tea.Key{Code: r, Text: string(r)})
 		translated := translateKeyForTerminal(msg)

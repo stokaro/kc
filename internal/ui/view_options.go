@@ -723,10 +723,7 @@ func (m *ViewOptionsModel) ensureFocusVisible() {
 	if m.scroll < 0 {
 		m.scroll = 0
 	}
-	maxScroll := len(m.entries) - m.height
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := max(len(m.entries)-m.height, 0)
 	if m.scroll > maxScroll {
 		m.scroll = maxScroll
 	}

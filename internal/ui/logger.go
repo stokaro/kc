@@ -1,11 +1,12 @@
 package ui
 
 import (
-	tea "charm.land/bubbletea/v2"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // ToastLogger is a minimal adapter that wraps log-style calls and emits

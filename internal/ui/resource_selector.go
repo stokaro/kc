@@ -153,10 +153,7 @@ func (rs *ResourceSelector) renderContent() string {
 	// Render items with scrolling
 	contentHeight := rs.height - 3 // -3 for header and footer
 	start := rs.scrollTop
-	end := start + contentHeight
-	if end > len(items) {
-		end = len(items)
-	}
+	end := min(start+contentHeight, len(items))
 
 	var visibleItems []string
 	for i := start; i < end; i++ {

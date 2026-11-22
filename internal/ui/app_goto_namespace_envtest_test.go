@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	models "github.com/stokaro/kc/internal/models"
@@ -65,7 +64,7 @@ func TestGoToNamespaceExistingNavigatesPanels(t *testing.T) {
 	})
 
 	nsName := "autonav"
-	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
+	namespace := &corev1.Namespace{Name: nsName}
 	if err := cl.GetClient().Create(ctx, namespace); err != nil {
 		t.Fatalf("create namespace: %v", err)
 	}

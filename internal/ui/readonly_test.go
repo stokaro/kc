@@ -46,12 +46,12 @@ func TestResolveReadOnly(t *testing.T) {
 
 // readOnlyTestObject knows its instance, as list rows do: delete asks for
 // the UID and the cluster the row was read from.
-var readOnlyTestObject = stubInstance{stubObject: stubObject{
+var readOnlyTestObject = stubInstance{
 	id:        "group/v1/tests/foo",
 	namespace: "ns",
 	name:      "foo",
 	verbs:     []string{"get", "list", "update", "delete"},
-}}
+}
 
 type stubInstance struct{ stubObject }
 

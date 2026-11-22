@@ -312,10 +312,7 @@ func (f *testResourcesFolder) Lines(ctx context.Context, top, num int) []table.R
 	if top < 0 {
 		top = 0
 	}
-	end := top + num
-	if end > len(rows) {
-		end = len(rows)
-	}
+	end := min(top+num, len(rows))
 	return append([]table.Row(nil), rows[top:end]...)
 }
 
@@ -324,10 +321,7 @@ func (f *testResourcesFolder) Above(ctx context.Context, id string, n int) []tab
 	if !ok {
 		return nil
 	}
-	start := idx - n
-	if start < 0 {
-		start = 0
-	}
+	start := max(idx-n, 0)
 	return f.Lines(ctx, start, idx-start)
 }
 

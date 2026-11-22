@@ -87,7 +87,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			"leader", msg.PanelIdx,
 			"namespace", msg.Namespace,
 		)
-		for idx := 0; idx < 2; idx++ {
+		for idx := range 2 {
 			if cmd := a.maybeRestartNamespaceCommand(idx, msg.Namespace); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -669,7 +669,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		// screen terminal the default route would drop it, and the widget
 		// would wait for it forever.
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		for idx := 0; idx < 2; idx++ {
+		for idx := range 2 {
 			if panel := a.panelByIndex(idx); panel != nil {
 				cmds = append(cmds, panel.DeliverBackground(ctx, msg))
 			}
@@ -751,7 +751,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		// the other panel follows this one's selection, and this panel's
 		// own content came from its list. Each widget rereads at most once
 		// a second, and only when its object changed.
-		for idx := 0; idx < 2; idx++ {
+		for idx := range 2 {
 			if p := a.panelByIndex(idx); p != nil {
 				cmds = append(cmds, p.RefreshContent(ctx))
 			}
@@ -972,7 +972,6 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		if cmd := a.updateTerminal(msg, ""); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
-
 	}
 
 	if len(cmds) == 0 && viewWasValid && a.mainViewCache.valid {
@@ -999,10 +998,7 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseM
 	if panel == nil {
 		return nil, nil, PanelMouseMsg{}, panelIdx, false
 	}
-	relRow := m.Y - headerOffset
-	if relRow < 0 {
-		relRow = 0
-	}
+	relRow := max(m.Y-headerOffset, 0)
 	var panelMsg PanelMouseMsg
 	switch mm := msg.(type) {
 	case tea.MouseWheelMsg:

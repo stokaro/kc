@@ -186,7 +186,7 @@ func runOutput(t *testing.T, cmd *exec.Cmd) (kubeconfigValue string, args []stri
 	if err != nil {
 		t.Fatalf("run %v: %v", cmd.Args, err)
 	}
-	for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(string(out), "\n"), "\n") {
 		if v, ok := strings.CutPrefix(line, "KUBECONFIG="); ok {
 			kubeconfigValue = v
 		} else if v, ok := strings.CutPrefix(line, "arg="); ok {

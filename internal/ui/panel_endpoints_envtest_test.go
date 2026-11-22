@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -33,8 +32,8 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	}
 	ctx := t.Context()
 	// Ensure kube-system exists
-	_ = cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}})
-	ep := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "kube-system"}}
+	_ = cli.Create(ctx, &corev1.Namespace{Name: "kube-system"})
+	ep := &corev1.Endpoints{Name: "kubernetes", Namespace: "kube-system"}
 	// One dummy subset to ensure a non-empty row
 	ep.Subsets = []corev1.EndpointSubset{{
 		Addresses: []corev1.EndpointAddress{{IP: "10.0.0.1"}},

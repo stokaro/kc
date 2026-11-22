@@ -8,7 +8,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -32,7 +31,7 @@ func deleteEnv(t *testing.T, namespace string) (*kccluster.Cluster, crclient.Cli
 	go cl.Start(ctx)
 	t.Cleanup(cl.Stop)
 	c := cl.GetClient()
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+	ns := &corev1.Namespace{Name: namespace}
 	if err := c.Create(ctx, ns); err != nil {
 		t.Fatalf("create namespace: %v", err)
 	}
@@ -72,7 +71,7 @@ func selectedRow(t *testing.T, cl *kccluster.Cluster, namespace, name string) mo
 
 func createConfigMap(t *testing.T, c crclient.Client, namespace, name string) *corev1.ConfigMap {
 	t.Helper()
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}}
+	cm := &corev1.ConfigMap{Namespace: namespace, Name: name}
 	if err := c.Create(t.Context(), cm); err != nil {
 		t.Fatalf("create configmap %s/%s: %v", namespace, name, err)
 	}

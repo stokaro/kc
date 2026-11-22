@@ -123,7 +123,7 @@ func ParsePanelPath(s string) (PanelPath, error) {
 	case s == "." || strings.HasPrefix(s, "./"):
 		p.Anchor = AnchorCurrentStrict
 	}
-	for _, seg := range strings.Split(s, "/") {
+	for seg := range strings.SplitSeq(s, "/") {
 		if seg == "" || seg == "." {
 			continue
 		}

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -489,10 +490,8 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		"space", // fallback just in case
 	}
 
-	for _, termKey := range terminalKeys {
-		if key == termKey {
-			return false
-		}
+	if slices.Contains(terminalKeys, key) {
+		return false
 	}
 
 	// If the user has typed into the terminal buffer while panels are visible,
@@ -527,10 +526,8 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		"esc",    // Cancel
 	}
 
-	for _, panelKey := range panelKeys {
-		if key == panelKey {
-			return true
-		}
+	if slices.Contains(panelKeys, key) {
+		return true
 	}
 
 	// Special handling for Enter key

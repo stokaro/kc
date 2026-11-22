@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"maps"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -71,9 +72,7 @@ func (p *Panel) SetActionHandlers(h PanelActionHandlers) {
 	}
 	// Copy to avoid external mutation.
 	p.actionHandlers = make(PanelActionHandlers, len(h))
-	for k, v := range h {
-		p.actionHandlers[k] = v
-	}
+	maps.Copy(p.actionHandlers, h)
 }
 
 // SetEnvironmentSupplier wires a supplier for environment-level capability hints.

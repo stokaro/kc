@@ -159,10 +159,7 @@ func (m *CommandSelectorModel) View() tea.View {
 		Bold(true)
 
 	start := m.scroll
-	end := start + visible
-	if end > len(m.entries) {
-		end = len(m.entries)
-	}
+	end := min(start+visible, len(m.entries))
 
 	for i := start; i < end; i++ {
 		entry := m.entries[i]

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -78,12 +79,7 @@ type ResourcesOptionsChangedMsg struct {
 }
 
 func (m *ResourcesOptionsModel) hasOption(opt int) bool {
-	for _, existing := range m.options {
-		if existing == opt {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.options, opt)
 }
 
 func (m *ResourcesOptionsModel) optionAtFocus() int {

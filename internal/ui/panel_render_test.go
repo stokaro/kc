@@ -81,7 +81,7 @@ func TestRenderFrameIndicatorsWithFooter(t *testing.T) {
 func TestRenderFrameTitleLeftAligned(t *testing.T) {
 	p := NewPanel("test")
 	frame := p.renderFrame(strings.Repeat(" ", 10), panelcontent.FrameInfo{}, "/namespaces/default", 40, 6, true, false)
-	top := strings.Split(ansi.Strip(frame), "\n")[0]
+	top, _, _ := strings.Cut(ansi.Strip(frame), "\n")
 	if !strings.HasPrefix(top, "┌─ /namespaces/default ─") {
 		t.Fatalf("expected title at the left of the top border, got %q", top)
 	}

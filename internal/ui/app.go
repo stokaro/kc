@@ -716,10 +716,7 @@ func (a *App) inlineTerminalHeight() int {
 func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int, headerOffset int) {
 	// A toast replaces the function key bar; it takes no row of its own.
 	reserved := 1 + a.inlineTerminalHeight() + a.commandLineHeight()
-	panelHeight = a.height - reserved
-	if panelHeight < 0 {
-		panelHeight = 0
-	}
+	panelHeight = max(a.height-reserved, 0)
 	leftWidth, rightWidth = a.panelWidthsFor(a.width)
 	headerOffset = 1
 	return
@@ -1072,7 +1069,7 @@ func (a *App) setupModals() {
 	a.modalManager.Register("copy_local", copyModal)
 	a.copyInput = copyModel
 
-	for idx := 0; idx < 2; idx++ {
+	for idx := range 2 {
 		modeModel := NewPanelModeModel(idx, []PanelViewMode{PanelModeList}, PanelModeList)
 		modeModal := NewModal("Panel Mode", modeModel)
 		modeModal.SetCloseOnSingleEsc(true)
@@ -1438,21 +1435,12 @@ func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
 		panelWidth = max(20, max(a.width/2, a.width))
 		panelOffset = 0
 	}
-	width := panelWidth / 2
-	if width < 24 {
-		width = 24
-	}
+	width := max(panelWidth/2, 24)
 	width = min(width, panelWidth-2)
 	width = min(width, a.width-4)
 	maxContentHeight := max(len(modes)+4, 6)
-	targetHeight := panelHeight / 2
-	if targetHeight < 6 {
-		targetHeight = 6
-	}
-	height := min(maxContentHeight, targetHeight)
-	if height < 6 {
-		height = 6
-	}
+	targetHeight := max(panelHeight/2, 6)
+	height := max(min(maxContentHeight, targetHeight), 6)
 	model.SetDimensions(max(1, width-4), max(1, height-3))
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
@@ -1763,14 +1751,8 @@ func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, pa
 	if panelWidth <= 0 {
 		panelWidth = max(24, max(a.width/2, a.width))
 	}
-	fallbackWidth := panelWidth / 2
-	if fallbackWidth < 36 {
-		fallbackWidth = 36
-	}
-	fallbackHeight := content.ContentHeight() + 2
-	if fallbackHeight < 6 {
-		fallbackHeight = 6
-	}
+	fallbackWidth := max(panelWidth/2, 36)
+	fallbackHeight := max(content.ContentHeight()+2, 6)
 	a.configureModalWindow(modal, content, panelIdx, background, fallbackWidth, fallbackHeight)
 }
 
@@ -1793,16 +1775,10 @@ func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelHeight, headerOf
 	return panelWidth, panelHeight, headerOffset, panelOffset, centered
 }
 
-func (a *App) configureModalWindow(modal *Modal, content interface{}, panelIdx int, background string, fallbackWinW, fallbackWinH int) {
+func (a *App) configureModalWindow(modal *Modal, content any, panelIdx int, background string, fallbackWinW, fallbackWinH int) {
 	panelWidth, panelHeight, headerOffset, panelOffset, centered := a.modalPanelMetrics(panelIdx)
-	maxFrameWidth := min(panelWidth-2, a.width-4)
-	if maxFrameWidth < 6 {
-		maxFrameWidth = 6
-	}
-	maxFrameHeight := min(panelHeight-2, a.height-4)
-	if maxFrameHeight < 6 {
-		maxFrameHeight = 6
-	}
+	maxFrameWidth := max(min(panelWidth-2, a.width-4), 6)
+	maxFrameHeight := max(min(panelHeight-2, a.height-4), 6)
 	maxContentWidth := max(1, maxFrameWidth-2)
 	maxContentHeight := max(1, maxFrameHeight-2)
 
@@ -1865,10 +1841,7 @@ func (a *App) configureModalWindow(modal *Modal, content interface{}, panelIdx i
 	}
 	if centered {
 		offsetX = max(0, (a.width-winW)/2)
-		offsetY = headerOffset + max(0, (panelHeight-winH)/2)
-		if offsetY > maxOffsetY {
-			offsetY = maxOffsetY
-		}
+		offsetY = min(headerOffset+max(0, (panelHeight-winH)/2), maxOffsetY)
 	}
 	modal.SetWindowOffset(offsetX, offsetY)
 }
@@ -2020,7 +1993,7 @@ func (a *App) createNamespaceWithName(name string) tea.Cmd {
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 		defer cancel()
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		ns := &corev1.Namespace{Name: name}
 		if err := a.cl.GetClient().Create(ctx, ns); err != nil {
 			return namespaceCreatedMsg{name: name, err: err}
 		}
@@ -2683,7 +2656,7 @@ func (a *App) ensureManifestPreview(res resolvedResource, name string) tea.Cmd {
 	})
 }
 
-func (a *App) notifyIntentError(format string, args ...interface{}) {
+func (a *App) notifyIntentError(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if a.toastLogger != nil {
 		a.enqueueCmd(a.toastLogger.Errorf("%s", msg))
@@ -3553,7 +3526,7 @@ func (a *App) startupContext(name string) (*kubeconfig.Context, error) {
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
 func (a *App) selectCurrentContext() *kubeconfig.Context {
 	if env := os.Getenv("KUBECONFIG"); env != "" {
-		for _, p := range strings.Split(env, string(os.PathListSeparator)) {
+		for p := range strings.SplitSeq(env, string(os.PathListSeparator)) {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
@@ -3588,7 +3561,7 @@ func sameFilepath(a, b string) bool {
 	return ap == bp
 }
 
-func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]interface{}, error) {
+func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]any, error) {
 	gvr, err := a.cl.GVKToGVR(gvk)
 	if err != nil {
 		return nil, err

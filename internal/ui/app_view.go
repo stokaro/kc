@@ -101,10 +101,7 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Reserve space for the inline terminal (if visible) and function keys (1)
 	commandHeight := a.commandLineHeight()
 	reserved := terminalHeight + commandHeight + 1
-	panelHeight := a.height - reserved
-	if panelHeight < 3 {
-		panelHeight = 3
-	}
+	panelHeight := max(a.height-reserved, 3)
 	leftPanelWidth, rightPanelWidth := a.panelWidthsFor(a.width)
 
 	var (
@@ -256,10 +253,7 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 	// clamp the terminal content to a.height-1 lines.
 	toggleMsg := a.renderToggleMessage()
 	lines := strings.Split(terminalView, "\n")
-	maxTerm := a.height - 1
-	if maxTerm < 1 {
-		maxTerm = 1
-	}
+	maxTerm := max(a.height-1, 1)
 	if len(lines) > maxTerm {
 		lines = lines[:maxTerm]
 	} else if len(lines) < maxTerm {

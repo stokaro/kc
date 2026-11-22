@@ -1,8 +1,9 @@
 package ui
 
 import (
-	tea "charm.land/bubbletea/v2"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // BusyShowMsg requests the app to show a spinner with a given token.

@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/stokaro/kc/internal/models"
@@ -170,7 +169,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 }
 
 func nodeShellTestApp(t *testing.T) (*App, *fake.Clientset, *corev1.Pod) {
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "kc-node-shell-n1-abcde", Namespace: "default", UID: "u1"}}
+	pod := &corev1.Pod{Name: "kc-node-shell-n1-abcde", Namespace: "default", UID: "u1"}
 	client := fake.NewClientset(pod)
 	cfg := appconfig.Default()
 	cfg.NodeShell.Enabled = true

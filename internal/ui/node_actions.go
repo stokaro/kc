@@ -343,7 +343,7 @@ func waitDrain(ch <-chan tea.Msg) tea.Cmd {
 func wrapCommand(cmd string, width int) []string {
 	var lines []string
 	line := ""
-	for _, w := range strings.Fields(cmd) {
+	for w := range strings.FieldsSeq(cmd) {
 		switch {
 		case line == "":
 			line = w

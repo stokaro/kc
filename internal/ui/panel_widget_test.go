@@ -39,7 +39,7 @@ func TestPanelModeSwitchesToManifest(t *testing.T) {
 
 func TestNextPanelModeCycles(t *testing.T) {
 	modes := PanelModeOrder()
-	for i := 0; i < len(modes); i++ {
+	for i := range modes {
 		next := NextPanelMode(modes[i])
 		if next == modes[i] {
 			t.Fatalf("mode did not advance for %v", modes[i])
