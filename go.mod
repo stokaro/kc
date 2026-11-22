@@ -24,6 +24,7 @@ require (
 	k8s.io/component-helpers v0.37.2
 	k8s.io/klog/v2 v2.140.0
 	k8s.io/kubectl v0.37.2
+	k8s.io/streaming v0.37.2
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd
 	sigs.k8s.io/controller-runtime v0.25.3
 	sigs.k8s.io/yaml v1.6.0
@@ -293,7 +294,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.8.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
-	k8s.io/streaming v0.37.2 // indirect
 	mvdan.cc/gofumpt v0.12.0 // indirect
 	mvdan.cc/unparam v0.0.0-20260823230713-2fa3d841b0c8 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect

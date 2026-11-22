@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	clientportforward "k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
+	"k8s.io/streaming/pkg/httpstream"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -52,7 +52,7 @@ func (c ClientRunner) Run(ctx context.Context, spec Spec, ready func(int32)) err
 	readyCh := make(chan struct{})
 	errOut := logWriter(log)
 	defer errOut.Close()
-	pf, err := clientportforward.NewOnAddressesWithContext(ctx, dialer, []string{address}, ports, readyCh, io.Discard, errOut)
+	pf, err := clientportforward.NewOnAddressesForStreamingWithContext(ctx, dialer, []string{address}, ports, readyCh, io.Discard, errOut)
 	if err != nil {
 		return err
 	}
@@ -77,12 +77,12 @@ func newDialer(log logr.Logger, cfg *rest.Config, u *url.URL) (httpstream.Dialer
 	if err != nil {
 		return nil, fmt.Errorf("building SPDY transport: %w", err)
 	}
-	spdyDialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, u)
-	ws, err := clientportforward.NewSPDYOverWebsocketDialerWithLogger(log, u, cfg)
+	spdyDialer := spdy.NewDialerForStreaming(upgrader, &http.Client{Transport: transport}, http.MethodPost, u)
+	ws, err := clientportforward.NewSPDYOverWebsocketDialerForStreamingWithLogger(log, u, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("building websocket dialer: %w", err)
 	}
-	return clientportforward.NewFallbackDialer(ws, spdyDialer, func(err error) bool {
+	return clientportforward.NewFallbackDialerForStreaming(ws, spdyDialer, func(err error) bool {
 		return httpstream.IsUpgradeFailure(err) || httpstream.IsHTTPSProxyError(err)
 	}), nil
 }
