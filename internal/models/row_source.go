@@ -109,10 +109,7 @@ func (s *sliceRowSource) Lines(ctx context.Context, top, num int) []table.Row {
 	if top < 0 {
 		top = 0
 	}
-	end := top + num
-	if end > len(rows) {
-		end = len(rows)
-	}
+	end := min(top+num, len(rows))
 	return rows[top:end]
 }
 
@@ -127,10 +124,7 @@ func (s *sliceRowSource) Above(ctx context.Context, id string, n int) []table.Ro
 		s.mu.Unlock()
 		return nil
 	}
-	start := idx - n
-	if start < 0 {
-		start = 0
-	}
+	start := max(idx-n, 0)
 	rows := append([]table.Row(nil), s.rows[start:idx]...)
 	s.mu.Unlock()
 	if len(rows) == 0 {
@@ -155,10 +149,7 @@ func (s *sliceRowSource) Below(ctx context.Context, id string, n int) []table.Ro
 		s.mu.Unlock()
 		return nil
 	}
-	end := start + n
-	if end > len(s.rows) {
-		end = len(s.rows)
-	}
+	end := min(start+n, len(s.rows))
 	rows := append([]table.Row(nil), s.rows[start:end]...)
 	s.mu.Unlock()
 	return rows

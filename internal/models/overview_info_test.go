@@ -64,7 +64,7 @@ func TestInfoSummary(t *testing.T) {
 		if disk := infoBar(t, s, "Disk"); !disk.Known || disk.Detail != "29/915 Gi" {
 			t.Fatalf("disk = %+v", disk)
 		}
-		names := []string{}
+		names := make([]string, 0)
 		for _, c := range s.Top {
 			names = append(names, c.Namespace+"/"+c.Name+" "+c.Memory)
 		}

@@ -23,7 +23,7 @@ func (r *RowItem) ViewCommand() string { return r.viewCommand }
 // SetViewCommand sets the kubectl command shown in the viewer.
 func (r *RowItem) SetViewCommand(cmd string) { r.viewCommand = cmd }
 
-func NewRowItem(id string, cells []string, path []string, style *lipgloss.Style) *RowItem {
+func NewRowItem(id string, cells, path []string, style *lipgloss.Style) *RowItem {
 	if style == nil {
 		style = GreenStyle()
 	}
@@ -34,7 +34,7 @@ func NewRowItem(id string, cells []string, path []string, style *lipgloss.Style)
 	return NewRowItemStyled(id, cells, path, styles)
 }
 
-func NewRowItemStyled(id string, cells []string, path []string, styles []*lipgloss.Style) *RowItem {
+func NewRowItemStyled(id string, cells, path []string, styles []*lipgloss.Style) *RowItem {
 	cloned := make([]string, len(cells))
 	copy(cloned, cells)
 	sty := make([]*lipgloss.Style, len(styles))
@@ -51,6 +51,8 @@ func (r *RowItem) ID() string      { return r.SimpleRow.ID }
 
 // Columns returns the row cells, applying any registered hook while keeping the
 // stored SimpleRow slice unchanged for subsequent renders.
+//
+//revive:disable-next-line:function-result-limit the table.Row interface in internal/table fixes these four results
 func (r *RowItem) Columns() (string, []string, []*lipgloss.Style, bool) {
 	id, cells, styles, ok := r.SimpleRow.Columns()
 	if !ok || r.cellsHook == nil {
@@ -73,7 +75,7 @@ func (r *RowItem) copyFrom(other *RowItem) {
 	r.cellsHook = other.cellsHook
 }
 
-func (r *RowItem) reset(id string, cells []string, path []string, style *lipgloss.Style) {
+func (r *RowItem) reset(id string, cells, path []string, style *lipgloss.Style) {
 	if r == nil {
 		return
 	}

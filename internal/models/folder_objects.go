@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +49,7 @@ type ObjectsFolder struct {
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
-func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string, verbs []string) *ObjectsFolder {
+func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path, verbs []string) *ObjectsFolder {
 	base := NewBaseFolder(deps, nil, path)
 	base.SetColumns([]table.Column{{Title: " Name"}})
 	folder := &ObjectsFolder{
@@ -159,7 +160,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		if namespaced {
 			cells = withNamespaceColumn(cells, ns)
 		}
-		basePath := append(append([]string{}, o.Path()...), name)
+		basePath := append(slices.Clone(o.Path()), name)
 		info := RowStyleInfo{
 			GVR:        o.gvr,
 			GVK:        rr.TableTarget(),
@@ -236,12 +237,12 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		name := item.GetName()
 		_, id := o.objectNamespaceAndID(namespaced, item.GetNamespace(), name)
 		ns, _ := o.objectNamespaceAndID(namespaced, item.GetNamespace(), name)
-		basePath := append(append([]string{}, o.Path()...), name)
+		basePath := append(slices.Clone(o.Path()), name)
 		title := name
 		if hasChild {
 			title = "/" + strings.TrimPrefix(name, "/")
 		}
-		meta := metav1.ObjectMeta{
+		objMeta := metav1.ObjectMeta{
 			Name:              name,
 			Namespace:         ns,
 			UID:               item.GetUID(),
@@ -249,11 +250,11 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 			Annotations:       item.GetAnnotations(),
 			CreationTimestamp: item.GetCreationTimestamp(),
 		}
-		meta.DeletionTimestamp = item.GetDeletionTimestamp()
+		objMeta.DeletionTimestamp = item.GetDeletionTimestamp()
 		info := RowStyleInfo{
 			GVR:          o.gvr,
 			GVK:          item.GroupVersionKind(),
-			ObjectMeta:   meta,
+			ObjectMeta:   objMeta,
 			Unstructured: item,
 			BaseStyle:    WhiteStyle(),
 		}
@@ -289,7 +290,9 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 // only unique within a namespace.
 //
 // namespaced is the result of resourceNamespaced, computed once per listing.
-func (o *ObjectsFolder) objectNamespaceAndID(namespaced bool, objectNamespace, name string) (string, string) {
+//
+//revive:disable-next-line:flag-parameter namespaced is data computed once per listing, not a mode switch
+func (o *ObjectsFolder) objectNamespaceAndID(namespaced bool, objectNamespace, name string) (namespace, id string) {
 	if o.namespace != "" {
 		return o.namespace, name
 	}
@@ -447,7 +450,8 @@ func withNamespaceColumn[T any](row []T, v T) []T {
 	return append(out, row[1:]...)
 }
 
-func buildCells(cells []interface{}, vis []int, hasChild bool) []string {
+//revive:disable-next-line:flag-parameter hasChild is a property of the resource that marks the name cell, not a mode switch
+func buildCells(cells []any, vis []int, hasChild bool) []string {
 	out := make([]string, len(vis))
 	for i := range vis {
 		idx := vis[i]
@@ -470,7 +474,7 @@ func rowName(rr *tablecache.Row) string {
 	if rr.Name != "" {
 		return rr.Name
 	}
-	if rr.Cells != nil && len(rr.Cells) > 0 {
+	if len(rr.Cells) > 0 {
 		if s, ok := rr.Cells[0].(string); ok {
 			return strings.TrimPrefix(s, "/")
 		}
@@ -580,7 +584,7 @@ func (s *liveObjectRowSource) setTarget(target liveSourceTarget) {
 	s.mu.Unlock()
 }
 
-func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent func(), onStop func()) (func(), error) {
+func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent, onStop func()) (func(), error) {
 	if owner == nil {
 		return nil, nil
 	}
@@ -848,10 +852,7 @@ func (s *liveObjectRowSource) Lines(ctx context.Context, top, num int) []table.R
 	if top < 0 {
 		top = 0
 	}
-	end := top + num
-	if end > len(rows) {
-		end = len(rows)
-	}
+	end := min(top+num, len(rows))
 	return rows[top:end]
 }
 
@@ -866,10 +867,7 @@ func (s *liveObjectRowSource) Above(ctx context.Context, id string, n int) []tab
 		s.mu.Unlock()
 		return nil
 	}
-	start := idx - n
-	if start < 0 {
-		start = 0
-	}
+	start := max(idx-n, 0)
 	rows := append([]table.Row(nil), s.rows[start:idx]...)
 	s.mu.Unlock()
 	if len(rows) == 0 {
@@ -894,10 +892,7 @@ func (s *liveObjectRowSource) Below(ctx context.Context, id string, n int) []tab
 		s.mu.Unlock()
 		return nil
 	}
-	end := start + n
-	if end > len(s.rows) {
-		end = len(s.rows)
-	}
+	end := min(start+n, len(s.rows))
 	rows := append([]table.Row(nil), s.rows[start:end]...)
 	s.mu.Unlock()
 	return rows
@@ -962,13 +957,13 @@ const informerStartTimeout = 5 * time.Second
 // informer syncs) before the user is told.
 const listFailureGrace = 10 * time.Second
 
-func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, onEvent func(), onStop func()) (func(), error) {
+func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, onEvent, onStop func()) (func(), error) {
 	return startFilteredInformer(deps, gvr, namespace, name, nil, onEvent, onStop)
 }
 
 // startFilteredInformer is startInformerForResource with an extra filter on
 // the event's object; a nil filter accepts every object.
-func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace, name string, filter func(metav1.Object) bool, onEvent func(), onStop func()) (func(), error) {
+func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace, name string, filter func(metav1.Object) bool, onEvent, onStop func()) (func(), error) {
 	if deps.Cl == nil {
 		return nil, nil
 	}
@@ -1002,32 +997,7 @@ func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace
 	type handlerReg interface {
 		Remove() error
 	}
-	reg, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if !matchesFiltered(obj, namespace, name, filter) {
-				return
-			}
-			if onEvent != nil {
-				onEvent()
-			}
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if !matchesFiltered(newObj, namespace, name, filter) {
-				return
-			}
-			if onEvent != nil {
-				onEvent()
-			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if !matchesFiltered(obj, namespace, name, filter) {
-				return
-			}
-			if onEvent != nil {
-				onEvent()
-			}
-		},
-	})
+	reg, err := informer.AddEventHandler(filteredEventHandler(namespace, name, filter, onEvent))
 	if err != nil {
 		log.Error(err, "failed to add informer handler")
 		return nil, err
@@ -1036,30 +1006,7 @@ func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace
 	// cache. This waits in the background; an informer that never syncs
 	// (no permission) only leaves this goroutine waiting until cancel.
 	stop := make(chan struct{})
-	go func() {
-		select {
-		case <-deps.Ctx.Done():
-			return
-		case <-stop:
-			return
-		default:
-		}
-		synced := informer.HasSynced()
-		if !synced {
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				select {
-				case <-deps.Ctx.Done():
-				case <-stop:
-				}
-			}()
-			synced = toolscache.WaitForCacheSync(done, informer.HasSynced)
-		}
-		if synced && onEvent != nil {
-			onEvent()
-		}
-	}()
+	go notifyWhenSynced(deps.Ctx, informer, stop, onEvent)
 	var stopOnce sync.Once
 	cancel := func() {
 		stopOnce.Do(func() { close(stop) })
@@ -1073,6 +1020,48 @@ func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace
 	return cancel, nil
 }
 
+// filteredEventHandler calls onEvent for every add, update and delete of an
+// object that matches namespace, name and filter.
+func filteredEventHandler(namespace, name string, filter func(metav1.Object) bool, onEvent func()) toolscache.ResourceEventHandlerFuncs {
+	notify := func(obj any) {
+		if matchesFiltered(obj, namespace, name, filter) && onEvent != nil {
+			onEvent()
+		}
+	}
+	return toolscache.ResourceEventHandlerFuncs{
+		AddFunc:    notify,
+		UpdateFunc: func(_, newObj any) { notify(newObj) },
+		DeleteFunc: notify,
+	}
+}
+
+// notifyWhenSynced calls onEvent once the informer has synced. It gives up
+// when ctx is done or stop is closed.
+func notifyWhenSynced(ctx context.Context, informer crcache.Informer, stop <-chan struct{}, onEvent func()) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-stop:
+		return
+	default:
+	}
+	synced := informer.HasSynced()
+	if !synced {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			select {
+			case <-ctx.Done():
+			case <-stop:
+			}
+		}()
+		synced = toolscache.WaitForCacheSync(done, informer.HasSynced)
+	}
+	if synced && onEvent != nil {
+		onEvent()
+	}
+}
+
 func watchDuration(deps Deps) time.Duration {
 	if deps.AppConfig != nil {
 		if dur := deps.AppConfig.Kubernetes.Clusters.TTL.Duration; dur > 0 {
@@ -1082,7 +1071,7 @@ func watchDuration(deps Deps) time.Duration {
 	return 2 * time.Minute
 }
 
-func accessorForEvent(obj interface{}) (metav1.Object, bool) {
+func accessorForEvent(obj any) (metav1.Object, bool) {
 	switch o := obj.(type) {
 	case toolscache.DeletedFinalStateUnknown:
 		return accessorForEvent(o.Obj)
@@ -1095,7 +1084,7 @@ func accessorForEvent(obj interface{}) (metav1.Object, bool) {
 	}
 }
 
-func matchesTarget(obj interface{}, namespace, name string) bool {
+func matchesTarget(obj any, namespace, name string) bool {
 	accessor, ok := accessorForEvent(obj)
 	if !ok || accessor == nil {
 		return false
@@ -1109,7 +1098,7 @@ func matchesTarget(obj interface{}, namespace, name string) bool {
 	return true
 }
 
-func matchesFiltered(obj interface{}, namespace, name string, filter func(metav1.Object) bool) bool {
+func matchesFiltered(obj any, namespace, name string, filter func(metav1.Object) bool) bool {
 	if !matchesTarget(obj, namespace, name) {
 		return false
 	}

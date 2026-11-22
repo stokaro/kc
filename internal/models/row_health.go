@@ -89,7 +89,7 @@ func podHealth(u *unstructured.Unstructured) RowHealth {
 	for _, field := range []string{"initContainerStatuses", "containerStatuses"} {
 		statuses, _, _ := unstructured.NestedSlice(u.Object, "status", field)
 		for _, raw := range statuses {
-			st, ok := raw.(map[string]interface{})
+			st, ok := raw.(map[string]any)
 			if !ok {
 				continue
 			}

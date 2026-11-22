@@ -82,7 +82,9 @@ func newPortForwardItem(deps Deps, registry *portforward.Registry, fwd portforwa
 func (i *PortForwardItem) Forward() portforward.Forward { return i.fwd }
 
 // ViewContent describes the forward for F3.
-func (i *PortForwardItem) ViewContent() (string, string, string, string, string, error) {
+//
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (i *PortForwardItem) ViewContent() (title, body, lang, mime, filename string, err error) {
 	s := i.fwd.Spec
 	var b strings.Builder
 	line := func(k, v string) {
@@ -99,7 +101,7 @@ func (i *PortForwardItem) ViewContent() (string, string, string, string, string,
 	line("context", s.Context)
 	line("started", i.fwd.Started.Format(time.RFC3339))
 	line("kubectl", s.Command)
-	title := "port-forward " + i.fwd.Local()
+	title = "port-forward " + i.fwd.Local()
 	return title, b.String(), "yaml", "application/yaml", "port-forward-" + i.fwd.ID + ".yaml", nil
 }
 

@@ -38,7 +38,7 @@ func TestObjectsFolderAllNamespacesUsesObjectNamespace(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("expected one row per object, got %d", len(rows))
 	}
-	seen := map[string]string{}
+	seen := make(map[string]string)
 	for _, row := range rows {
 		obj := objectRowOf(t, row)
 		id, _, _, _ := row.Columns()

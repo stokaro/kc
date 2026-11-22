@@ -9,18 +9,18 @@ import (
 	"github.com/stokaro/kc/internal/models"
 )
 
-type obj = map[string]interface{}
+type obj = map[string]any
 
-func conditions(pairs ...string) []interface{} {
-	out := make([]interface{}, 0, len(pairs)/2)
+func conditions(pairs ...string) []any {
+	out := make([]any, 0, len(pairs)/2)
 	for i := 0; i+1 < len(pairs); i += 2 {
 		out = append(out, obj{"type": pairs[i], "status": pairs[i+1]})
 	}
 	return out
 }
 
-func waiting(reason string) []interface{} {
-	return []interface{}{obj{"name": "app", "state": obj{"waiting": obj{"reason": reason}}}}
+func waiting(reason string) []any {
+	return []any{obj{"name": "app", "state": obj{"waiting": obj{"reason": reason}}}}
 }
 
 func TestClassifyRowHealth(t *testing.T) {
@@ -52,13 +52,13 @@ func TestClassifyRowHealth(t *testing.T) {
 		{name: "pod crash loop", gvr: pods, obj: obj{"status": obj{"phase": "Running", "conditions": conditions("Ready", "True"), "containerStatuses": waiting("CrashLoopBackOff")}}, want: models.RowHealthNotReady},
 		{name: "pod init image pull", gvr: pods, obj: obj{"status": obj{"phase": "Running", "initContainerStatuses": waiting("ImagePullBackOff")}}, want: models.RowHealthNotReady},
 		{name: "pod container creating", gvr: pods, obj: obj{"status": obj{"conditions": conditions("Ready", "True"), "containerStatuses": waiting("ContainerCreating")}}, want: models.RowHealthOK},
-		{name: "pod no status", gvr: pods, obj: obj{}, want: models.RowHealthUnknown},
+		{name: "pod no status", gvr: pods, obj: make(obj), want: models.RowHealthUnknown},
 
 		{name: "node ready", gvr: nodes, obj: obj{"status": obj{"conditions": conditions("MemoryPressure", "False", "Ready", "True")}}, want: models.RowHealthOK},
 		{name: "node not ready", gvr: nodes, obj: obj{"status": obj{"conditions": conditions("Ready", "False")}}, want: models.RowHealthNotReady},
 		{name: "node ready unknown", gvr: nodes, obj: obj{"status": obj{"conditions": conditions("Ready", "Unknown")}}, want: models.RowHealthNotReady},
 		{name: "node cordoned but ready", gvr: nodes, obj: obj{"spec": obj{"unschedulable": true}, "status": obj{"conditions": conditions("Ready", "True")}}, want: models.RowHealthOK},
-		{name: "node no conditions", gvr: nodes, obj: obj{}, want: models.RowHealthUnknown},
+		{name: "node no conditions", gvr: nodes, obj: make(obj), want: models.RowHealthUnknown},
 
 		{name: "pvc bound", gvr: pvcs, obj: obj{"status": obj{"phase": "Bound"}}, want: models.RowHealthOK},
 		{name: "pvc pending", gvr: pvcs, obj: obj{"status": obj{"phase": "Pending"}}, want: models.RowHealthNotReady},
@@ -72,7 +72,7 @@ func TestClassifyRowHealth(t *testing.T) {
 		{name: "deployment scaled to zero", gvr: deployments, obj: obj{"spec": obj{"replicas": int64(0)}}, want: models.RowHealthOK},
 		{name: "statefulset ready", gvr: statefulsets, obj: obj{"spec": obj{"replicas": int64(3)}, "status": obj{"readyReplicas": int64(3)}}, want: models.RowHealthOK},
 		{name: "statefulset short", gvr: statefulsets, obj: obj{"spec": obj{"replicas": int64(3)}, "status": obj{"readyReplicas": int64(2)}}, want: models.RowHealthNotReady},
-		{name: "statefulset default replicas", gvr: statefulsets, obj: obj{"status": obj{}}, want: models.RowHealthNotReady},
+		{name: "statefulset default replicas", gvr: statefulsets, obj: obj{"status": make(obj)}, want: models.RowHealthNotReady},
 		{name: "replicaset old and empty", gvr: replicasets, obj: obj{"spec": obj{"replicas": int64(0)}, "status": obj{"replicas": int64(0)}}, want: models.RowHealthOK},
 		{name: "replicaset unavailable", gvr: replicasets, obj: obj{"spec": obj{"replicas": int64(2)}, "status": obj{"readyReplicas": int64(2), "availableReplicas": int64(1)}}, want: models.RowHealthNotReady},
 		{name: "daemonset ready", gvr: daemonsets, obj: obj{"status": obj{"desiredNumberScheduled": int64(3), "numberReady": int64(3), "numberAvailable": int64(3)}}, want: models.RowHealthOK},

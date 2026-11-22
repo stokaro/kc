@@ -106,7 +106,6 @@ func TestPodRowSourcesRefresh(t *testing.T) {
 	if len(lst.Lines(ctx, 0, 10)) != len(rowsSet[1]) {
 		t.Fatalf("list rows did not refresh")
 	}
-
 }
 
 func TestLiveObjectRowSourceStopsListingAfterForbidden(t *testing.T) {
@@ -146,7 +145,7 @@ func TestLiveObjectRowSourceStopsWatchRetriesAfterForbidden(t *testing.T) {
 	src := newLiveObjectRowSourceWithHooks(
 		func(context.Context) ([]table.Row, error) {
 			populateCalls++
-			return []table.Row{}, nil
+			return make([]table.Row, 0), nil
 		},
 		func() {},
 		func(func(), func()) (func(), error) {

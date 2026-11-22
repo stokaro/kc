@@ -6,7 +6,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/pkg/appconfig"
@@ -29,11 +28,9 @@ func TestResolveExecTargetForPodRow(t *testing.T) {
 	const ns = "exec-target"
 	createNamespace(t, cl, ns)
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:   ns,
-			Name:        "web-0",
-			Annotations: map[string]string{DefaultContainerAnnotation: "app"},
-		},
+		Namespace:   ns,
+		Name:        "web-0",
+		Annotations: map[string]string{DefaultContainerAnnotation: "app"},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{
 			{Name: "proxy", Image: "registry.k8s.io/pause:3.9"},
 			{Name: "app", Image: "registry.k8s.io/pause:3.9", Stdin: true, TTY: true},

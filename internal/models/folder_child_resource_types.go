@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -40,7 +41,7 @@ func (f *ChildResourceTypesFolder) populate(ctx context.Context) ([]table.Row, e
 		childGVR := child
 		resName := childGVR.Resource
 		id := fmt.Sprintf("%s/%s/%s/%s/%s", f.parentNamespace, f.parentName, childGVR.Group, childGVR.Version, childGVR.Resource)
-		path := append(append([]string{}, f.Path()...), resName)
+		path := append(slices.Clone(f.Path()), resName)
 		item := NewChildResourceItem(id, []string{"/" + resName}, path, func() (Folder, error) {
 			return NewChildResourcesFolder(f.Deps, f.parentGVR, f.parentNamespace, f.parentName, childGVR, path), nil
 		})
@@ -54,7 +55,7 @@ func (f *ChildResourceTypesFolder) populate(ctx context.Context) ([]table.Row, e
 			Follow:       true,
 			TailLines:    DefaultLogsTailLines,
 		}
-		path := append(append([]string{}, f.Path()...), "logs")
+		path := append(slices.Clone(f.Path()), "logs")
 		item := NewWorkloadLogItem(f.Deps, "logs", []string{"logs"}, path, spec)
 		item.RowItem.details = "Stream logs of all pods and containers"
 		rows = append(rows, item)

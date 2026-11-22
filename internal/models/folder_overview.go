@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -121,7 +122,9 @@ func (i *OverviewFindingItem) Enter() (Folder, error) {
 }
 
 // ViewContent explains how the value was computed.
-func (i *OverviewFindingItem) ViewContent() (string, string, string, string, string, error) {
+//
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (i *OverviewFindingItem) ViewContent() (title, body, lang, mime, filename string, err error) {
 	finding, ok := i.folder.currentFinding(i.id)
 	if !ok {
 		return "", "", "", "", "", ErrNoViewContent
@@ -289,7 +292,7 @@ func involvedObjectRef(deps Deps, o corev1.ObjectReference, eventNamespace strin
 // resourceVerbsByGVR returns the verbs discovery lists per resource, so the
 // object actions (F8 delete and others) work in the targets list.
 func resourceVerbsByGVR(deps Deps) map[schema.GroupResource][]string {
-	out := map[schema.GroupResource][]string{}
+	out := make(map[schema.GroupResource][]string)
 	if deps.Cl == nil {
 		return out
 	}
@@ -355,7 +358,7 @@ func overviewSeverityStyle(s overviewSeverity) *lipgloss.Style {
 
 // overviewRootItem is the /overview row of the panel root.
 func overviewRootItem(deps Deps, namespace string, parentPath []string) Item {
-	path := append(append([]string{}, parentPath...), "overview")
+	path := append(slices.Clone(parentPath), "overview")
 	item := NewChildResourceItem(OverviewRowID, []string{"/overview", "", ""}, path, func() (Folder, error) {
 		return NewOverviewFolder(deps, namespace, path), nil
 	})

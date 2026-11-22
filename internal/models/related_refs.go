@@ -140,81 +140,92 @@ func PodReferences(pod *corev1.Pod) []PodReference {
 	if pod == nil {
 		return nil
 	}
-	var out []PodReference
-	seen := map[PodReference]bool{}
-	add := func(gvr schema.GroupVersionResource, name, via string) {
-		if name == "" {
-			return
-		}
-		r := PodReference{GVR: gvr, Name: name, Via: via}
-		if seen[r] {
-			return
-		}
-		seen[r] = true
-		out = append(out, r)
-	}
+	c := podRefCollector{seen: make(map[PodReference]bool)}
 	spec := &pod.Spec
 	sa := spec.ServiceAccountName
 	if sa == "" {
 		sa = spec.DeprecatedServiceAccount
 	}
-	add(serviceAccountGVR, sa, "serviceAccount")
+	c.add(serviceAccountGVR, sa, "serviceAccount")
 	for _, s := range spec.ImagePullSecrets {
-		add(secretGVR, s.Name, "imagePullSecrets")
+		c.add(secretGVR, s.Name, "imagePullSecrets")
 	}
 	for _, v := range spec.Volumes {
-		switch {
-		case v.ConfigMap != nil:
-			add(configMapGVR, v.ConfigMap.Name, "volume")
-		case v.Secret != nil:
-			add(secretGVR, v.Secret.SecretName, "volume")
-		case v.PersistentVolumeClaim != nil:
-			add(pvcGVR, v.PersistentVolumeClaim.ClaimName, "volume")
-		case v.Ephemeral != nil:
-			// The ephemeral volume controller names the claim <pod>-<volume>.
-			add(pvcGVR, pod.Name+"-"+v.Name, "ephemeral volume")
-		case v.Projected != nil:
-			for _, src := range v.Projected.Sources {
-				if src.ConfigMap != nil {
-					add(configMapGVR, src.ConfigMap.Name, "projected volume")
-				}
-				if src.Secret != nil {
-					add(secretGVR, src.Secret.Name, "projected volume")
-				}
+		c.volume(pod.Name, v)
+	}
+	for _, ct := range spec.InitContainers {
+		c.env(ct.Env, ct.EnvFrom)
+	}
+	for _, ct := range spec.Containers {
+		c.env(ct.Env, ct.EnvFrom)
+	}
+	for _, ct := range spec.EphemeralContainers {
+		c.env(ct.Env, ct.EnvFrom)
+	}
+	return c.out
+}
+
+// podRefCollector gathers the references of one pod in order, each once.
+type podRefCollector struct {
+	out  []PodReference
+	seen map[PodReference]bool
+}
+
+func (c *podRefCollector) add(gvr schema.GroupVersionResource, name, via string) {
+	if name == "" {
+		return
+	}
+	r := PodReference{GVR: gvr, Name: name, Via: via}
+	if c.seen[r] {
+		return
+	}
+	c.seen[r] = true
+	c.out = append(c.out, r)
+}
+
+func (c *podRefCollector) volume(podName string, v corev1.Volume) {
+	switch {
+	case v.ConfigMap != nil:
+		c.add(configMapGVR, v.ConfigMap.Name, "volume")
+	case v.Secret != nil:
+		c.add(secretGVR, v.Secret.SecretName, "volume")
+	case v.PersistentVolumeClaim != nil:
+		c.add(pvcGVR, v.PersistentVolumeClaim.ClaimName, "volume")
+	case v.Ephemeral != nil:
+		// The ephemeral volume controller names the claim <pod>-<volume>.
+		c.add(pvcGVR, podName+"-"+v.Name, "ephemeral volume")
+	case v.Projected != nil:
+		for _, src := range v.Projected.Sources {
+			if src.ConfigMap != nil {
+				c.add(configMapGVR, src.ConfigMap.Name, "projected volume")
+			}
+			if src.Secret != nil {
+				c.add(secretGVR, src.Secret.Name, "projected volume")
 			}
 		}
 	}
-	containers := func(env []corev1.EnvVar, envFrom []corev1.EnvFromSource) {
-		for _, e := range envFrom {
-			if e.ConfigMapRef != nil {
-				add(configMapGVR, e.ConfigMapRef.Name, "envFrom")
-			}
-			if e.SecretRef != nil {
-				add(secretGVR, e.SecretRef.Name, "envFrom")
-			}
+}
+
+func (c *podRefCollector) env(env []corev1.EnvVar, envFrom []corev1.EnvFromSource) {
+	for _, e := range envFrom {
+		if e.ConfigMapRef != nil {
+			c.add(configMapGVR, e.ConfigMapRef.Name, "envFrom")
 		}
-		for _, e := range env {
-			if e.ValueFrom == nil {
-				continue
-			}
-			if e.ValueFrom.ConfigMapKeyRef != nil {
-				add(configMapGVR, e.ValueFrom.ConfigMapKeyRef.Name, "env")
-			}
-			if e.ValueFrom.SecretKeyRef != nil {
-				add(secretGVR, e.ValueFrom.SecretKeyRef.Name, "env")
-			}
+		if e.SecretRef != nil {
+			c.add(secretGVR, e.SecretRef.Name, "envFrom")
 		}
 	}
-	for _, c := range spec.InitContainers {
-		containers(c.Env, c.EnvFrom)
+	for _, e := range env {
+		if e.ValueFrom == nil {
+			continue
+		}
+		if e.ValueFrom.ConfigMapKeyRef != nil {
+			c.add(configMapGVR, e.ValueFrom.ConfigMapKeyRef.Name, "env")
+		}
+		if e.ValueFrom.SecretKeyRef != nil {
+			c.add(secretGVR, e.ValueFrom.SecretKeyRef.Name, "env")
+		}
 	}
-	for _, c := range spec.Containers {
-		containers(c.Env, c.EnvFrom)
-	}
-	for _, c := range spec.EphemeralContainers {
-		containers(c.Env, c.EnvFrom)
-	}
-	return out
 }
 
 // ServiceSelectsPod reports whether a Service's selector matches the pod
@@ -237,7 +248,7 @@ func IngressServiceRefs(ing *networkingv1.Ingress, service string) []string {
 	if b := ing.Spec.DefaultBackend; b != nil && b.Service != nil && b.Service.Name == service {
 		out = append(out, "default backend")
 	}
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
 			continue
@@ -269,12 +280,19 @@ type UsedByFinder struct {
 }
 
 var (
-	usedByMu  sync.RWMutex
-	usedByMap = map[schema.GroupVersionResource]UsedByFinder{}
+	usedByOnce sync.Once
+	usedByMu   sync.RWMutex
+	usedByMap  map[schema.GroupVersionResource]UsedByFinder
 )
+
+// loadUsedBy fills the registry with the built-in finders on first use.
+func loadUsedBy() {
+	usedByOnce.Do(func() { usedByMap = builtinUsedBy() })
+}
 
 // RegisterUsedBy registers how to find the users of objects of a GVR.
 func RegisterUsedBy(gvr schema.GroupVersionResource, f UsedByFinder) {
+	loadUsedBy()
 	usedByMu.Lock()
 	usedByMap[gvr] = f
 	usedByMu.Unlock()
@@ -282,25 +300,27 @@ func RegisterUsedBy(gvr schema.GroupVersionResource, f UsedByFinder) {
 
 // UsedByFor returns the finder for a GVR when one is registered.
 func UsedByFor(gvr schema.GroupVersionResource) (UsedByFinder, bool) {
+	loadUsedBy()
 	usedByMu.RLock()
 	f, ok := usedByMap[gvr]
 	usedByMu.RUnlock()
 	return f, ok
 }
 
-func init() {
-	for _, gvr := range []schema.GroupVersionResource{configMapGVR, secretGVR, pvcGVR, serviceAccountGVR} {
-		target := gvr
-		RegisterUsedBy(target, UsedByFinder{
+func builtinUsedBy() map[schema.GroupVersionResource]UsedByFinder {
+	m := make(map[schema.GroupVersionResource]UsedByFinder)
+	for _, target := range []schema.GroupVersionResource{configMapGVR, secretGVR, pvcGVR, serviceAccountGVR} {
+		m[target] = UsedByFinder{
 			Sources: []schema.GroupVersionResource{podGVR},
 			Find: func(ctx context.Context, r RelatedReader, namespace, name string) ([]RelatedRef, error) {
 				return podsUsing(ctx, r, target, namespace, name)
 			},
-		})
+		}
 	}
-	RegisterUsedBy(podGVR, UsedByFinder{Sources: []schema.GroupVersionResource{serviceGVR}, Find: servicesSelecting})
-	RegisterUsedBy(serviceGVR, UsedByFinder{Sources: []schema.GroupVersionResource{ingressGVR}, Find: ingressesUsing})
-	RegisterUsedBy(pvGVR, UsedByFinder{Sources: []schema.GroupVersionResource{pvcGVR}, Find: claimsBinding})
+	m[podGVR] = UsedByFinder{Sources: []schema.GroupVersionResource{serviceGVR}, Find: servicesSelecting}
+	m[serviceGVR] = UsedByFinder{Sources: []schema.GroupVersionResource{ingressGVR}, Find: ingressesUsing}
+	m[pvGVR] = UsedByFinder{Sources: []schema.GroupVersionResource{pvcGVR}, Find: claimsBinding}
+	return m
 }
 
 func podsUsing(ctx context.Context, r RelatedReader, target schema.GroupVersionResource, namespace, name string) ([]RelatedRef, error) {
@@ -373,7 +393,7 @@ func ingressesUsing(ctx context.Context, r RelatedReader, namespace, name string
 // claimsBinding finds the claim a PersistentVolume is bound to. The volume's
 // claimRef names it; the claim counts only when it names the volume back
 // (spec.volumeName) and, when the claimRef has a UID, has that UID.
-func claimsBinding(ctx context.Context, r RelatedReader, _ string, name string) ([]RelatedRef, error) {
+func claimsBinding(ctx context.Context, r RelatedReader, _, name string) ([]RelatedRef, error) {
 	pv, err := r.GetByGVR(ctx, pvGVR, "", name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {

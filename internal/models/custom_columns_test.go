@@ -254,12 +254,12 @@ func TestRowsFromRowListMergesCustomColumns(t *testing.T) {
 		},
 		Items: []tablecache.Row{
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "default"},
-				TableRow:   metav1.TableRow{Cells: []any{"web", "1/1", "1", "5m", "c"}},
+				Name: "web", Namespace: "default",
+				Cells: []any{"web", "1/1", "1", "5m", "c"},
 			},
 			{
-				ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"},
-				TableRow:   metav1.TableRow{Cells: []any{"api", "0/1", "0", "1m", "c"}},
+				Name: "api", Namespace: "default",
+				Cells: []any{"api", "0/1", "0", "1m", "c"},
 			},
 		},
 	}

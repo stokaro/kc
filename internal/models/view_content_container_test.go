@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -14,8 +13,8 @@ import (
 // cannot encode a wrong idea of where an entry keeps its name.
 func containerLookupPod() *corev1.Pod {
 	return &corev1.Pod{
-		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
-		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "default"},
+		APIVersion: "v1", Kind: "Pod",
+		Name: "web", Namespace: "default",
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				{Name: "app", Image: "example.com/app:1"},
@@ -26,23 +25,23 @@ func containerLookupPod() *corev1.Pod {
 			},
 			EphemeralContainers: []corev1.EphemeralContainer{
 				{
-					EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debugger", Image: "busybox:1.36"},
-					TargetContainerName:      "app",
+					Name: "debugger", Image: "busybox:1.36",
+					TargetContainerName: "app",
 				},
 				{
-					EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "kc-fs-helper-app-0", Image: "busybox:1.36"},
-					TargetContainerName:      "app",
+					Name: "kc-fs-helper-app-0", Image: "busybox:1.36",
+					TargetContainerName: "app",
 				},
 				{
-					EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "kc-fs-ptrace-app-1", Image: "busybox:1.36"},
-					TargetContainerName:      "app",
+					Name: "kc-fs-ptrace-app-1", Image: "busybox:1.36",
+					TargetContainerName: "app",
 				},
 			},
 		},
 	}
 }
 
-func toUnstructuredPod(t *testing.T, pod *corev1.Pod) map[string]interface{} {
+func toUnstructuredPod(t *testing.T, pod *corev1.Pod) map[string]any {
 	t.Helper()
 	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(pod)
 	if err != nil {
@@ -108,11 +107,11 @@ func TestFindContainer(t *testing.T) {
 func TestFindContainerIgnoresMetadataName(t *testing.T) {
 	t.Parallel()
 
-	obj := map[string]interface{}{
-		"spec": map[string]interface{}{
-			"ephemeralContainers": []interface{}{
-				map[string]interface{}{
-					"metadata": map[string]interface{}{"name": "ghost"},
+	obj := map[string]any{
+		"spec": map[string]any{
+			"ephemeralContainers": []any{
+				map[string]any{
+					"metadata": map[string]any{"name": "ghost"},
 					"image":    "busybox:1.36",
 				},
 			},
@@ -127,8 +126,8 @@ func TestFindContainerWithoutList(t *testing.T) {
 	t.Parallel()
 
 	obj := toUnstructuredPod(t, &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "bare"},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
+		Name: "bare",
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
 	})
 	for _, kind := range []containerKind{containerKindInit, containerKindEphemeral} {
 		if got := findContainer(obj, kind, "app"); got != nil {

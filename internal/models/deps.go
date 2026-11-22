@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
-	crlog "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/podfs"
@@ -85,7 +85,7 @@ func (d Deps) ForNamespace(namespace string) (Deps, func()) {
 	key.Namespace = ns
 	cl, release, err := d.NamespaceFactory(ctx, key, nil)
 	if err != nil {
-		crlog.FromContext(ctx).Error(err, "namespace cluster acquisition failed", "namespace", ns)
+		ctrllog.FromContext(ctx).Error(err, "namespace cluster acquisition failed", "namespace", ns)
 		return d, noRelease
 	}
 	d.Cl = cl
@@ -109,7 +109,7 @@ func (d Deps) ForSelectorScope(selectors map[schema.GroupVersionResource]crcache
 	}
 	cl, release, err := d.NamespaceFactory(d.Ctx, key, selectors)
 	if err != nil {
-		crlog.FromContext(d.Ctx).Error(err, "selector-scoped cluster acquisition failed", "selectorKey", key.SelectorKey)
+		ctrllog.FromContext(d.Ctx).Error(err, "selector-scoped cluster acquisition failed", "selectorKey", key.SelectorKey)
 		d.ClusterKey = key
 		return d, noRelease
 	}
@@ -133,7 +133,7 @@ func (d Deps) unscoped() (Deps, func()) {
 	}
 	cl, release, err := d.NamespaceFactory(d.Ctx, key, nil)
 	if err != nil {
-		crlog.FromContext(d.Ctx).Error(err, "unscoped cluster acquisition failed")
+		ctrllog.FromContext(d.Ctx).Error(err, "unscoped cluster acquisition failed")
 		return d, noRelease
 	}
 	d.Cl = cl
