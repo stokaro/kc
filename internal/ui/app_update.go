@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/ui/viewer"
+	"github.com/sttts/kc/internal/workloadaction"
 	"github.com/sttts/kc/pkg/appconfig"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -690,6 +691,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.showConfirm(msg.Action)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case workloadaction.Request:
+		return a, a.startWorkloadAction(msg)
+	case workloadMessage:
+		return a, a.handleWorkloadMsg(msg)
 	case startupSelectMsg:
 		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
 	case contextSwitchedMsg:
@@ -952,6 +957,9 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case workloadMessage:
+		// The workload dialogs answer themselves.
 		return true
 	}
 	return false
