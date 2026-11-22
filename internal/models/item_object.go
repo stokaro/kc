@@ -5,6 +5,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // ObjectRow models a concrete Kubernetes object row.
@@ -15,6 +16,8 @@ type ObjectRow struct {
 	name      string
 	viewFn    ViewContentFunc
 	verbs     []string
+	uid       types.UID
+	origin    ObjectOrigin
 }
 
 func NewObjectRow(id string, cells []string, path []string, gvr schema.GroupVersionResource, namespace, name string, style *lipgloss.Style) *ObjectRow {
@@ -29,6 +32,19 @@ func NewObjectRow(id string, cells []string, path []string, gvr schema.GroupVers
 func (o *ObjectRow) GVR() schema.GroupVersionResource { return o.gvr }
 func (o *ObjectRow) Namespace() string                { return o.namespace }
 func (o *ObjectRow) Name() string                     { return o.name }
+
+// UID returns the UID of the object instance the row was built from; it is
+// empty when the listing carried no metadata.
+func (o *ObjectRow) UID() types.UID { return o.uid }
+
+// Origin returns the cluster connection the row was read from.
+func (o *ObjectRow) Origin() ObjectOrigin { return o.origin }
+
+// SetInstance records the object instance the row shows and where it was read.
+func (o *ObjectRow) SetInstance(uid types.UID, origin ObjectOrigin) {
+	o.uid = uid
+	o.origin = origin
+}
 
 func (o *ObjectRow) WithViewContent(fn ViewContentFunc) *ObjectRow {
 	o.viewFn = fn
