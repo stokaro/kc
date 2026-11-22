@@ -18,10 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-var (
-	deploymentGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
-	nodeGVR       = schema.GroupVersionResource{Version: "v1", Resource: "nodes"}
-)
+var deploymentGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 
 func TestPodReferences(t *testing.T) {
 	t.Parallel()

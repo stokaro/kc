@@ -60,32 +60,37 @@ type RelatedObjectsFolder struct {
 	name      string
 	finder    UsedByFinder
 	rows      *liveObjectRowSource
+	release   func() // gives up the unscoped cluster
 }
 
 // NewRelatedFolder builds the folder at objectPath/owners or
 // objectPath/used-by. It returns ErrNoOwners when the object has no owner
 // references and ErrNoUsedBy when no used-by finder is registered for gvr.
 func NewRelatedFolder(ctx context.Context, deps Deps, kind RelatedKind, gvr schema.GroupVersionResource, namespace, name string, objectPath []string) (*RelatedObjectsFolder, error) {
-	deps = deps.unscoped()
-	f := &RelatedObjectsFolder{kind: kind, gvr: gvr, namespace: namespace, name: name}
+	deps, release := deps.unscoped()
+	f := &RelatedObjectsFolder{kind: kind, gvr: gvr, namespace: namespace, name: name, release: release}
 	segment := OwnersSegment
 	switch kind {
 	case RelatedOwners:
 		obj, err := deps.Cl.GetByGVR(ctx, gvr, namespace, name)
 		if err != nil {
+			release()
 			return nil, err
 		}
 		if len(obj.GetOwnerReferences()) == 0 {
+			release()
 			return nil, ErrNoOwners
 		}
 	case RelatedUsedBy:
 		finder, ok := UsedByFor(gvr)
 		if !ok {
+			release()
 			return nil, ErrNoUsedBy
 		}
 		f.finder = finder
 		segment = UsedBySegment
 	default:
+		release()
 		return nil, fmt.Errorf("unknown related kind %d", kind)
 	}
 	path := append(append([]string(nil), objectPath...), segment)
@@ -103,10 +108,14 @@ func NewRelatedFolder(ctx context.Context, deps Deps, kind RelatedKind, gvr sche
 // Kind reports whether the folder lists owners or users.
 func (f *RelatedObjectsFolder) Kind() RelatedKind { return f.kind }
 
-// Close stops the folder's watches.
+// Close stops the folder's watches and gives up the unscoped cluster.
 func (f *RelatedObjectsFolder) Close() {
 	if f.rows != nil {
 		f.rows.Close()
+	}
+	if f.release != nil {
+		f.release()
+		f.release = nil
 	}
 }
 

@@ -20,7 +20,6 @@ import (
 )
 
 var (
-	configMapGVR      = schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}
 	secretGVR         = schema.GroupVersionResource{Version: "v1", Resource: "secrets"}
 	pvcGVR            = schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"}
 	pvGVR             = schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumes"}
