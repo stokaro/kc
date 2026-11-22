@@ -125,6 +125,8 @@ func modeLabel(mode PanelViewMode) string {
 		return "Manifest"
 	case PanelModeLogs:
 		return "Logs"
+	case PanelModeInfo:
+		return "Info"
 	case PanelModeCommand:
 		return "Command"
 	default:

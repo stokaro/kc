@@ -34,10 +34,21 @@ type usageSnapshot struct {
 	served bool  // metrics.k8s.io serves the resource
 	err    error // the metrics could not be read; cells show n/a
 	values map[string]usageValues
+	// containers holds the usage of each container of a pod, by pod key.
+	// The overview compares it with each container's limit.
+	containers map[string][]containerUsage
 }
 
-// usageFetcher reads one snapshot. Tests replace it.
-type usageFetcher func(ctx context.Context, deps Deps, kind usageKind, namespace string) *usageSnapshot
+// containerUsage is the measured usage of one container: CPU in millicores,
+// memory in bytes.
+type containerUsage struct {
+	name     string
+	cpu, mem int64
+}
+
+// usageFetcher reads one snapshot. metricsOnly skips the join with the
+// objects in the shared cache. Tests replace it.
+type usageFetcher func(ctx context.Context, deps Deps, kind usageKind, namespace string, metricsOnly bool) *usageSnapshot
 
 // UsageMetrics polls metrics.k8s.io for the pod and node lists on screen.
 // It keeps one poller per cluster, kind and namespace. A poller runs while
@@ -60,6 +71,11 @@ type usagePollerKey struct {
 	cluster   kccluster.Key
 	kind      usageKind
 	namespace string
+	// metricsOnly pollers read metrics.k8s.io and nothing else. The overview
+	// uses them: it has the pod and node specs in its own cache, and joining
+	// with the panel's shared cache would start cluster-wide informers there
+	// that live for the session.
+	metricsOnly bool
 }
 
 type usagePoller struct {
@@ -87,10 +103,19 @@ func (m *UsageMetrics) idleAfter() time.Duration { return 2 * m.interval }
 // poller when it is not running. The result may be nil before the first
 // poll; fresh is false when the snapshot is older than the idle window.
 func (m *UsageMetrics) snapshot(deps Deps, kind usageKind, namespace string, watcher any, notify func()) (snap *usageSnapshot, fresh bool) {
-	if m == nil || kind == 0 {
+	return m.snapshotFor(deps, usagePollerKey{cluster: deps.ClusterKey, kind: kind, namespace: namespace}, watcher, notify)
+}
+
+// metricsSnapshot is snapshot for a poller that reads metrics.k8s.io only:
+// the values carry usage, and requests, limits and allocatable stay zero.
+func (m *UsageMetrics) metricsSnapshot(deps Deps, kind usageKind, namespace string, watcher any, notify func()) (snap *usageSnapshot, fresh bool) {
+	return m.snapshotFor(deps, usagePollerKey{cluster: deps.ClusterKey, kind: kind, namespace: namespace, metricsOnly: true}, watcher, notify)
+}
+
+func (m *UsageMetrics) snapshotFor(deps Deps, key usagePollerKey, watcher any, notify func()) (snap *usageSnapshot, fresh bool) {
+	if m == nil || key.kind == 0 {
 		return nil, false
 	}
-	key := usagePollerKey{cluster: deps.ClusterKey, kind: kind, namespace: namespace}
 	m.mu.Lock()
 	if m.pollers == nil {
 		m.pollers = make(map[usagePollerKey]*usagePoller)
@@ -163,7 +188,7 @@ func (p *usagePoller) run() {
 
 		if !deps.Activity.Paused() {
 			ctx, cancel := context.WithTimeout(deps.Ctx, usagePollTimeout)
-			snap := m.fetch(ctx, deps, p.key.kind, p.key.namespace)
+			snap := m.fetch(ctx, deps, p.key.kind, p.key.namespace, p.key.metricsOnly)
 			cancel()
 			if snap != nil {
 				snap.at = m.now()
@@ -207,7 +232,7 @@ func (p *usagePoller) logStateLocked(ctx context.Context, snap *usageSnapshot) {
 		return
 	}
 	p.lastErr = msg
-	log := ctrllog.FromContext(ctx).WithName("usage").WithValues("kind", p.key.kind.String(), "namespace", p.key.namespace)
+	log := ctrllog.FromContext(ctx).WithName("usage").WithValues("kind", p.key.kind.String(), "namespace", p.key.namespace, "metricsOnly", p.key.metricsOnly)
 	if msg == "" {
 		log.Info("usage metrics available")
 		return
@@ -215,9 +240,9 @@ func (p *usagePoller) logStateLocked(ctx context.Context, snap *usageSnapshot) {
 	log.Info("usage metrics unavailable", "error", msg)
 }
 
-// fetchUsage lists PodMetrics or NodeMetrics once and joins them with the
-// pods or nodes in the shared cache.
-func fetchUsage(ctx context.Context, deps Deps, kind usageKind, namespace string) *usageSnapshot {
+// fetchUsage lists PodMetrics or NodeMetrics once and, unless metricsOnly,
+// joins them with the pods or nodes in the shared cache.
+func fetchUsage(ctx context.Context, deps Deps, kind usageKind, namespace string, metricsOnly bool) *usageSnapshot {
 	if deps.Cl == nil {
 		return nil
 	}
@@ -245,6 +270,13 @@ func fetchUsage(ctx context.Context, deps Deps, kind usageKind, namespace string
 	case err != nil:
 		return &usageSnapshot{served: true, err: err}
 	}
+	var containers map[string][]containerUsage
+	if kind == usagePods {
+		containers = buildContainerUsage(list.Items)
+	}
+	if metricsOnly {
+		return &usageSnapshot{served: true, values: buildUsageValues(kind, list.Items, nil), containers: containers}
+	}
 	// Requests, limits and allocatable come from the shared cache. Without
 	// them usage still shows, and percentages say n/a.
 	var objects []unstructured.Unstructured
@@ -253,7 +285,7 @@ func fetchUsage(ctx context.Context, deps Deps, kind usageKind, namespace string
 	} else if err != nil {
 		log.V(1).Info("usage: cannot read objects from the cache", "gvr", objectGVR.String(), "error", err.Error())
 	}
-	return &usageSnapshot{served: true, values: buildUsageValues(kind, list.Items, objects)}
+	return &usageSnapshot{served: true, values: buildUsageValues(kind, list.Items, objects), containers: containers}
 }
 
 // metricsServed reports whether discovery lists gvr. It sends no request

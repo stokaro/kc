@@ -16,7 +16,7 @@ A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, B
 - **Helm releases:** `/helm` lists releases with their stored values, manifest, notes, hooks and revision history, and links each manifest object to the live object (read-only, no `helm` binary needed).
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **CPU and memory usage:** when the cluster serves `metrics.k8s.io` (metrics-server), pod lists show `CPU`, `MEM`, `%CPU/R` (of requests) and `%MEM/L` (of limits), and node lists show `CPU`, `%CPU`, `MEM` and `%MEM` (of allocatable). Wide mode adds `%CPU/L` and `%MEM/R` for pods and `CPU/A` and `MEM/A` for nodes. kc reads the metrics every 15 seconds, only while such a list is on screen and no dialog is open. `n/a` means no metrics for the object yet, no request or limit to compare with, or metrics kc may not read.
-- **Two synchronized panels:** each panel can render lists, or follow the other panel's selection in Describe, Manifest or Logs mode (`C-1` / `C-2` cycle the left / right panel's mode; Logs streams the selected pod's or container's log; `F2` there sets the container, "All containers", tail, since, timestamps and previous), supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
+- **Two synchronized panels:** each panel can render lists, or follow the other panel's selection in Describe, Manifest, Logs or Info mode (`C-1` / `C-2` cycle the left / right panel's mode; Logs streams the selected pod's or container's log, and `F2` there sets the container, "All containers", tail, since, timestamps and previous; Info shows CPU, memory, pods and disk bars for the other panel's scope), supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
 - **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts; `F2` sets tail lines, the since window, timestamps and the previous container instance, and restarts the stream. A container that restarted also gets a `logs (previous)` row. JSON lines are shown as time, level, message and key=value fields, with display filters and field extraction.
 - **Workload actions:** entering a Deployment, StatefulSet, DaemonSet or ReplicaSet shows rows next to its child types: `Scale...` (a replica count dialog, prefilled with the current count, written through the scale subresource), `Restart...` (as `kubectl rollout restart`) and, for Deployments, `Roll back...` (pick a revision; as `kubectl rollout undo --to-revision`). Each change asks first in a red dialog that names the context, the object and the equivalent kubectl command. Read-only mode refuses them.
 - **Container internals:** each pod container exposes `/logs`, a `shell` row and a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
@@ -84,6 +84,7 @@ Kubernetes Commander accepts a subset of kubectl syntax so you can jump straight
 - `kc get deploy myapp -o yaml` – highlights `myapp`, opens the manifest viewer in the opposite panel.
 - `kc get pods/nginx pods/api svc/frontend` – multi-selects rows across resources.
 - `kc logs payments-0 -c worker --follow` – drills down to the pod → container → logs row and opens the streaming viewer.
+- `kc overview`, `kc -n shop overview`, `kc -A overview` – start in the [cluster overview](#cluster-overview) of the context's namespace, of `shop`, or of all namespaces.
 
 All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s default.
 
@@ -131,6 +132,7 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | `M-b`      | Used by: opens `<object>/used-by` with the objects that use the selected one, read from the watch cache: pods using a ConfigMap, Secret, PersistentVolumeClaim or ServiceAccount (volumes, env, envFrom, imagePullSecrets, serviceAccountName), Services selecting a Pod, Ingresses routing to a Service, the claim bound to a PersistentVolume. `Esc b` does the same. |
 | `C-x C-d`  | Compare the objects under the cursors of the two panels, as mc's "Compare files". Opens a read-only unified diff of the two YAML manifests. |
 | `M-e`      | Explain: browse the field documentation of the selected object or resource type, read from the cluster's OpenAPI v3 schema for exactly that group and version (CRDs included). See [Field documentation](#field-documentation). `Esc e` does the same. |
+| `M-i`      | Open the [cluster overview](#cluster-overview) in the active panel for the namespace of the list it shows (all namespaces for a list across namespaces). `Esc` and `/..` return to the panel root. `Esc i` does the same. |
 | `M-k`      | Access – show what the current identity may do with the selected object or resource type: allowed, denied or unknown for get, list, watch, create, update, patch, delete and the subresources kc uses (pod logs, exec, port-forward, attach, eviction; scale for workloads), with the reason and the matching `kubectl auth can-i` command (`Enter` copies it, `r` checks again). `Esc k` does the same. |
 | `M-x`      | Shell in the container of the selected container or pod row: `kubectl exec -it` runs `bash`, or `sh` when the image has no bash. On a pod row kc takes the container named by the `kubectl.kubernetes.io/default-container` annotation, else the first one; open the pod's `/containers` folder to pick another. kc hands the terminal to kubectl and comes back when the shell ends. `Esc x` does the same. Enter on a container's `shell` row does the same. |
 | `M-t`      | Attach to the main process of the selected container or pod (`kubectl attach`, with `-i` and `-t` when the container has stdin and a TTY). Keys go to that process, so ending it ends the container. `Esc t` does the same. |
@@ -251,11 +253,13 @@ kc needs get, list and watch on Secrets in all namespaces for this, because its 
 
 ## Cluster Overview
 
-The first row of every panel root is `/overview`: one row per finding about the panel's context and namespace scope, in four sections. Capacity compares the CPU and memory requests and limits of the pods on each node with its allocatable, and the pods per node with allocatable pods (`use n/a` until measured usage from metrics.k8s.io is wired in). Health lists nodes that are not ready, under pressure or cordoned; pods that are not ready, pending, crash looping, failing to pull images or to start, OOMKilled or restarting; workloads that are unavailable or rolling out; failed Jobs and CronJobs; Pending or Lost claims and Released or Failed volumes. Risks lists PodDisruptionBudgets that allow no eviction, pods without requests or without a memory limit, single-replica workloads without a PDB, ResourceQuotas near their limit, and HPAs at their maximum or without metrics. Activity lists warning events and pod restarts inside the window.
+The first row of every panel root is `/overview`: one row per finding about the panel's context and namespace scope, in four sections. `M-i` opens it from any list for that list's namespace, and `kc overview` starts there. Capacity compares the measured CPU and memory usage of each node (metrics.k8s.io), the requests and limits of the pods on it and its allocatable; a node is `under-req` when it uses well above what its pods request, so the scheduler thinks it is emptier than it is. It also shows pods per node against allocatable pods, and node and image filesystem use from the kubelet stats summary. Health lists nodes that are not ready, under pressure or cordoned; pods that are not ready, pending, crash looping, failing to pull images or to start, OOMKilled or restarting; workloads that are unavailable or rolling out; failed Jobs and CronJobs; Pending or Lost claims and Released or Failed volumes. Risks lists PodDisruptionBudgets that allow no eviction, pods without requests or without a memory limit, containers near their memory limit or at their CPU limit (measured), PersistentVolumeClaims near full (kubelet stats), single-replica workloads without a PDB, ResourceQuotas near their limit, and HPAs at their maximum or without metrics. Activity lists warning events and pod restarts inside the window.
 
-Each row has a value and a state: white is ok, yellow a warning, red failed, and dim when kc cannot read the source (the reason is in `F3`). `Enter` lists exactly the objects behind a row, with the reason for each, and `/..` returns. `F3` explains how the value is computed and shows the kubectl commands that show the same inputs. Capacity rows always cover every node and every pod on it; the other rows follow the namespace scope.
+Each row has a value and a state, colored like rows of object lists: normal is ok, the not-ready color a warning, the failed color failed, and dim when kc cannot read the source (the reason is in `F3`, for example "metrics.k8s.io is not served by this cluster" or "forbidden: nodes/proxy"). `Enter` lists exactly the objects behind a row, with the reason for each, and `/..` returns. `Enter` on a warning event opens the object it is about in the other panel. `F3` explains how the value is computed and shows the kubectl commands that show the same inputs. Capacity rows always cover every node and every pod on it; the other rows follow the namespace scope.
 
-The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. Thresholds are set under `overview:` in the configuration.
+The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. While it is open it lists NodeMetrics and PodMetrics every 15 seconds and reads `/api/v1/nodes/<node>/proxy/stats/summary` once a minute, at most five nodes at a time; that needs get on `nodes/proxy` and is skipped on clusters with more than `overview.statsMaxNodes` nodes. Thresholds are set under `overview:` in the configuration.
+
+The Info panel mode (`C-1` / `C-2`, or Info in the `F9` panel menu) is mc's Info panel for kc: it shows bars for CPU, memory, pods and disk of the other panel's namespace scope, or of one node when the other panel's cursor is on a node, a sparkline of the measured CPU and memory usage while it is open, and the five pods that use the most memory. It reads the same data as `/overview` and stops when the panel leaves the mode.
 
 ## Read-only mode
 
@@ -389,7 +393,7 @@ Read-only mode refuses `M-n` before the menu opens.
 - `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
 - `panel.skin`, `contexts` – panel colors and per-context frame colors (see [Panel colors](#panel-colors)).
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
-- `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, pods per node, and ResourceQuota use.
+- `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests, limits and measured usage against allocatable, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
 - `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
@@ -532,6 +536,26 @@ overview:
   podsWarnPercent: 90
   # A ResourceQuota is flagged when any used value reaches this percent.
   quotaWarnPercent: 80
+  # Measured CPU and memory usage of a node (metrics.k8s.io), in percent
+  # of allocatable.
+  usageWarnPercent: 80
+  usageFailPercent: 90
+  # A node is "under-req" when its usage is at least this many times its
+  # requests and reaches underRequestedMinPercent of allocatable.
+  underRequestedFactor: 2
+  underRequestedMinPercent: 25
+  # A container near its memory limit (OOM soon) or at its CPU limit
+  # (throttled), in percent of the limit.
+  memoryLimitWarnPercent: 90
+  cpuLimitWarnPercent: 90
+  # Node and image filesystem use (kubelet stats summary), in percent.
+  diskWarnPercent: 80
+  diskFailPercent: 90
+  # A mounted PersistentVolumeClaim is flagged at this percent full.
+  volumeWarnPercent: 80
+  # The kubelet stats summary (one request per node) is skipped on
+  # clusters with more nodes than this.
+  statsMaxNodes: 50
 
 # Read-only mode: kc refuses edits (F4), deletes (F8), namespace creation
 # (F7), the pod filesystem debug helper and commands marked dangerous.

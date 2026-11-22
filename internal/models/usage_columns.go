@@ -279,6 +279,29 @@ func podMetricsUsage(pm *unstructured.Unstructured) (cpu, mem int64) {
 	return cpu, mem
 }
 
+// buildContainerUsage returns the usage of each container of each PodMetrics
+// object, by pod key.
+func buildContainerUsage(metrics []unstructured.Unstructured) map[string][]containerUsage {
+	out := make(map[string][]containerUsage, len(metrics))
+	for i := range metrics {
+		pm := &metrics[i]
+		containers, _, _ := unstructured.NestedSlice(pm.Object, "containers")
+		list := make([]containerUsage, 0, len(containers))
+		for _, c := range containers {
+			m, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			name, _, _ := unstructured.NestedString(m, "name")
+			usage, _, _ := unstructured.NestedStringMap(m, "usage")
+			cpu, mem := usageFromMap(usage)
+			list = append(list, containerUsage{name: name, cpu: cpu, mem: mem})
+		}
+		out[usageObjectKey(pm.GetNamespace(), pm.GetName())] = list
+	}
+	return out
+}
+
 // nodeMetricsUsage reads the usage of one NodeMetrics object.
 func nodeMetricsUsage(nm *unstructured.Unstructured) (cpu, mem int64) {
 	usage, _, _ := unstructured.NestedStringMap(nm.Object, "usage")

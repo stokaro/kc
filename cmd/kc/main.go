@@ -48,6 +48,7 @@ type cliFlags struct {
 	Root          rootCommand    `cmd:"" hidden:"true" default:"1"`
 	Get           getCommand     `cmd:"get" help:"Mirror kubectl get"`
 	Logs          logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
+	Overview      struct{}       `cmd:"overview" help:"Start in the cluster overview (/overview) of the namespace, or of all namespaces with -A"`
 	Version       versionCommand `cmd:"version" help:"Show version information"`
 }
 
@@ -232,6 +233,14 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 		intent.Verb = ui.KubectlVerbLogs
 		intent.Namespace = ns
 		intent.Logs = logsIntent
+		return intent, ns, nil
+	case commandMatches(cmd, "kc overview", "overview"):
+		ns := selectNamespace(cli.Namespace, "")
+		if cli.AllNamespaces {
+			ns = ""
+		}
+		intent.Verb = ui.KubectlVerbOverview
+		intent.Namespace = ns
 		return intent, ns, nil
 	default:
 		return intent, "", fmt.Errorf("unsupported command %q", cmd)

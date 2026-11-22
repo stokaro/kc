@@ -28,12 +28,33 @@ func TestOverviewNormalized(t *testing.T) {
 				Window: metav1.Duration{Duration: 10 * time.Minute}, RestartThreshold: 1,
 				RequestsWarnPercent: 50, RequestsFailPercent: 70, LimitsWarnPercent: 150,
 				PodsWarnPercent: 60, QuotaWarnPercent: 90,
+				UsageWarnPercent: 70, UsageFailPercent: 85, UnderRequestedFactor: 1.5,
+				UnderRequestedMinPercent: 10, MemoryLimitWarnPercent: 95, CPULimitWarnPercent: 99,
+				DiskWarnPercent: 70, DiskFailPercent: 75, VolumeWarnPercent: 60, StatsMaxNodes: 5,
 			},
 			want: appconfig.OverviewConfig{
 				Window: metav1.Duration{Duration: 10 * time.Minute}, RestartThreshold: 1,
 				RequestsWarnPercent: 50, RequestsFailPercent: 70, LimitsWarnPercent: 150,
 				PodsWarnPercent: 60, QuotaWarnPercent: 90,
+				UsageWarnPercent: 70, UsageFailPercent: 85, UnderRequestedFactor: 1.5,
+				UnderRequestedMinPercent: 10, MemoryLimitWarnPercent: 95, CPULimitWarnPercent: 99,
+				DiskWarnPercent: 70, DiskFailPercent: 75, VolumeWarnPercent: 60, StatsMaxNodes: 5,
 			},
+		},
+		{
+			name: "under-requested factor of 1 or less takes the default",
+			in:   appconfig.OverviewConfig{UnderRequestedFactor: 1},
+			want: def,
+		},
+		{
+			name: "usage and disk fail below warn are raised to warn",
+			in:   appconfig.OverviewConfig{UsageWarnPercent: 95, UsageFailPercent: 50, DiskWarnPercent: 85, DiskFailPercent: 10},
+			want: func() appconfig.OverviewConfig {
+				o := def
+				o.UsageWarnPercent, o.UsageFailPercent = 95, 95
+				o.DiskWarnPercent, o.DiskFailPercent = 85, 85
+				return o
+			}(),
 		},
 		{
 			name: "fail below warn is raised to warn",

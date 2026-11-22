@@ -95,6 +95,7 @@ var builtinHotkeys = map[string]string{
 	"M-f":     "row filter",
 	"M-g":     "log filter",
 	"M-H":     "history list",
+	"M-i":     "open the overview",
 	"M-j":     "owners",
 	"M-k":     "access view",
 	"M-l":     "local directory panel",

@@ -58,7 +58,9 @@ type overviewEngine struct {
 	namespace string
 	cfg       appconfig.OverviewConfig
 	connect   func(ctx context.Context) (overviewConn, error)
-	usage     overviewUsage
+	// measure reads the measured usage; it runs on every tick, which also
+	// keeps the metrics pollers alive while the engine runs.
+	measure   func() *overviewMeasured
 	interval  time.Duration
 	refresh   time.Duration
 	idleAfter time.Duration
@@ -78,6 +80,16 @@ type overviewEngine struct {
 	computes    int // recomputes so far; tests read it
 	listeners   map[int]func()
 	nextID      int
+
+	// Kubelet stats: read every statsEvery for the nodes of the last
+	// recompute, in the background.
+	statsFetch  func() (statsFetcher, error)
+	statsEvery  time.Duration
+	statsBusy   bool
+	statsLast   time.Time
+	statsRes    *statsResult
+	lastNodes   []string
+	lastMeasure *overviewMeasured
 }
 
 // newOverviewEngine returns an engine for deps' cluster in namespace.
@@ -99,6 +111,22 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 		listeners: map[int]func(){},
 	}
 	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps) }
+	e.measure = func() *overviewMeasured {
+		return measuredUsage(deps, namespace, e, func() { e.dirty.Store(true) })
+	}
+	e.statsEvery = overviewStatsEvery
+	var once sync.Once
+	var fetch statsFetcher
+	var fetchErr error
+	e.statsFetch = func() (statsFetcher, error) {
+		once.Do(func() {
+			if deps.Cl == nil {
+				return
+			}
+			fetch, fetchErr = newKubeletStatsFetcher(deps.Cl.GetConfig())
+		})
+		return fetch, fetchErr
+	}
 	return e
 }
 
@@ -196,6 +224,7 @@ func (e *overviewEngine) run(stop <-chan struct{}) {
 	lastKeep := e.now()
 	var lastCompute time.Time
 	for {
+		e.refreshMeasured(ctx)
 		if e.now().Sub(lastCompute) >= e.refresh {
 			e.dirty.Store(true)
 		}
@@ -248,13 +277,78 @@ func (e *overviewEngine) recompute(ctx context.Context, conn overviewConn) bool 
 		pending = pending || p
 		return reason
 	})
-	report := computeOverview(in, e.cfg, e.now(), e.usage)
 	e.mu.Lock()
+	m := e.measuredLocked()
+	e.mu.Unlock()
+	report := computeOverview(in, e.cfg, e.now(), m)
+	e.mu.Lock()
+	e.lastNodes = nodeNames(in.nodes)
 	e.report = report
 	e.err = nil
 	e.computes++
 	e.mu.Unlock()
 	return pending
+}
+
+// refreshMeasured reads the measured usage and starts a stats round when one
+// is due. A new value marks the engine dirty through the pollers' notify.
+func (e *overviewEngine) refreshMeasured(ctx context.Context) {
+	var m *overviewMeasured
+	if e.measure != nil {
+		m = e.measure()
+	}
+	e.mu.Lock()
+	e.lastMeasure = m
+	due := !e.statsBusy && e.statsFetch != nil && len(e.lastNodes) > 0 &&
+		(e.statsLast.IsZero() || e.now().Sub(e.statsLast) >= e.statsEvery)
+	if due && e.deps.Activity.Paused() {
+		due = false
+	}
+	var nodes []string
+	if due {
+		e.statsBusy = true
+		e.statsLast = e.now()
+		nodes = append(nodes, e.lastNodes...)
+	}
+	e.mu.Unlock()
+	if due {
+		go e.pollStats(ctx, nodes)
+	}
+}
+
+// pollStats reads the kubelet stats of nodes and marks the engine dirty.
+func (e *overviewEngine) pollStats(ctx context.Context, nodes []string) {
+	fetch, err := e.statsFetch()
+	var res statsResult
+	if err != nil {
+		res = statsResult{reason: "kubelet stats: " + err.Error()}
+	} else {
+		res = pollNodeStats(ctx, fetch, nodes, e.cfg.StatsMaxNodes)
+	}
+	e.mu.Lock()
+	e.statsRes = &res
+	e.statsBusy = false
+	e.mu.Unlock()
+	e.dirty.Store(true)
+}
+
+// measuredLocked joins the latest usage and stats into what one recompute
+// uses. e.mu must be held.
+func (e *overviewEngine) measuredLocked() *overviewMeasured {
+	m := &overviewMeasured{nodesReason: "not measured", podsReason: "not measured"}
+	if e.lastMeasure != nil {
+		cp := *e.lastMeasure
+		m = &cp
+	}
+	switch {
+	case e.statsRes != nil:
+		m.stats, m.statsErrors, m.statsReason = e.statsRes.stats, e.statsRes.errors, e.statsRes.reason
+	case e.statsFetch == nil:
+		m.statsReason = "not measured"
+	default:
+		m.statsReason = "loading"
+	}
+	return m
 }
 
 // overviewClusterKey is the pool key of the overview's own cache.
