@@ -145,6 +145,29 @@ func TestMenuBarSetsPanelMode(t *testing.T) {
 	}
 }
 
+// TestMenuBarSetsLogsMode covers #139: Logs mode was reachable only with
+// C-1 / C-2, not from the Left and Right menus.
+func TestMenuBarSetsLogsMode(t *testing.T) {
+	app := newMenuTestApp(t)
+	// F9, L (Left), G (Logs).
+	app = feedMenu(app, keyF9, tea.KeyPressMsg{Code: 'l', Text: "l"}, tea.KeyPressMsg{Code: 'g', Text: "g"})
+	if got := app.leftPanel.Mode(); got != PanelModeLogs {
+		t.Fatalf("left panel mode = %v, want Logs", got)
+	}
+	if got := app.rightPanel.Mode(); got != PanelModeList {
+		t.Fatalf("right panel mode = %v, want List", got)
+	}
+	checked := false
+	for _, it := range app.panelMenuItems(0) {
+		if it.Text() == "Logs" {
+			checked = it.Checked
+		}
+	}
+	if !checked {
+		t.Fatal("Logs is missing or not checked in the Left menu")
+	}
+}
+
 func TestMenuBarMouse(t *testing.T) {
 	app := newMenuTestApp(t)
 	// The PullDn slot of the function key bar opens the menu bar.
