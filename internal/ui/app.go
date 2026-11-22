@@ -47,6 +47,7 @@ import (
 	manifestwidget "github.com/stokaro/kc/internal/ui/panelcontent/manifest"
 	"github.com/stokaro/kc/internal/ui/skin"
 	viewpkg "github.com/stokaro/kc/internal/ui/viewer"
+	"github.com/stokaro/kc/internal/workloadaction"
 	"github.com/stokaro/kc/pkg/appconfig"
 	describe "github.com/stokaro/kc/pkg/describe"
 	"github.com/stokaro/kc/pkg/kubeconfig"
@@ -224,13 +225,6 @@ type App struct {
 	lastClickTime  time.Time
 	lastClickPanel int
 	lastClickRowID string
-	// Suppress forwarding of mouse to terminal immediately after toggling fullscreen
-	suppressMouseUntil time.Time
-	// Resources options dialog state
-	prevResShowNonEmpty bool
-	prevResOrder        string
-	resOptsChanged      bool
-	resOptsConfirmed    bool
 	// Busy spinner state (lightweight, non-intrusive)
 	busyActive bool
 	busyLabel  string
@@ -331,6 +325,9 @@ var panelWidthPercentOptions = []int{25, 33, 50, 66, 75, 100}
 
 // NewApp creates a new application instance
 func NewApp() *App {
+	// Workload objects list their actions (scale, restart, rollback) as
+	// rows. Registering more than once is a no-op.
+	workloadaction.RegisterRows()
 	cfg := appconfig.Default()
 	app := &App{
 		cfg:                    cfg,
@@ -353,7 +350,7 @@ func NewApp() *App {
 	app.usage = models.NewUsageMetrics()
 	app.leftPanel = NewPanel("", app.cfg)
 	app.rightPanel = NewPanel("", app.cfg)
-	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
+	app.terminal.SetLogger(ctrllog.FromContext(app.ctx).WithName("terminal"))
 	app.toastLogger = NewToastLogger(app, 2*time.Second)
 	app.leftPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(0, f) })
 	app.rightPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(1, f) })
@@ -713,16 +710,19 @@ func (a *App) inlineTerminalHeight() int {
 	return inlineTerminalLines
 }
 
-func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int, headerOffset int) {
+// panelHeaderOffset is the number of rows above the panels: the menu bar.
+const panelHeaderOffset = 1
+
+// panelsHeight returns the height of the panel area.
+func (a *App) panelsHeight() int {
 	// A toast replaces the function key bar; it takes no row of its own.
 	reserved := 1 + a.inlineTerminalHeight() + a.commandLineHeight()
-	panelHeight = a.height - reserved
-	if panelHeight < 0 {
-		panelHeight = 0
-	}
-	leftWidth, rightWidth = a.panelWidthsFor(a.width)
-	headerOffset = 1
-	return
+	return max(a.height-reserved, 0)
+}
+
+// panelWidths returns the widths of the left and right panels.
+func (a *App) panelWidths() (left, right int) {
+	return a.panelWidthsFor(a.width)
 }
 
 func (a *App) panelWidthPercentFor(panelIdx int) int {
@@ -732,7 +732,7 @@ func (a *App) panelWidthPercentFor(panelIdx int) int {
 	return clampPercent(a.leftPanelWidthPercent)
 }
 
-func (a *App) panelWidthsFor(total int) (int, int) {
+func (a *App) panelWidthsFor(total int) (leftWidth, rightWidth int) {
 	if total <= 0 {
 		return 0, 0
 	}
@@ -753,25 +753,12 @@ func (a *App) panelWidthsFor(total int) (int, int) {
 			left = total - 1
 		}
 	}
-	right := total - left
-	if rightPercent == 0 {
-		right = 0
-	} else if right <= 0 {
-		right = 1
-		if left > 0 {
-			left = total - right
-		}
-	}
-	if left < 0 {
-		left = 0
-	}
-	if right < 0 {
-		right = 0
-	}
+	// left is now in [0, total-1], so the right panel keeps at least one
+	// column.
 	return left, total - left
 }
 
-func (a *App) setPanelWidthPercent(panelIdx int, percent int) []tea.Cmd {
+func (a *App) setPanelWidthPercent(panelIdx, percent int) []tea.Cmd {
 	percent = clampPercent(percent)
 	switch panelIdx {
 	case 1:
@@ -805,7 +792,8 @@ func (a *App) resizePanelsForCurrentLayout() []tea.Cmd {
 	if a == nil {
 		return nil
 	}
-	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	leftWidth, rightWidth := a.panelWidths()
+	panelHeight := a.panelsHeight()
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	log := ctrllog.FromContext(ctx).WithName("ui").WithName("panelResize")
@@ -813,7 +801,7 @@ func (a *App) resizePanelsForCurrentLayout() []tea.Cmd {
 	if a.leftPanel != nil {
 		model, cmd := a.leftPanel.Update(tea.WindowSizeMsg{Width: leftWidth, Height: panelHeight})
 		if model != nil {
-			a.leftPanel = model.(*Panel)
+			a.leftPanel = updatedModel(a.leftPanel, model)
 		}
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -822,7 +810,7 @@ func (a *App) resizePanelsForCurrentLayout() []tea.Cmd {
 	if a.rightPanel != nil {
 		model, cmd := a.rightPanel.Update(tea.WindowSizeMsg{Width: rightWidth, Height: panelHeight})
 		if model != nil {
-			a.rightPanel = model.(*Panel)
+			a.rightPanel = updatedModel(a.rightPanel, model)
 		}
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -855,7 +843,7 @@ func (a *App) cyclePanelWidth(panelIdx int) []tea.Cmd {
 	return a.setPanelWidthPercent(panelIdx, next)
 }
 
-func normalizePanelWidthPercents(left, right int) (int, int) {
+func normalizePanelWidthPercents(left, right int) (leftPercent, rightPercent int) {
 	left = clampPercent(left)
 	right = clampPercent(right)
 	switch {
@@ -1072,7 +1060,7 @@ func (a *App) setupModals() {
 	a.modalManager.Register("copy_local", copyModal)
 	a.copyInput = copyModel
 
-	for idx := 0; idx < 2; idx++ {
+	for idx := range 2 {
 		modeModel := NewPanelModeModel(idx, []PanelViewMode{PanelModeList}, PanelModeList)
 		modeModal := NewModal("Panel Mode", modeModel)
 		modeModal.SetCloseOnSingleEsc(true)
@@ -1351,7 +1339,7 @@ func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {
 	if a.leftPanel != nil {
 		model, cmd := a.leftPanel.Update(msg)
 		if model != nil {
-			a.leftPanel = model.(*Panel)
+			a.leftPanel = updatedModel(a.leftPanel, model)
 		}
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1360,7 +1348,7 @@ func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {
 	if a.rightPanel != nil {
 		model, cmd := a.rightPanel.Update(msg)
 		if model != nil {
-			a.rightPanel = model.(*Panel)
+			a.rightPanel = updatedModel(a.rightPanel, model)
 		}
 		if cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1384,7 +1372,7 @@ func (a *App) cyclePanelMode(idx int) tea.Cmd {
 // it did. The command may be nil when the new widget has nothing to load;
 // the key is still used.
 func (a *App) cyclePanelModeIfVisible(idx int) (tea.Cmd, bool) {
-	leftWidth, rightWidth, _, _ := a.panelAreaMetrics()
+	leftWidth, rightWidth := a.panelWidths()
 	// Only cycle when both panels are visible to avoid acting on hidden panes.
 	if leftWidth <= 0 || rightWidth <= 0 {
 		return nil, false
@@ -1409,70 +1397,6 @@ func panelModeModalKey(idx int) string {
 		return "panel_mode_left"
 	}
 	return "panel_mode_right"
-}
-
-func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
-	panel := a.panelByIndex(panelIdx)
-	if panel == nil {
-		return nil
-	}
-	modes := panel.AvailableModes()
-	if len(modes) == 0 {
-		modes = []PanelViewMode{PanelModeList}
-	}
-	model := NewPanelModeModel(panelIdx, modes, panel.Mode())
-	key := panelModeModalKey(panelIdx)
-	modal := a.modalManager.modals[key]
-	if modal == nil {
-		modal = NewModal("Panel Mode", model)
-		modal.SetCloseOnSingleEsc(true)
-		a.modalManager.Register(key, modal)
-	} else {
-		modal.SetContent(model)
-	}
-	leftPanelWidth, rightPanelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
-	panelWidth := leftPanelWidth
-	panelOffset := 0
-	if panelIdx == 1 {
-		panelWidth = rightPanelWidth
-		panelOffset = leftPanelWidth
-	}
-	if panelWidth <= 0 {
-		panelWidth = max(20, max(a.width/2, a.width))
-		panelOffset = 0
-	}
-	width := panelWidth / 2
-	if width < 24 {
-		width = 24
-	}
-	width = min(width, panelWidth-2)
-	width = min(width, a.width-4)
-	maxContentHeight := max(len(modes)+4, 6)
-	targetHeight := panelHeight / 2
-	if targetHeight < 6 {
-		targetHeight = 6
-	}
-	height := min(maxContentHeight, targetHeight)
-	if height < 6 {
-		height = 6
-	}
-	model.SetDimensions(max(1, width-4), max(1, height-3))
-	modal.SetDimensions(a.width, a.height)
-	bg, _ := a.renderMainView()
-	modal.SetWindowed(width, height, bg)
-	offsetX := panelOffset + max(0, (panelWidth-width)/2)
-	offsetY := headerOffset
-	modal.SetWindowOffset(offsetX, offsetY)
-	modal.SetOnClose(func() tea.Cmd { return nil })
-	a.showModal(key)
-	return nil
-}
-
-// Message handlers for function keys
-// showViewOptionsModal opens the appropriate View Options dialog (Resources or Objects)
-// depending on the active view context.
-func (a *App) showViewOptionsModal() tea.Cmd {
-	return a.showViewOptionsModalForPanel(a.activePanelRef())
 }
 
 func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
@@ -1523,12 +1447,10 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 	}
 
 	objectSection := false
-	if curFolder != nil {
-		if _, ok := curFolder.(interface {
-			ObjectListMeta() (schema.GroupVersionResource, string, bool)
-		}); ok {
-			objectSection = true
-		}
+	if _, ok := curFolder.(interface {
+		ObjectListMeta() (schema.GroupVersionResource, string, bool)
+	}); ok {
+		objectSection = true
 	}
 	if panel.Mode() != PanelModeList {
 		objectSection = false
@@ -1724,25 +1646,7 @@ func (a *App) applyViewerSettings(msg ViewOptionsCommittedMsg) (restart tea.Cmd,
 		} else {
 			a.cfg.Viewer.Mode = appconfig.ViewerModeScroll
 		}
-		if lt, ok := target.(logOptionsTarget); ok && msg.Logs != nil {
-			opts := LogOptions{
-				TailLines:    msg.Logs.TailLines,
-				SinceSeconds: msg.Logs.SinceSeconds,
-				Timestamps:   msg.Logs.Timestamps,
-				Previous:     msg.Logs.Previous,
-				Container:    msg.Logs.Container,
-			}
-			restart = lt.SetLogOptions(opts)
-			if msg.SaveDefault {
-				// Previous belongs to one container's history, not a default.
-				a.cfg.Viewer.Logs = appconfig.LogsViewerConfig{
-					Tail:       opts.TailLines,
-					Since:      metav1.Duration{Duration: time.Duration(opts.SinceSeconds) * time.Second},
-					Timestamps: opts.Timestamps,
-				}
-				saveLogs = true
-			}
-		}
+		restart, saveLogs = a.applyLogOptions(target, msg)
 	}
 	if !msg.SaveDefault {
 		return restart, nil
@@ -1757,8 +1661,36 @@ func (a *App) applyViewerSettings(msg ViewOptionsCommittedMsg) (restart tea.Cmd,
 	}
 }
 
+// applyLogOptions applies the dialog's log options to a logs viewer. With
+// Save as defaults it also stores them in the session configuration and
+// reports saveLogs.
+func (a *App) applyLogOptions(target viewerOptionsTarget, msg ViewOptionsCommittedMsg) (restart tea.Cmd, saveLogs bool) {
+	lt, ok := target.(logOptionsTarget)
+	if !ok || msg.Logs == nil {
+		return nil, false
+	}
+	opts := LogOptions{
+		TailLines:    msg.Logs.TailLines,
+		SinceSeconds: msg.Logs.SinceSeconds,
+		Timestamps:   msg.Logs.Timestamps,
+		Previous:     msg.Logs.Previous,
+		Container:    msg.Logs.Container,
+	}
+	restart = lt.SetLogOptions(opts)
+	if !msg.SaveDefault {
+		return restart, false
+	}
+	// Previous belongs to one container's history, not a default.
+	a.cfg.Viewer.Logs = appconfig.LogsViewerConfig{
+		Tail:       opts.TailLines,
+		Since:      metav1.Duration{Duration: time.Duration(opts.SinceSeconds) * time.Second},
+		Timestamps: opts.Timestamps,
+	}
+	return restart, true
+}
+
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
-	leftPanelWidth, rightPanelWidth, _, _ := a.panelAreaMetrics()
+	leftPanelWidth, rightPanelWidth := a.panelWidths()
 	panelWidth := leftPanelWidth
 	if panelIdx == 1 {
 		panelWidth = rightPanelWidth
@@ -1766,19 +1698,16 @@ func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, pa
 	if panelWidth <= 0 {
 		panelWidth = max(24, max(a.width/2, a.width))
 	}
-	fallbackWidth := panelWidth / 2
-	if fallbackWidth < 36 {
-		fallbackWidth = 36
-	}
-	fallbackHeight := content.ContentHeight() + 2
-	if fallbackHeight < 6 {
-		fallbackHeight = 6
-	}
+	fallbackWidth := max(panelWidth/2, 36)
+	fallbackHeight := max(content.ContentHeight()+2, 6)
 	a.configureModalWindow(modal, content, panelIdx, background, fallbackWidth, fallbackHeight)
 }
 
-func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelHeight, headerOffset, panelOffset int, centered bool) {
-	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+// modalPanelMetrics returns the width and the left offset of the panel a
+// modal belongs to, or of the whole screen for a centered modal
+// (panelIdx < 0).
+func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelOffset int, centered bool) {
+	leftWidth, rightWidth := a.panelWidths()
 	panelOffset = 0
 	panelWidth = leftWidth
 	centered = panelIdx < 0
@@ -1793,19 +1722,15 @@ func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelHeight, headerOf
 		panelWidth = max(24, max(a.width/2, a.width))
 		panelOffset = 0
 	}
-	return panelWidth, panelHeight, headerOffset, panelOffset, centered
+	return panelWidth, panelOffset, centered
 }
 
-func (a *App) configureModalWindow(modal *Modal, content interface{}, panelIdx int, background string, fallbackWinW, fallbackWinH int) {
-	panelWidth, panelHeight, headerOffset, panelOffset, centered := a.modalPanelMetrics(panelIdx)
-	maxFrameWidth := min(panelWidth-2, a.width-4)
-	if maxFrameWidth < 6 {
-		maxFrameWidth = 6
-	}
-	maxFrameHeight := min(panelHeight-2, a.height-4)
-	if maxFrameHeight < 6 {
-		maxFrameHeight = 6
-	}
+func (a *App) configureModalWindow(modal *Modal, content any, panelIdx int, background string, fallbackWinW, fallbackWinH int) {
+	panelWidth, panelOffset, centered := a.modalPanelMetrics(panelIdx)
+	panelHeight := a.panelsHeight()
+	headerOffset := panelHeaderOffset
+	maxFrameWidth := max(min(panelWidth-2, a.width-4), 6)
+	maxFrameHeight := max(min(panelHeight-2, a.height-4), 6)
 	maxContentWidth := max(1, maxFrameWidth-2)
 	maxContentHeight := max(1, maxFrameHeight-2)
 
@@ -1868,26 +1793,9 @@ func (a *App) configureModalWindow(modal *Modal, content interface{}, panelIdx i
 	}
 	if centered {
 		offsetX = max(0, (a.width-winW)/2)
-		offsetY = headerOffset + max(0, (panelHeight-winH)/2)
-		if offsetY > maxOffsetY {
-			offsetY = maxOffsetY
-		}
+		offsetY = min(headerOffset+max(0, (panelHeight-winH)/2), maxOffsetY)
 	}
 	modal.SetWindowOffset(offsetX, offsetY)
-}
-
-func (a *App) viewResource() tea.Cmd {
-	// TODO: Implement resource viewer
-	return nil
-}
-
-func (a *App) editResource() tea.Cmd {
-	// TODO: Implement resource editor
-	return nil
-}
-
-func (a *App) createNamespace() tea.Cmd {
-	return a.createNamespaceForPanel(a.activePanelRef())
 }
 
 func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
@@ -1919,11 +1827,11 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 		return nil
 	}
 	if a.namespaceInput == nil {
-		if model, ok := modal.content.(*NamespaceCreateModel); ok {
-			a.namespaceInput = model
-		} else {
+		model, ok := modal.content.(*NamespaceCreateModel)
+		if !ok {
 			return nil
 		}
+		a.namespaceInput = model
 	}
 	a.namespaceInput.Reset()
 	modal.SetContent(a.namespaceInput)
@@ -1934,10 +1842,6 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 	})
 	a.showModal("namespace_create")
 	return nil
-}
-
-func (a *App) deleteResource() tea.Cmd {
-	return a.deleteResourceForPanel(a.activePanelRef())
 }
 
 func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
@@ -1976,11 +1880,11 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 		return nil
 	}
 	if a.deleteConfirm == nil {
-		if model, ok := modal.content.(*DeleteConfirmModel); ok {
-			a.deleteConfirm = model
-		} else {
+		model, ok := modal.content.(*DeleteConfirmModel)
+		if !ok {
 			return nil
 		}
+		a.deleteConfirm = model
 	}
 	resourceLabel := kubectlResourceRef(target.gvr, target.name)
 	a.deleteConfirm.Configure(resourceLabel, target.namespace, target.context)
@@ -2005,10 +1909,6 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	return nil
 }
 
-func (a *App) showContextMenu() tea.Cmd {
-	return a.showContextMenuForPanel(a.activePanelRef())
-}
-
 func (a *App) createNamespaceWithName(name string) tea.Cmd {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -2023,7 +1923,7 @@ func (a *App) createNamespaceWithName(name string) tea.Cmd {
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 		defer cancel()
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		ns := &corev1.Namespace{Name: name}
 		if err := a.cl.GetClient().Create(ctx, ns); err != nil {
 			return namespaceCreatedMsg{name: name, err: err}
 		}
@@ -2090,19 +1990,6 @@ func (a *App) showHelp() tea.Cmd {
 	return nil
 }
 
-func (a *App) viewItem() tea.Cmd {
-	return a.openViewerForPanel(a.activePanelRef())
-}
-
-func (a *App) editItem() tea.Cmd {
-	return a.editSelectionForPanel(a.activePanelRef())
-}
-
-// openViewerForSelection opens the focused item's viewer when available.
-func (a *App) openViewerForSelection() tea.Cmd {
-	return a.openViewerForPanel(a.activePanelRef())
-}
-
 func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	if panel == nil {
 		return nil
@@ -2127,11 +2014,11 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 		type vc interface {
 			ViewContent() (string, string, string, string, string, error)
 		}
-		if alt, okAlt := item.(vc); okAlt {
-			viewable = alt
-		} else {
+		alt, okAlt := item.(vc)
+		if !okAlt {
 			return nil
 		}
+		viewable = alt
 	}
 	title, body, lang, mime, filename, err := viewable.ViewContent()
 	if err != nil {
@@ -2266,11 +2153,6 @@ func (a *App) viewerTheme() string {
 		theme = a.cfg.Viewer.Theme
 	}
 	return theme
-}
-
-// editSelection triggers kubectl edit for the selected object.
-func (a *App) editSelection() tea.Cmd {
-	return a.editSelectionForPanel(a.activePanelRef())
 }
 
 func (a *App) editSelectionForPanel(panel *Panel) tea.Cmd {
@@ -2416,19 +2298,19 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 	}
 	order, groups, err := groupGetTargets(intent)
 	if err != nil {
-		a.notifyIntentError("kubectl get: %v", err)
+		a.notifyIntentErrorf("kubectl get: %v", err)
 		return nil
 	}
 	ns := a.startupIntentNamespace()
 	resolved, warn := a.resolveGetResources(ns, order)
 	if len(resolved) == 0 {
 		if warn != "" {
-			a.notifyIntentError("kubectl get: %s", warn)
+			a.notifyIntentErrorf("kubectl get: %s", warn)
 		}
 		return nil
 	}
 	if warn != "" {
-		a.notifyIntentError("kubectl get: %s", warn)
+		a.notifyIntentErrorf("kubectl get: %s", warn)
 	}
 	if len(order) > 1 {
 		idList := make([]string, 0, len(order))
@@ -2456,7 +2338,7 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 	}
 	return a.NavigatePanel(0, target, func(err error) tea.Cmd {
 		if err != nil {
-			a.notifyIntentError("kubectl get %s: %v", res.name, err)
+			a.notifyIntentErrorf("kubectl get %s: %v", res.name, err)
 			return nil
 		}
 		var cmds []tea.Cmd
@@ -2493,14 +2375,14 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 	order := []string{"pods"}
 	resolved, warn := a.resolveGetResources(ns, order)
 	if warn != "" {
-		a.notifyIntentError("kubectl logs: %s", warn)
+		a.notifyIntentErrorf("kubectl logs: %s", warn)
 	}
 	res, ok := resolved["pods"]
 	if !ok {
 		return nil
 	}
 	if a.cl == nil {
-		a.notifyIntentError("kubectl logs %s: cluster not ready", intent.Pod)
+		a.notifyIntentErrorf("kubectl logs %s: cluster not ready", intent.Pod)
 		return nil
 	}
 	// Choosing the container reads the pod from the API, so it runs off
@@ -2519,7 +2401,7 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 func (a *App) startStartupLogs(msg startupLogsTargetMsg) tea.Cmd {
 	intent := msg.intent
 	if msg.err != nil {
-		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, msg.err)
+		a.notifyIntentErrorf("kubectl logs %s: %v", intent.Pod, msg.err)
 		return nil
 	}
 	a.setActivePanel(0, "startup logs focus left")
@@ -2533,7 +2415,7 @@ func (a *App) startStartupLogs(msg startupLogsTargetMsg) tea.Cmd {
 	target.SelectLast = true
 	return a.NavigatePanel(0, target, func(err error) tea.Cmd {
 		if err != nil {
-			a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
+			a.notifyIntentErrorf("kubectl logs %s: %v", intent.Pod, err)
 			return nil
 		}
 		return a.openLogsViewerForIntent(intent)
@@ -2677,7 +2559,7 @@ func (a *App) ensureManifestPreview(res resolvedResource, name string) tea.Cmd {
 	target.SelectLast = true
 	return a.NavigatePanel(1, target, func(err error) tea.Cmd {
 		if err != nil {
-			a.notifyIntentError("manifest %s/%s: %v", res.name, name, err)
+			a.notifyIntentErrorf("manifest %s/%s: %v", res.name, name, err)
 			return nil
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -2686,7 +2568,7 @@ func (a *App) ensureManifestPreview(res resolvedResource, name string) tea.Cmd {
 	})
 }
 
-func (a *App) notifyIntentError(format string, args ...interface{}) {
+func (a *App) notifyIntentErrorf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	if a.toastLogger != nil {
 		a.enqueueCmd(a.toastLogger.Errorf("%s", msg))
@@ -2820,15 +2702,12 @@ func (a *App) refreshPanelAfterEdit(panelIdx int) {
 	}
 }
 
-func (a *App) copyItem() tea.Cmd {
-	return a.copyItemForPanel(a.activePanelRef())
-}
-
 func (a *App) renameMoveItem() tea.Cmd {
 	// TODO: Implement rename/move functionality (F6)
 	return nil
 }
 
+//nolint:gocyclo // a chain of early returns, one per reason the item cannot be copied
 func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 	if panel == nil {
 		panel = a.activePanelRef()
@@ -2888,11 +2767,11 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 		type viewContentProvider interface {
 			ViewContent() (string, string, string, string, string, error)
 		}
-		if alt, ok := item.(viewContentProvider); ok {
-			viewable = alt
-		} else {
+		alt, ok := item.(viewContentProvider)
+		if !ok {
 			return nil
 		}
+		viewable = alt
 	}
 	title, body, _, _, filename, err := viewable.ViewContent()
 	if err != nil {
@@ -3088,7 +2967,8 @@ type RunConfig struct {
 
 // Run starts the application
 func Run(ctx context.Context, cfg RunConfig) error {
-	ctx = ctrllog.IntoContext(ctx, ctrllog.Log.WithName("startup"))
+	baseLog := ctrllog.FromContext(ctx)
+	ctx = ctrllog.IntoContext(ctx, baseLog.WithName("startup"))
 	log := ctrllog.FromContext(ctx)
 	app := NewApp()
 	app.namespaceOverride = strings.TrimSpace(cfg.Namespace)
@@ -3140,10 +3020,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	if cfg.SwitchToFileLogger != nil {
 		cfg.SwitchToFileLogger()
 		// Refresh contexts so logs use the file-only, unnamed logger (no lingering "startup" name).
-		baseLog := ctrllog.Log
-		ctx = ctrllog.IntoContext(ctx, baseLog)
 		app.ctx = ctrllog.IntoContext(app.ctx, baseLog)
-		log = ctrllog.FromContext(ctx)
 	}
 
 	// Ensure terminal is reset on exit
@@ -3177,6 +3054,8 @@ func Run(ctx context.Context, cfg RunConfig) error {
 }
 
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
+//
+//nolint:gocognit,gocyclo // startup steps in order, each with its own error and fallback
 func (a *App) initData(ctx context.Context) error {
 	log := ctrllog.FromContext(ctx).WithName("init")
 	// Kubeconfig manager and discovery
@@ -3397,15 +3276,6 @@ func (a *App) initialNamespace() string {
 	return corev1.NamespaceDefault
 }
 
-// handleFolderNav processes back/forward navigation from panels and updates both panels.
-// currentNav returns the navigator for the active panel (left=0, right=1).
-func (a *App) currentNav() *navui.Navigator {
-	if a.activePanel == 0 {
-		return a.leftNav
-	}
-	return a.rightNav
-}
-
 func (a *App) navigatorDepth(nav *navui.Navigator) int {
 	if nav == nil {
 		return 0
@@ -3440,6 +3310,7 @@ func (a *App) syncPanelWithNavigator(panelIdx int) {
 	cancelUse()
 }
 
+// handleFolderNav processes back/forward navigation from panels and updates both panels.
 func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	var nav *navui.Navigator
 	var panelSet func(context.Context, models.Folder, bool)
@@ -3556,7 +3427,7 @@ func (a *App) startupContext(name string) (*kubeconfig.Context, error) {
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
 func (a *App) selectCurrentContext() *kubeconfig.Context {
 	if env := os.Getenv("KUBECONFIG"); env != "" {
-		for _, p := range strings.Split(env, string(os.PathListSeparator)) {
+		for p := range strings.SplitSeq(env, string(os.PathListSeparator)) {
 			p = strings.TrimSpace(p)
 			if p == "" {
 				continue
@@ -3591,7 +3462,7 @@ func sameFilepath(a, b string) bool {
 	return ap == bp
 }
 
-func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]interface{}, error) {
+func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]any, error) {
 	gvr, err := a.cl.GVKToGVR(gvk)
 	if err != nil {
 		return nil, err
@@ -3623,24 +3494,6 @@ func (a *App) logMsg(msg tea.Msg) {
 	}
 }
 
-// resetMsgLog clears the diagnostic buffer.
-func (a *App) resetMsgLog() {
-	if a == nil {
-		return
-	}
-	a.msgLog = nil
-}
-
-// msgLogSnapshot copies the current diagnostic log for debugging or tests.
-func (a *App) msgLogSnapshot() []string {
-	if len(a.msgLog) == 0 {
-		return nil
-	}
-	out := make([]string, len(a.msgLog))
-	copy(out, a.msgLog)
-	return out
-}
-
 func describeTeaMsg(msg tea.Msg) string {
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -3665,8 +3518,8 @@ func (c *cachedView) invalidate() { c.valid = false }
 func (c *cachedView) set(view string, cursor *tea.Cursor) {
 	c.view = view
 	if cursor != nil {
-		copy := *cursor
-		c.cursor = &copy
+		cursorCopy := *cursor
+		c.cursor = &cursorCopy
 	} else {
 		c.cursor = nil
 	}
@@ -3679,8 +3532,8 @@ func (c *cachedView) get() (string, *tea.Cursor, bool) {
 	}
 	var cursorCopy *tea.Cursor
 	if c.cursor != nil {
-		copy := *c.cursor
-		cursorCopy = &copy
+		cursorValue := *c.cursor
+		cursorCopy = &cursorValue
 	}
 	return c.view, cursorCopy, true
 }
@@ -3772,9 +3625,18 @@ func (a *App) swapPanels() {
 	a.activePanel = (a.activePanel + 1) % 2
 }
 
-func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) (models.Item, []Item, string, string) {
+// panelNamespaces is a panel's selection and the namespaces it implies.
+type panelNamespaces struct {
+	item     models.Item
+	selected []Item
+	// folder is the namespace of the panel's folder; active is the one
+	// the selection implies, falling back to folder.
+	folder, active string
+}
+
+func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) panelNamespaces {
 	if p == nil {
-		return nil, nil, "", ""
+		return panelNamespaces{}
 	}
 
 	item, _ := p.SelectedNavItem(ctx)
@@ -3782,7 +3644,7 @@ func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) (models.Item,
 	folderNamespace := p.namespace(ctx)
 	activeNamespace := deriveNamespace(item, selectedItems, folderNamespace)
 
-	return item, selectedItems, folderNamespace, activeNamespace
+	return panelNamespaces{item: item, selected: selectedItems, folder: folderNamespace, active: activeNamespace}
 }
 
 func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, namespace string) tea.Cmd {
@@ -3798,7 +3660,8 @@ func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, n
 
 	panel.InvalidateRenderCache()
 
-	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	leftWidth, rightWidth := a.panelWidths()
+	panelHeight := a.panelsHeight()
 	frameWidth := leftWidth
 	if panelIdx == 1 {
 		frameWidth = rightWidth
@@ -3868,11 +3731,13 @@ func (a *App) maybeRestartNamespaceCommand(panelIdx int, namespace string) tea.C
 	return a.startNamespaceCommand(panelIdx, *cfg, namespace)
 }
 
+//nolint:gocognit,gocyclo // resolves the target namespace through a chain of fallbacks and logs each
 func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 
-	item, selectedItems, folderNamespace, activeNamespace := a.panelNamespaceContext(ctx, p)
+	cur := a.panelNamespaceContext(ctx, p)
+	item, selectedItems, folderNamespace, activeNamespace := cur.item, cur.selected, cur.folder, cur.active
 
 	var otherPanel *Panel
 	if a.panelIndex(p) == 0 {
@@ -3880,7 +3745,8 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	} else {
 		otherPanel = a.leftPanel
 	}
-	_, _, otherFolderNamespace, otherActiveNamespace := a.panelNamespaceContext(ctx, otherPanel)
+	other := a.panelNamespaceContext(ctx, otherPanel)
+	otherFolderNamespace, otherActiveNamespace := other.folder, other.active
 
 	targetNamespace := otherActiveNamespace
 	if targetNamespace == "" {
@@ -3971,7 +3837,8 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			return a.startNamespaceCommand(runPanelIdx, cmd, ns)
 		}
 
-		leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+		leftWidth, rightWidth := a.panelWidths()
+		panelHeight := a.panelsHeight()
 		frameWidth := leftWidth
 		if idx := a.panelIndex(runPanel); idx == 1 {
 			frameWidth = rightWidth
@@ -4015,6 +3882,7 @@ type namespaceCommandItem struct {
 	namespace string
 }
 
+//revive:disable-next-line:function-result-limit models.Item defines this signature.
 func (n namespaceCommandItem) Columns() (string, []string, []*lipgloss.Style, bool) {
 	return "namespace-placeholder", nil, nil, true
 }

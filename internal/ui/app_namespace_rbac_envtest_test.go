@@ -10,7 +10,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -39,15 +38,15 @@ func TestAppBrowsesPodsWithNamespaceOnlyAccess(t *testing.T) {
 	}
 	go func() { _ = admin.Start(ctx) }()
 	t.Cleanup(admin.Stop)
-	adminCreate(t, admin, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
+	adminCreate(t, admin, &corev1.Namespace{Name: ns})
 	adminCreate(t, admin, &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod-reader", Namespace: ns},
-		Rules:      []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}}},
+		Name: "pod-reader", Namespace: ns,
+		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}}},
 	})
 	adminCreate(t, admin, &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: "pod-reader", Namespace: ns},
-		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: "pod-reader"},
-		Subjects:   []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: user}},
+		Name: "pod-reader", Namespace: ns,
+		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: "pod-reader"},
+		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: user}},
 	})
 	adminCreate(t, admin, testPod(ns, "pod-1"))
 
@@ -139,7 +138,8 @@ func adminCreate(t *testing.T, cl *kccluster.Cluster, obj crclient.Object) {
 		t.Fatalf("create %s: %v", obj.GetName(), err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		// t.Context() is canceled before cleanup functions run.
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, obj)
 	})
@@ -147,7 +147,7 @@ func adminCreate(t *testing.T, cl *kccluster.Cluster, obj crclient.Object) {
 
 func testPod(namespace, name string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.9"}}},
+		Name: name, Namespace: namespace,
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pause", Image: "registry.k8s.io/pause:3.9"}}},
 	}
 }

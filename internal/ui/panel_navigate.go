@@ -42,7 +42,7 @@ func (a *App) NavigatePanel(idx int, p PanelPath, onDone func(error) tea.Cmd) te
 	if onDone == nil {
 		onDone = func(err error) tea.Cmd {
 			if err != nil {
-				a.notifyIntentError("%v", err)
+				a.notifyIntentErrorf("%v", err)
 			}
 			return nil
 		}

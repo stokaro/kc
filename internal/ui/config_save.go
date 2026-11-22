@@ -66,8 +66,7 @@ func (a *App) handleConfigSaved(msg configSavedMsg) tea.Cmd {
 	}
 	log := ctrllog.FromContext(a.ctx).WithName("config")
 	log.Error(msg.err, "saving defaults failed", "path", msg.path)
-	var le *appconfig.LoadError
-	if errors.As(msg.err, &le) {
+	if _, ok := errors.AsType[*appconfig.LoadError](msg.err); ok {
 		return a.ShowToast(sessionOnlyNotSaved+msg.err.Error()+"; fix the file and save again", configToastTTL)
 	}
 	return a.ShowToast(sessionOnlyNotSaved+msg.err.Error(), configToastTTL)

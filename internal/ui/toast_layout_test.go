@@ -11,9 +11,9 @@ import (
 // mouse hit-testing must not shift while it is shown.
 func TestToastDoesNotMovePanels(t *testing.T) {
 	a := &App{width: 120, height: 30, leftPanelWidthPercent: 50, rightPanelWidthPercent: 50}
-	_, _, without, _ := a.panelAreaMetrics()
+	without := a.panelsHeight()
 	a.toastActive = true
-	_, _, with, _ := a.panelAreaMetrics()
+	with := a.panelsHeight()
 	if with != without {
 		t.Fatalf("panel height %d with a toast, %d without", with, without)
 	}

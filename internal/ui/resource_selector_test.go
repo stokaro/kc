@@ -37,7 +37,7 @@ func TestNewResourceSelector(t *testing.T) {
 }
 
 func TestResourceSelectorMoveUp(t *testing.T) {
-	selector := NewResourceSelector([]schema.GroupVersionKind{})
+	selector := NewResourceSelector(make([]schema.GroupVersionKind, 0))
 
 	// Move up when at top should not change selection
 	selector.moveUp()
@@ -54,7 +54,7 @@ func TestResourceSelectorMoveUp(t *testing.T) {
 }
 
 func TestResourceSelectorMoveDown(t *testing.T) {
-	selector := NewResourceSelector([]schema.GroupVersionKind{})
+	selector := NewResourceSelector(make([]schema.GroupVersionKind, 0))
 
 	// Move down
 	selector.moveDown()
@@ -70,7 +70,7 @@ func TestResourceSelectorMoveDown(t *testing.T) {
 }
 
 func TestResourceSelectorToggleView(t *testing.T) {
-	selector := NewResourceSelector([]schema.GroupVersionKind{})
+	selector := NewResourceSelector(make([]schema.GroupVersionKind, 0))
 
 	// Initially showing presets
 	if selector.showCustom {
@@ -145,7 +145,7 @@ func TestGetSelectedResources(t *testing.T) {
 }
 
 func TestResourceSelectorSetDimensions(t *testing.T) {
-	selector := NewResourceSelector([]schema.GroupVersionKind{})
+	selector := NewResourceSelector(make([]schema.GroupVersionKind, 0))
 
 	selector.SetDimensions(100, 50)
 

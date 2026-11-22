@@ -286,7 +286,7 @@ func resultLines(results []filexfer.Result) []string {
 
 // summarizeResults counts the results by status, for the title and the log.
 func summarizeResults(results []filexfer.Result) string {
-	counts := map[filexfer.Status]int{}
+	counts := make(map[filexfer.Status]int)
 	for _, r := range results {
 		counts[r.Status]++
 	}
@@ -316,7 +316,7 @@ func formatTransferBytes(n int64) string {
 }
 
 // size is the content size the dialog needs.
-func (m *TransferModel) size() (int, int) {
+func (m *TransferModel) size() (width, height int) {
 	w := 0
 	for _, l := range m.lines() {
 		w = max(w, lipgloss.Width(l)+1)

@@ -17,7 +17,7 @@ import (
 // one marked. Values are indexes into contexts, since names may repeat
 // across kubeconfig files; the note then names the file.
 func contextChoices(contexts []*kubeconfig.Context, current *kubeconfig.Context) []scopeChoice {
-	files := map[string]bool{}
+	files := make(map[string]bool)
 	for _, c := range contexts {
 		if c.Kubeconfig != nil {
 			files[c.Kubeconfig.Path] = true
