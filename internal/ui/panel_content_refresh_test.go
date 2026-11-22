@@ -46,18 +46,6 @@ func (s *contentSpyWidget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool
 	return nil, false
 }
 
-// runCmd executes cmd and every command of nested batches.
-func runCmd(cmd tea.Cmd) {
-	if cmd == nil {
-		return
-	}
-	if batch, ok := cmd().(tea.BatchMsg); ok {
-		for _, c := range batch {
-			runCmd(c)
-		}
-	}
-}
-
 func TestHiddenListSelectionDoesNotReachDescribe(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
