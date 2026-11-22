@@ -249,10 +249,14 @@ type App struct {
 	// Namespace auto-navigation state
 	// panelScope is each panel's namespace scope (models.AllNamespaces for
 	// all). It is kc state; kubeconfig is never changed.
-	panelScope             [2]string
-	activity               *models.Activity       // pauses background refreshes while a dialog is open
-	pendingConfirm         models.ConfirmedAction // waits for the red confirmation
-	namespaceOverride      string
+	panelScope        [2]string
+	activity          *models.Activity       // pauses background refreshes while a dialog is open
+	pendingConfirm    models.ConfirmedAction // waits for the red confirmation
+	namespaceOverride string
+	// contextOverride is the kubeconfig context requested with --context.
+	contextOverride string
+	// allNamespaces is set by -A: the panels start in models.AllNamespaces.
+	allNamespaces          bool
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
 	startupIntentApplied   bool
@@ -2288,10 +2292,7 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 		a.notifyIntentError("kubectl get: %v", err)
 		return nil
 	}
-	ns := strings.TrimSpace(a.startupIntent.Namespace)
-	if ns == "" {
-		ns = a.currentNamespace()
-	}
+	ns := a.startupIntentNamespace()
 	resolved, warn := a.resolveGetResources(ns, order)
 	if len(resolved) == 0 {
 		if warn != "" {
@@ -2395,6 +2396,22 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 	return a.openLogsViewerForIntent(intent)
 }
 
+// startupIntentNamespace is the namespace a kc get intent opens: the
+// all-namespaces scope with -A, else -n, else the context's namespace, else
+// default.
+func (a *App) startupIntentNamespace() string {
+	if a.allNamespaces {
+		return models.AllNamespaces
+	}
+	if ns := strings.TrimSpace(a.startupIntent.Namespace); ns != "" {
+		return ns
+	}
+	if ns := a.currentNamespace(); ns != "" {
+		return ns
+	}
+	return corev1.NamespaceDefault
+}
+
 func (a *App) currentNamespace() string {
 	if a.currentCtx != nil {
 		return strings.TrimSpace(a.currentCtx.Namespace)
@@ -2447,16 +2464,14 @@ func (a *App) resolveGetResources(namespace string, order []string) (map[string]
 			}
 			continue
 		}
-		ns := namespace
-		if namespaced && ns == "" {
-			ns = corev1.NamespaceDefault
-		}
+		// namespace is models.AllNamespaces for -A; the callers default
+		// an unset namespace.
 		resolved[res] = resolvedResource{
 			name:       res,
 			gvr:        gvr,
 			namespaced: namespaced,
-			rowID:      resourceRowID(ns, gvr, namespaced),
-			namespace:  ns,
+			rowID:      resourceRowID(namespace, gvr, namespaced),
+			namespace:  namespace,
 		}
 	}
 	return resolved, warn
@@ -2470,11 +2485,9 @@ func (a *App) goToResourceFolder(res resolvedResource) error {
 	defer cancel()
 	// Namespaced types live in the root of the panel's namespace scope, so
 	// rescope the panel when the target is in another namespace.
+	// res.namespace is models.AllNamespaces for -A.
 	if res.namespaced {
 		nsName := res.namespace
-		if nsName == "" {
-			nsName = corev1.NamespaceDefault
-		}
 		if a.panelScope[0] != nsName {
 			a.panelScope[0] = nsName
 			a.replaceNavigator(0, a.newScopedNavigator(0))
@@ -2989,9 +3002,20 @@ func (a *App) fetchLogsSnapshot(ctx context.Context, spec models.LogsSpec) (io.R
 	return req.Stream(ctx)
 }
 
+// ErrUnknownContext reports a --context name that no loaded kubeconfig
+// defines.
+var ErrUnknownContext = errors.New("unknown context")
+
 // RunConfig allows callers to customize the UI startup.
 type RunConfig struct {
-	Namespace     string
+	// Context, when non-empty, is the kubeconfig context kc starts in
+	// instead of the current context. kubeconfig is not changed.
+	Context string
+	// Namespace is the namespace both panels start in (-n).
+	Namespace string
+	// AllNamespaces starts both panels in the all-namespaces scope (-A). It
+	// wins over Namespace, as in kubectl.
+	AllNamespaces bool
 	StartupIntent StartupIntent
 	// DebugLogPath, when non-empty, points to the UI log file (e.g., ~/.kc/debug.log).
 	DebugLogPath string
@@ -3009,6 +3033,11 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	log := ctrllog.FromContext(ctx)
 	app := NewApp()
 	app.namespaceOverride = strings.TrimSpace(cfg.Namespace)
+	app.contextOverride = strings.TrimSpace(cfg.Context)
+	app.allNamespaces = cfg.AllNamespaces
+	if app.allNamespaces {
+		app.namespaceOverride = ""
+	}
 	app.startupIntent = cfg.StartupIntent
 	app.impersonateUser = strings.TrimSpace(cfg.ImpersonateUser)
 	app.impersonateUID = strings.TrimSpace(cfg.ImpersonateUID)
@@ -3017,6 +3046,12 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// Initialize data model (best-effort; UI can still run without it)
 	log.Info("initializing data")
 	if err := app.initData(ctx); err != nil {
+		if errors.Is(err, ErrUnknownContext) {
+			// A wrong --context is a usage error: stop before the UI
+			// takes over the terminal.
+			app.cancel()
+			return err
+		}
 		log.Error(err, "initialization warning")
 		fmt.Printf("Data init warning: %v\n", err)
 	}
@@ -3094,8 +3129,18 @@ func (a *App) initData(ctx context.Context) error {
 	if raw, err := clientcmd.NewDefaultClientConfigLoadingRules().Load(); err == nil {
 		a.kubectlCtx = raw.CurrentContext
 	}
-	// Select current context (prefer env KUBECONFIG first path)
-	a.currentCtx = a.selectCurrentContext()
+	// Select the --context, else the current context (prefer env KUBECONFIG
+	// first path).
+	if name := strings.TrimSpace(a.contextOverride); name != "" {
+		c, err := a.startupContext(name)
+		if err != nil {
+			log.Error(err, "requested context not found", "context", name)
+			return err
+		}
+		a.currentCtx = c
+	} else {
+		a.currentCtx = a.selectCurrentContext()
+	}
 	if a.currentCtx == nil {
 		log.Error(nil, "no current context found")
 		return fmt.Errorf("no current context found")
@@ -3255,6 +3300,9 @@ func (a *App) scheduleStartupIntent() {
 }
 
 func (a *App) initialNamespace() string {
+	if a.allNamespaces {
+		return models.AllNamespaces
+	}
 	if ns := strings.TrimSpace(a.namespaceOverride); ns != "" {
 		return ns
 	}
@@ -3402,6 +3450,22 @@ func (a *App) namespaceExists(ns string) bool {
 		return false
 	}
 	return true
+}
+
+// startupContext returns the context called name. When several kubeconfig
+// files define it, the first one wins, as when kubectl merges $KUBECONFIG.
+func (a *App) startupContext(name string) (*kubeconfig.Context, error) {
+	if c := a.kubeMgr.GetContextByName(name); c != nil {
+		return c, nil
+	}
+	paths := make([]string, 0, len(a.kubeMgr.GetKubeconfigs()))
+	for _, kc := range a.kubeMgr.GetKubeconfigs() {
+		paths = append(paths, kc.Path)
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("%w %q (no kubeconfig loaded)", ErrUnknownContext, name)
+	}
+	return nil, fmt.Errorf("%w %q (kubeconfig: %s)", ErrUnknownContext, name, strings.Join(paths, string(os.PathListSeparator)))
 }
 
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
