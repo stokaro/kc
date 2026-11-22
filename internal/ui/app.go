@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -20,13 +19,13 @@ import (
 	"charm.land/lipgloss/v2"
 	readmedoc "github.com/sttts/kc"
 	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/internal/execctx"
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/podfs"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
-	"github.com/sttts/kc/internal/ui/termctx"
 	viewpkg "github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	describe "github.com/sttts/kc/pkg/describe"
@@ -78,7 +77,6 @@ type kubectlEditFinishedMsg struct {
 	err         error
 	panelIndex  int
 	resourceRef string
-	tempConfig  string
 }
 
 type namespaceCreatedMsg struct {
@@ -169,7 +167,7 @@ type App struct {
 	leftPanel    *Panel
 	rightPanel   *Panel
 	terminal     *Terminal
-	termCtx      *termctx.Manager
+	execFiles    *execctx.Files // kubeconfigs for subprocesses; see exec_context.go
 	modalManager *ModalManager
 	width        int
 	height       int
@@ -939,52 +937,6 @@ func (a *App) impersonationGroupsKey() string {
 	return strings.Join(groups, ",")
 }
 
-func (a *App) impersonationSpec() termctx.Impersonation {
-	imp := termctx.Impersonation{
-		User: strings.TrimSpace(a.impersonateUser),
-		UID:  strings.TrimSpace(a.impersonateUID),
-	}
-	for _, g := range a.impersonateGroups {
-		g = strings.TrimSpace(g)
-		if g == "" {
-			continue
-		}
-		imp.Groups = append(imp.Groups, g)
-	}
-	return imp
-}
-
-func (a *App) impersonationTemplate() *clientcmdapi.Config {
-	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil || a.currentCtx.Kubeconfig.Config == nil {
-		return nil
-	}
-	imp := a.impersonationSpec()
-	if strings.TrimSpace(imp.User) == "" && strings.TrimSpace(imp.UID) == "" && len(imp.Groups) == 0 {
-		return a.currentCtx.Kubeconfig.Config
-	}
-	cfg := a.currentCtx.Kubeconfig.Config.DeepCopy()
-	ctx := cfg.Contexts[a.currentCtx.Name]
-	if ctx == nil {
-		return cfg
-	}
-	userName := strings.TrimSpace(ctx.AuthInfo)
-	if userName == "" {
-		return cfg
-	}
-	if cfg.AuthInfos == nil {
-		cfg.AuthInfos = make(map[string]*clientcmdapi.AuthInfo)
-	}
-	auth := cfg.AuthInfos[userName]
-	if auth == nil {
-		auth = &clientcmdapi.AuthInfo{}
-		cfg.AuthInfos[userName] = auth
-	}
-	auth.Impersonate = imp.User
-	auth.ImpersonateUID = imp.UID
-	auth.ImpersonateGroups = append([]string(nil), imp.Groups...)
-	return cfg
-}
-
 func (a *App) navigatorNamespace(nav *navui.Navigator) string {
 	if nav == nil {
 		return ""
@@ -1097,11 +1049,13 @@ func (a *App) setupPanelInputs() {
 	}
 	if a.leftPanel != nil {
 		a.leftPanel.SetEnvironmentSupplier(envSupplier)
+		a.leftPanel.SetCommandExecSupplier(panelCommandExec{app: a, panel: a.leftPanel})
 		a.leftPanel.SetActionHandlers(a.panelActionHandlers())
 		registerModes(a.leftPanel, "Left panel")
 	}
 	if a.rightPanel != nil {
 		a.rightPanel.SetEnvironmentSupplier(envSupplier)
+		a.rightPanel.SetCommandExecSupplier(panelCommandExec{app: a, panel: a.rightPanel})
 		a.rightPanel.SetActionHandlers(a.panelActionHandlers())
 		registerModes(a.rightPanel, "Right panel")
 	}
@@ -2136,61 +2090,19 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 
 	log := ctrllog.FromContext(a.ctx).WithName("kubectl_edit")
 
-	kubeconfigPath := a.currentCtx.Kubeconfig.Path
-	tempConfigPath := ""
-	if kubeconfigPath == "" {
-		if a.currentCtx.Kubeconfig.Config == nil {
-			if a.toastLogger != nil {
-				return a.toastLogger.Errorf("kubectl edit: kubeconfig has no backing file")
-			}
-			return a.ShowToast("kubectl edit failed: kubeconfig missing backing file", 5*time.Second)
-		}
-		tmpFile, err := os.CreateTemp("", "kc-kubeconfig-*.yaml")
-		if err != nil {
-			if a.toastLogger != nil {
-				return a.toastLogger.Errorf("kubectl edit: temp kubeconfig: %v", err)
-			}
-			return a.ShowToast(fmt.Sprintf("kubectl edit failed: %v", err), 5*time.Second)
-		}
-		if err := tmpFile.Close(); err != nil {
-			_ = os.Remove(tmpFile.Name())
-			if a.toastLogger != nil {
-				return a.toastLogger.Errorf("kubectl edit: temp kubeconfig close: %v", err)
-			}
-			return a.ShowToast(fmt.Sprintf("kubectl edit failed: %v", err), 5*time.Second)
-		}
-		if err := clientcmd.WriteToFile(*a.currentCtx.Kubeconfig.Config, tmpFile.Name()); err != nil {
-			_ = os.Remove(tmpFile.Name())
-			if a.toastLogger != nil {
-				return a.toastLogger.Errorf("kubectl edit: write kubeconfig: %v", err)
-			}
-			return a.ShowToast(fmt.Sprintf("kubectl edit failed: %v", err), 5*time.Second)
-		}
-		kubeconfigPath = tmpFile.Name()
-		tempConfigPath = tmpFile.Name()
-	}
-
-	contextName := a.currentCtx.Name
-	if contextName == "" {
-		if a.toastLogger != nil {
-			return a.toastLogger.Errorf("kubectl edit: context name empty")
-		}
-		return a.ShowToast("kubectl edit failed: active context missing name", 5*time.Second)
-	}
-
 	namespace := strings.TrimSpace(obj.Namespace())
 	if namespace == "" {
 		namespace = strings.TrimSpace(a.currentCtx.Namespace)
 	}
-
-	resourceRef := kubectlResourceRef(obj.GVR(), obj.Name())
-
-	commandStr := strings.Join([]string{"kubectl", "edit", resourceRef, "--context", contextName, "--kubeconfig", kubeconfigPath}, " ")
-	args := []string{"edit", resourceRef, "--context", contextName, "--kubeconfig", kubeconfigPath}
-	if namespace != "" {
-		args = append(args, "--namespace", namespace)
-		commandStr = commandStr + " --namespace " + namespace
+	ec := a.execContext(namespace)
+	if ec.Kubeconfig == "" || ec.Context == "" {
+		if a.toastLogger != nil {
+			return a.toastLogger.Errorf("kubectl edit: active context has no kubeconfig file")
+		}
+		return a.ShowToast("kubectl edit failed: active context has no kubeconfig file", 5*time.Second)
 	}
+	resourceRef := kubectlResourceRef(obj.GVR(), obj.Name())
+	cmd, commandStr := kubectlEditCommand(ec, resourceRef)
 
 	log.Info("launching kubectl edit", "command", commandStr)
 	a.logCommandToTerminal(commandStr)
@@ -2211,19 +2123,11 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 		a.invalidateTerminalArea("terminal exit")
 	}
 
-	cmd := exec.Command("kubectl", args...)
-	env := os.Environ()
-	if kubeconfigPath != "" {
-		env = append(env, "KUBECONFIG="+kubeconfigPath)
-	}
-	cmd.Env = env
-
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return kubectlEditFinishedMsg{
 			err:         err,
 			panelIndex:  panelIdx,
 			resourceRef: resourceRef,
-			tempConfig:  tempConfigPath,
 		}
 	})
 }
@@ -2649,79 +2553,6 @@ func (a *App) logCommandToTerminal(command string) {
 	fmt.Fprintf(os.Stdout, "\n[kc] %s\n", command)
 }
 
-func (a *App) ensureTermContext() {
-	if !a.cfg.Terminal.Follow || a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
-		if a.termCtx != nil {
-			_ = a.termCtx.Close()
-			a.termCtx = nil
-		}
-		a.terminal.SetEnv(nil)
-		return
-	}
-	if a.termCtx != nil {
-		_ = a.termCtx.Close()
-	}
-	mode := convertTerminalMode(a.cfg.Terminal.Mode)
-	mgr, err := termctx.NewManager(a.currentCtx.Kubeconfig.Path, a.impersonationTemplate(), mode, a.impersonationSpec())
-	if err != nil {
-		if a.toastLogger != nil {
-			a.enqueueCmd(a.toastLogger.Errorf("Terminal overlay: %v", err))
-		}
-		return
-	}
-	a.termCtx = mgr
-	a.terminal.SetEnv(a.buildTerminalEnv())
-	a.updateTermContextNamespace(strings.TrimSpace(a.currentCtx.Namespace))
-}
-
-func (a *App) updateTermContextNamespace(ns string) {
-	if !a.cfg.Terminal.Follow || a.termCtx == nil || a.currentCtx == nil {
-		return
-	}
-	if err := a.termCtx.Update(a.currentCtx.Name, ns); err != nil {
-		if a.toastLogger != nil {
-			a.enqueueCmd(a.toastLogger.Errorf("Terminal context update failed: %v", err))
-		}
-		return
-	}
-	log := ctrllog.FromContext(a.ctx).WithName("termctx")
-	if overlay := a.termCtx.OverlayPath(); overlay != "" {
-		log.Info("updated terminal overlay kubeconfig", "path", overlay, "context", a.currentCtx.Name, "namespace", ns)
-		return
-	}
-	log.Info("updated terminal kubeconfig copy", "path", a.termCtx.EnvValue(), "context", a.currentCtx.Name, "namespace", ns)
-}
-
-func (a *App) buildTerminalEnv() []string {
-	env := os.Environ()
-	if a.termCtx == nil {
-		return env
-	}
-	value := fmt.Sprintf("KUBECONFIG=%s", a.termCtx.EnvValue())
-	return append(filterEnv(env, "KUBECONFIG"), value)
-}
-
-func filterEnv(env []string, key string) []string {
-	prefix := key + "="
-	out := make([]string, 0, len(env))
-	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			continue
-		}
-		out = append(out, entry)
-	}
-	return out
-}
-
-func convertTerminalMode(mode appconfig.TerminalMode) termctx.Mode {
-	switch mode {
-	case appconfig.TerminalModeCopy:
-		return termctx.ModeCopy
-	default:
-		return termctx.ModeOverlay
-	}
-}
-
 func (a *App) refreshPanelAfterEdit(panelIdx int) {
 	var panel *Panel
 	var nav *navui.Navigator
@@ -3065,6 +2896,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		if app.clPool != nil {
 			app.clPool.Stop()
 		}
+		app.closeKubeconfigFiles()
 		app.cancel()
 	}()
 

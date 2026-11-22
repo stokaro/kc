@@ -43,6 +43,7 @@ type Panel struct {
 	commandInteractive   bool
 	commandFocused       bool
 	commandConfig        *appconfig.CommandConfig
+	commandExec          CommandExecSupplier
 	messagePoster        func(tea.Msg)
 	commandFocusHandler  func(bool) tea.Cmd
 	lastSelectionID      string
@@ -111,6 +112,7 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 	p.commandConfig = &cfgCopy
 	p.commandInteractive = config.Interactive
 	widget := NewCommandWidget(p.listWidgetDeps(), config)
+	widget.SetExecSupplier(p.commandExec)
 	widget.SetInteractive(config.Interactive)
 	widget.SetFocusChangedHandler(p.setCommandFocus)
 

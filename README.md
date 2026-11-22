@@ -89,6 +89,8 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
 
+Everything kc starts runs against the context and identity the panels show: the integrated shell, `F4` (`kubectl edit`) and custom commands. `--as`, `--as-uid` and `--as-group` are applied on top of the context's own credentials (token, client certificate or exec plugin). `F4` passes them as kubectl flags. The shell and custom commands get `KUBECONFIG` pointing at a kubeconfig that kc generates in a private temp directory (mode 0600) and removes on exit. With `terminal.mode: overlay` (the default) that file only sets the current context, the namespace and, when you impersonate, the user entry, and your own kubeconfig files follow it in `KUBECONFIG`; with `terminal.mode: copy` it is a full copy of the file that defines the context. The shell keeps the same `KUBECONFIG` path for its whole life, so it follows context and namespace changes from its next command on. `terminal.follow: false` leaves the shell's environment alone.
+
 ## Custom Commands
 
 You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F9** menu. Commands run in a terminal panel and can use templates to reference the selected item.
@@ -131,6 +133,7 @@ commands:
 
 ### Templating
 Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `{{.Version}}`, `{{.Resource}}`.
+The execution context is available as `{{.Context}}`, `{{.As}}`, `{{.AsUID}}` and `{{.AsGroups}}` (a list), for tools that do not read `KUBECONFIG`. Commands already run with `KUBECONFIG` set to kc's selected context and the namespace of the selected item (else the panel's), so `kubectl` needs no extra flags. Commands without a selected item are run as written, without template expansion.
 
 ## Configuration
 

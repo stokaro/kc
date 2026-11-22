@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -481,9 +480,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case kubectlEditFinishedMsg:
-		if msg.tempConfig != "" {
-			_ = os.Remove(msg.tempConfig)
-		}
 		if msg.err != nil {
 			if a.toastLogger != nil {
 				a.enqueueCmd(a.toastLogger.Errorf("kubectl edit %s failed: %v", msg.resourceRef, msg.err))
