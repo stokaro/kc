@@ -206,7 +206,7 @@ func TestCommandHotkeyDispatch(t *testing.T) {
 	_ = modalText(t, app, commandConfirmModal)
 	app.hideModalName(commandConfirmModal)
 	// With text on the shell line, C-x stays with the shell.
-	app.terminal.hasTyped = true
+	typeOnShellLine(app, "ls")
 	pressHotkeyApp(t, app, tea.Key{Code: 'x', Mod: tea.ModCtrl})
 	if app.ctrlXPending {
 		t.Fatalf("C-x must go to the shell line while it has text")
