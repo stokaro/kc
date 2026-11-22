@@ -102,7 +102,8 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	terminalHeight := a.inlineTerminalHeight()
 	// Reserve space for the inline terminal (if visible) and function keys (1)
 	commandHeight := a.commandLineHeight()
-	reserved := terminalHeight + commandHeight + 1
+	menuRows := a.menuBarRows()
+	reserved := menuRows + terminalHeight + commandHeight + 1
 	panelHeight := max(a.height-reserved, 3)
 	leftPanelWidth, rightPanelWidth := a.panelWidthsFor(a.width)
 
@@ -165,7 +166,11 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 
 	// Add function key bar
 	functionKeys := a.renderFunctionKeys()
-	parts := []string{panels}
+	parts := make([]string, 0, 5)
+	if menuRows > 0 {
+		parts = append(parts, a.renderIdleMenuBar())
+	}
+	parts = append(parts, panels)
 	if commandHeight > 0 {
 		parts = append(parts, a.renderCommandLine())
 	}
@@ -187,7 +192,7 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Prefer panel cursor when focused; fall back to terminal cursor.
 	if panelCursor != nil {
 		offsetX := panelOrigin + 1
-		offsetY := 1
+		offsetY := menuRows + 1
 		adjusted := tea.NewCursor(panelCursor.X+offsetX, panelCursor.Y+offsetY)
 		adjusted.Blink = panelCursor.Blink
 		adjusted.Color = panelCursor.Color
@@ -196,7 +201,7 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	}
 	if terminalCursor != nil {
 		// Calculate the offset: panels height
-		offsetY := panelHeight + commandHeight
+		offsetY := menuRows + panelHeight + commandHeight
 		adjustedCursor := tea.NewCursor(terminalCursor.X, terminalCursor.Y+offsetY)
 		adjustedCursor.Blink = terminalCursor.Blink
 		adjustedCursor.Color = terminalCursor.Color

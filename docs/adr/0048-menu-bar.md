@@ -1,6 +1,6 @@
 # 0048. mc-style pull-down menu bar
 
-- Status: Accepted
+- Status: Accepted; decisions 2 (bar drawn only while open) and 5 (colors) superseded by 0162
 - Date: 2026-11-22
 - Issue: #48
 

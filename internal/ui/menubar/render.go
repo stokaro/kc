@@ -7,17 +7,35 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Colors follow mc's default skin: black on cyan, yellow hotkeys, a black
-// highlight bar, dim text for entries that cannot be chosen.
+// Colors follow mc's default skin ([menu] in default.ini): white on cyan
+// for titles, entries, shortcuts, the frame and the separators; yellow
+// hotkey letters; a black highlight bar with white text; gray for entries
+// that cannot be chosen.
 var (
-	normalStyle   = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.Black)
+	normalStyle   = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.BrightWhite)
 	hotStyle      = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.BrightYellow)
 	selStyle      = lipgloss.NewStyle().Background(lipgloss.Black).Foreground(lipgloss.BrightWhite)
 	selHotStyle   = lipgloss.NewStyle().Background(lipgloss.Black).Foreground(lipgloss.BrightYellow)
 	disabledStyle = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.BrightBlack)
 )
 
-// RenderBar draws the bar row, width columns wide.
+// RenderTitles draws the bar row for menus while the bar is closed: every
+// title in the bar colors, none highlighted. It is the row mc keeps on top
+// of the screen when the menu bar is visible.
+func RenderTitles(menus []Menu, width int) string {
+	b := Bar{menus: menus}
+	return b.RenderBar(width)
+}
+
+// TitleIndex returns the index of the title of menus under column x of the
+// bar row, or -1. It matches what RenderTitles draws.
+func TitleIndex(menus []Menu, x int) int {
+	b := Bar{menus: menus}
+	return b.TitleAt(x)
+}
+
+// RenderBar draws the bar row, width columns wide. The selected title is
+// highlighted while the bar is open.
 func (b *Bar) RenderBar(width int) string {
 	if width <= 0 {
 		return ""

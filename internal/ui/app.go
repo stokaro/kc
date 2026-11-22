@@ -714,13 +714,14 @@ func (a *App) inlineTerminalHeight() int {
 	return inlineTerminalLines
 }
 
-// panelHeaderOffset is the number of rows above the panels: the menu bar.
+// panelHeaderOffset is the number of frame rows of a panel above its first
+// content row: the top border.
 const panelHeaderOffset = 1
 
 // panelsHeight returns the height of the panel area.
 func (a *App) panelsHeight() int {
 	// A toast replaces the function key bar; it takes no row of its own.
-	reserved := 1 + a.inlineTerminalHeight() + a.commandLineHeight()
+	reserved := 1 + a.menuBarRows() + a.inlineTerminalHeight() + a.commandLineHeight()
 	return max(a.height-reserved, 0)
 }
 
@@ -1732,7 +1733,7 @@ func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelOffset int, cent
 func (a *App) configureModalWindow(modal *Modal, content any, panelIdx int, background string, fallbackWinW, fallbackWinH int) {
 	panelWidth, panelOffset, centered := a.modalPanelMetrics(panelIdx)
 	panelHeight := a.panelsHeight()
-	headerOffset := panelHeaderOffset
+	headerOffset := a.menuBarRows() + panelHeaderOffset
 	maxFrameWidth := max(min(panelWidth-2, a.width-4), 6)
 	maxFrameHeight := max(min(panelHeight-2, a.height-4), 6)
 	maxContentWidth := max(1, maxFrameWidth-2)

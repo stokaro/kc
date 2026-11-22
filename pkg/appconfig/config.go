@@ -175,7 +175,16 @@ type ResourcesViewConfig struct {
 	PeekInterval metav1.Duration `json:"peekInterval"`
 }
 
+// LayoutConfig holds the screen layout settings of mc's Options > Layout.
+type LayoutConfig struct {
+	// MenuBarVisible keeps the menu bar titles on the top row, as mc does by
+	// default; the panels start one row lower. When false the top row
+	// belongs to the panels and the bar shows only while F9 has it open.
+	MenuBarVisible bool `json:"menuBarVisible"`
+}
+
 type Config struct {
+	Layout      LayoutConfig        `json:"layout"`
 	Viewer      ViewerConfig        `json:"viewer"`
 	Panel       PanelConfig         `json:"panel"`
 	Input       InputConfig         `json:"input"`
@@ -475,6 +484,7 @@ type TableConfig struct {
 
 func Default() *Config {
 	return &Config{
+		Layout: LayoutConfig{MenuBarVisible: true},
 		Viewer: ViewerConfig{
 			Theme: "dracula",
 			Mode:  ViewerModeScroll,

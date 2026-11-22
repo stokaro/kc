@@ -309,7 +309,7 @@ func (a *App) handleScopeClick(m tea.Mouse) (tea.Cmd, bool) {
 func (a *App) scopeHitAt(m tea.Mouse) (int, string) {
 	leftWidth, rightWidth := a.panelWidths()
 	panelHeight := a.panelsHeight()
-	if m.Y != panelHeight-1 {
+	if m.Y != a.menuBarRows()+panelHeight-1 {
 		return 0, ""
 	}
 	idx, x := 0, m.X

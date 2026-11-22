@@ -6,6 +6,8 @@
 
 ![kc demo: two panels, a live pod list while scaling a Deployment, YAML and logs, copying a file out of a container, draining a node, the terminal](docs/demo.gif)
 
+The demo was recorded before the menu bar stayed on the top row (see [Menu Bar](#menu-bar)).
+
 A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, Bubble Tea v2 and controller-runtime informers. See `TODO.md` for the plan.
 
 ## Highlights
@@ -180,14 +182,18 @@ The schema comes from the connected cluster (`/openapi/v3`, the source `kubectl 
 
 ## Menu Bar
 
-`F9` (or `Esc 9`, or a click on `9 PullDn`) opens a menu bar on the top row, as in mc. Every entry runs an action that also has a key, and shows that key on the right, so the menus double as a key reference.
+The menu bar titles stay on the top row, as in mc, and the panels start under them. `F9` (or `Esc 9`, or a click on `9 PullDn`) opens the bar; a click on a title opens that menu at any time. Every entry runs an action that also has a key, and shows that key on the right, so the menus double as a key reference.
+
+Options > Menu bar visible (or `layout.menuBarVisible: false` in the config) hides the bar and gives the row to the panels; `F9` then draws the bar over the top row only while it is open. The entry saves the setting to `~/.kc/config.yaml`. The fullscreen terminal (`C-o`) and fullscreen viewers cover the bar, as in mc.
 
 - **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
 - **File**: view, edit, copy, create namespace, delete, port forward, owners and used by, explain, marking and selecting rows, quick search, exit.
 - **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
-- **Options**: panel width and the options of each panel.
+- **Options**: panel width, the options of each panel, and whether the menu bar stays visible.
 
 `Left`/`Right` move between menus, `Up`/`Down` between entries, `Enter` runs the entry and `Esc` closes the bar. The highlighted letter of a title opens that menu; the highlighted letter of an entry runs it (`M-<letter>` always picks a title). Entries that do not apply to the current selection are dim. With the mouse, click a title to open its menu, click an entry to run it, click anywhere else to close the bar.
+
+The colors are mc's default skin: white titles and entries on cyan with yellow hotkey letters, a white frame and separators, white on black for the open title and the selected entry, and gray for entries that do not apply.
 
 ## Port Forwarding
 
@@ -381,6 +387,7 @@ Read-only mode refuses `M-n` before the menu opens.
 
 `~/.kc/config.yaml` stores all user preferences. Key sections:
 
+- `layout.menuBarVisible` – keep the menu bar titles on the top row (default `true`, as in mc); see [Menu Bar](#menu-bar).
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer and a Logs panel open with. `F2` in the viewer or the panel changes them there; `C-s` saves them as the defaults.
 - `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot.
@@ -431,6 +438,11 @@ If the file cannot be read or parsed, kc starts with the defaults and shows the 
 Copy/paste into `~/.kc/config.yaml` to start customizing:
 
 ```yaml
+layout:
+  # Keep the menu bar titles on the top row, as in mc. false gives the row
+  # to the panels; F9 still opens the bar.
+  menuBarVisible: true
+
 viewer:
   theme: dracula
   mode: scroll
