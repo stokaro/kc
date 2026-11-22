@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
 	kctesting "github.com/sttts/kc/internal/testing"
@@ -16,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func pathString(f models.Folder) string {
@@ -56,13 +57,7 @@ func hierarchyDeps(cl *kccluster.Cluster, ctx context.Context, name string) mode
 
 func TestHierarchyEnvtest(t *testing.T) {
 	t.Parallel()
-	// Start envtest API server
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err != nil || cfg == nil {
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = testEnv.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	// Seed objects via a typed client
 	scheme := runtime.NewScheme()
@@ -243,12 +238,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 // /namespaces, then a namespace, then a group and into concrete objects below.
 func TestContextNamespaceWalk(t *testing.T) {
 	t.Parallel()
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err != nil || cfg == nil {
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = testEnv.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	// Seed: ns testns, cm1 (a,b)
 	scheme := runtime.NewScheme()
@@ -377,12 +367,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 // restores the previous selection IDs (namespace, then "/namespaces").
 func TestStartupSelectionRestore(t *testing.T) {
 	t.Parallel()
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err != nil || cfg == nil {
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = testEnv.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -429,12 +414,7 @@ func TestStartupSelectionRestore(t *testing.T) {
 // TestClusterStartupSelectionRestore mirrors startup selection restore at cluster root (/).
 func TestClusterStartupSelectionRestore(t *testing.T) {
 	t.Parallel()
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err != nil || cfg == nil {
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = testEnv.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -482,12 +462,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 // and another back restores group selection.
 func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	t.Parallel()
-	testEnv := &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err != nil || cfg == nil {
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = testEnv.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)

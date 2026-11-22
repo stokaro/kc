@@ -85,8 +85,35 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		a.swapPanels()
 		return a, nil
 
+	case hotlistKey:
+		if !a.showTerminal {
+			return a, a.showHotlist()
+		}
+	case "alt+y":
+		if !a.showTerminal {
+			return a, a.historyBack()
+		}
+	case "alt+u":
+		if !a.showTerminal {
+			return a, a.historyForward()
+		}
+	case "alt+H", "alt+shift+h", "alt+shift+H":
+		if !a.showTerminal {
+			return a, a.showHistoryList()
+		}
+
 	case "ctrl+s", "alt+s":
 		if a.startQuickSearch() {
+			return a, nil
+		}
+
+	case sortNextKey:
+		if a.changeObjectSort(nextSortOrder) {
+			return a, nil
+		}
+
+	case sortReverseKey:
+		if a.changeObjectSort(reverseSortOrder) {
 			return a, nil
 		}
 
@@ -229,6 +256,31 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
+		case "y", "u", "H":
+			// Esc y, Esc u and Esc H are the fallbacks for M-y, M-u and
+			// M-H, as in mc.
+			a.escPressed = false
+			if a.showTerminal {
+				break
+			}
+			switch keyStr {
+			case "y":
+				return a, a.historyBack()
+			case "u":
+				return a, a.historyForward()
+			}
+			return a, a.showHistoryList()
+		case "o":
+			// Esc o and Esc r are the fallbacks for M-o and M-r.
+			a.escPressed = false
+			if a.changeObjectSort(nextSortOrder) {
+				return a, nil
+			}
+		case "r":
+			a.escPressed = false
+			if a.changeObjectSort(reverseSortOrder) {
+				return a, nil
+			}
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {

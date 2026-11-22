@@ -60,10 +60,10 @@ func TestPortForwardRowStopsWithF8(t *testing.T) {
 		t.Fatal("F8 not enabled on a port forward row")
 	}
 	p.InvokeAction(PanelActionDelete)
-	if !app.modalManager.IsModalVisible() || app.pendingConfirm == nil {
+	if !app.modalManager.IsModalVisible() || app.pendingConfirm == nil || app.pendingConfirm.row == nil {
 		t.Fatal("F8 did not ask for confirmation")
 	}
-	if c := app.pendingConfirm.Confirmation(); c.Title != "Stop port forward?" {
+	if c := app.pendingConfirm.row.Confirmation(); c.Title != "Stop port forward?" {
 		t.Fatalf("confirmation title = %q", c.Title)
 	}
 	if reg.Len() != 1 {
