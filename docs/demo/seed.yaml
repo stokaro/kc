@@ -1,0 +1,146 @@
+# Demo objects for docs/demo/record.sh. Small public images only.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: batch
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: shop
+data:
+  FEATURE_FLAGS: "search,recommendations"
+  LOG_LEVEL: info
+  index.html: |
+    <!doctype html>
+    <title>shop</title>
+    <h1>Welcome to the shop</h1>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: shop
+  labels:
+    app: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+      volumes:
+        - name: html
+          configMap:
+            name: web-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: shop
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: shop
+  labels:
+    app: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: api
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              trap 'exit 0' TERM
+              i=0
+              while true; do
+                i=$((i+1))
+                case $((i % 5)) in
+                  0) echo "{\"level\":\"warn\",\"msg\":\"slow upstream\",\"path\":\"/cart\",\"ms\":$((300 + i * 37 % 200))}" ;;
+                  1) echo "{\"level\":\"info\",\"msg\":\"GET /products\",\"status\":200,\"ms\":$((5 + i * 13 % 40))}" ;;
+                  2) echo "{\"level\":\"info\",\"msg\":\"POST /cart\",\"status\":201,\"ms\":$((8 + i * 7 % 30))}" ;;
+                  3) echo "{\"level\":\"error\",\"msg\":\"payment declined\",\"order\":$((1000 + i))}" ;;
+                  4) echo "{\"level\":\"info\",\"msg\":\"GET /products/$((i % 50))\",\"status\":200,\"ms\":$((4 + i * 11 % 25))}" ;;
+                esac
+                sleep 1
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: batch
+  labels:
+    app: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: worker
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - 'trap "exit 0" TERM; while true; do echo "processed job $RANDOM"; sleep 3; done'
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
