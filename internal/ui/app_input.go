@@ -44,7 +44,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 	}
 	if ctrlX {
-		return a, a.handleCtrlXKey(press.String())
+		return a, a.handleCtrlXKey(press)
 	}
 	// Prefer modifier-aware matching to cover both KeyMsg and KeyPressMsg forms.
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
@@ -58,6 +58,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 				return a, cmd
 			}
 		}
+	}
+	// Hotkeys of custom commands; they never shadow the keys below.
+	if cmd, ok := a.handleCommandHotkey(press); ok {
+		return a, cmd
 	}
 	// Handle global shortcuts first
 	switch press.String() {
@@ -345,6 +349,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		default:
 			// Not a number, cancel escape sequence
 			a.escPressed = false
+			if cmd, ok := a.commandHotkeyAfterEsc(press); ok {
+				return a, cmd
+			}
 			// Continue with normal key handling
 		}
 	}

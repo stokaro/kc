@@ -159,4 +159,10 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 			t.Fatalf("commands[%d].dangerous mismatch: yaml=%v code=%v", i, a.Commands[i].Dangerous, b.Commands[i].Dangerous)
 		}
 	}
+	for i := range a.Commands {
+		ya, co := a.Commands[i], b.Commands[i]
+		if ya.Hotkey != co.Hotkey || !reflect.DeepEqual(ya.Prompts, co.Prompts) || ya.Confirm != co.Confirm {
+			t.Fatalf("commands[%d] hotkey/prompts/confirm mismatch: yaml=%+v code=%+v", i, ya, co)
+		}
+	}
 }

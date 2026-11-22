@@ -183,7 +183,14 @@ func (m *CommandSelectorModel) View() tea.View {
 			style = focusStyle
 		}
 		name := entry.label()
+		if entry.command != nil && len(entry.command.Prompts) > 0 {
+			name += "..." // asks before it runs, as mc marks dialog items
+		}
 		line := fmt.Sprintf("%s%s", cursor, name)
+		if key := commandHotkeyLabel(entry.command); key != "" {
+			gap := max(1, lineWidth-lipgloss.Width(line)-lipgloss.Width(key)-1)
+			line += strings.Repeat(" ", gap) + key
+		}
 		s.WriteString(style.Width(lineWidth).Render(line))
 		if i < end-1 {
 			s.WriteString("\n")
@@ -284,6 +291,9 @@ func (m *CommandSelectorModel) PreferredSize(maxContentWidth, maxContentHeight i
 		}
 		if e.selectable() {
 			line := fmt.Sprintf("> %s", e.label())
+			if key := commandHotkeyLabel(e.command); key != "" {
+				line += "  " + key
+			}
 			if w := lipgloss.Width(line); w > maxLen {
 				maxLen = w
 			}
