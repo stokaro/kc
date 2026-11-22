@@ -33,7 +33,7 @@ type selection struct {
 	cursor   textPos
 }
 
-func (s selection) bounds() (textPos, textPos) {
+func (s selection) bounds() (start, end textPos) {
 	if s.cursor.before(s.anchor) {
 		return s.cursor, s.anchor
 	}
@@ -151,7 +151,7 @@ func (w *Widget) selectedText() string {
 }
 
 // selectionRange returns the selected columns [start, end) on a line.
-func (w *Widget) selectionRange(line int) (int, int, bool) {
+func (w *Widget) selectionRange(line int) (from, to int, ok bool) {
 	if !w.sel.active {
 		return 0, 0, false
 	}
@@ -159,7 +159,7 @@ func (w *Widget) selectionRange(line int) (int, int, bool) {
 	if line < start.line || line > end.line {
 		return 0, 0, false
 	}
-	from, to := 0, 1<<30
+	from, to = 0, 1<<30
 	if line == start.line {
 		from = start.col
 	}

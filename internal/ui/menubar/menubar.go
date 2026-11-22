@@ -324,8 +324,8 @@ const (
 )
 
 // titleCell returns the start column and width of the cell of title i.
-func (b *Bar) titleCell(i int) (int, int) {
-	x := barStartX
+func (b *Bar) titleCell(i int) (x, width int) {
+	x = barStartX
 	for j := range i {
 		x += titleWidth(b.menus[j].Title) + barGap
 	}

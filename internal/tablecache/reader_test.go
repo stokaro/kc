@@ -283,13 +283,13 @@ func buildTestTable(t *testing.T) *metav1.Table {
 
 	rows := make([]metav1.TableRow, len(pods))
 	for i := range pods {
-		meta := &metav1.PartialObjectMetadata{
+		objMeta := &metav1.PartialObjectMetadata{
 			TypeMeta:   pods[i].TypeMeta,
 			ObjectMeta: pods[i].ObjectMeta,
 		}
 		rows[i] = metav1.TableRow{
 			Cells:  []any{pods[i].Name},
-			Object: runtime.RawExtension{Object: meta},
+			Object: runtime.RawExtension{Object: objMeta},
 		}
 	}
 
@@ -338,7 +338,7 @@ func (f *fakeFetcher) WatchObjects(ctx context.Context, mapping *meta.RESTMappin
 	return f.WatchTable(ctx, mapping, namespace, opts)
 }
 
-func (f *fakeFetcher) GetTable(context.Context, *meta.RESTMapping, string, string) (*metav1.Table, error) {
+func (f *fakeFetcher) GetTable(_ context.Context, _ *meta.RESTMapping, _, _ string) (*metav1.Table, error) {
 	if f.table == nil {
 		return nil, fmt.Errorf("no table configured")
 	}

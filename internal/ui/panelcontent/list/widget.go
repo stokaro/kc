@@ -315,8 +315,8 @@ func (w *Widget) SelectedNavItem(ctx context.Context) (models.Item, bool) {
 			if back, ok := current.Item.(models.Back); ok && back.IsBack() {
 				return nil, false
 			}
-			if navItem, ok := current.Item.(models.Item); ok {
-				return navItem, true
+			if current.Item != nil {
+				return current.Item, true
 			}
 		}
 		return nil, false

@@ -41,7 +41,7 @@ func hierarchyConfig() *appconfig.Config {
 }
 
 func hierarchyDeps(cl *kccluster.Cluster, ctx context.Context, name string) models.Deps {
-	contexts := map[string]*clientcmdapi.Context{}
+	contexts := make(map[string]*clientcmdapi.Context)
 	if name != "" {
 		contexts[name] = &clientcmdapi.Context{}
 	}
@@ -349,7 +349,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len(ctx) >= 2 })
 	count = keys.Len(ctx)
 	rows = keys.Lines(ctx, 0, count)
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 {

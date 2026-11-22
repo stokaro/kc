@@ -18,7 +18,7 @@ import (
 // replicaSet is a ReplicaSet of revision rev, controlled by the owner with
 // ownerUID, with the hash label the Deployment controller adds.
 func replicaSet(name, rev, image string, ownerUID types.UID, annotations map[string]string) *appsv1.ReplicaSet {
-	a := map[string]string{}
+	a := make(map[string]string)
 	maps.Copy(a, annotations)
 	if rev != "" {
 		a["deployment.kubernetes.io/revision"] = rev

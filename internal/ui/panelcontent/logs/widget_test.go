@@ -70,7 +70,7 @@ type fakeSource struct {
 }
 
 func newFakeSource(bodies map[string]*chanBody) *fakeSource {
-	return &fakeSource{bodies: bodies, canceled: map[string]bool{}}
+	return &fakeSource{bodies: bodies, canceled: make(map[string]bool)}
 }
 
 func (s *fakeSource) Source(req logswidget.Request) logswidget.Open {

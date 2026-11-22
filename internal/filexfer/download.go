@@ -20,7 +20,7 @@ import (
 // Source reads a container filesystem. podfs.ExecSession implements it.
 type Source interface {
 	List(ctx context.Context, dir string) ([]podfs.FileEntry, error)
-	ReadFile(ctx context.Context, path string, limit int64) (io.ReadCloser, error)
+	ReadFile(ctx context.Context, file string, limit int64) (io.ReadCloser, error)
 }
 
 // TarSource is a Source that can also stream `tar cf -` of one entry.

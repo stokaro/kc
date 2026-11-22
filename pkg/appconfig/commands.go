@@ -249,7 +249,7 @@ var promptName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // refuses gets no hotkey either. The error lists every problem.
 func ValidateCommands(cmds []CommandConfig) (map[string]int, error) {
 	var errs []error
-	keys := map[string]int{}
+	keys := make(map[string]int)
 	for i, cmd := range cmds {
 		where := fmt.Sprintf("commands[%d] %q", i, cmd.Name)
 		if err := ValidateCommand(cmd); err != nil {

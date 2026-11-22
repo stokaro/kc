@@ -69,14 +69,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		msg.Height = usableHeight
 		model, cmd := m.term.Update(msg)
-		m.term = model.(*bubbleterm.Model)
+		m.term, _ = model.(*bubbleterm.Model)
 		if m.term.GetEmulator() != nil && m.term.GetEmulator().IsProcessExited() {
 			return m, tea.Quit
 		}
 		return m, cmd
 	default:
 		model, cmd := m.term.Update(msg)
-		m.term = model.(*bubbleterm.Model)
+		m.term, _ = model.(*bubbleterm.Model)
 		if m.term.GetEmulator() != nil && m.term.GetEmulator().IsProcessExited() {
 			return m, tea.Quit
 		}

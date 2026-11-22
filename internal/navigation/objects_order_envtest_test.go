@@ -70,7 +70,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	got := normFirstCells(rows)
 	// Assert relative order of our namespaces regardless of other system entries
 	idxA, idxB, idxC := indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
-	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) {
+	if idxA < 0 || idxB < 0 || idxC < 0 || idxA >= idxB || idxB >= idxC {
 		t.Fatalf("name asc order unexpected (a<b<c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
 	// Verify Age column exists
@@ -103,7 +103,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	rows = f2.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
 	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
-	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
+	if idxA < 0 || idxB < 0 || idxC < 0 || idxC >= idxB || idxB >= idxA {
 		t.Fatalf("name desc order unexpected (c>b>a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
 
@@ -114,7 +114,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	rows = f3.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
 	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
-	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) {
+	if idxA < 0 || idxB < 0 || idxC < 0 || idxA >= idxB || idxB >= idxC {
 		t.Fatalf("creation asc order unexpected (a<b<c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
 
@@ -125,7 +125,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	rows = f4.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
 	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
-	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
+	if idxA < 0 || idxB < 0 || idxC < 0 || idxC >= idxB || idxB >= idxA {
 		t.Fatalf("creation desc order unexpected (c>b>a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
 }
@@ -138,11 +138,7 @@ func normFirstCells(rows []table.Row) []string {
 			continue
 		}
 		if len(cells) > 0 {
-			v := cells[0]
-			if strings.HasPrefix(v, "/") {
-				v = v[1:]
-			}
-			out = append(out, v)
+			out = append(out, strings.TrimPrefix(cells[0], "/"))
 		}
 	}
 	return out

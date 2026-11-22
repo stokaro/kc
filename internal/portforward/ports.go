@@ -121,8 +121,8 @@ func ParsePair(s string) (Pair, error) {
 		return Pair{}, fmt.Errorf("remote port %q is neither a number nor a port name", remote)
 	}
 	var lp int32
-	switch {
-	case local == "":
+	switch local {
+	case "":
 		lp = 0
 	default:
 		n, err := strconv.Atoi(local)

@@ -53,8 +53,8 @@ func (c *rowCache) List(ctx context.Context, list client.ObjectList, opts ...cli
 	}
 
 	rowList.SetTableTarget(target)
-	copy := rows.DeepCopy()
-	*rowList = *copy
+	out := rows.DeepCopy()
+	*rowList = *out
 	return nil
 }
 

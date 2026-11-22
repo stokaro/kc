@@ -187,7 +187,7 @@ func (f Format) level(b *strings.Builder, s string) {
 // levelLabel normalizes a level to upper case, padded to five columns, and
 // picks its color. Numeric levels follow pino and bunyan (10 trace .. 60
 // fatal).
-func levelLabel(s string) (string, string) {
+func levelLabel(s string) (label, color string) {
 	name := strings.ToLower(strings.TrimSpace(s))
 	if n, err := strconv.Atoi(name); err == nil {
 		switch {
@@ -205,7 +205,6 @@ func levelLabel(s string) (string, string) {
 			name = "trace"
 		}
 	}
-	color := ""
 	switch name {
 	case "trace", "verbose":
 		color = "\x1b[90m"
@@ -220,7 +219,7 @@ func levelLabel(s string) (string, string) {
 	case "fatal", "panic", "dpanic", "critical", "crit", "alert", "emergency", "emerg":
 		color = "\x1b[91m"
 	}
-	label := strings.ToUpper(name)
+	label = strings.ToUpper(name)
 	if n := utf8.RuneCountInString(label); n < 5 {
 		label += strings.Repeat(" ", 5-n)
 	}

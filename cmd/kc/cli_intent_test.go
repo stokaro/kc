@@ -62,7 +62,7 @@ func TestParseGetIntent_UnsupportedOutput(t *testing.T) {
 }
 
 func TestParseGetIntent_EmptyArgs(t *testing.T) {
-	if _, err := parseGetIntent([]string{}, ""); err == nil {
+	if _, err := parseGetIntent(make([]string, 0), ""); err == nil {
 		t.Fatalf("expected error for empty args")
 	}
 }

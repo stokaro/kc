@@ -30,7 +30,7 @@ func TestRowsPerWorkloadKind(t *testing.T) {
 			r := ref(tt.gvr, "web")
 			rows := workloadaction.Rows(env, r, []string{"namespaces", ns, "deployments", "web"})
 			var labels []string
-			ids := map[string]bool{}
+			ids := make(map[string]bool)
 			for _, row := range rows {
 				id, cells, _, _ := row.Columns()
 				labels = append(labels, cells[0])

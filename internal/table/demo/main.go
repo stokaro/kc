@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"time"
@@ -21,7 +21,6 @@ type app struct {
 	focus   int // 0=left, 1=right
 	bstateL int
 	bstateR int
-	ticks   int
 }
 
 func newApp(provider string) app {
@@ -272,7 +271,6 @@ func viewString(view tea.View) string {
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
 	provider := ""
 	if len(os.Args) > 1 {
 		provider = os.Args[1]
@@ -295,13 +293,13 @@ func (a app) randomlyUpdateStatuses(bt *table.BigTable, p float64) {
 	count := max(int(float64(n)*p), 1)
 	statuses := []string{"OK", "WARN", "ERROR"}
 	for range count {
-		idx := rand.Intn(n)
+		idx := rand.IntN(n) // #nosec G404 -- demo data, not a secret
 		rows := list.Lines(ctx, idx, 1)
 		if len(rows) != 1 {
 			continue
 		}
 		if r, ok := rows[0].(*table.SimpleRow); ok {
-			val := statuses[rand.Intn(len(statuses))]
+			val := statuses[rand.IntN(len(statuses))] // #nosec G404 -- demo data, not a secret
 			// Optional: color-code style similar to initial demo setup
 			var st *lipgloss.Style
 			switch val {
@@ -343,6 +341,3 @@ func makeBaseRows(nRows, nCols int) [][]string {
 	}
 	return rows
 }
-
-//go:fix inline
-func ptrStyle(s lipgloss.Style) *lipgloss.Style { return new(s) }

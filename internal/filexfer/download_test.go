@@ -74,7 +74,7 @@ type tarFS struct {
 	walked  bool
 }
 
-func (t *tarFS) TarStream(context.Context, string, string) (io.ReadCloser, error) {
+func (t *tarFS) TarStream(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	if t.openErr != nil {
 		return io.NopCloser(&errReader{err: t.openErr}), nil
 	}
@@ -463,7 +463,7 @@ type walkWithTar struct {
 	tried bool
 }
 
-func (w *walkWithTar) TarStream(context.Context, string, string) (io.ReadCloser, error) {
+func (w *walkWithTar) TarStream(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	w.tried = true
 	return io.NopCloser(&errReader{err: w.err}), nil
 }

@@ -251,7 +251,7 @@ func TestRegistryConcurrentStarts(t *testing.T) {
 	if len(list) != n {
 		t.Fatalf("List has %d forwards, want %d", len(list), n)
 	}
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, f := range list {
 		if seen[f.ID] {
 			t.Fatalf("duplicate id %s", f.ID)

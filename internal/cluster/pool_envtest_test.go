@@ -89,7 +89,7 @@ func TestPoolHeldNodeScopeStaysLivePastTTL(t *testing.T) {
 			list, err := cl.ListByGVR(ctx, podsGVR, "default")
 			if err == nil {
 				seen = seen[:0]
-				labels := map[string]map[string]string{}
+				labels := make(map[string]map[string]string)
 				for _, u := range list.Items {
 					seen = append(seen, u.GetName())
 					labels[u.GetName()] = u.GetLabels()

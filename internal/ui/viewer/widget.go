@@ -71,7 +71,6 @@ type Widget struct {
 	searchQuery      string
 	searchOpts       SearchOptions
 	searchRe         *regexp.Regexp
-	searchErr        string
 	searchMatches    []matchLocation
 	searchMatchIndex map[int][]int
 	activeMatch      int
@@ -116,7 +115,7 @@ func (w *Widget) SetContent(text string, meta Metadata) {
 	w.styled = nil
 	w.updateMaxLineWidth()
 	if w.plain {
-		w.lines = append([]string{}, w.rawLines...)
+		w.lines = append(make([]string, 0), w.rawLines...)
 	} else {
 		w.highlight()
 	}
@@ -136,7 +135,7 @@ func (w *Widget) UpdateContent(text string, meta Metadata) {
 	w.rawLines = strings.Split(text, "\n")
 	w.updateMaxLineWidth()
 	if w.plain {
-		w.lines = append([]string{}, w.rawLines...)
+		w.lines = append(make([]string, 0), w.rawLines...)
 	} else {
 		w.highlight()
 	}
@@ -331,7 +330,7 @@ func (w *Widget) View(frame Frame) string {
 	body := strings.Join(lines, "\n")
 	contentW := max(1, frame.Width)
 	contentH := max(1, frame.Height)
-	style := uistyles.PanelContentStyle.Copy().Height(contentH).MaxHeight(contentH)
+	style := uistyles.PanelContentStyle.Height(contentH).MaxHeight(contentH)
 	if w.wrapMode {
 		style = style.Width(contentW).MaxWidth(contentW)
 	}
@@ -367,7 +366,7 @@ func (w *Widget) Footer(width int) string {
 func (w *Widget) Metadata() Metadata { return w.metadata }
 
 // Position returns the one-based index of the last visible line and total lines.
-func (w *Widget) Position() (current int, total int) {
+func (w *Widget) Position() (current, total int) {
 	total = len(w.lines)
 	if total == 0 {
 		return 0, 0
@@ -406,7 +405,7 @@ func (w *Widget) ScrollToEnd() {
 }
 
 // ScrollIndicators reports whether additional content exists above or below.
-func (w *Widget) ScrollIndicators() (bool, bool) {
+func (w *Widget) ScrollIndicators() (above, below bool) {
 	if len(w.lines) == 0 {
 		return false, false
 	}
@@ -440,7 +439,7 @@ func (w *Widget) FooterStatusText(width int) string {
 		return ""
 	}
 	trimmed := trimToWidth(summary, width)
-	return searchInputStyle.Copy().Width(width).Render(trimmed)
+	return searchInputStyle.Width(width).Render(trimmed)
 }
 
 // FooterCursor returns nil: the search string is edited in the search dialog,
@@ -486,7 +485,7 @@ func (w *Widget) highlight() {
 	} else {
 		style := styles.Get(w.theme)
 		if style == nil {
-			style = styles.Monokai
+			style = styles.Get("monokai")
 		}
 		rendered = renderTokensWithStyle(style, iterator)
 	}
@@ -662,26 +661,6 @@ func (w *Widget) clearSearchState() {
 	}
 	for k := range w.searchMatchIndex {
 		delete(w.searchMatchIndex, k)
-	}
-}
-
-func (w *Widget) hasSearchQuery() bool {
-	return w.searchRe != nil
-}
-
-func (w *Widget) alignToEnd() {
-	start := w.offset
-	end := min(len(w.rawLines), w.offset+w.page())
-	maxLen := 0
-	for i := start; i < end; i++ {
-		if length := runeWidth(w.rawLines[i]); length > maxLen {
-			maxLen = length
-		}
-	}
-	if maxLen > w.width {
-		w.hOffset = maxLen - w.width
-	} else {
-		w.hOffset = 0
 	}
 }
 

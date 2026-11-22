@@ -127,7 +127,7 @@ func Compare(left, right Side, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("encoding right manifest: %w", err)
 	}
-	omitted := append(lOmit, rOmit...)
+	omitted := slices.Concat(lOmit, rOmit)
 	slices.Sort(omitted)
 	omitted = slices.Compact(omitted)
 

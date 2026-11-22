@@ -86,7 +86,7 @@ func TestListWatchAccessAllNamespaces(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			srv := &reviewServer{allowed: map[string]bool{}}
+			srv := &reviewServer{allowed: make(map[string]bool)}
 			for _, a := range tc.allowed {
 				srv.allowed[a] = true
 			}
@@ -138,7 +138,7 @@ func TestListWatchAccessInNamespace(t *testing.T) {
 
 func TestListWatchAccessErrorsAreNotKept(t *testing.T) {
 	t.Parallel()
-	srv := &reviewServer{allowed: map[string]bool{}, fail: errors.New("connection refused")}
+	srv := &reviewServer{allowed: make(map[string]bool), fail: errors.New("connection refused")}
 	access := kccluster.NewListWatchAccess(srv.client().AuthorizationV1())
 	if _, err := access.AllNamespaces(t.Context(), podsGVR); err == nil {
 		t.Fatal("expected the review error")

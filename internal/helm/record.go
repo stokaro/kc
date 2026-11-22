@@ -128,7 +128,7 @@ func (h History) Revision(rev int) (Record, bool) {
 
 // Group groups records by release, sorted by namespace and name.
 func Group(records []Record) []History {
-	byKey := map[string]*History{}
+	byKey := make(map[string]*History)
 	for _, r := range records {
 		key := r.Namespace + "/" + r.Release
 		h, ok := byKey[key]

@@ -689,9 +689,8 @@ func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
 		if _, ok := err.(*discovery.ErrGroupDiscoveryFailed); !ok {
 			return nil, err
 		}
-		// For partial failures, continue with the successful lists and clear the error so callers
+		// For partial failures, continue with the successful lists so callers
 		// can proceed (metrics server down should not block the UI).
-		err = nil
 	}
 	var out []ResourceInfo
 	for _, l := range lists {

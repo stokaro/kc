@@ -41,7 +41,7 @@ func newFakeServer(t *testing.T) *fakeServer {
 			"apis/fixture.kc.dev/v1": read("apis_fixture.kc.dev_v1.json"),
 		},
 		hashes:  map[string]string{"apis/apps/v1": "a1", "apis/fixture.kc.dev/v1": "f1"},
-		fetches: map[string]int{},
+		fetches: make(map[string]int),
 	}
 }
 
@@ -52,7 +52,7 @@ func (s *fakeServer) PathsWithContext(context.Context) (map[string]openapi.Group
 	if s.indexErr != nil {
 		return nil, s.indexErr
 	}
-	out := map[string]openapi.GroupVersionWithContext{}
+	out := make(map[string]openapi.GroupVersionWithContext)
 	for key := range s.docs {
 		out[key] = fakeGV{server: s, key: key, hash: s.hashes[key]}
 	}

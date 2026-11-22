@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -65,12 +64,12 @@ func TestNamespaceScopedClusterListsOneNamespace(t *testing.T) {
 			Name: name, Namespace: ns,
 			Data: map[string]string{"k": "v"},
 		}
-		if err := cl.GetClient().Create(context.Background(), cm); err != nil {
+		if err := cl.GetClient().Create(t.Context(), cm); err != nil {
 			t.Fatalf("create configmap %s/%s: %v", ns, name, err)
 		}
 	}
 	for _, ns := range []string{"ns-a", "ns-b"} {
-		if err := cl.GetClient().Create(context.Background(), &corev1.Namespace{Name: ns}); err != nil && !strings.Contains(err.Error(), "already exists") {
+		if err := cl.GetClient().Create(t.Context(), &corev1.Namespace{Name: ns}); err != nil && !strings.Contains(err.Error(), "already exists") {
 			t.Fatalf("create namespace %s: %v", ns, err)
 		}
 	}

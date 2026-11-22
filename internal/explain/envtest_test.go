@@ -117,11 +117,11 @@ func TestAgainstAPIServer(t *testing.T) {
 	for {
 		crdDoc, err = loader.Load(ctx, "envtest", client, fixtureV1)
 		if err == nil {
-			if _, rerr := crdDoc.Root(fixtureDeployment); rerr == nil {
+			_, rerr := crdDoc.Root(fixtureDeployment)
+			if rerr == nil {
 				break
-			} else {
-				err = rerr
 			}
+			err = rerr
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("fixture CRD schema not published under /openapi/v3 within 30s; last error: %v", err)

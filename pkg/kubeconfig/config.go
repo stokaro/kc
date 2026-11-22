@@ -60,7 +60,7 @@ func (m *Manager) DiscoverKubeconfigs() error {
 	log := ctrllog.Log.WithName("kubeconfig.manager")
 	m.kubeconfigs = make([]*Kubeconfig, 0)
 
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	envVar := strings.TrimSpace(os.Getenv("KUBECONFIG"))
 
 	homeDir, homeErr := os.UserHomeDir()

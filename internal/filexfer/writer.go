@@ -109,7 +109,7 @@ func cleanArchiveName(name string) (string, error) {
 		return "", fmt.Errorf("%w: %q", ErrUnsafePath, name)
 	}
 	if slices.Contains(strings.Split(n, "/"), "..") {
-		return "", fmt.Errorf("%w: %q has ..", ErrUnsafePath, name)
+		return "", fmt.Errorf("%w: %q has a .. element", ErrUnsafePath, name)
 	}
 	return n, nil
 }

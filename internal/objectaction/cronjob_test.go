@@ -57,7 +57,7 @@ func cronJobActions(t *testing.T) map[string]objectaction.Action {
 	t.Helper()
 	r := objectaction.NewRegistry()
 	objectaction.RegisterCronJobActions(r, func() string { return "abcde" })
-	out := map[string]objectaction.Action{}
+	out := make(map[string]objectaction.Action)
 	for _, a := range r.For(objectaction.CronJobsGVR, nil) {
 		out[a.ID] = a
 	}

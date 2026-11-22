@@ -342,7 +342,7 @@ func (a *DrainAction) drainNode(ctx context.Context, node string, np *NodeProgre
 		defer cancel()
 	}
 	np.Phase = PhaseEvicting
-	requested := map[types.UID]bool{} // accepted evictions, until the pod is gone
+	requested := make(map[types.UID]bool) // accepted evictions, until the pod is gone
 	for {
 		if err := ctx.Err(); err != nil {
 			return a.stopError(ctx, node, np)

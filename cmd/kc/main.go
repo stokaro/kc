@@ -79,7 +79,7 @@ type cutoverWriter struct {
 	useStderr atomic.Bool
 }
 
-func newCutoverWriter(file io.Writer, stderr io.Writer) *cutoverWriter {
+func newCutoverWriter(file, stderr io.Writer) *cutoverWriter {
 	w := &cutoverWriter{file: file, stderr: stderr}
 	w.useStderr.Store(true)
 	return w
@@ -397,48 +397,4 @@ func startPprofServer(addr string) {
 			fmt.Fprintf(os.Stderr, "pprof server error: %v\n", err)
 		}
 	}()
-}
-
-func showHelp() {
-	fmt.Println("Kubernetes Commander (kc) - A TUI for Kubernetes")
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  kc [flags]")
-	fmt.Println("  kc version [--client]")
-	fmt.Println("  kc --version")
-	fmt.Println("  kc get <resource> [name] [flags]")
-	fmt.Println("  kc logs <pod> [flags]")
-	fmt.Println()
-	fmt.Println("Flags:")
-	fmt.Println("  -help              Show this help message")
-	fmt.Println("  -kubeconfig <path> Use the provided kubeconfig file (overrides KUBECONFIG)")
-	fmt.Println("  -namespace <name>  Open the specified namespace on startup")
-	fmt.Println("  -n <name>          Alias for -namespace")
-	fmt.Println()
-	fmt.Println("Key Bindings:")
-	fmt.Println("  F1          Help")
-	fmt.Println("  F2          User menu (object actions, custom commands)")
-	fmt.Println("  F3          View resource")
-	fmt.Println("  F4          Edit resource")
-	fmt.Println("  F5          Copy")
-	fmt.Println("  F6          Rename/Move")
-	fmt.Println("  F7          Create namespace")
-	fmt.Println("  F8          Delete resource")
-	fmt.Println("  F9          Menu bar")
-	fmt.Println("  F10         Quit")
-	fmt.Println("  M-p         Port forward (pods, containers, services)")
-	fmt.Println("  C-o         Toggle terminal")
-	fmt.Println("  Tab         Switch panels")
-	fmt.Println("  C-c         Quit")
-	fmt.Println()
-	fmt.Println("Navigation:")
-	fmt.Println("  ↑/↓         Navigate items")
-	fmt.Println("  Enter       Enter directory/resource")
-	fmt.Println("  M-y / M-u   Back / forward in the panel history")
-	fmt.Println("  M-H         Panel history list")
-	fmt.Println(`  C-\         Hotlist (saved locations)`)
-	fmt.Println("  Space       Select item")
-	fmt.Println("  A           Select all")
-	fmt.Println("  U           Unselect all")
-	fmt.Println("  I           Invert selection")
 }

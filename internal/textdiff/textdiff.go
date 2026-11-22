@@ -88,12 +88,12 @@ func (d *differ) compare(aLo, aHi, bLo, bHi int) {
 	// distance is at least 2, so both halves around the middle snake are
 	// strictly smaller problems and the recursion ends.
 	if aLo < aHi && bLo < bHi {
-		x, y, u, v := d.middleSnake(aLo, aHi, bLo, bHi)
-		d.compare(aLo, x, bLo, y)
-		for ; x < u; x, y = x+1, y+1 {
+		sn := d.middleSnake(aLo, aHi, bLo, bHi)
+		d.compare(aLo, sn.x, bLo, sn.y)
+		for x, y := sn.x, sn.y; x < sn.u; x, y = x+1, y+1 {
 			d.matches = append(d.matches, match{x, y})
 		}
-		d.compare(u, aHi, v, bHi)
+		d.compare(sn.u, aHi, sn.v, bHi)
 	}
 	for k := range suffix {
 		d.matches = append(d.matches, match{aHi + k, bHi + k})
@@ -106,79 +106,114 @@ func (d *differ) compare(aLo, aHi, bLo, bHi int) {
 // stays near-linear for large, mostly different inputs (Myers is O(ND)).
 const maxCost = 2048
 
-// middleSnake finds the middle snake of an optimal path through
-// a[aLo:aHi] x b[bLo:bHi]. It returns the snake's start (x, y) and end (u, v)
-// in absolute coordinates.
-func (d *differ) middleSnake(aLo, aHi, bLo, bHi int) (x, y, u, v int) {
-	n, m := aHi-aLo, bHi-bLo
-	delta := n - m
-	odd := delta%2 != 0
-	maxD := (n + m + 1) / 2
-	off := maxD + 1
-	vf := make([]int, 2*maxD+3) // furthest x on each forward diagonal
-	vb := make([]int, 2*maxD+3) // furthest distance from the end on each backward diagonal
+// snake is a run of matches from (x, y) to (u, v), in absolute coordinates.
+// x == u for an empty snake.
+type snake struct{ x, y, u, v int }
 
-	for D := 0; D <= maxD; D++ {
-		if D > maxCost {
-			return d.furthestForward(vf, off, D-1, aLo, bLo, n, m)
+// snakeSearch is the state of one middleSnake search through
+// a[aLo:aHi] x b[bLo:bHi].
+type snakeSearch struct {
+	d                  *differ
+	aLo, aHi, bLo, bHi int
+	n, m, delta, off   int
+	odd                bool
+	vf                 []int // furthest x on each forward diagonal
+	vb                 []int // furthest distance from the end on each backward diagonal
+}
+
+// middleSnake finds the middle snake of an optimal path through
+// a[aLo:aHi] x b[bLo:bHi].
+func (d *differ) middleSnake(aLo, aHi, bLo, bHi int) snake {
+	n, m := aHi-aLo, bHi-bLo
+	maxD := (n + m + 1) / 2
+	s := &snakeSearch{
+		d: d, aLo: aLo, aHi: aHi, bLo: bLo, bHi: bHi,
+		n: n, m: m, delta: n - m, off: maxD + 1,
+		vf: make([]int, 2*maxD+3),
+		vb: make([]int, 2*maxD+3),
+	}
+	s.odd = s.delta%2 != 0
+
+	for rnd := 0; rnd <= maxD; rnd++ {
+		if rnd > maxCost {
+			return s.furthestForward(rnd - 1)
 		}
-		for k := -D; k <= D; k += 2 {
-			var px int
-			if k == -D || (k != D && vf[off+k-1] < vf[off+k+1]) {
-				px = vf[off+k+1]
-			} else {
-				px = vf[off+k-1] + 1
-			}
-			py := px - k
-			sx, sy := px, py
-			for px < n && py < m && d.a[aLo+px] == d.b[bLo+py] {
-				px++
-				py++
-			}
-			vf[off+k] = px
-			if kr := delta - k; odd && kr >= -(D-1) && kr <= D-1 && px+vb[off+kr] >= n {
-				return aLo + sx, bLo + sy, aLo + px, bLo + py
-			}
+		if sn, ok := s.forward(rnd); ok {
+			return sn
 		}
-		for k := -D; k <= D; k += 2 {
-			var px int
-			if k == -D || (k != D && vb[off+k-1] < vb[off+k+1]) {
-				px = vb[off+k+1]
-			} else {
-				px = vb[off+k-1] + 1
-			}
-			py := px - k
-			sx, sy := px, py
-			for px < n && py < m && d.a[aHi-1-px] == d.b[bHi-1-py] {
-				px++
-				py++
-			}
-			vb[off+k] = px
-			if kf := delta - k; !odd && kf >= -D && kf <= D && px+vf[off+kf] >= n {
-				return aLo + n - px, bLo + m - py, aLo + n - sx, bLo + m - sy
-			}
+		if sn, ok := s.backward(rnd); ok {
+			return sn
 		}
 	}
 	// Unreachable: an optimal path has at most n+m edits.
 	panic("textdiff: middle snake not found")
 }
 
-// furthestForward returns, as an empty snake, the point of the forward search
-// after round D that is furthest from the start. It is neither the start nor
-// the end, so both halves are smaller problems.
-func (d *differ) furthestForward(vf []int, off, D, aLo, bLo, n, m int) (x, y, u, v int) {
-	best, bx, by := -1, 0, 0
-	for k := -D; k <= D; k += 2 {
-		px := min(vf[off+k], n)
+// forward runs round rnd of the forward search. It reports the snake where
+// the forward and backward paths overlap, when they do.
+func (s *snakeSearch) forward(rnd int) (snake, bool) {
+	vf, vb, off := s.vf, s.vb, s.off
+	for k := -rnd; k <= rnd; k += 2 {
+		var px int
+		if k == -rnd || (k != rnd && vf[off+k-1] < vf[off+k+1]) {
+			px = vf[off+k+1]
+		} else {
+			px = vf[off+k-1] + 1
+		}
 		py := px - k
-		if py < 0 || py > m {
+		sx, sy := px, py
+		for px < s.n && py < s.m && s.d.a[s.aLo+px] == s.d.b[s.bLo+py] {
+			px++
+			py++
+		}
+		vf[off+k] = px
+		if kr := s.delta - k; s.odd && kr >= -(rnd-1) && kr <= rnd-1 && px+vb[off+kr] >= s.n {
+			return snake{s.aLo + sx, s.bLo + sy, s.aLo + px, s.bLo + py}, true
+		}
+	}
+	return snake{}, false
+}
+
+// backward runs round rnd of the backward search, as forward does.
+func (s *snakeSearch) backward(rnd int) (snake, bool) {
+	vf, vb, off := s.vf, s.vb, s.off
+	for k := -rnd; k <= rnd; k += 2 {
+		var px int
+		if k == -rnd || (k != rnd && vb[off+k-1] < vb[off+k+1]) {
+			px = vb[off+k+1]
+		} else {
+			px = vb[off+k-1] + 1
+		}
+		py := px - k
+		sx, sy := px, py
+		for px < s.n && py < s.m && s.d.a[s.aHi-1-px] == s.d.b[s.bHi-1-py] {
+			px++
+			py++
+		}
+		vb[off+k] = px
+		if kf := s.delta - k; !s.odd && kf >= -rnd && kf <= rnd && px+vf[off+kf] >= s.n {
+			return snake{s.aLo + s.n - px, s.bLo + s.m - py, s.aLo + s.n - sx, s.bLo + s.m - sy}, true
+		}
+	}
+	return snake{}, false
+}
+
+// furthestForward returns, as an empty snake, the point of the forward search
+// after round rnd that is furthest from the start. It is neither the start
+// nor the end, so both halves are smaller problems.
+func (s *snakeSearch) furthestForward(rnd int) snake {
+	best, bx, by := -1, 0, 0
+	for k := -rnd; k <= rnd; k += 2 {
+		px := min(s.vf[s.off+k], s.n)
+		py := px - k
+		if py < 0 || py > s.m {
 			continue
 		}
 		if px+py > best {
 			best, bx, by = px+py, px, py
 		}
 	}
-	return aLo + bx, bLo + by, aLo + bx, bLo + by
+	return snake{s.aLo + bx, s.bLo + by, s.aLo + bx, s.bLo + by}
 }
 
 // Hunk is a group of changes with the lines of context around them.

@@ -15,7 +15,7 @@ import (
 func TestFrameInfoEmptyList(t *testing.T) {
 	w := New(panelcontent.WidgetDeps{})
 
-	info := w.FrameInfo(context.Background(), panelcontent.FrameInfoRequest{Width: 20})
+	info := w.FrameInfo(t.Context(), panelcontent.FrameInfoRequest{Width: 20})
 	if info.TopIndicator != "─" || info.BottomIndicator != "─" {
 		t.Fatalf("expected default indicators, got top=%q bottom=%q", info.TopIndicator, info.BottomIndicator)
 	}
@@ -28,7 +28,7 @@ func TestFrameInfoEmptyList(t *testing.T) {
 }
 
 func TestFrameInfoIndicatorsAndStatus(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	w := New(panelcontent.WidgetDeps{})
 	_, _ = w.Update(ctx, tea.WindowSizeMsg{Width: 16, Height: 6})
 
@@ -66,7 +66,7 @@ func TestFrameInfoIndicatorsAndStatus(t *testing.T) {
 }
 
 func TestWidgetAppliesObjectOrderToFolder(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	w := New(panelcontent.WidgetDeps{})
 	w.UseFolder(true)
 
@@ -96,7 +96,7 @@ func (f *orderCaptureFolder) Path() []string          { return nil }
 func (f *orderCaptureFolder) ItemByID(context.Context, string) (models.Item, bool) {
 	return nil, false
 }
-func (f *orderCaptureFolder) Lines(context.Context, int, int) []table.Row    { return nil }
+func (f *orderCaptureFolder) Lines(_ context.Context, _, _ int) []table.Row  { return nil }
 func (f *orderCaptureFolder) Above(context.Context, string, int) []table.Row { return nil }
 func (f *orderCaptureFolder) Below(context.Context, string, int) []table.Row { return nil }
 func (f *orderCaptureFolder) Len(context.Context) int                        { return 0 }

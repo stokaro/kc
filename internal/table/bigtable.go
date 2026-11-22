@@ -378,9 +378,6 @@ func (m *BigTable) View() tea.View { return tea.NewView(strings.TrimRight(m.body
 // no app header/help line inside BigTable; outer app should render it
 // no BigTable footer; outer app should render any footers/help lines
 
-// refreshRowsOnly re-renders rows for the current mode without recomputing widths.
-func (m *BigTable) refreshRowsOnly(ctx context.Context) { m.rebuildWindow(ctx) }
-
 // rebuildWindow sets the table rows to the current window [top:top+height)
 // and positions the table cursor at (cursor-top), updating the width cache.
 func (m *BigTable) rebuildWindow(ctx context.Context) {
@@ -695,24 +692,6 @@ func (m *BigTable) bodyRowsHeight() int {
 
 // (no custom column width allocator; Fit relies on lipgloss.table sizing)
 
-// rowsToStringRows converts []Row to [][]string for lipgloss table.
-func rowsToStringRowsSubset(rows []Row, idx []int) [][]string {
-	out := make([][]string, len(rows))
-	for i := range rows {
-		_, cells, _, _ := rows[i].Columns()
-		row := make([]string, len(idx))
-		for j, k := range idx {
-			if k < len(cells) {
-				row[j] = cells[k]
-			} else {
-				row[j] = ""
-			}
-		}
-		out[i] = row
-	}
-	return out
-}
-
 // (no custom interleaved separator columns)
 
 // captureStyles extracts per-cell styles for visible rows to use in StyleFunc.
@@ -1018,7 +997,7 @@ func (m *BigTable) repositionOnDataChange(ctx context.Context) {
 	n := m.list.Len(ctx)
 	if n <= 0 {
 		m.cursor, m.top, m.focusedID = 0, 0, ""
-		m.selected = map[string]struct{}{}
+		m.selected = make(map[string]struct{})
 		return
 	}
 	// Prune selection for rows that disappeared.

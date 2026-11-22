@@ -14,7 +14,7 @@ import (
 )
 
 func envMap(kv ...string) func(string) (string, bool) {
-	m := map[string]string{}
+	m := make(map[string]string)
 	for i := 0; i+1 < len(kv); i += 2 {
 		m[kv[i]] = kv[i+1]
 	}

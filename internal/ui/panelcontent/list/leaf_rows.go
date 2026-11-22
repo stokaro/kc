@@ -112,7 +112,7 @@ func isDefaultRowStyle(st *lipgloss.Style) bool {
 		return true
 	}
 	fg := st.GetForeground()
-	if _, unset := fg.(lipgloss.NoColor); unset || fg == nil {
+	if _, unset := fg.(lipgloss.NoColor); unset {
 		return true
 	}
 	return sameColor(fg, defaultRowForeground)

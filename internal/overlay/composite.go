@@ -66,8 +66,7 @@ func Composite(fg, bg string, xPos, yPos Position, xOff, yOff int) string {
 
 // offsets calculates the actual vertical and horizontal offsets used to position the foreground
 // view relative to the background view.
-func offsets(fg, bg string, xPos, yPos Position, xOff, yOff int) (int, int) {
-	var x, y int
+func offsets(fg, bg string, xPos, yPos Position, xOff, yOff int) (x, y int) {
 	switch xPos {
 	case Center:
 		halfBackgroundWidth := lipgloss.Width(bg) / 2

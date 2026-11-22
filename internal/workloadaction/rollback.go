@@ -232,7 +232,7 @@ func (c *RollbackChange) Patch() ([]byte, error) {
 	t := c.Target()
 	template := t.template.DeepCopy()
 	delete(template.Labels, appsv1.DefaultDeploymentUniqueLabelKey)
-	annotations := map[string]string{}
+	annotations := make(map[string]string)
 	for k := range annotationsToSkip {
 		if v, ok := c.deploy.Annotations[k]; ok {
 			annotations[k] = v

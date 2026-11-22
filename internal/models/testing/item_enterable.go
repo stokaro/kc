@@ -18,7 +18,7 @@ type EnterableItem struct {
 var _ models.Item = (*EnterableItem)(nil)
 var _ models.Enterable = (*EnterableItem)(nil)
 
-func NewEnterableItem(id string, cells []string, path []string, enter func() (models.Folder, error), style *lipgloss.Style) *EnterableItem {
+func NewEnterableItem(id string, cells, path []string, enter func() (models.Folder, error), style *lipgloss.Style) *EnterableItem {
 	if len(cells) > 0 && !strings.HasPrefix(cells[0], "/") {
 		cloned := append([]string(nil), cells...)
 		cloned[0] = "/" + cloned[0]
@@ -27,7 +27,7 @@ func NewEnterableItem(id string, cells []string, path []string, enter func() (mo
 	return &EnterableItem{RowItem: models.NewRowItem(id, cells, path, style), enter: enter}
 }
 
-func NewEnterableItemStyled(id string, cells []string, path []string, styles []*lipgloss.Style, enter func() (models.Folder, error)) *EnterableItem {
+func NewEnterableItemStyled(id string, cells, path []string, styles []*lipgloss.Style, enter func() (models.Folder, error)) *EnterableItem {
 	if len(cells) > 0 && !strings.HasPrefix(cells[0], "/") {
 		cloned := append([]string(nil), cells...)
 		cloned[0] = "/" + cloned[0]

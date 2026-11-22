@@ -2,6 +2,7 @@ package table
 
 import (
 	"context"
+	"slices"
 
 	"charm.land/lipgloss/v2"
 )
@@ -96,9 +97,7 @@ func (l *SliceList) InsertBefore(anchorID string, newRows ...Row) int {
 	if !ok {
 		return -1
 	}
-	pre := append([]Row(nil), l.rows[:i]...)
-	post := append([]Row(nil), l.rows[i:]...)
-	l.rows = append(pre, append(newRows, post...)...)
+	l.rows = slices.Concat(l.rows[:i], newRows, l.rows[i:])
 	l.rebuildIndex()
 	return i
 }
@@ -110,9 +109,7 @@ func (l *SliceList) InsertAfter(anchorID string, newRows ...Row) int {
 		return -1
 	}
 	i++
-	pre := append([]Row(nil), l.rows[:i]...)
-	post := append([]Row(nil), l.rows[i:]...)
-	l.rows = append(pre, append(newRows, post...)...)
+	l.rows = slices.Concat(l.rows[:i], newRows, l.rows[i:])
 	l.rebuildIndex()
 	return i
 }

@@ -63,8 +63,8 @@ func (n *Node) Fields() []Field {
 	if n == nil || n.schema == nil {
 		return nil
 	}
-	props := map[string]*Schema{}
-	required := map[string]bool{}
+	props := make(map[string]*Schema)
+	required := make(map[string]bool)
 	for _, part := range n.parts() {
 		for name, p := range part.Properties {
 			if _, seen := props[name]; !seen {

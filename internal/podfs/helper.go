@@ -172,7 +172,7 @@ func runningHelper(pod *corev1.Pod, container string, prefixes ...string) (strin
 func pickHelper(pod *corev1.Pod, prefix, container string) (string, bool) {
 	// The sanitizer trims a trailing hyphen, so add it after.
 	base := sanitizeHelperName(fmt.Sprintf("%s-%s", prefix, container)) + "-"
-	state := map[string]corev1.ContainerState{}
+	state := make(map[string]corev1.ContainerState)
 	for _, st := range pod.Status.EphemeralContainerStatuses {
 		state[st.Name] = st.State
 	}

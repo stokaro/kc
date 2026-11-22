@@ -27,8 +27,8 @@ func newTestPool(t *testing.T) *testPool {
 	tp := &testPool{
 		Pool:   NewPool(testTTL, time.Minute),
 		clock:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		starts: map[Key]int{},
-		stops:  map[Key]int{},
+		starts: make(map[Key]int),
+		stops:  make(map[Key]int),
 	}
 	tp.now = func() time.Time { return tp.clock }
 	tp.start = func(_ context.Context, k Key, _ map[schema.GroupVersionResource]cache.ByObject) (*Cluster, context.CancelFunc, error) {

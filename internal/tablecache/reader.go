@@ -113,8 +113,8 @@ func (r *Reader) List(ctx context.Context, list client.ObjectList, opts ...clien
 	}
 
 	rowList.SetTableTarget(targetGVK)
-	copy := rows.DeepCopy()
-	*rowList = *copy
+	out := rows.DeepCopy()
+	*rowList = *out
 	return nil
 }
 
@@ -217,11 +217,11 @@ func convertTable(table *metav1.Table, target schema.GroupVersionKind) (*RowList
 		row.Columns = list.Columns
 		table.Rows[i].DeepCopyInto(&row.TableRow)
 
-		meta, err := extractMetadata(&table.Rows[i])
+		objMeta, err := extractMetadata(&table.Rows[i])
 		if err != nil {
 			return nil, err
 		}
-		row.ObjectMeta = meta
+		row.ObjectMeta = objMeta
 		if row.Name == "" && len(row.TableRow.Cells) > 0 {
 			if cell, ok := row.TableRow.Cells[0].(string); ok {
 				row.Name = strings.TrimPrefix(cell, "/")
@@ -258,8 +258,8 @@ func (r *Reader) objectEventConverter(ctx context.Context, mapping *meta.RESTMap
 			return []watch.Event{evt}, nil
 		}
 
-		obj, ok := evt.Object.(runtime.Object)
-		if !ok {
+		obj := evt.Object
+		if obj == nil {
 			return []watch.Event{evt}, nil
 		}
 
@@ -324,9 +324,7 @@ func extractMetadata(row *metav1.TableRow) (metav1.ObjectMeta, error) {
 	var runtimeObj runtime.Object
 	switch {
 	case row.Object.Object != nil:
-		if obj, ok := row.Object.Object.(runtime.Object); ok {
-			runtimeObj = obj
-		}
+		runtimeObj = row.Object.Object
 	case len(row.Object.Raw) > 0:
 		var u unstructured.Unstructured
 		if err := u.UnmarshalJSON(row.Object.Raw); err != nil {
@@ -344,7 +342,7 @@ func extractMetadata(row *metav1.TableRow) (metav1.ObjectMeta, error) {
 		return metav1.ObjectMeta{}, fmt.Errorf("tablecache: access embedded object metadata: %w", err)
 	}
 
-	meta := metav1.ObjectMeta{
+	objMeta := metav1.ObjectMeta{
 		Name:            accessor.GetName(),
 		Namespace:       accessor.GetNamespace(),
 		UID:             accessor.GetUID(),
@@ -354,17 +352,17 @@ func extractMetadata(row *metav1.TableRow) (metav1.ObjectMeta, error) {
 		Finalizers:      slices.Clone(accessor.GetFinalizers()),
 	}
 
-	meta.SetCreationTimestamp(accessor.GetCreationTimestamp())
-	meta.Generation = accessor.GetGeneration()
-	meta.OwnerReferences = append([]metav1.OwnerReference(nil), accessor.GetOwnerReferences()...)
+	objMeta.SetCreationTimestamp(accessor.GetCreationTimestamp())
+	objMeta.Generation = accessor.GetGeneration()
+	objMeta.OwnerReferences = append([]metav1.OwnerReference(nil), accessor.GetOwnerReferences()...)
 	if dt := accessor.GetDeletionTimestamp(); dt != nil {
-		meta.DeletionTimestamp = dt.DeepCopy()
+		objMeta.DeletionTimestamp = dt.DeepCopy()
 	}
-	meta.ManagedFields = append([]metav1.ManagedFieldsEntry(nil), accessor.GetManagedFields()...)
-	meta.Labels = ensureMap(meta.Labels)
-	meta.Annotations = ensureMap(meta.Annotations)
+	objMeta.ManagedFields = append([]metav1.ManagedFieldsEntry(nil), accessor.GetManagedFields()...)
+	objMeta.Labels = ensureMap(objMeta.Labels)
+	objMeta.Annotations = ensureMap(objMeta.Annotations)
 
-	return meta, nil
+	return objMeta, nil
 }
 
 func ensureMap(in map[string]string) map[string]string {
@@ -372,7 +370,7 @@ func ensureMap(in map[string]string) map[string]string {
 		return nil
 	}
 	if len(in) == 0 {
-		return map[string]string{}
+		return make(map[string]string)
 	}
 	return in
 }
@@ -414,8 +412,10 @@ func newRESTTableFetcher(cfg *rest.Config, scheme *runtime.Scheme) (tableFetcher
 func (f *restTableFetcher) clientFor(mapping *meta.RESTMapping) (rest.Interface, error) {
 	gv := mapping.GroupVersionKind.GroupVersion()
 	key := gv.String()
-	if client, ok := f.clients.Load(key); ok {
-		return client.(rest.Interface), nil
+	if v, ok := f.clients.Load(key); ok {
+		if rc, ok := v.(rest.Interface); ok {
+			return rc, nil
+		}
 	}
 
 	cfg := rest.CopyConfig(f.baseConfig)
@@ -437,11 +437,11 @@ func (f *restTableFetcher) clientFor(mapping *meta.RESTMapping) (rest.Interface,
 }
 
 func (f *restTableFetcher) ListTable(ctx context.Context, mapping *meta.RESTMapping, namespace string, opts metav1.ListOptions) (*metav1.Table, error) {
-	client, err := f.clientFor(mapping)
+	rc, err := f.clientFor(mapping)
 	if err != nil {
 		return nil, err
 	}
-	req := client.Get().Resource(mapping.Resource.Resource)
+	req := rc.Get().Resource(mapping.Resource.Resource)
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace && namespace != "" {
 		req = req.Namespace(namespace)
 	}
@@ -458,11 +458,11 @@ func (f *restTableFetcher) ListTable(ctx context.Context, mapping *meta.RESTMapp
 }
 
 func (f *restTableFetcher) WatchTable(ctx context.Context, mapping *meta.RESTMapping, namespace string, opts metav1.ListOptions) (watch.Interface, error) {
-	client, err := f.clientFor(mapping)
+	rc, err := f.clientFor(mapping)
 	if err != nil {
 		return nil, err
 	}
-	req := client.Get().Resource(mapping.Resource.Resource)
+	req := rc.Get().Resource(mapping.Resource.Resource)
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace && namespace != "" {
 		req = req.Namespace(namespace)
 	}
@@ -475,11 +475,11 @@ func (f *restTableFetcher) WatchTable(ctx context.Context, mapping *meta.RESTMap
 }
 
 func (f *restTableFetcher) GetTable(ctx context.Context, mapping *meta.RESTMapping, namespace, name string) (*metav1.Table, error) {
-	client, err := f.clientFor(mapping)
+	rc, err := f.clientFor(mapping)
 	if err != nil {
 		return nil, err
 	}
-	req := client.Get().Resource(mapping.Resource.Resource)
+	req := rc.Get().Resource(mapping.Resource.Resource)
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace && namespace != "" {
 		req = req.Namespace(namespace)
 	}

@@ -127,7 +127,7 @@ func TestPodName(t *testing.T) {
 			}
 		})
 	}
-	if nodeshell.PodName("n") == nodeshell.PodName("n") {
+	if first, second := nodeshell.PodName("n"), nodeshell.PodName("n"); first == second {
 		t.Errorf("two names for the same node are equal")
 	}
 }

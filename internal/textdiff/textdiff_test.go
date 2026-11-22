@@ -114,12 +114,12 @@ func TestUnifiedDiff(t *testing.T) {
 // a into b and be as short as the LCS allows.
 func TestLinesIsShortest(t *testing.T) {
 	t.Parallel()
-	rng := rand.New(rand.NewPCG(1, 2))
+	rng := rand.New(rand.NewPCG(1, 2)) // #nosec G404 -- seeded, reproducible test input
 	gen := func() []string {
 		n := rng.IntN(30)
 		out := make([]string, n)
 		for i := range out {
-			out[i] = string(rune('a' + rng.IntN(4)))
+			out[i] = string('a' + rng.Int32N(4))
 		}
 		return out
 	}
@@ -165,11 +165,11 @@ func TestLinesLargeDisjointInput(t *testing.T) {
 // still turns a into b.
 func TestLinesPastCostLimit(t *testing.T) {
 	t.Parallel()
-	rng := rand.New(rand.NewPCG(5, 6))
+	rng := rand.New(rand.NewPCG(5, 6)) // #nosec G404 -- seeded, reproducible test input
 	gen := func(n int) []string {
 		out := make([]string, n)
 		for i := range out {
-			out[i] = string(rune('a' + rng.IntN(50)))
+			out[i] = string('a' + rng.Int32N(50))
 		}
 		return out
 	}
@@ -206,10 +206,10 @@ func lcs(a, b []string) int {
 }
 
 func BenchmarkLines(b *testing.B) {
-	rng := rand.New(rand.NewPCG(3, 4))
+	rng := rand.New(rand.NewPCG(3, 4)) // #nosec G404 -- seeded, reproducible test input
 	left := make([]string, 2000)
 	for i := range left {
-		left[i] = string(rune('a' + rng.IntN(20)))
+		left[i] = string('a' + rng.Int32N(20))
 	}
 	right := append([]string(nil), left...)
 	for range 50 {

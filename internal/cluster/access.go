@@ -40,7 +40,7 @@ type accessKey struct {
 
 // NewListWatchAccess returns a checker that sends its reviews through client.
 func NewListWatchAccess(client authorizationv1client.SelfSubjectAccessReviewsGetter) *ListWatchAccess {
-	return &ListWatchAccess{client: client, results: map[accessKey]bool{}}
+	return &ListWatchAccess{client: client, results: make(map[accessKey]bool)}
 }
 
 // AllNamespaces reports whether list and watch of gvr across all namespaces
@@ -80,7 +80,8 @@ func (a *ListWatchAccess) allowed(ctx context.Context, k accessKey) (bool, error
 	if err != nil {
 		return false, err
 	}
-	return v.(bool), nil
+	allowed, _ := v.(bool)
+	return allowed, nil
 }
 
 // everything asks once whether the user may list and watch every resource
@@ -107,7 +108,8 @@ func (a *ListWatchAccess) everything(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return v.(bool), nil
+	allowed, _ := v.(bool)
+	return allowed, nil
 }
 
 // listAndWatch reviews list, and watch only when list is allowed.

@@ -44,8 +44,8 @@ func NewCache(ttl time.Duration, now func() time.Time) *Cache {
 	return &Cache{
 		ttl:      ttl,
 		now:      now,
-		entries:  map[cacheKey]Result{},
-		inflight: map[cacheKey]struct{}{},
+		entries:  make(map[cacheKey]Result),
+		inflight: make(map[cacheKey]struct{}),
 	}
 }
 
@@ -110,7 +110,7 @@ func (k *Cache) pruneLocked() {
 	}
 	if len(k.entries) > maxEntries {
 		// Everything is fresh; start over rather than grow without bound.
-		k.entries = map[cacheKey]Result{}
+		k.entries = make(map[cacheKey]Result)
 	}
 }
 

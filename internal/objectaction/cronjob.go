@@ -102,7 +102,7 @@ func ManualJobName(cronJob, suffix string) string {
 func JobFromCronJob(cj *batchv1.CronJob, name string) *batchv1.Job {
 	annotations := maps.Clone(cj.Spec.JobTemplate.Annotations)
 	if annotations == nil {
-		annotations = map[string]string{}
+		annotations = make(map[string]string)
 	}
 	annotations[InstantiateAnnotation] = "manual"
 	return &batchv1.Job{

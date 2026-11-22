@@ -10,7 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-func mkCols(n int, w int) []Column {
+func mkCols(n, w int) []Column {
 	cols := make([]Column, n)
 	for i := range n {
 		cols[i] = Column{Title: fmt.Sprintf("C%02d", i), Width: w}
@@ -71,7 +71,7 @@ func TestRepositionOnDataChange_NextThenPrev(t *testing.T) {
 }
 
 func TestBigTableVirtualScrollUsesBelow(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cols := []Column{{Title: "Name", Width: 10}}
 	list := newWindowSpyList(100, 1)
 	bt := NewBigTable(cols, list, 60, 10)
@@ -100,7 +100,7 @@ func TestBigTableVirtualScrollUsesBelow(t *testing.T) {
 }
 
 func TestBigTableVirtualScrollUsesAbove(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cols := []Column{{Title: "Name", Width: 10}}
 	list := newWindowSpyList(100, 1)
 	bt := NewBigTable(cols, list, 60, 10)
@@ -124,7 +124,7 @@ func TestBigTableVirtualScrollUsesAbove(t *testing.T) {
 }
 
 func TestBigTableVirtualScrollFallbackOnSelect(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cols := []Column{{Title: "Name", Width: 10}}
 	list := newWindowSpyList(500, 1)
 	bt := NewBigTable(cols, list, 60, 10)
@@ -145,7 +145,7 @@ func TestBigTableVirtualScrollFallbackOnSelect(t *testing.T) {
 }
 
 func TestBigTableVirtualScrollLargeList(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cols := []Column{{Title: "Name", Width: 10}}
 	list := newWindowSpyList(20000, 1)
 	bt := NewBigTable(cols, list, 80, 18)
@@ -172,7 +172,7 @@ func TestBigTableVirtualScrollLargeList(t *testing.T) {
 }
 
 func TestBigTableSelectionClampsOnRemoval(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cols := mkCols(2, 6)
 	list := mkList(4, 2)
 	bt := NewBigTable(cols, list, 40, 8)
@@ -193,7 +193,7 @@ func TestBigTableSelectionClampsOnRemoval(t *testing.T) {
 }
 
 func TestBigTableMultiSelectMarks(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cols := mkCols(1, 6)
 	list := mkList(3, 1)
 	bt := NewBigTable(cols, list, 30, 8)
@@ -213,7 +213,7 @@ func TestBigTableMultiSelectMarks(t *testing.T) {
 }
 
 func TestBigTablePreservesMarksAfterSetList(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cols := mkCols(1, 6)
 	list := mkList(3, 1)
 	bt := NewBigTable(cols, list, 30, 8)
@@ -359,7 +359,7 @@ func (c *countingList) Find(context.Context, string) (int, Row, bool) {
 func (c *countingList) reset() { c.calls = 0 }
 
 func TestBigTableSetSizeNoOp(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	row := SimpleRow{ID: "a"}
 	style := lipgloss.NewStyle()
 	row.SetColumn(0, "a", &style)

@@ -93,12 +93,11 @@ var keyAliases = map[string]string{
 }
 
 type session struct {
-	mu      sync.Mutex
-	emu     *emulator.Emulator
-	cmd     *exec.Cmd
-	exited  bool
-	exitErr error
-	exitCh  chan struct{}
+	mu     sync.Mutex
+	emu    *emulator.Emulator
+	cmd    *exec.Cmd
+	exited bool
+	exitCh chan struct{}
 }
 
 func newSession(cols, rows int) (*session, error) {

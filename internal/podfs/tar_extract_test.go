@@ -75,7 +75,7 @@ func buildArchive(t *testing.T, members []tarMember, marker bool) []byte {
 
 func readTree(t *testing.T, dir string) map[string]string {
 	t.Helper()
-	out := map[string]string{}
+	out := make(map[string]string)
 	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil || p == dir {
 			return err
@@ -168,7 +168,7 @@ func TestExtractScript(t *testing.T) {
 			name: "archive without the marker", entry: "app",
 			archive: func(t *testing.T) []byte { return buildArchive(t, dirTree, false) },
 			wantErr: "incomplete",
-			want:    map[string]string{},
+			want:    make(map[string]string),
 		},
 		{
 			name: "archive cut between members", entry: "app",
@@ -179,13 +179,13 @@ func TestExtractScript(t *testing.T) {
 				return full[:3*512]
 			},
 			wantErr: "incomplete|extracting the archive failed",
-			want:    map[string]string{},
+			want:    make(map[string]string),
 		},
 		{
 			name: "archive cut inside a member", entry: "app",
 			archive: func(t *testing.T) []byte { return buildArchive(t, dirTree, true)[:512+100] },
 			wantErr: "incomplete|extracting the archive failed",
-			want:    map[string]string{},
+			want:    make(map[string]string),
 		},
 	}
 	for _, tc := range cases {

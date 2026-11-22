@@ -158,7 +158,7 @@ func TestReaderListCustomResourceColumnsEnvtest(t *testing.T) {
 		t.Fatalf("create custom resource definition: %v", err)
 	}
 
-	waitErr := wait.PollImmediate(200*time.Millisecond, 10*time.Second, func() (bool, error) {
+	waitErr := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, 10*time.Second, true, func(ctx context.Context) (bool, error) {
 		current, err := extClient.ApiextensionsV1().CustomResourceDefinitions().Get(ctx, crd.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
 			return false, nil
@@ -220,7 +220,7 @@ func TestReaderListCustomResourceColumnsEnvtest(t *testing.T) {
 		},
 	}
 
-	createErr := wait.PollImmediate(200*time.Millisecond, 10*time.Second, func() (bool, error) {
+	createErr := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, 10*time.Second, true, func(ctx context.Context) (bool, error) {
 		_, err := dynClient.Resource(resource).Namespace(ns.Name).Create(ctx, customObj.DeepCopy(), metav1.CreateOptions{})
 		switch {
 		case err == nil, errors.IsAlreadyExists(err):

@@ -1,7 +1,6 @@
 package manifest
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -44,7 +43,7 @@ func (o objectViewableStub) Name() string                     { return o.nm }
 func (objectViewableStub) SupportsVerb(string) bool           { return false }
 
 func TestFrameInfoProvidesIndicatorsAndStatus(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	w := New(panelcontent.WidgetDeps{})
 	_, _ = w.Update(ctx, tea.WindowSizeMsg{Width: 40, Height: 5})
 

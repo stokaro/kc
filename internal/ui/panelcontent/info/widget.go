@@ -116,7 +116,7 @@ func New(deps panelcontent.WidgetDeps, opts Options) *Widget {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Widget{deps: deps, opts: opts, history: map[string]*history{}}
+	return &Widget{deps: deps, opts: opts, history: make(map[string]*history)}
 }
 
 // Init reads the summary at once and starts the ticks.

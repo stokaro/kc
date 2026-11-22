@@ -162,7 +162,7 @@ func TestWorkloadSelector(t *testing.T) {
 		u := &unstructured.Unstructured{Object: map[string]any{
 			"apiVersion": "apps/v1", "kind": "Deployment",
 			"metadata": map[string]any{"name": "api", "namespace": "web"},
-			"spec":     map[string]any{},
+			"spec":     make(map[string]any),
 		}}
 		if selector != nil {
 			u.Object["spec"].(map[string]any)["selector"] = selector
@@ -184,7 +184,7 @@ func TestWorkloadSelector(t *testing.T) {
 			want: "tier in (a,b)",
 		},
 		{name: "missing", selector: nil, wantErr: logmux.ErrNoSelector},
-		{name: "empty", selector: map[string]any{}, wantErr: logmux.ErrNoSelector},
+		{name: "empty", selector: make(map[string]any), wantErr: logmux.ErrNoSelector},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

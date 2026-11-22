@@ -93,7 +93,7 @@ func NewRecord(line string, src Source) Record {
 
 // splitTimestamp splits "<RFC 3339 time> <rest>" as kubectl --timestamps
 // writes it.
-func splitTimestamp(line string) (string, string, bool) {
+func splitTimestamp(line string) (ts, rest string, ok bool) {
 	i := strings.IndexByte(line, ' ')
 	if i < len("2006-01-02T15:04:05Z") || i > len(time.RFC3339Nano)+6 {
 		return "", "", false
@@ -192,7 +192,7 @@ func readArray(dec *json.Decoder, depth int) ([]any, error) {
 	if depth > maxDepth {
 		return nil, errTooDeep
 	}
-	items := []any{}
+	items := make([]any, 0)
 	for dec.More() {
 		tok, err := dec.Token()
 		if err != nil {

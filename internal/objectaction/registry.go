@@ -37,7 +37,7 @@ type Registry struct {
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{byGVR: map[schema.GroupVersionResource][]Action{}}
+	return &Registry{byGVR: make(map[schema.GroupVersionResource][]Action)}
 }
 
 // Register adds actions for gvr in menu order. It panics on an incomplete
