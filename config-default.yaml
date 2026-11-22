@@ -104,6 +104,26 @@ overview:
   podsWarnPercent: 90
   # A ResourceQuota is flagged when any used value reaches this percent.
   quotaWarnPercent: 80
+  # Measured CPU and memory usage of a node (metrics.k8s.io), in percent
+  # of allocatable.
+  usageWarnPercent: 80
+  usageFailPercent: 90
+  # A node is "under-req" when its usage is at least this many times its
+  # requests and reaches underRequestedMinPercent of allocatable.
+  underRequestedFactor: 2
+  underRequestedMinPercent: 25
+  # A container near its memory limit (OOM soon) or at its CPU limit
+  # (throttled), in percent of the limit.
+  memoryLimitWarnPercent: 90
+  cpuLimitWarnPercent: 90
+  # Node and image filesystem use (kubelet stats summary), in percent.
+  diskWarnPercent: 80
+  diskFailPercent: 90
+  # A mounted PersistentVolumeClaim is flagged at this percent full.
+  volumeWarnPercent: 80
+  # The kubelet stats summary (one request per node) is skipped on
+  # clusters with more nodes than this.
+  statsMaxNodes: 50
 
 commands:
   - name: Top Nodes

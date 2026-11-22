@@ -448,7 +448,15 @@ func TestOverviewRules(t *testing.T) {
 func TestOverviewRulesWithNothingToReport(t *testing.T) {
 	t.Parallel()
 	web := withPod(overviewRunningPod("a", "web"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("100m", "64Mi", "", "64Mi") })
-	r := reportFor(t, AllNamespaces, appconfig.DefaultOverview(), readyNode("n1", "4", "8Gi", 110), web)
+	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(readyNode("n1", "4", "8Gi", 110), web).Build()
+	in := loadOverviewInput(t.Context(), cl, AllNamespaces, nil)
+	// Usage and kubelet stats are measured, and show nothing.
+	m := &overviewMeasured{
+		nodes: map[string]usageValues{"n1": {cpu: 10, mem: 1 << 20}},
+		pods:  map[string][]containerUsage{"a/web": {{name: "app", cpu: 1, mem: 1 << 20}}},
+		stats: map[string]*nodeStats{"n1": {nodeFS: fsUse{used: 1 << 30, capacity: 100 << 30}}},
+	}
+	r := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, m)
 	if len(r.findings) != len(overviewRules) {
 		t.Fatalf("findings = %d, want one per rule (%d)", len(r.findings), len(overviewRules))
 	}
@@ -545,10 +553,8 @@ func TestOverviewCapacityUsagePlugsIn(t *testing.T) {
 	t.Parallel()
 	cl := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithObjects(readyNode("n1", "4", "8Gi", 10)).Build()
 	in := loadOverviewInput(t.Context(), cl, AllNamespaces, nil)
-	usage := func() (map[string]nodeUsage, bool) {
-		return map[string]nodeUsage{"n1": {cpuMilli: 1000, memBytes: 2 << 30}}, true
-	}
-	r := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, usage)
+	m := &overviewMeasured{nodes: map[string]usageValues{"n1": {cpu: 1000, mem: 2 << 30}}}
+	r := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, m)
 	if got := mustFinding(t, r, "capacity/cpu").value; got != "use 25% req 0% lim 0%" {
 		t.Fatalf("cpu with usage = %q", got)
 	}

@@ -255,7 +255,7 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		synctest.Wait()
 		rows := folder.Lines(ctx, 0, 100)
 		ids := overviewRowIDs(rows)
-		wantOrder := []string{"__back__", "section/capacity", "capacity/cpu", "capacity/memory", "capacity/pods", "section/health", "health/nodes-not-ready"}
+		wantOrder := []string{"__back__", "section/capacity", "capacity/cpu", "capacity/memory", "capacity/pods", "capacity/disk", "section/health", "health/nodes-not-ready"}
 		if !slices.Equal(ids[:len(wantOrder)], wantOrder) {
 			t.Fatalf("first rows = %v, want %v", ids[:len(wantOrder)], wantOrder)
 		}
@@ -276,8 +276,8 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 			t.Fatal("crash loop row not found by ID")
 		}
 		_, _, styles, _ := item.Columns()
-		if styles[0] != NotReadyStyle() {
-			t.Fatal("a failed row does not use the failed style")
+		if styles[0] != JobFailedStyle() {
+			t.Fatal("a failed row does not use the failed row style of object lists")
 		}
 		enter, ok := item.(Enterable)
 		if !ok {

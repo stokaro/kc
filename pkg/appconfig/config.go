@@ -217,6 +217,32 @@ type OverviewConfig struct {
 	// QuotaWarnPercent flags a ResourceQuota when any used value reaches
 	// this percent of its hard limit.
 	QuotaWarnPercent int `json:"quotaWarnPercent"`
+	// UsageWarnPercent and UsageFailPercent compare the measured CPU and
+	// memory usage of a node (metrics.k8s.io) with its allocatable.
+	UsageWarnPercent int `json:"usageWarnPercent"`
+	UsageFailPercent int `json:"usageFailPercent"`
+	// UnderRequestedFactor marks a node "under-requested" when its measured
+	// usage is at least this many times what its pods request, and the
+	// usage reaches UnderRequestedMinPercent of allocatable. The scheduler
+	// then keeps placing pods on a node that is busier than it thinks.
+	UnderRequestedFactor     float64 `json:"underRequestedFactor"`
+	UnderRequestedMinPercent int     `json:"underRequestedMinPercent"`
+	// MemoryLimitWarnPercent flags a container whose memory usage reaches
+	// this percent of its limit: it is close to an OOM kill.
+	MemoryLimitWarnPercent int `json:"memoryLimitWarnPercent"`
+	// CPULimitWarnPercent flags a container whose CPU usage reaches this
+	// percent of its limit: it is throttled.
+	CPULimitWarnPercent int `json:"cpuLimitWarnPercent"`
+	// DiskWarnPercent and DiskFailPercent compare the used node and image
+	// filesystem of a node (kubelet stats summary) with its capacity.
+	DiskWarnPercent int `json:"diskWarnPercent"`
+	DiskFailPercent int `json:"diskFailPercent"`
+	// VolumeWarnPercent flags a mounted PersistentVolumeClaim whose used
+	// bytes reach this percent of its capacity.
+	VolumeWarnPercent int `json:"volumeWarnPercent"`
+	// StatsMaxNodes skips the kubelet stats summary (one request per node)
+	// on clusters with more nodes than this.
+	StatsMaxNodes int `json:"statsMaxNodes"`
 }
 
 // DefaultOverview returns the default overview thresholds.
@@ -229,6 +255,17 @@ func DefaultOverview() OverviewConfig {
 		LimitsWarnPercent:   100,
 		PodsWarnPercent:     90,
 		QuotaWarnPercent:    80,
+
+		UsageWarnPercent:         80,
+		UsageFailPercent:         90,
+		UnderRequestedFactor:     2,
+		UnderRequestedMinPercent: 25,
+		MemoryLimitWarnPercent:   90,
+		CPULimitWarnPercent:      90,
+		DiskWarnPercent:          80,
+		DiskFailPercent:          90,
+		VolumeWarnPercent:        80,
+		StatsMaxNodes:            50,
 	}
 }
 
@@ -250,8 +287,28 @@ func (o OverviewConfig) Normalized() OverviewConfig {
 	positive(&o.LimitsWarnPercent, d.LimitsWarnPercent)
 	positive(&o.PodsWarnPercent, d.PodsWarnPercent)
 	positive(&o.QuotaWarnPercent, d.QuotaWarnPercent)
+	positive(&o.UsageWarnPercent, d.UsageWarnPercent)
+	positive(&o.UsageFailPercent, d.UsageFailPercent)
+	positive(&o.UnderRequestedMinPercent, d.UnderRequestedMinPercent)
+	positive(&o.MemoryLimitWarnPercent, d.MemoryLimitWarnPercent)
+	positive(&o.CPULimitWarnPercent, d.CPULimitWarnPercent)
+	positive(&o.DiskWarnPercent, d.DiskWarnPercent)
+	positive(&o.DiskFailPercent, d.DiskFailPercent)
+	positive(&o.VolumeWarnPercent, d.VolumeWarnPercent)
+	positive(&o.StatsMaxNodes, d.StatsMaxNodes)
+	if o.UnderRequestedFactor <= 1 {
+		// A factor of 1 or less would flag every node that uses what it
+		// requests.
+		o.UnderRequestedFactor = d.UnderRequestedFactor
+	}
 	if o.RequestsFailPercent < o.RequestsWarnPercent {
 		o.RequestsFailPercent = o.RequestsWarnPercent
+	}
+	if o.UsageFailPercent < o.UsageWarnPercent {
+		o.UsageFailPercent = o.UsageWarnPercent
+	}
+	if o.DiskFailPercent < o.DiskWarnPercent {
+		o.DiskFailPercent = o.DiskWarnPercent
 	}
 	return o
 }
