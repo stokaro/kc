@@ -30,6 +30,8 @@ type ObjectsFolder struct {
 	rows               *liveObjectRowSource
 	objectOrder        string
 	hasObjOrder        bool
+	groupNamespaces    bool
+	hasGroupNamespaces bool
 	sortMu             sync.Mutex
 	sortState          folderSortState
 	verbs              []string
@@ -140,8 +142,8 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 	o.SetColumns(cols)
 	ageCols := ageColumnIndices(cols)
 
-	idxs, sortBy := orderRowIndices(rl.Items, rl.Columns, order, namespaced)
-	o.setSortState(sortBy, keys)
+	idxs, sortBy := orderRowIndices(rl.Items, rl.Columns, order, layoutFor(namespaced, o.requestedGrouping()))
+	o.setSortState(sortBy, keys, namespaced)
 	rows := make([]table.Row, 0, len(idxs))
 	var hooks []*ageCellHook
 	gvStr := o.gvr.GroupVersion().String()
@@ -226,8 +228,8 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		items = append(items, &list.Items[i])
 		metas = append(metas, r)
 	}
-	idxs, sortBy := orderRowIndices(metas, nil, order, namespaced)
-	o.setSortState(sortBy, keys)
+	idxs, sortBy := orderRowIndices(metas, nil, order, layoutFor(namespaced, o.requestedGrouping()))
+	o.setSortState(sortBy, keys, namespaced)
 	rows := make([]table.Row, 0, len(idxs))
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
@@ -354,11 +356,53 @@ func (o *ObjectsFolder) ApplyObjectOrder(order string) {
 	}
 }
 
+// ApplyNamespaceGrouping turns the grouping of a list across namespaces on
+// or off until changed again. Lists of one namespace ignore it.
+func (o *ObjectsFolder) ApplyNamespaceGrouping(on bool) {
+	o.sortMu.Lock()
+	changed := !o.hasGroupNamespaces || o.groupNamespaces != on
+	o.groupNamespaces = on
+	o.hasGroupNamespaces = true
+	o.sortMu.Unlock()
+	if changed {
+		o.Refresh()
+	}
+}
+
+// NamespaceGrouping reports whether the rows are grouped by namespace, and
+// whether the list spans namespaces at all, so grouping applies to it. The
+// scope comes from the last listing, so the call does no lookup; before the
+// first listing a list of all namespaces counts as spanning them.
+func (o *ObjectsFolder) NamespaceGrouping() (on, applies bool) {
+	on = o.requestedGrouping()
+	o.sortMu.Lock()
+	defer o.sortMu.Unlock()
+	if !o.sortState.applied {
+		return on, o.namespace == ""
+	}
+	return on, o.sortState.spansNamespaces
+}
+
+// requestedGrouping is the grouping set on the folder, or else the
+// configured one.
+func (o *ObjectsFolder) requestedGrouping() bool {
+	o.sortMu.Lock()
+	defer o.sortMu.Unlock()
+	if o.hasGroupNamespaces {
+		return o.groupNamespaces
+	}
+	if o.Deps.AppConfig != nil {
+		return o.Deps.AppConfig.Objects.GroupByNamespace
+	}
+	return true
+}
+
 // folderSortState is the sort of the last listing.
 type folderSortState struct {
-	applied bool
-	sortBy  objectSort
-	keys    []string
+	applied         bool
+	sortBy          objectSort
+	keys            []string
+	spansNamespaces bool
 }
 
 // requestedOrder is the order set on the folder, or else the configured one.
@@ -374,9 +418,9 @@ func (o *ObjectsFolder) requestedOrder() string {
 	return appconfig.ObjectsOrderName
 }
 
-func (o *ObjectsFolder) setSortState(sortBy objectSort, keys []string) {
+func (o *ObjectsFolder) setSortState(sortBy objectSort, keys []string, spansNamespaces bool) {
 	o.sortMu.Lock()
-	o.sortState = folderSortState{applied: true, sortBy: sortBy, keys: keys}
+	o.sortState = folderSortState{applied: true, sortBy: sortBy, keys: keys, spansNamespaces: spansNamespaces}
 	o.sortMu.Unlock()
 }
 

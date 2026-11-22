@@ -50,6 +50,10 @@ type ViewOptionsObjectsPayload struct {
 	Order           string
 	HasFaultsOnly   bool
 	FaultsOnly      bool
+	// HasGroupByNamespace is set when the dialog offered the grouping, so
+	// only then GroupByNamespace carries a choice.
+	HasGroupByNamespace bool
+	GroupByNamespace    bool
 }
 
 // ViewOptionsCommandPayload carries command-specific options.
@@ -134,6 +138,10 @@ type ViewOptionsObjectsConfig struct {
 	// folders that can filter rows.
 	ShowFaultsOnly bool
 	FaultsOnly     bool
+	// ShowGroupByNamespace adds the "Group by namespace" toggle; it is
+	// shown for lists that span namespaces.
+	ShowGroupByNamespace bool
+	GroupByNamespace     bool
 }
 
 // ViewOptionsCommandConfig configures the Command section.
@@ -272,6 +280,7 @@ const (
 	viewOptionLogsPrevious
 	viewOptionLogsContainer
 	viewOptionObjectFaultsOnly
+	viewOptionObjectGroupNamespaces
 )
 
 type viewOptionEntry struct {
@@ -319,6 +328,8 @@ type ViewOptionsModel struct {
 		reverse    bool
 		hasFaults  bool
 		faults     bool
+		hasGroupNS bool
+		groupNS    bool
 	}
 
 	viewer struct {
@@ -423,6 +434,8 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		model.objects.sortIdx, model.objects.reverse = choice.idx, choice.desc
 		model.objects.hasFaults = cfg.Objects.ShowFaultsOnly
 		model.objects.faults = cfg.Objects.FaultsOnly
+		model.objects.hasGroupNS = cfg.Objects.ShowGroupByNamespace
+		model.objects.groupNS = cfg.Objects.GroupByNamespace
 
 		model.appendSectionSpacerIfNeeded()
 		model.entries = append(model.entries, viewOptionEntry{
@@ -440,6 +453,9 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectOrder},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectReverse},
 		)
+		if model.objects.hasGroupNS {
+			model.entries = append(model.entries, viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectGroupNamespaces})
+		}
 		if model.objects.hasFaults {
 			model.entries = append(model.entries, viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectFaultsOnly})
 		}
@@ -878,6 +894,8 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		m.objects.reverse = !m.objects.reverse
 	case viewOptionObjectFaultsOnly:
 		m.objects.faults = !m.objects.faults
+	case viewOptionObjectGroupNamespaces:
+		m.objects.groupNS = !m.objects.groupNS
 	case viewOptionViewerTheme:
 		if !m.viewer.enabled || len(m.viewer.themeNames) == 0 {
 			return
@@ -974,6 +992,9 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 			Order:           m.objectOrder(),
 			HasFaultsOnly:   m.objects.hasFaults,
 			FaultsOnly:      m.objects.faults,
+
+			HasGroupByNamespace: m.objects.hasGroupNS,
+			GroupByNamespace:    m.objects.groupNS,
 		}
 	}
 	if m.viewer.enabled {
@@ -1050,6 +1071,11 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (label, value
 			val = "Yes"
 		}
 		return "Faults only", val
+	case viewOptionObjectGroupNamespaces:
+		if m.objects.groupNS {
+			return "Group by namespace", "Yes"
+		}
+		return "Group by namespace", "No"
 	case viewOptionCommandWatch:
 		if len(commandWatchLabels) == 0 {
 			return "Watch", "-"

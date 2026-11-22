@@ -254,3 +254,45 @@ func TestF2OpensUserMenuNotOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestMenuBarLocalFiles(t *testing.T) {
+	t.Chdir(t.TempDir())
+	app := newMenuTestApp(t)
+	// F9, R (Right), E (Local files): the right panel lists the local
+	// filesystem in List mode and the entry carries the mark.
+	app = feedMenu(app, keyF9, tea.KeyPressMsg{Code: 'r', Text: "r"}, tea.KeyPressMsg{Code: 'e', Text: "e"})
+	if app.menuBar.IsOpen() {
+		t.Fatal("menu bar still open after Local files")
+	}
+	if app.activePanel != 1 {
+		t.Fatalf("active panel = %d, want the right panel", app.activePanel)
+	}
+	if mode := app.panelByIndex(1).Mode(); mode != PanelModeList {
+		t.Fatalf("right panel mode = %v, want List", mode)
+	}
+	if !app.panelShowsLocal(1) {
+		t.Fatal("right panel does not show the local filesystem")
+	}
+	marks := func() (list, local bool) {
+		for _, it := range app.panelMenuItems(1) {
+			switch it.Label {
+			case "&List":
+				list = it.Checked
+			case "Local fil&es":
+				local = it.Checked
+			}
+		}
+		return list, local
+	}
+	if list, local := marks(); list || !local {
+		t.Fatalf("marks list=%v local=%v, want only Local files", list, local)
+	}
+	// Chosen again, the panel returns to the cluster.
+	app = feedMenu(app, keyF9, tea.KeyPressMsg{Code: 'r', Text: "r"}, tea.KeyPressMsg{Code: 'e', Text: "e"})
+	if app.panelShowsLocal(1) {
+		t.Fatal("Local files chosen again did not leave the local filesystem")
+	}
+	if list, local := marks(); !list || local {
+		t.Fatalf("marks list=%v local=%v, want only List", list, local)
+	}
+}

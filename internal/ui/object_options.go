@@ -55,9 +55,12 @@ type ObjectOptionsChangedMsg struct {
 	TableMode    string
 	Columns      string
 	ObjectsOrder string
-	Accept       bool
-	Close        bool
-	SaveDefault  bool
+	// HasGroupByNamespace is set when GroupByNamespace carries a choice.
+	HasGroupByNamespace bool
+	GroupByNamespace    bool
+	Accept              bool
+	Close               bool
+	SaveDefault         bool
 }
 
 // moveFocus moves the focus by delta rows, stopping at the first and last.

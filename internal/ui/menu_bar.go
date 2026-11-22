@@ -65,6 +65,7 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 		a.panelModeItem(idx, "&Manifest", PanelModeManifest),
 		a.panelModeItem(idx, "Lo&gs", PanelModeLogs),
 		a.panelModeItem(idx, "&Info", PanelModeInfo),
+		a.localFilesItem(idx),
 		menubar.Separator(),
 		{Label: "Panel &options...", Shortcut: optionsKey, Disabled: !visible, Run: func() tea.Cmd {
 			return a.showViewOptionsModalForPanel(a.panelByIndex(idx))
@@ -79,6 +80,7 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 			a.changeObjectSort(reverseSortOrder)
 			return nil
 		})},
+		a.groupNamespacesItem(idx, list),
 		{Label: "&Filter...", Shortcut: "M-f", Disabled: !list, Run: a.onPanel(idx, a.showRowFilterDialog)},
 		{Label: "Faults onl&y", Shortcut: "C-z", Disabled: !list, Run: a.onPanel(idx, a.toggleFaultsOnly)},
 		menubar.Separator(),
@@ -174,9 +176,15 @@ func (a *App) panelModeItem(idx int, label string, mode PanelViewMode) menubar.I
 	if panel == nil {
 		return menubar.Item{Label: label, Disabled: true}
 	}
+	checked := panel.Mode() == mode
+	if mode == PanelModeList && a.panelShowsLocal(idx) {
+		// The local files entry carries the mark while the list shows
+		// the local filesystem.
+		checked = false
+	}
 	return menubar.Item{
 		Label:    label,
-		Checked:  panel.Mode() == mode,
+		Checked:  checked,
 		Disabled: !a.panelVisible(idx) || !slices.Contains(panel.AvailableModes(), mode),
 		Run: func() tea.Cmd {
 			p := a.panelByIndex(idx)
@@ -185,6 +193,44 @@ func (a *App) panelModeItem(idx int, label string, mode PanelViewMode) menubar.I
 			return a.setPanelMode(ctx, p, mode, "menu panel mode")
 		},
 	}
+}
+
+// localFilesItem is the Left/Right entry that shows the local filesystem in
+// the panel, next to the panel modes, as mc lists its panel kinds there. It
+// switches the panel to List mode first; chosen again, it returns the panel
+// to the cluster (M-l).
+func (a *App) localFilesItem(idx int) menubar.Item {
+	panel := a.panelByIndex(idx)
+	if panel == nil {
+		return menubar.Item{Label: "Local fil&es", Shortcut: "M-l", Disabled: true}
+	}
+	return menubar.Item{
+		Label:    "Local fil&es",
+		Shortcut: "M-l",
+		Checked:  a.panelShowsLocal(idx),
+		Disabled: !a.panelVisible(idx) || !slices.Contains(panel.AvailableModes(), PanelModeList),
+		Run: func() tea.Cmd {
+			a.setActivePanel(idx, "menu local files")
+			p := a.panelByIndex(idx)
+			var cmd tea.Cmd
+			if p.Mode() != PanelModeList {
+				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+				cmd = a.setPanelMode(ctx, p, PanelModeList, "menu local files")
+				cancel()
+			}
+			return tea.Batch(cmd, a.toggleLocalPanel())
+		},
+	}
+}
+
+// panelShowsLocal reports whether panel idx lists the local filesystem.
+func (a *App) panelShowsLocal(idx int) bool {
+	panel := a.panelByIndex(idx)
+	if panel == nil {
+		return false
+	}
+	nav := a.navigatorForPanel(panel)
+	return nav != nil && isLocalFolder(nav)
 }
 
 // onPanel makes panel idx the active panel and runs fn, for Left and Right
