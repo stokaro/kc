@@ -408,8 +408,7 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(
 		a.loadCommandHotkeys(),
 		lookErr,
-		a.leftPanel.Init(),
-		a.rightPanel.Init(),
+		a.initPanels(),
 		a.terminal.Init(),
 		func() tea.Msg {
 			// Focus the terminal initially since it's the main input area
@@ -892,6 +891,7 @@ func (a *App) syncPanelConfig(panel *Panel) {
 	columns := panel.ColumnsMode()
 	cfg.Resources.Columns = columns
 	cfg.Objects.Order = panel.ObjectOrder()
+	cfg.Objects.GroupByNamespace, _ = panel.NamespaceGrouping()
 	cfg.Objects.Columns = columns
 	cfg.Panel.Table.Mode = appconfig.TableMode(panel.TableMode())
 }
@@ -1502,6 +1502,7 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 			objConfig.ShowFaultsOnly = true
 			objConfig.FaultsOnly = filter.FaultsOnly
 		}
+		objConfig.GroupByNamespace, objConfig.ShowGroupByNamespace = panel.NamespaceGrouping()
 	}
 
 	var cmdConfig *ViewOptionsCommandConfig
@@ -3185,11 +3186,13 @@ func (a *App) initData(ctx context.Context) error {
 		a.leftPanel.SetTableMode(ctxLeft, string(a.cfg.Panel.Table.Mode))
 		a.leftPanel.SetColumnsMode(ctxLeft, a.cfg.Objects.Columns)
 		a.leftPanel.SetObjectOrder(ctxLeft, a.cfg.Objects.Order)
+		a.leftPanel.SetNamespaceGrouping(ctxLeft, a.cfg.Objects.GroupByNamespace)
 		cancelLeft()
 		ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
 		a.rightPanel.SetTableMode(ctxRight, string(a.cfg.Panel.Table.Mode))
 		a.rightPanel.SetColumnsMode(ctxRight, a.cfg.Objects.Columns)
 		a.rightPanel.SetObjectOrder(ctxRight, a.cfg.Objects.Order)
+		a.rightPanel.SetNamespaceGrouping(ctxRight, a.cfg.Objects.GroupByNamespace)
 		cancelRight()
 		// Initialize columns mode and objects order from config defaults
 		a.syncPanelConfig(a.leftPanel)

@@ -18,9 +18,9 @@ type overviewMeasured struct {
 	nodesReason string                      // why node usage is not known
 	pods        map[string][]containerUsage // container usage by pod key
 	podsReason  string                      // why pod usage is not known
-	// clusterPods is the pod usage of every namespace, which the Info mode
-	// sums per node. It is pods itself in an all-namespaces scope, and nil
-	// when no engine asked for it (the /overview folder does not).
+	// clusterPods is the pod usage of every namespace, which the capacity
+	// rows and the Info mode sum per node. It is pods itself in an
+	// all-namespaces scope, and nil while it is not known.
 	clusterPods       map[string][]containerUsage
 	clusterPodsReason string                // why clusterPods is not known
 	stats             map[string]*nodeStats // kubelet stats by node name
@@ -54,9 +54,11 @@ func usageReason(snap *usageSnapshot, fresh bool) string {
 // measuredUsage reads the latest metrics-only snapshots of the overview's
 // pollers and marks the engine as their reader: notify runs after each
 // poll. The pollers run while some engine reads them, and stop two
-// intervals after the last read. With clusterPods it also reads the pod
-// usage of every namespace when namespace is one namespace.
-func measuredUsage(deps Deps, namespace string, clusterPods bool, watcher any, notify func()) *overviewMeasured {
+// intervals after the last read. It also reads the pod usage of every
+// namespace when namespace is one namespace: the capacity rows sum the pods
+// of each node in every namespace. That poller is shared by key, so an Info
+// panel and /overview of any one-namespace scope read the same poll.
+func measuredUsage(deps Deps, namespace string, watcher any, notify func()) *overviewMeasured {
 	m := &overviewMeasured{clusterPodsReason: "not measured"}
 	if deps.Usage == nil {
 		m.nodesReason, m.podsReason, m.clusterPodsReason = "usage metrics are off", "usage metrics are off", "usage metrics are off"
@@ -70,15 +72,13 @@ func measuredUsage(deps Deps, namespace string, clusterPods bool, watcher any, n
 	if m.podsReason = usageReason(pods, fresh); m.podsReason == "" {
 		m.pods = pods.containers
 	}
-	switch {
-	case !clusterPods:
-	case namespace == AllNamespaces:
+	if namespace == AllNamespaces {
 		m.clusterPods, m.clusterPodsReason = m.pods, m.podsReason
-	default:
-		all, fresh := deps.Usage.metricsSnapshot(deps, usagePods, AllNamespaces, watcher, notify)
-		if m.clusterPodsReason = usageReason(all, fresh); m.clusterPodsReason == "" {
-			m.clusterPods = all.containers
-		}
+		return m
+	}
+	all, fresh := deps.Usage.metricsSnapshot(deps, usagePods, AllNamespaces, watcher, notify)
+	if m.clusterPodsReason = usageReason(all, fresh); m.clusterPodsReason == "" {
+		m.clusterPods = all.containers
 	}
 	return m
 }

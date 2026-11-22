@@ -191,7 +191,7 @@ The menu bar titles stay on the top row, as in mc, and the panels start under th
 
 Options > Menu bar visible (or `layout.menuBarVisible: false` in the config) hides the bar and gives the row to the panels; `F9` then draws the bar over the top row only while it is open. The entry saves the setting to `~/.kc/config.yaml`. The fullscreen terminal (`C-o`) and fullscreen viewers cover the bar, as in mc.
 
-- **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
+- **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info, and Local files, which lists the local filesystem like `M-l`; the current one is marked `*`), panel options, columns, reread, sort and reverse, group by namespace, row filter and faults only, namespace and context pickers.
 - **File**: view, edit, copy, create namespace, delete, port forward, owners, used by and requires, explain, marking and selecting rows, quick search, exit.
 - **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
 - **Options**: panel width, the options of each panel, and whether the menu bar stays visible.
@@ -264,13 +264,13 @@ kc needs get, list and watch on Secrets in all namespaces for this, because its 
 
 ## Cluster Overview
 
-The first row of every panel root is `/overview`: one row per finding about the panel's context and namespace scope, in four sections. `M-i` opens it from any list for that list's namespace, and `kc overview` starts there. Capacity compares the measured CPU and memory usage of each node (metrics.k8s.io), the requests and limits of the pods on it and its allocatable; a node is `under-req` when it uses well above what its pods request, so the scheduler thinks it is emptier than it is. It also shows pods per node against allocatable pods, and node and image filesystem use from the kubelet stats summary. Health lists nodes that are not ready, under pressure or cordoned; pods that are not ready, pending, crash looping, failing to pull images or to start, OOMKilled or restarting; workloads that are unavailable or rolling out; failed Jobs and CronJobs; Pending or Lost claims and Released or Failed volumes. Risks lists PodDisruptionBudgets that allow no eviction, pods without requests or without a memory limit, containers near their memory limit or at their CPU limit (measured), PersistentVolumeClaims near full (kubelet stats), single-replica workloads without a PDB, ResourceQuotas near their limit, HPAs at their maximum or without metrics, and cert-manager Certificates that are not Ready or expire within `overview.certificateExpiryDays` (14 days; the row is dim when cert-manager is not installed). Activity lists warning events and pod restarts inside the window.
+The first row of every panel root is `/overview`: one row per finding about the panel's context and namespace scope, in four sections. `M-i` opens it from any list for that list's namespace, and `kc overview` starts there. Capacity shows CPU and memory per node with the same bases as the Info panel mode, for example `pods 22% req 25% lim 116% of alloc, node 40% of cap`: the measured usage of the pods on the node (PodMetrics, every namespace), their requests and their limits against allocatable, and the node's own usage (NodeMetrics, system daemons included) against capacity. Percentages are truncated, as `kubectl describe node` prints them. A node is `under-req` when its pods use well above what they request, so the scheduler thinks it is emptier than it is; usage outside pods does not count for it. A row's state is its worst node, and F3 lists the formulas and the kubectl commands for each input. It also shows pods per node against allocatable pods, and node and image filesystem use from the kubelet stats summary. Health lists nodes that are not ready, under pressure or cordoned; pods that are not ready, pending, crash looping, failing to pull images or to start, OOMKilled or restarting; workloads that are unavailable or rolling out; failed Jobs and CronJobs; Pending or Lost claims and Released or Failed volumes. Risks lists PodDisruptionBudgets that allow no eviction, pods without requests or without a memory limit, containers near their memory limit or at their CPU limit (measured), PersistentVolumeClaims near full (kubelet stats), single-replica workloads without a PDB, ResourceQuotas near their limit, HPAs at their maximum or without metrics, and cert-manager Certificates that are not Ready or expire within `overview.certificateExpiryDays` (14 days; the row is dim when cert-manager is not installed). Activity lists warning events and pod restarts inside the window.
 
 Each row has a value and a state, colored like rows of object lists: normal is ok, the not-ready color a warning, the failed color failed, and dim when kc cannot read the source (the reason is in `F3`, for example "metrics.k8s.io is not served by this cluster" or "forbidden: nodes/proxy"). `Enter` lists exactly the objects behind a row, with the reason for each, and `/..` returns. `Enter` on a warning event opens the object it is about in the other panel. `F3` explains how the value is computed and shows the kubectl commands that show the same inputs. Capacity rows always cover every node and every pod on it; the other rows follow the namespace scope.
 
-The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. While it is open it lists NodeMetrics and PodMetrics every 15 seconds and reads `/api/v1/nodes/<node>/proxy/stats/summary` once a minute, at most five nodes at a time; that needs get on `nodes/proxy` and is skipped on clusters with more than `overview.statsMaxNodes` nodes. Thresholds are set under `overview:` in the configuration.
+The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. While it is open it lists NodeMetrics and PodMetrics every 15 seconds and reads `/api/v1/nodes/<node>/proxy/stats/summary` once a minute, at most five nodes at a time; that needs get on `nodes/proxy`, is skipped on clusters with more than `overview.statsMaxNodes` nodes, and stops after a round in which every node answers forbidden. A metrics list that is forbidden is asked again after five minutes instead of every 15 seconds. Thresholds are set under `overview:` in the configuration.
 
-The Info panel mode (`C-1` / `C-2`, or Info in the `F9` panel menu) is mc's Info panel for kc: it shows bars for CPU, memory, pods and disk of the other panel's namespace scope, or of one node when the other panel's cursor is on a node, a sparkline of the measured CPU and memory usage while it is open, and the five pods that use the most memory. Under the CPU and memory bars, each line names its base: `pods 2.3/10.4 Gi allocatable, 22%` is the usage of the pods on the nodes (PodMetrics, every namespace) against allocatable, and fills the bar; `node 6.0/14.9 Gi capacity, 40%` is the node's own usage (NodeMetrics, system daemons included) against capacity; `req 25%, lim 116% (overcommitted)` are the pods' requests and limits against allocatable. A state word follows the line it belongs to, so `overcommitted` marks the limits, not the usage; the bar's color is the worst of them. Without pod usage the bar shows the requests. Percentages are truncated, as `kubectl describe node` prints them. Under the top pods, `no pods in <ns>` means the scope has no pods, and `metrics unavailable: <reason>` means they are not measured. When the other panel's cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob, the bars are about that workload's pods instead: CPU and memory usage of their limits (of their requests when a pod has no limit, `near-limit` and `under-req` flag the extremes), ready pods of the desired replicas, and its pods by memory. Pods are grouped by their controller owner references (a Deployment's pods through its ReplicaSets), not by label selectors. It reads the same data as `/overview` and stops when the panel leaves the mode.
+The Info panel mode (`C-1` / `C-2`, or Info in the `F9` panel menu) is mc's Info panel for kc: it shows bars for CPU, memory, pods and disk of the other panel's namespace scope, or of one node when the other panel's cursor is on a node, a sparkline of the measured CPU and memory usage while it is open, and the five pods that use the most memory. Under the CPU and memory bars, each line names its base: `pods 2.3/10.4 Gi allocatable, 22%` is the usage of the pods on the nodes (PodMetrics, every namespace) against allocatable, and fills the bar; `node 6.0/14.9 Gi capacity, 40%` is the node's own usage (NodeMetrics, system daemons included) against capacity; `req 25%, lim 116% (overcommitted)` are the pods' requests and limits against allocatable. A state word follows the line it belongs to, so `overcommitted` marks the limits, not the usage; the bar's color is the worst of them. Without pod usage the bar shows the requests. Percentages are truncated, as `kubectl describe node` prints them. Under the top pods, `no pods in <ns>` means the scope has no pods, and `metrics unavailable: <reason>` means they are not measured. When the other panel's cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob, the bars are about that workload's pods instead: CPU and memory usage of their limits (of their requests when a pod has no limit, `near-limit` and `under-req` flag the extremes), ready pods of the desired replicas, and its pods by memory. Pods are grouped by their controller owner references (a Deployment's pods through its ReplicaSets), not by label selectors. It reads the same data as `/overview` and stops when the panel leaves the mode. The right panel starts in Info mode; `layout.rightPanelMode: list` restores two lists (see [Configuration](#configuration)). Info needs list and watch on nodes and pods in all namespaces; kc asks the API server first (SelfSubjectAccessReview), and a user without that grant sees "not permitted to list and watch nodes and pods in all namespaces" while Info starts no informers and no metrics polls.
 
 ## Read-only mode
 
@@ -393,19 +393,20 @@ Read-only mode refuses `M-n` before the menu opens.
 `~/.kc/config.yaml` stores all user preferences. Key sections:
 
 - `layout.menuBarVisible` – keep the menu bar titles on the top row (default `true`, as in mc); see [Menu Bar](#menu-bar).
+- `layout.leftPanelMode`, `layout.rightPanelMode` – the mode each panel starts in: `list`, `describe`, `manifest`, `logs` or `info` (default left `list`, right `info`). One panel must start in `list`. kc does not save panel modes between runs, so these apply on every start; start targets such as `kc overview` or `kc get pods` open in the left panel, and `kc get TYPE NAME -o yaml` still puts the right panel in Manifest mode.
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer and a Logs panel open with. `F2` in the viewer or the panel changes them there; `C-s` saves them as the defaults.
 - `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot.
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
-- `objects.order`, `objects.columns` – object list sort and wide/normal column display. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells and `<none>` come last. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace, and `namespace` orders the groups.
+- `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
 - `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation, and how long a cluster cache stays running after the last open folder that uses it is closed.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 - `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
 - `panel.skin`, `contexts` – panel colors and per-context frame colors (see [Panel colors](#panel-colors)).
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
-- `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests, limits and measured usage against allocatable, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
+- `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, measured pod and node usage, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
 - `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
@@ -447,6 +448,11 @@ layout:
   # Keep the menu bar titles on the top row, as in mc. false gives the row
   # to the panels; F9 still opens the bar.
   menuBarVisible: true
+  # Modes the panels start in: list, describe, manifest, logs or info.
+  # One panel must start in list mode. Panel modes are not saved, so these
+  # apply on every start; C-1 / C-2 switch them as usual.
+  leftPanelMode: list
+  rightPanelMode: info
 
 viewer:
   theme: dracula
@@ -502,6 +508,9 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+  # Lists across namespaces: group the rows by namespace and sort inside each
+  # one (true), or sort all rows by the sort column as one list (false)
+  groupByNamespace: true
 
 # Tint the panel frame and the context label per kubeconfig context. The
 # first matching entry wins. match is a name or a glob ("*" and "?"); regex is
@@ -553,12 +562,12 @@ overview:
   podsWarnPercent: 90
   # A ResourceQuota is flagged when any used value reaches this percent.
   quotaWarnPercent: 80
-  # Measured CPU and memory usage of a node (metrics.k8s.io), in percent
-  # of allocatable.
+  # Measured CPU and memory usage (metrics.k8s.io): of the pods on a node,
+  # in percent of allocatable, and of the node itself, of capacity.
   usageWarnPercent: 80
   usageFailPercent: 90
-  # A node is "under-req" when its usage is at least this many times its
-  # requests and reaches underRequestedMinPercent of allocatable.
+  # A node is "under-req" when its pods use at least this many times what
+  # they request and reach underRequestedMinPercent of allocatable.
   underRequestedFactor: 2
   underRequestedMinPercent: 25
   # A container near its memory limit (OOM soon) or at its CPU limit

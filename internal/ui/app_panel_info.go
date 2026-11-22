@@ -49,9 +49,11 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 			}
 		}
 	}
-	cl, cfg := a.cl, a.ensurePanelConfig(a.panelByIndex(other))
+	cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
 	t.Open = func() infowidget.Summarizer {
-		return models.NewOverviewInfo(a.makeDeps(cl, cfg, key), ns)
+		return newGatedInfo(root, cl.CanListWatchAllNamespaces, func() infowidget.Summarizer {
+			return models.NewOverviewInfo(a.makeDeps(cl, cfg, key), ns)
+		})
 	}
 	return t
 }

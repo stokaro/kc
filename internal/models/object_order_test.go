@@ -33,25 +33,25 @@ func TestOrderRowIndicesGroupsByNamespace(t *testing.T) {
 		return out
 	}
 	cases := []struct {
-		name        string
-		order       string
-		byNamespace bool
-		want        []string
+		name   string
+		order  string
+		layout namespaceLayout
+		want   []string
 	}{
-		{"one namespace", appconfig.ObjectsOrderName, false,
+		{"one namespace", appconfig.ObjectsOrderName, oneNamespace,
 			[]string{"auth/auth-db-1", "auth/authelia", "kube-system/coredns", "tailscale/nameserver", "tailscale/operator"}},
-		{"by namespace, then name", appconfig.ObjectsOrderName, true,
+		{"by namespace, then name", appconfig.ObjectsOrderName, groupedNamespaces,
 			[]string{"auth/auth-db-1", "auth/authelia", "kube-system/coredns", "tailscale/nameserver", "tailscale/operator"}},
-		{"by namespace, newest first", appconfig.ObjectsOrderCreationDesc, true,
+		{"by namespace, newest first", appconfig.ObjectsOrderCreationDesc, groupedNamespaces,
 			[]string{"auth/auth-db-1", "auth/authelia", "kube-system/coredns", "tailscale/nameserver", "tailscale/operator"}},
-		{"by namespace, name descending", appconfig.ObjectsOrderNameDesc, true,
+		{"by namespace, name descending", appconfig.ObjectsOrderNameDesc, groupedNamespaces,
 			[]string{"auth/authelia", "auth/auth-db-1", "kube-system/coredns", "tailscale/operator", "tailscale/nameserver"}},
-		{"creation without grouping", appconfig.ObjectsOrderCreation, false,
+		{"creation without grouping", appconfig.ObjectsOrderCreation, oneNamespace,
 			[]string{"kube-system/coredns", "auth/authelia", "tailscale/operator", "auth/auth-db-1", "tailscale/nameserver"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			idxs, _ := orderRowIndices(items, nil, tc.order, tc.byNamespace)
+			idxs, _ := orderRowIndices(items, nil, tc.order, tc.layout)
 			if got := names(idxs); !slices.Equal(got, tc.want) {
 				t.Fatalf("order = %v\nwant    %v", got, tc.want)
 			}

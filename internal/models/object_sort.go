@@ -79,17 +79,44 @@ func (s objectSort) order() string {
 	return s.key
 }
 
+// namespaceLayout is how a list places the namespaces of its rows.
+type namespaceLayout int
+
+const (
+	// oneNamespace lists one namespace or a cluster-scoped resource.
+	oneNamespace namespaceLayout = iota
+	// groupedNamespaces lists several namespaces, each one as a block.
+	groupedNamespaces
+	// mixedNamespaces lists several namespaces as one list: the sort
+	// column decides the order across all of them.
+	mixedNamespaces
+)
+
+// layoutFor returns the layout of a list that spans namespaces or not.
+func layoutFor(spansNamespaces, group bool) namespaceLayout {
+	switch {
+	case !spansNamespaces:
+		return oneNamespace
+	case group:
+		return groupedNamespaces
+	default:
+		return mixedNamespaces
+	}
+}
+
 // orderRowIndices sorts the rows by order and returns the indices in display
 // order with the sort it applied. Name and Age compare the object's name and
 // creation timestamp; other columns compare their cells by value (see
 // columnSortValues). Empty cells and placeholders such as <none> come last in
-// both directions, and ties keep name order.
+// both directions, and ties keep name order, then namespace order.
 //
-// Across namespaces (byNamespace) the rows are grouped by namespace first, as
-// kubectl get -A prints them, and the order applies inside each namespace.
-// Sorting by namespace orders the groups and keeps names ascending inside.
-func orderRowIndices(items []tablecache.Row, cols []metav1.TableColumnDefinition, order string, byNamespace bool) ([]int, objectSort) {
-	sortBy := resolveObjectSort(order, cols, byNamespace)
+// With groupedNamespaces the rows are grouped by namespace first, as kubectl
+// get -A prints them, and the order applies inside each namespace. With
+// mixedNamespaces the order applies to all rows at once. Sorting by
+// namespace orders the namespaces and keeps names ascending inside in both
+// layouts.
+func orderRowIndices(items []tablecache.Row, cols []metav1.TableColumnDefinition, order string, layout namespaceLayout) ([]int, objectSort) {
+	sortBy := resolveObjectSort(order, cols, layout != oneNamespace)
 	idxs := make([]int, len(items))
 	names := make([]string, len(items))
 	for i := range items {
@@ -97,13 +124,14 @@ func orderRowIndices(items []tablecache.Row, cols []metav1.TableColumnDefinition
 		names[i] = strings.ToLower(rowName(&items[i]))
 	}
 	byName := func(a, b int) int { return strings.Compare(names[a], names[b]) }
+	byNamespace := func(a, b int) int { return strings.Compare(items[a].Namespace, items[b].Namespace) }
 
 	var primary func(a, b int) int
 	switch sortBy.key {
 	case sortKeyName:
 		primary = func(a, b int) int { return direction(byName(a, b), sortBy.desc) }
 	case sortKeyNamespace:
-		primary = func(a, b int) int { return 0 }
+		primary = func(a, b int) int { return direction(byNamespace(a, b), sortBy.desc) }
 	case sortKeyAge:
 		// A larger age is an earlier creation time.
 		primary = func(a, b int) int {
@@ -116,17 +144,19 @@ func orderRowIndices(items []tablecache.Row, cols []metav1.TableColumnDefinition
 		primary = func(a, b int) int { return compareSortValues(vals[a], vals[b], sortBy.desc) }
 	}
 	slices.SortStableFunc(idxs, func(a, b int) int {
+		if layout == groupedNamespaces && sortBy.key != sortKeyNamespace {
+			if c := byNamespace(a, b); c != 0 {
+				return c
+			}
+		}
 		if c := primary(a, b); c != 0 {
 			return c
 		}
-		return byName(a, b)
+		if c := byName(a, b); c != 0 {
+			return c
+		}
+		return byNamespace(a, b)
 	})
-	if byNamespace {
-		desc := sortBy.key == sortKeyNamespace && sortBy.desc
-		slices.SortStableFunc(idxs, func(a, b int) int {
-			return direction(strings.Compare(items[a].Namespace, items[b].Namespace), desc)
-		})
-	}
 	return idxs, sortBy
 }
 

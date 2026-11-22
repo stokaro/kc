@@ -32,6 +32,7 @@ type Widget struct {
 	tableMode        table.GridMode
 	columnsMode      string
 	objOrder         string
+	groupNamespaces  bool
 	resShowNonEmpty  bool
 	resOrder         string
 
@@ -67,6 +68,7 @@ func New(deps panelcontent.WidgetDeps) *Widget {
 		tableMode:        table.ModeScroll,
 		columnsMode:      "normal",
 		objOrder:         "name",
+		groupNamespaces:  true,
 		resOrder:         "favorites",
 		positionMemory:   make(map[string]PositionInfo),
 	}
@@ -467,6 +469,28 @@ func (w *Widget) SetObjectOrder(ctx context.Context, order string) {
 // ObjectOrder returns the order the panel asks object lists for.
 func (w *Widget) ObjectOrder() string { return w.objOrder }
 
+// SetNamespaceGrouping groups lists across namespaces by namespace (on) or
+// sorts all their rows as one list.
+func (w *Widget) SetNamespaceGrouping(ctx context.Context, on bool) {
+	w.groupNamespaces = on
+	w.applyObjectOrderToFolder()
+	w.RefreshFolder(ctx)
+}
+
+// NamespaceGrouping returns the grouping the panel asks lists for, and
+// whether the shown folder spans namespaces, so the grouping applies to it.
+func (w *Widget) NamespaceGrouping() (on, applies bool) {
+	if !w.useFolder || w.folder == nil {
+		return w.groupNamespaces, false
+	}
+	g, ok := w.folder.(models.NamespaceGroupingConfigurable)
+	if !ok {
+		return w.groupNamespaces, false
+	}
+	_, applies = g.NamespaceGrouping()
+	return w.groupNamespaces, applies
+}
+
 // SortState describes the sort of an object list.
 type SortState struct {
 	// Keys are the order keys of the columns, Titles their titles.
@@ -505,6 +529,9 @@ func (w *Widget) applyObjectOrderToFolder() {
 	}
 	if configurable, ok := w.folder.(models.ObjectOrderConfigurable); ok {
 		configurable.ApplyObjectOrder(w.objOrder)
+	}
+	if g, ok := w.folder.(models.NamespaceGroupingConfigurable); ok {
+		g.ApplyNamespaceGrouping(w.groupNamespaces)
 	}
 }
 

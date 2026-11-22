@@ -563,6 +563,25 @@ func (p *Panel) ObjectOrder() string {
 	return "name"
 }
 
+// SetNamespaceGrouping groups object lists across namespaces by namespace
+// (on) or sorts all their rows as one list.
+func (p *Panel) SetNamespaceGrouping(ctx context.Context, on bool) {
+	p.invalidateRenderCache()
+	if lw := p.listWidget(ctx); lw != nil {
+		lw.SetNamespaceGrouping(ctx, on)
+	}
+}
+
+// NamespaceGrouping returns the panel's namespace grouping and whether the
+// shown list spans namespaces, so the grouping applies to it.
+func (p *Panel) NamespaceGrouping() (on, applies bool) {
+	if lw := p.accessorListWidget(); lw != nil {
+		on, applies = lw.NamespaceGrouping()
+		return on, applies && p.mode == PanelModeList
+	}
+	return true, false
+}
+
 // SortState returns the columns of the shown object list and the order it
 // is sorted by. ok is false when the panel shows no sortable list.
 func (p *Panel) SortState(ctx context.Context) (listwidget.SortState, bool) {

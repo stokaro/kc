@@ -250,21 +250,21 @@ func kubectlGet(resource string, extra ...string) []string {
 
 // --- Capacity ---------------------------------------------------------------
 
-// nodeLoad is what the pods on one node ask for.
+// nodeLoad is what the pods on one node ask for and use.
 type nodeLoad struct {
-	node                        *corev1.Node
-	cpuReq, cpuLim, cpuAlloc    int64 // millicores
-	memReq, memLim, memAlloc    int64 // bytes
-	pods, podsAlloc             int64
-	cpuUse, memUse              int64
-	hasUse                      bool
-	cpuReqPct, cpuLimPct, cpuUP float64
-	memReqPct, memLimPct, memUP float64
+	node            *corev1.Node
+	cpu, mem        capacityAmounts // millicores, bytes
+	pods, podsAlloc int64
 }
 
 // nodeLoads sums the requests and limits of the pods bound to each node, as
 // kubectl describe node does: terminated pods do not count, init
-// containers and overhead count the way the scheduler counts them.
+// containers and overhead count the way the scheduler counts them. It adds
+// the node's usage (NodeMetrics) and the usage of those pods (PodMetrics of
+// every namespace) the way kubectl top pods -A adds up: a pod without
+// PodMetrics yet counts as zero, but a node none of whose pods is measured
+// has no pod usage, so a node that metrics-server does not reach is not
+// shown as idle.
 func nodeLoads(rc *ruleContext) []*nodeLoad {
 	byName := make(map[string]*nodeLoad, len(rc.in.nodes))
 	loads := make([]*nodeLoad, 0, len(rc.in.nodes))
@@ -272,13 +272,15 @@ func nodeLoads(rc *ruleContext) []*nodeLoad {
 		n := &rc.in.nodes[i]
 		l := &nodeLoad{
 			node:      n,
-			cpuAlloc:  n.Status.Allocatable.Cpu().MilliValue(),
-			memAlloc:  n.Status.Allocatable.Memory().Value(),
+			cpu:       capacityAmounts{alloc: n.Status.Allocatable.Cpu().MilliValue(), capacity: n.Status.Capacity.Cpu().MilliValue()},
+			mem:       capacityAmounts{alloc: n.Status.Allocatable.Memory().Value(), capacity: n.Status.Capacity.Memory().Value()},
 			podsAlloc: n.Status.Allocatable.Pods().Value(),
 		}
 		byName[n.Name] = l
 		loads = append(loads, l)
 	}
+	podsReason := clusterPodsReason(rc.m)
+	measured := make(map[string]int, len(loads))
 	for i := range rc.in.pods {
 		p := &rc.in.pods[i]
 		if p.Spec.NodeName == "" || podTerminal(p) {
@@ -289,18 +291,41 @@ func nodeLoads(rc *ruleContext) []*nodeLoad {
 			continue
 		}
 		req, lim := podRequestsAndLimits(p)
-		l.cpuReq += req.Cpu().MilliValue()
-		l.memReq += req.Memory().Value()
-		l.cpuLim += lim.Cpu().MilliValue()
-		l.memLim += lim.Memory().Value()
+		l.cpu.req += req.Cpu().MilliValue()
+		l.mem.req += req.Memory().Value()
+		l.cpu.lim += lim.Cpu().MilliValue()
+		l.mem.lim += lim.Memory().Value()
 		l.pods++
+		if used, ok := rc.m.clusterPods[usageObjectKey(p.Namespace, p.Name)]; ok && podsReason == "" {
+			measured[p.Spec.NodeName]++
+			for _, c := range used {
+				l.cpu.podUse += c.cpu
+				l.mem.podUse += c.mem
+			}
+		}
 	}
 	for _, l := range loads {
-		if u, found := rc.m.nodes[l.node.Name]; found {
-			l.cpuUse, l.memUse, l.hasUse = u.cpu, u.mem, true
+		name := l.node.Name
+		switch {
+		case podsReason != "":
+			l.cpu.podReason, l.mem.podReason = podsReason, podsReason
+		case l.pods > 0 && measured[name] == 0:
+			reason := "no PodMetrics for the pods on node " + name + " yet"
+			l.cpu.podReason, l.mem.podReason = reason, reason
+		default:
+			l.cpu.hasPodUse, l.mem.hasPodUse = true, true
 		}
-		l.cpuReqPct, l.cpuLimPct, l.cpuUP = percent(l.cpuReq, l.cpuAlloc), percent(l.cpuLim, l.cpuAlloc), percent(l.cpuUse, l.cpuAlloc)
-		l.memReqPct, l.memLimPct, l.memUP = percent(l.memReq, l.memAlloc), percent(l.memLim, l.memAlloc), percent(l.memUse, l.memAlloc)
+		u, found := rc.m.nodes[name]
+		switch {
+		case rc.m.nodesReason != "":
+			l.cpu.nodeReason, l.mem.nodeReason = rc.m.nodesReason, rc.m.nodesReason
+		case !found:
+			reason := "no NodeMetrics for node " + name + " yet"
+			l.cpu.nodeReason, l.mem.nodeReason = reason, reason
+		default:
+			l.cpu.nodeUse, l.mem.nodeUse = u.cpu, u.mem
+			l.cpu.hasNodeUse, l.mem.hasNodeUse = true, true
+		}
 	}
 	return loads
 }
@@ -312,94 +337,100 @@ func percent(v, of int64) float64 {
 	return float64(v) * 100 / float64(of)
 }
 
-// flagUnderRequested is the state of a node whose measured usage is well
-// above what its pods request.
-const flagUnderRequested = "under-req"
+// clusterPodsReason says why the pod usage of every namespace is not known,
+// or "" when it is.
+func clusterPodsReason(m *overviewMeasured) string {
+	if m.clusterPodsReason == "" && m.clusterPods == nil {
+		return "not measured"
+	}
+	return m.clusterPodsReason
+}
 
-// capacityFlag classifies requests, limits and the measured usage (when
-// hasUse) against allocatable. All values are percent of allocatable.
-func capacityFlag(cfg appconfig.OverviewConfig, reqPct, limPct float64, hasUse bool, usePct float64) (overviewSeverity, string) {
+// capacityUsageNote is what F3 adds when node or pod usage is not known.
+func capacityUsageNote(m *overviewMeasured) string {
+	pods, nodes := clusterPodsReason(m), m.nodesReason
 	switch {
-	case reqPct >= float64(cfg.RequestsFailPercent):
-		return severityFailed, "full"
-	case hasUse && usePct >= float64(cfg.UsageFailPercent):
-		return severityFailed, "full"
-	case limPct > float64(cfg.LimitsWarnPercent):
-		return severityWarning, "overcommitted"
-	case hasUse && underRequested(cfg, usePct, reqPct):
-		return severityWarning, flagUnderRequested
-	case hasUse && usePct >= float64(cfg.UsageWarnPercent):
-		return severityWarning, "high"
-	case reqPct >= float64(cfg.RequestsWarnPercent):
-		return severityWarning, "high"
+	case nodes == pods:
+		return usageNote(pods)
+	case nodes == "":
+		return "\n\nPod usage is not available: " + pods + "."
+	case pods == "":
+		return "\n\nNode usage is not available: " + nodes + "."
 	}
-	return severityOK, "ok"
+	return "\n\nPod usage is not available: " + pods + ".\nNode usage is not available: " + nodes + "."
 }
 
-// underRequested reports whether the usage is at least underRequestedFactor
-// times the requests and large enough to matter.
-func underRequested(cfg appconfig.OverviewConfig, usePct, reqPct float64) bool {
-	return usePct >= float64(cfg.UnderRequestedMinPercent) && usePct >= cfg.UnderRequestedFactor*reqPct
-}
-
-func capacityValue(hasUse bool, use, req, lim float64) string {
-	u := "use n/a"
-	if hasUse {
-		u = fmt.Sprintf("use %.0f%%", use)
-	}
-	return fmt.Sprintf("%s req %.0f%% lim %.0f%%", u, req, lim)
-}
-
-func capacityResourceRule(rc *ruleContext, id, title, resource string, pick func(*nodeLoad) (use, req, lim, alloc int64, usePct, reqPct, limPct float64)) overviewFinding {
+func capacityResourceRule(rc *ruleContext, id, title, resource string, pick func(*nodeLoad) capacityAmounts) overviewFinding {
 	f := overviewFinding{
 		id: id, section: overviewCapacity, title: title,
-		explain: fmt.Sprintf(`Requests and limits are the %[1]s requests and limits of all pods bound to
-a node that have not terminated, counted the way the scheduler counts them
-(the larger of the init containers and the sum of the app containers, plus
-sidecars and pod overhead). They are summed over the nodes and compared with
-the sum of status.allocatable.%[1]s. This row always covers every node and
-every pod on it, whatever the namespace scope.
+		explain: fmt.Sprintf(`Each node is judged on four figures, and this row adds them up over the
+nodes. It always covers every node and every pod on it, whatever the
+namespace scope. The Info panel mode shows the same figures.
 
-"use" is the measured usage of the nodes from metrics.k8s.io (NodeMetrics),
-read every 15 seconds while the overview is open. It is n/a when the API is
-not served, cannot be read, or has no value for a node yet.
+  pods  measured %[1]s usage of the pods bound to the node that have not
+        terminated, in every namespace (metrics.k8s.io PodMetrics; memory
+        is the working set), of status.allocatable.%[1]s. A pod without
+        PodMetrics yet counts as zero, as in kubectl top pods; a node none
+        of whose pods is measured is n/a.
+  req   %[1]s requests of those pods, counted the way the scheduler counts
+        them (the larger of the init containers and the sum of the app
+        containers, plus sidecars and pod overhead), of
+        status.allocatable.%[1]s, as kubectl describe node prints them.
+  lim   %[1]s limits of those pods, counted the same way, of allocatable.
+  node  measured %[1]s usage of the node itself (metrics.k8s.io NodeMetrics:
+        pods, system daemons, kubelet and runtime), of
+        status.capacity.%[1]s. kubectl top nodes prints the same usage
+        against allocatable instead.
 
-A node is "full" when its requests reach requestsFailPercent (%[2]d%%) or
-its usage reaches usageFailPercent (%[5]d%%); "overcommitted" when its
-limits exceed limitsWarnPercent (%[3]d%%); "under-req" when its usage is at
-least underRequestedFactor (%.1[6]f) times its requests and reaches
-underRequestedMinPercent (%[7]d%%), so the scheduler thinks the node is
-emptier than it is; "high" when its usage reaches usageWarnPercent (%[8]d%%)
-or its requests reach requestsWarnPercent (%[4]d%%). The row shows the
-worst node. Enter lists the nodes, the most loaded first.`, resource, rc.cfg.RequestsFailPercent, rc.cfg.LimitsWarnPercent, rc.cfg.RequestsWarnPercent,
-			rc.cfg.UsageFailPercent, rc.cfg.UnderRequestedFactor, rc.cfg.UnderRequestedMinPercent, rc.cfg.UsageWarnPercent) + usageNote(rc.m.nodesReason),
-		kubectl: [][]string{{"describe", "nodes"}, {"top", "nodes"}},
+Usage is read every 15 seconds while the overview is open. The total is
+n/a when it is not known for every node. Percentages are truncated, as
+kubectl describe node prints them, and the states compare the printed
+numbers.
+
+A node is "full" when its requests reach requestsFailPercent (%[2]d%%), or
+its pods or the node reach usageFailPercent (%[5]d%%); "overcommitted" when
+its limits exceed limitsWarnPercent (%[3]d%%); "under-req" when its pods
+use at least underRequestedFactor (%.1[6]f) times what they request and at
+least underRequestedMinPercent (%[7]d%%), so the scheduler thinks the node
+is emptier than it is; "high" when its pods or the node reach
+usageWarnPercent (%[8]d%%) or its requests reach requestsWarnPercent
+(%[4]d%%). What runs outside pods counts only on the node line, so it
+cannot make the pods look under-requested. The row shows the worst node.
+Enter lists the nodes, the most loaded first.`, resource, rc.cfg.RequestsFailPercent, rc.cfg.LimitsWarnPercent, rc.cfg.RequestsWarnPercent,
+			rc.cfg.UsageFailPercent, rc.cfg.UnderRequestedFactor, rc.cfg.UnderRequestedMinPercent, rc.cfg.UsageWarnPercent) + capacityUsageNote(rc.m),
+		kubectl: [][]string{
+			{"describe", "nodes"},
+			{"top", "pods", "-A"},
+			{"get", "pods", "-A", "--field-selector", "status.phase!=Succeeded,status.phase!=Failed", "-o", "custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,NODE:.spec.nodeName"},
+			{"top", "nodes"},
+			{"get", "nodes", "-o", "custom-columns=NAME:.metadata.name,CAPACITY:.status.capacity." + resource + ",ALLOCATABLE:.status.allocatable." + resource},
+		},
 	}
 	if reason := rc.in.missingReason(ovNodesGVR, ovPodsGVR); reason != "" {
 		f.unavailable, f.value, f.state = reason, "n/a", severityUnknown.String()
 		return f
 	}
-	var sumUse, sumReq, sumLim, sumAlloc int64
-	allUse := true
-	worst, worstFlag := severityOK, "ok"
-	for _, l := range nodeLoads(rc) {
-		use, req, lim, alloc, usePct, reqPct, limPct := pick(l)
-		sumUse, sumReq, sumLim, sumAlloc = sumUse+use, sumReq+req, sumLim+lim, sumAlloc+alloc
-		allUse = allUse && l.hasUse
-		sev, flag := capacityFlag(rc.cfg, reqPct, limPct, l.hasUse, usePct)
-		if sev > worst || (sev == worst && worstFlag == "ok") {
-			worst, worstFlag = sev, flag
+	loads := nodeLoads(rc)
+	all := make([]capacityAmounts, 0, len(loads))
+	worst := infoStateOK
+	for _, l := range loads {
+		a := pick(l)
+		all = append(all, a)
+		j := judgeCapacity(rc.cfg, a)
+		st := j.worst()
+		if st.sev > worst.sev {
+			worst = st
 		}
 		f.targets = append(f.targets, overviewTarget{
-			gvr: ovNodesGVR, name: l.node.Name, severity: sev,
-			value: capacityValue(l.hasUse, usePct, reqPct, limPct) + flagSuffix(flag),
-			rank:  max(reqPct, limPct, usePct),
+			gvr: ovNodesGVR, name: l.node.Name, severity: st.sev,
+			value: j.overviewText(a) + flagSuffix(st.flag),
+			rank:  j.rank(),
 		})
 	}
 	f.targets = sortTargets(f.targets)
-	hasUse := allUse && len(f.targets) > 0
-	f.value = capacityValue(hasUse, percent(sumUse, sumAlloc), percent(sumReq, sumAlloc), percent(sumLim, sumAlloc))
-	f.severity, f.state = worst, worstFlag
+	total := sumCapacity(all)
+	f.value = judgeCapacity(rc.cfg, total).overviewText(total)
+	f.severity, f.state = worst.sev, worst.flag
 	return f
 }
 
@@ -411,15 +442,11 @@ func flagSuffix(flag string) string {
 }
 
 func capacityCPURule(rc *ruleContext) overviewFinding {
-	return capacityResourceRule(rc, "capacity/cpu", "/nodes cpu", "cpu", func(l *nodeLoad) (int64, int64, int64, int64, float64, float64, float64) {
-		return l.cpuUse, l.cpuReq, l.cpuLim, l.cpuAlloc, l.cpuUP, l.cpuReqPct, l.cpuLimPct
-	})
+	return capacityResourceRule(rc, "capacity/cpu", "/nodes cpu", "cpu", func(l *nodeLoad) capacityAmounts { return l.cpu })
 }
 
 func capacityMemoryRule(rc *ruleContext) overviewFinding {
-	return capacityResourceRule(rc, "capacity/memory", "/nodes memory", "memory", func(l *nodeLoad) (int64, int64, int64, int64, float64, float64, float64) {
-		return l.memUse, l.memReq, l.memLim, l.memAlloc, l.memUP, l.memReqPct, l.memLimPct
-	})
+	return capacityResourceRule(rc, "capacity/memory", "/nodes memory", "memory", func(l *nodeLoad) capacityAmounts { return l.mem })
 }
 
 func capacityPodsRule(rc *ruleContext) overviewFinding {

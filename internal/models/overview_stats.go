@@ -149,6 +149,8 @@ type statsResult struct {
 	stats  map[string]*nodeStats
 	errors map[string]string
 	reason string // set when no stats are known at all
+	// denied is true when every node answered forbidden.
+	denied bool
 }
 
 // pollNodeStats reads the stats of nodes, at most overviewStatsInFlight at a
@@ -206,6 +208,7 @@ func pollNodeStats(ctx context.Context, fetch statsFetcher, nodes []string, maxN
 	if len(res.stats) == 0 {
 		switch {
 		case forbidden == len(nodes):
+			res.denied = true
 			res.reason = "forbidden: nodes/proxy (get on nodes/proxy is needed for the kubelet stats)"
 		case firstErr != "":
 			res.reason = "kubelet stats: " + firstErr
