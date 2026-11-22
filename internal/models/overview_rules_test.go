@@ -28,9 +28,9 @@ func ago(d time.Duration) metav1.Time { return metav1.NewTime(overviewTestNow.Ad
 
 func om(ns, name string) metav1.ObjectMeta { return metav1.ObjectMeta{Namespace: ns, Name: name} }
 
-func readyNode(name string, cpu, mem string, pods int64) *corev1.Node {
+func readyNode(name, cpu, mem string, pods int64) *corev1.Node {
 	return &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Name: name,
 		Status: corev1.NodeStatus{
 			Allocatable: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse(cpu),
@@ -119,10 +119,9 @@ func TestOverviewRules(t *testing.T) {
 	t.Parallel()
 	cronUID := types.UID("cron-uid")
 	ownedJob := func(name string, created time.Duration, failed bool) *batchv1.Job {
-		j := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+		j := &batchv1.Job{
 			Namespace: "a", Name: name, CreationTimestamp: ago(created),
-			OwnerReferences: []metav1.OwnerReference{{APIVersion: "batch/v1", Kind: "CronJob", Name: "nightly", UID: cronUID, Controller: ptr.To(true)}},
-		}}
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "batch/v1", Kind: "CronJob", Name: "nightly", UID: cronUID, Controller: new(true)}}}
 		if failed {
 			j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded"}}
 		}
@@ -130,7 +129,7 @@ func TestOverviewRules(t *testing.T) {
 	}
 	event := func(name, typ string, seen time.Duration) *corev1.Event {
 		return &corev1.Event{
-			ObjectMeta:     metav1.ObjectMeta{Namespace: "a", Name: name, CreationTimestamp: ago(3 * time.Hour)},
+			Namespace: "a", Name: name, CreationTimestamp: ago(3 * time.Hour),
 			Type:           typ,
 			Reason:         "BackOff",
 			Count:          4,
@@ -291,8 +290,8 @@ func TestOverviewRules(t *testing.T) {
 		{
 			name: "cronjob newest run failed", finding: "health/cronjobs-failed",
 			objs: []crclient.Object{
-				&batchv1.CronJob{ObjectMeta: metav1.ObjectMeta{Namespace: "a", Name: "nightly", UID: cronUID}},
-				&batchv1.CronJob{ObjectMeta: metav1.ObjectMeta{Namespace: "a", Name: "recovered", UID: "other"}},
+				&batchv1.CronJob{Namespace: "a", Name: "nightly", UID: cronUID},
+				&batchv1.CronJob{Namespace: "a", Name: "recovered", UID: "other"},
 				ownedJob("nightly-1", 2*time.Hour, false),
 				ownedJob("nightly-2", time.Hour, true),
 				func() *batchv1.Job {
@@ -311,8 +310,8 @@ func TestOverviewRules(t *testing.T) {
 		{
 			name: "cronjobs suspended", finding: "health/cronjobs-suspended",
 			objs: []crclient.Object{
-				&batchv1.CronJob{ObjectMeta: om("a", "paused"), Spec: batchv1.CronJobSpec{Suspend: ptr.To(true)}},
-				&batchv1.CronJob{ObjectMeta: om("a", "active"), Spec: batchv1.CronJobSpec{Suspend: ptr.To(false)}},
+				&batchv1.CronJob{ObjectMeta: om("a", "paused"), Spec: batchv1.CronJobSpec{Suspend: new(true)}},
+				&batchv1.CronJob{ObjectMeta: om("a", "active"), Spec: batchv1.CronJobSpec{Suspend: new(false)}},
 			},
 			want: []string{"cronjobs:a/paused"}, sev: severityWarning,
 		},
@@ -328,8 +327,8 @@ func TestOverviewRules(t *testing.T) {
 		{
 			name: "pvs released or failed", finding: "health/pvs",
 			objs: []crclient.Object{
-				&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "old"}, Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}},
-				&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "used"}, Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeBound}},
+				&corev1.PersistentVolume{Name: "old", Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}},
+				&corev1.PersistentVolume{Name: "used", Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeBound}},
 			},
 			want: []string{"persistentvolumes:old"}, sev: severityWarning,
 		},
@@ -475,8 +474,8 @@ func TestOverviewNamespaceScope(t *testing.T) {
 		waiting(overviewRunningPod("a", "loop"), "CrashLoopBackOff"),
 		waiting(overviewRunningPod("b", "loop"), "CrashLoopBackOff"),
 		&batchv1.Job{ObjectMeta: om("b", "bad"), Status: batchv1.JobStatus{Conditions: []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}}},
-		&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-a"}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "a"}}, Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}},
-		&corev1.PersistentVolume{ObjectMeta: metav1.ObjectMeta{Name: "pv-b"}, Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "b"}}, Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}},
+		&corev1.PersistentVolume{Name: "pv-a", Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "a"}}, Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}},
+		&corev1.PersistentVolume{Name: "pv-b", Spec: corev1.PersistentVolumeSpec{ClaimRef: &corev1.ObjectReference{Namespace: "b"}}, Status: corev1.PersistentVolumeStatus{Phase: corev1.VolumeReleased}},
 	}
 	r := reportFor(t, "a", appconfig.DefaultOverview(), objs...)
 	if got := targetKeys(mustFinding(t, r, "health/pods-crashloop")); !slices.Equal(got, []string{"pods:a/loop"}) {

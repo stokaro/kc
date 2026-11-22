@@ -6,7 +6,7 @@ type ChildResourceItem struct {
 	enter func() (Folder, error)
 }
 
-func NewChildResourceItem(id string, cells []string, path []string, enter func() (Folder, error)) *ChildResourceItem {
+func NewChildResourceItem(id string, cells, path []string, enter func() (Folder, error)) *ChildResourceItem {
 	return &ChildResourceItem{
 		RowItem: NewRowItem(id, cells, path, WhiteStyle()),
 		enter:   enter,

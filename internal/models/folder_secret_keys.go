@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"slices"
 	"sort"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -18,7 +19,7 @@ type SecretKeysFolder struct {
 
 // NewSecretKeysFolder constructs the Secret data keys folder.
 func NewSecretKeysFolder(deps Deps, parentPath []string, namespace, name string) *SecretKeysFolder {
-	path := append(append([]string{}, parentPath...), "data")
+	path := append(slices.Clone(parentPath), "data")
 	cols := []table.Column{{Title: " Name"}}
 	base := NewBaseFolder(deps, cols, path)
 	folder := &SecretKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
@@ -28,7 +29,7 @@ func NewSecretKeysFolder(deps Deps, parentPath []string, namespace, name string)
 	return folder
 }
 
-func (f *SecretKeysFolder) Parent() (schema.GroupVersionResource, string, string) {
+func (f *SecretKeysFolder) Parent() (gvr schema.GroupVersionResource, namespace, name string) {
 	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}, f.Namespace, f.Name
 }
 
@@ -53,7 +54,7 @@ func (f *SecretKeysFolder) buildRows(ctx context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, len(keys))
 	style := WhiteStyle()
 	for _, k := range keys {
-		rowPath := append(append([]string{}, f.Path()...), k)
+		rowPath := append(slices.Clone(f.Path()), k)
 		item := NewSimpleItem(k, []string{k}, rowPath, style)
 		item.WithViewContent(keyViewContent(f.Deps, gvr, f.Namespace, f.Name, k, true))
 		item.SetViewCommand(keyViewCommand(f.Deps, "secret", f.Namespace, f.Name, k, true))

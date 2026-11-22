@@ -9,7 +9,7 @@ import (
 // scheduler and kubectl describe node compute them from the spec: the larger
 // of the init containers and the app containers (sidecars included), plus
 // pod overhead and pod-level resources.
-func podRequestsAndLimits(p *corev1.Pod) (corev1.ResourceList, corev1.ResourceList) {
+func podRequestsAndLimits(p *corev1.Pod) (requests, limits corev1.ResourceList) {
 	opts := resourcehelper.PodResourcesOptions{}
 	return resourcehelper.PodRequests(p, opts), resourcehelper.PodLimits(p, opts)
 }

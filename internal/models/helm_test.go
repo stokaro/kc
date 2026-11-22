@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -64,7 +65,7 @@ metadata:
 func helmFixture(ns, name string, rev int, status string) helmtest.Release {
 	return helmtest.Release{
 		Namespace: ns, Name: name, Revision: rev, Status: status,
-		Chart: name, Version: "1.0." + string(rune('0'+rev)), AppVersion: "2.0",
+		Chart: name, Version: "1.0." + strconv.Itoa(rev), AppVersion: "2.0",
 		Description: "Install complete", Notes: "hello from " + name,
 		Values:   map[string]any{"replicas": rev},
 		Manifest: helmTestManifest,

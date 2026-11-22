@@ -65,7 +65,7 @@ type WorkloadLogItem struct {
 }
 
 // NewWorkloadLogItem returns a merged logs row for spec.
-func NewWorkloadLogItem(deps Deps, id string, cells []string, path []string, spec WorkloadLogsSpec) *WorkloadLogItem {
+func NewWorkloadLogItem(deps Deps, id string, cells, path []string, spec WorkloadLogsSpec) *WorkloadLogItem {
 	item := NewSimpleItem(id, cells, path, GreenStyle())
 	return &WorkloadLogItem{SimpleItem: item, deps: deps, spec: spec}
 }

@@ -161,12 +161,12 @@ func assertManifest(t *testing.T, f Folder, wantCtx, ns, name string) {
 
 func seedData(t *testing.T, cli crclient.Client) {
 	t.Helper()
-	mustCreate(t, cli, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}})
-	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a": "A", "b": "B"}})
-	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm-bin", Namespace: "testns"}, BinaryData: map[string][]byte{"blob.v1.bin": envtestNonUTF8}})
-	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm-mix", Namespace: "testns"}, Data: map[string]string{"app.conf": "a: b"}, BinaryData: map[string][]byte{"logo.png": envtestPNG}})
-	mustCreate(t, cli, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sec1", Namespace: "testns"}, Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}})
-	mustCreate(t, cli, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}})
+	mustCreate(t, cli, &corev1.Namespace{Name: "testns"})
+	mustCreate(t, cli, &corev1.ConfigMap{Name: "cm1", Namespace: "testns", Data: map[string]string{"a": "A", "b": "B"}})
+	mustCreate(t, cli, &corev1.ConfigMap{Name: "cm-bin", Namespace: "testns", BinaryData: map[string][]byte{"blob.v1.bin": envtestNonUTF8}})
+	mustCreate(t, cli, &corev1.ConfigMap{Name: "cm-mix", Namespace: "testns", Data: map[string]string{"app.conf": "a: b"}, BinaryData: map[string][]byte{"logo.png": envtestPNG}})
+	mustCreate(t, cli, &corev1.Secret{Name: "sec1", Namespace: "testns", Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}})
+	mustCreate(t, cli, &corev1.Node{Name: "node1"})
 }
 
 var (
@@ -259,7 +259,7 @@ func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 	ctx := t.Context()
 	go cl.Start(ctx)
 
-	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "crd-ns"}}
+	ns := &corev1.Namespace{Name: "crd-ns"}
 	mustCreate(t, cl.GetClient(), ns)
 
 	deps := Deps{
@@ -285,7 +285,7 @@ func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 	}
 
 	crd := &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: "widgets.example.com"},
+		Name: "widgets.example.com",
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: "example.com",
 			Names: apiextensionsv1.CustomResourceDefinitionNames{

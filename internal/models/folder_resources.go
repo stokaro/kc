@@ -3,14 +3,14 @@ package models
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"charm.land/lipgloss/v2"
-	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	crlog "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	table "github.com/stokaro/kc/internal/table"
@@ -91,7 +91,7 @@ func (f *ResourcesFolder) ApplyResourceViewOptions(showNonEmpty bool, order appc
 	}
 	if favorites != nil {
 		if !ov.hasFavorites || !slices.Equal(ov.favorites, favorites) {
-			ov.favorites = append([]string(nil), favorites...)
+			ov.favorites = slices.Clone(favorites)
 			ov.hasFavorites = true
 			changed = true
 		}
@@ -106,7 +106,7 @@ func (f *ResourcesFolder) ApplyResourceViewOptions(showNonEmpty bool, order appc
 }
 
 func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpec) []table.Row {
-	log := crlog.FromContext(ctx).WithName("resourcesFolder")
+	log := ctrllog.FromContext(ctx).WithName("resourcesFolder")
 
 	if len(specs) == 0 {
 		changed := len(f.items) > 0 || len(f.lastSpecs) > 0
@@ -135,33 +135,14 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		handler := func() { f.onResourceGroupCountChanged(current) }
 		item.SetOnChange(handler)
 		item.ComputeCountAsync(handler)
-		visible := true
-		// Never peek the apiserver on the UI thread; use the cached answer
-		// and let a background peek refresh the folder.
-		empty, pending := item.EmptyState()
-		if item.Forbidden() {
-			visible = false
-		} else if showNonEmpty && !spec.uncounted && (empty || pending) {
-			// Uncounted types (all namespaces) have no emptiness to filter
-			// on. A type whose emptiness is not known yet stays hidden, so
-			// the list grows to the non-empty types instead of showing all
-			// of them and then shrinking.
-			visible = false
-		}
+		visible := resourceGroupVisible(item, spec, showNonEmpty)
 		sig := makeResourceGroupSignature(spec, visible, idx)
 		sigs[spec.id] = sig
-		if !changed {
-			prev, ok := f.lastSpecs[spec.id]
-			if !ok || prev != sig {
-				changed = true
-			}
+		if prev, ok := f.lastSpecs[spec.id]; !ok || prev != sig {
+			changed = true
 		}
 		seen[spec.id] = item
-		if count, ok := item.TryCount(); ok {
-			item.setCountCell(fmt.Sprintf("%d", count))
-		} else {
-			item.setCountCell("")
-		}
+		refreshCountCell(item)
 		if !visible {
 			continue
 		}
@@ -196,6 +177,32 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		log.Info("resources updated", "count", len(rows))
 	}
 	return rows
+}
+
+// resourceGroupVisible reports whether the row of a resource type is shown.
+// It never peeks the apiserver, because it runs on the UI thread: it uses the
+// cached answer and lets a background peek refresh the folder.
+func resourceGroupVisible(item *ResourceGroupItem, spec resourceGroupSpec, showNonEmpty bool) bool {
+	// EmptyState also starts the background peek, so it runs even for a
+	// forbidden type, as it always has.
+	empty, pending := item.EmptyState()
+	if item.Forbidden() {
+		return false
+	}
+	// Uncounted types (all namespaces) have no emptiness to filter on. A type
+	// whose emptiness is not known yet stays hidden, so the list grows to the
+	// non-empty types instead of showing all of them and then shrinking.
+	return !showNonEmpty || spec.uncounted || (!empty && !pending)
+}
+
+// refreshCountCell shows the cached object count, or an empty cell while the
+// count is unknown.
+func refreshCountCell(item *ResourceGroupItem) {
+	if count, ok := item.TryCount(); ok {
+		item.setCountCell(fmt.Sprintf("%d", count))
+		return
+	}
+	item.setCountCell("")
 }
 
 func (f *ResourcesFolder) setItems(items map[string]*ResourceGroupItem) {
@@ -403,15 +410,7 @@ func makeResourceGroupSignature(spec resourceGroupSpec, visible bool, index int)
 }
 
 func joinStrings(parts []string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	const sep = "\x00"
-	joined := parts[0]
-	for i := 1; i < len(parts); i++ {
-		joined += sep + parts[i]
-	}
-	return joined
+	return strings.Join(parts, "\x00")
 }
 
 func (f *ResourcesFolder) ensureResourceGroupItem(spec resourceGroupSpec) (*ResourceGroupItem, bool) {

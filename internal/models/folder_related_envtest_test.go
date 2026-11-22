@@ -32,10 +32,10 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 	}
 	ctx := t.Context()
 	const ns = "related"
-	mustCreate(t, cli, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
-	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "cfg"}})
+	mustCreate(t, cli, &corev1.Namespace{Name: ns})
+	mustCreate(t, cli, &corev1.ConfigMap{Namespace: ns, Name: "cfg"})
 	rs := &appsv1.ReplicaSet{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "web-1"},
+		Namespace: ns, Name: "web-1",
 		Spec: appsv1.ReplicaSetSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
 			Template: corev1.PodTemplateSpec{
@@ -48,10 +48,10 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 	yes := true
 	usingPod := func(name string) *corev1.Pod {
 		return &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name, Labels: map[string]string{"app": "web"}},
+			Namespace: ns, Name: name, Labels: map[string]string{"app": "web"},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{{Name: "c", Image: "busybox"}},
-				Volumes:    []corev1.Volume{{Name: "v", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: "cfg"}}}}},
+				Volumes:    []corev1.Volume{{Name: "v", ConfigMap: &corev1.ConfigMapVolumeSource{Name: "cfg"}}},
 			},
 		}
 	}
@@ -61,7 +61,7 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 		{APIVersion: "apps/v1", Kind: "Deployment", Name: "gone", UID: "no-such-uid"},
 	}
 	mustCreate(t, cli, owned)
-	mustCreate(t, cli, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "unrelated"}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "c", Image: "busybox"}}}})
+	mustCreate(t, cli, &corev1.Pod{Namespace: ns, Name: "unrelated", Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "c", Image: "busybox"}}}})
 
 	cl, err := kccluster.New(testCfg)
 	if err != nil {

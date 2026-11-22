@@ -8,7 +8,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -109,10 +108,8 @@ func createPod(t *testing.T, cl *kccluster.Cluster, namespace, name string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	p := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
+		Name:      name,
+		Namespace: namespace,
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
 				Name:  "pause",
@@ -124,7 +121,7 @@ func createPod(t *testing.T, cl *kccluster.Cluster, namespace, name string) {
 		t.Fatalf("create pod %s/%s: %v", namespace, name, err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, p)
 	})
@@ -135,17 +132,15 @@ func createSecret(t *testing.T, cl *kccluster.Cluster, namespace, name string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	s := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
+		Name:       name,
+		Namespace:  namespace,
 		StringData: map[string]string{"k": "v"},
 	}
 	if err := cl.GetClient().Create(ctx, s); err != nil {
 		t.Fatalf("create secret %s/%s: %v", namespace, name, err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, s)
 	})
@@ -156,9 +151,7 @@ func grantLimitedUser(t *testing.T, cl *kccluster.Cluster, user string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	role := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "limited-reader",
-		},
+		Name: "limited-reader",
 		Rules: []rbacv1.PolicyRule{
 			{APIGroups: []string{""}, Resources: []string{"namespaces"}, Verbs: []string{"get", "list", "watch"}},
 			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}},
@@ -168,9 +161,7 @@ func grantLimitedUser(t *testing.T, cl *kccluster.Cluster, user string) {
 		t.Fatalf("create clusterrole: %v", err)
 	}
 	binding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "limited-reader",
-		},
+		Name: "limited-reader",
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
 			Kind:     "ClusterRole",

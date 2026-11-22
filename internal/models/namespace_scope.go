@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	crlog "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // listScope says which informer cache may serve a list of one resource type
@@ -92,7 +92,7 @@ func (d Deps) resolveListScope(gvr schema.GroupVersionResource, namespace string
 	}
 	ctx, cancel := context.WithTimeout(d.Ctx, listScopeTimeout)
 	defer cancel()
-	log := crlog.FromContext(d.Ctx).WithValues("gvr", gvr.String(), "namespace", namespace)
+	log := ctrllog.FromContext(d.Ctx).WithValues("gvr", gvr.String(), "namespace", namespace)
 	ok, err := d.Cl.CanListWatchAllNamespaces(ctx, gvr)
 	if err != nil {
 		log.Info("access review failed; treating as unknown", "error", err.Error())

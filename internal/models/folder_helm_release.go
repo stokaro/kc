@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -81,7 +82,7 @@ func helmReleaseFolderRows(deps Deps, reader *helmReader, h helm.History, found 
 		rows = append(rows, newHelmResourcesEntry(deps, rel, revision, path))
 	}
 	if revision == 0 {
-		histPath := append(append([]string{}, path...), "history")
+		histPath := append(slices.Clone(path), "history")
 		item := NewChildResourceItem("history", []string{"/history", fmt.Sprintf("%d stored revisions", len(h.Revisions))}, histPath, func() (Folder, error) {
 			return newHelmHistoryFolder(deps, reader, h.Namespace, h.Release, histPath), nil
 		})
@@ -112,7 +113,7 @@ func helmContentRows(deps Deps, rel *helm.Release, revision int, path []string) 
 	}
 	rows := make([]table.Row, 0, len(parts))
 	for _, p := range parts {
-		item := NewSimpleItem(p.id, []string{p.id, p.desc}, append(append([]string{}, path...), p.id), WhiteStyle())
+		item := NewSimpleItem(p.id, []string{p.id, p.desc}, append(slices.Clone(path), p.id), WhiteStyle())
 		item.SetDetails(fmt.Sprintf("%s of %s, %s", p.id, rel.Name, stored))
 		title := fmt.Sprintf("%s %s (revision %d, stored)", rel.Name, p.id, rel.Version)
 		ext, mime := ".txt", ""
@@ -202,7 +203,7 @@ func helmHistoryRows(deps Deps, reader *helmReader, h helm.History, path []strin
 			updated = formatHelmTime(rel.Info.LastDeployed)
 			desc = rel.Info.Description
 		}
-		revPath := append(append([]string{}, path...), strconv.Itoa(rev))
+		revPath := append(slices.Clone(path), strconv.Itoa(rev))
 		item := NewChildResourceItem(strconv.Itoa(rev), []string{"/" + strconv.Itoa(rev), updated, status, chart, appVersion, desc}, revPath, func() (Folder, error) {
 			return newHelmReleaseFolder(deps, reader, h.Namespace, h.Release, rev, revPath), nil
 		})
@@ -214,7 +215,7 @@ func helmHistoryRows(deps Deps, reader *helmReader, h helm.History, path []strin
 
 // newHelmResourcesEntry opens the objects of a stored manifest.
 func newHelmResourcesEntry(deps Deps, rel *helm.Release, revision int, parent []string) *ChildResourceItem {
-	path := append(append([]string{}, parent...), "resources")
+	path := append(slices.Clone(parent), "resources")
 	objs, _ := helm.SplitManifest(rel.Manifest)
 	desc := fmt.Sprintf("%d objects of the manifest, linked to the live objects", len(objs))
 	item := NewChildResourceItem("resources", []string{"/resources", desc}, path, func() (Folder, error) {
@@ -291,8 +292,8 @@ const (
 func helmResourceRows(ctx context.Context, mapper meta.RESTMapper, get liveGetter, rel *helm.Release, path []string) []table.Row {
 	objs, errs := helm.SplitManifest(rel.Manifest)
 	rows := make([]table.Row, 0, len(objs)+len(errs))
-	skip := map[schema.GroupVersionResource]string{}
-	seen := map[string]int{}
+	skip := make(map[schema.GroupVersionResource]string)
+	seen := make(map[string]int)
 	for _, obj := range objs {
 		item := &HelmResourceItem{obj: obj, release: rel.Name, revision: rel.Version}
 		ns := obj.Namespace
@@ -328,9 +329,9 @@ func helmResourceRows(ctx context.Context, mapper meta.RESTMapper, get liveGette
 			id = fmt.Sprintf("%s#%d", key, n)
 		}
 		cells := []string{"@" + obj.Kind + "/" + obj.Name, ns, obj.APIVersion, live}
-		item.RowItem = NewRowItem(id, cells, append(append([]string{}, path...), obj.Kind+"/"+obj.Name), WhiteStyle())
+		item.RowItem = NewRowItem(id, cells, append(slices.Clone(path), obj.Kind+"/"+obj.Name), WhiteStyle())
 		if live == liveMissing || live == liveNotServed {
-			item.RowItem = NewRowItem(id, cells, append(append([]string{}, path...), obj.Kind+"/"+obj.Name), &helmNoticeStyle)
+			item.RowItem = NewRowItem(id, cells, append(slices.Clone(path), obj.Kind+"/"+obj.Name), &helmNoticeStyle)
 		}
 		if obj.Source != "" {
 			item.SetDetails(obj.Kind + "/" + obj.Name + " from " + obj.Source)
@@ -344,7 +345,7 @@ func helmResourceRows(ctx context.Context, mapper meta.RESTMapper, get liveGette
 	return rows
 }
 
-func liveState(ctx context.Context, get liveGetter, skip map[schema.GroupVersionResource]string, ref ObjectRef, kind string) (string, string) {
+func liveState(ctx context.Context, get liveGetter, skip map[schema.GroupVersionResource]string, ref ObjectRef, kind string) (state, missing string) {
 	if ref.Name == "" {
 		return liveNoName, "the manifest object has no name"
 	}
@@ -395,8 +396,10 @@ var _ ObjectLink = (*HelmResourceItem)(nil)
 func (i *HelmResourceItem) LinkTarget() (ObjectRef, string) { return i.ref, i.missing }
 
 // ViewContent shows the object as the release stored it, not as it is now.
-func (i *HelmResourceItem) ViewContent() (string, string, string, string, string, error) {
-	title := fmt.Sprintf("%s/%s (stored in %s revision %d)", i.obj.Kind, i.obj.Name, i.release, i.revision)
-	filename := fmt.Sprintf("%s-%s.yaml", strings.ToLower(i.obj.Kind), i.obj.Name)
+//
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (i *HelmResourceItem) ViewContent() (title, body, lang, mime, filename string, err error) {
+	title = fmt.Sprintf("%s/%s (stored in %s revision %d)", i.obj.Kind, i.obj.Name, i.release, i.revision)
+	filename = fmt.Sprintf("%s-%s.yaml", strings.ToLower(i.obj.Kind), i.obj.Name)
 	return title, i.obj.Doc, "yaml", "application/yaml", filename, nil
 }
