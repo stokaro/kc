@@ -2308,47 +2308,52 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 	if warn != "" {
 		a.notifyIntentError("kubectl get: %s", warn)
 	}
-	var cmds []tea.Cmd
-	if len(order) == 1 {
-		res := resolved[order[0]]
-		group := groups[order[0]]
-		if err := a.goToResourceFolder(res); err != nil {
-			a.notifyIntentError("kubectl get %s: %v", res.name, err)
-			return nil
-		}
-		a.setActivePanel(0, "startup get focus left")
-		names := group.Names
-		switch len(names) {
-		case 0:
-			// already at resource list
-		case 1:
-			if cmd := a.selectSingleObject(res, ns, names[0], intent.OutputFormat); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		default:
-			if cmd := a.selectStartupRows(names, a.leftPanel.GetCurrentPath(), 0); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			if strings.EqualFold(intent.OutputFormat, "yaml") {
-				if cmd := a.ensureManifestPreview(res, ns, names[0]); cmd != nil {
-					cmds = append(cmds, cmd)
-				}
-			}
-		}
-	} else {
+	if len(order) > 1 {
 		idList := make([]string, 0, len(order))
 		for _, resName := range order {
 			if res, ok := resolved[resName]; ok {
 				idList = append(idList, res.rowID)
 			}
 		}
-		if len(idList) > 0 {
-			if cmd := a.selectStartupRows(idList, a.leftPanel.GetCurrentPath(), 0); cmd != nil {
-				cmds = append(cmds, cmd)
-			}
+		if len(idList) == 0 {
+			return nil
 		}
+		return a.selectStartupRows(idList, a.leftPanel.GetCurrentPath(), 0)
 	}
-	return tea.Batch(cmds...)
+
+	res := resolved[order[0]]
+	names := groups[order[0]].Names
+	yaml := strings.EqualFold(intent.OutputFormat, "yaml")
+	a.setActivePanel(0, "startup get focus left")
+	// The type row and the object row may not be there yet on a fresh
+	// start; NavigatePanel waits for each of them.
+	target := startupTypePath(res)
+	if len(names) == 1 {
+		target.Elems = append(target.Elems, PathElem{Name: names[0]})
+		target.SelectLast = true
+	}
+	return a.NavigatePanel(0, target, func(err error) tea.Cmd {
+		if err != nil {
+			a.notifyIntentError("kubectl get %s: %v", res.name, err)
+			return nil
+		}
+		var cmds []tea.Cmd
+		if len(names) > 1 {
+			cmds = append(cmds, a.selectStartupRows(names, a.leftPanel.GetCurrentPath(), 0))
+		}
+		if yaml && len(names) > 0 {
+			cmds = append(cmds, a.ensureManifestPreview(res, names[0]))
+		}
+		return tea.Batch(cmds...)
+	})
+}
+
+// startupLogsTargetMsg carries the container a kc logs intent opens.
+type startupLogsTargetMsg struct {
+	res    resolvedResource
+	intent *LogsIntent
+	target logsContainerTarget
+	err    error
 }
 
 func (a *App) applyStartupIntentLogs() tea.Cmd {
@@ -2372,33 +2377,45 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	if err := a.goToResourceFolder(res); err != nil {
-		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
+	if a.cl == nil {
+		a.notifyIntentError("kubectl logs %s: cluster not ready", intent.Pod)
 		return nil
 	}
-	target, err := a.resolveLogsContainer(ns, intent)
-	if err != nil {
-		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
+	// Choosing the container reads the pod from the API, so it runs off
+	// the update goroutine; the navigation starts when it is known.
+	cl, parent := a.cl, a.ctx
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(parent, requestTimeout)
+		defer cancel()
+		target, err := resolveLogsContainer(ctx, cl, res.namespace, intent)
+		return startupLogsTargetMsg{res: res, intent: intent, target: target, err: err}
+	}
+}
+
+// startStartupLogs walks the left panel to the logs row of the chosen
+// container and opens the logs viewer.
+func (a *App) startStartupLogs(msg startupLogsTargetMsg) tea.Cmd {
+	intent := msg.intent
+	if msg.err != nil {
+		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, msg.err)
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
-	defer cancel()
-	steps := []navui.GoToStep{
-		{SelectionID: intent.Pod, Enter: true},
-		{SelectionID: target.SectionID, Enter: true},
-		{SelectionID: target.Container, Enter: true},
-		{SelectionID: "logs_latest", Enter: false},
-	}
-	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
-		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
-		return nil
-	}
-	a.syncPanelWithNavigator(0)
-	ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.leftPanel.SelectByRowID(ctxSel, "logs_latest")
-	cancelSel()
 	a.setActivePanel(0, "startup logs focus left")
-	return a.openLogsViewerForIntent(intent)
+	target := startupTypePath(msg.res)
+	target.Elems = append(target.Elems,
+		PathElem{Name: intent.Pod},
+		PathElem{ID: msg.target.SectionID},
+		PathElem{ID: msg.target.Container},
+		PathElem{ID: "logs_latest"},
+	)
+	target.SelectLast = true
+	return a.NavigatePanel(0, target, func(err error) tea.Cmd {
+		if err != nil {
+			a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
+			return nil
+		}
+		return a.openLogsViewerForIntent(intent)
+	})
 }
 
 func (a *App) currentNamespace() string {
@@ -2468,78 +2485,38 @@ func (a *App) resolveGetResources(namespace string, order []string) (map[string]
 	return resolved, warn
 }
 
-func (a *App) goToResourceFolder(res resolvedResource) error {
-	if a.leftNav == nil {
-		return fmt.Errorf("navigation not ready")
-	}
-	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
-	defer cancel()
-	// Namespaced types live in the root of the panel's namespace scope, so
-	// rescope the panel when the target is in another namespace.
+// startupTypePath is the path to the object list of res: the root of its
+// namespace (for namespaced types), then the type row.
+func startupTypePath(res resolvedResource) PanelPath {
+	p := PanelPath{Anchor: AnchorRoot, Elems: []PathElem{{Resource: res.gvr.GroupResource()}}}
 	if res.namespaced {
-		nsName := res.namespace
-		if nsName == "" {
-			nsName = corev1.NamespaceDefault
-		}
-		if a.panelScope[0] != nsName {
-			a.panelScope[0] = nsName
-			a.replaceNavigator(0, a.newScopedNavigator(0))
+		p.Rescope = true
+		p.Namespace = res.namespace
+		if p.Namespace == "" {
+			p.Namespace = corev1.NamespaceDefault
 		}
 	}
-	for a.leftNav.HasBack() {
-		a.leftNav.Back()
-	}
-	steps := []navui.GoToStep{{SelectionID: res.rowID, Enter: true}}
-	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
-		return err
-	}
-	a.syncPanelWithNavigator(0)
-	return nil
+	return p
 }
 
-func (a *App) selectSingleObject(res resolvedResource, namespace, name, outputFormat string) tea.Cmd {
-	if name == "" {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
-	defer cancel()
-	if _, err := navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: name, Enter: false}}); err != nil {
-		a.notifyIntentError("select %s/%s: %v", res.name, name, err)
-		return nil
-	}
-	a.syncPanelWithNavigator(0)
-	ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.leftPanel.SelectByRowID(ctxSel, name)
-	cancelSel()
-	if strings.EqualFold(outputFormat, "yaml") {
-		return a.ensureManifestPreview(res, namespace, name)
-	}
-	return nil
-}
-
-func (a *App) ensureManifestPreview(res resolvedResource, namespace, name string) tea.Cmd {
+// ensureManifestPreview shows the manifest of object name in the right
+// panel.
+func (a *App) ensureManifestPreview(res resolvedResource, name string) tea.Cmd {
 	if a.rightNav == nil || name == "" {
 		return nil
 	}
-	ns := namespace
-	if res.namespaced && ns == "" {
-		ns = corev1.NamespaceDefault
-	}
-	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
-	defer cancel()
-	steps := []navui.GoToStep{{SelectionID: resourceRowID(ns, res.gvr, res.namespaced), Enter: true}, {SelectionID: name, Enter: false}}
-	if _, err := navui.GoTo(ctx, a.rightNav, steps); err != nil {
-		a.notifyIntentError("manifest %s/%s: %v", res.name, name, err)
-		return nil
-	}
-	a.syncPanelWithNavigator(1)
-	ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.rightPanel.SelectByRowID(ctxSel, name)
-	cancelSel()
-	ctxMode, cancelMode := context.WithTimeout(a.ctx, panelContextTimeout)
-	cmd := a.setPanelMode(ctxMode, a.rightPanel, PanelModeManifest, "manifest preview mode")
-	cancelMode()
-	return cmd
+	target := startupTypePath(res)
+	target.Elems = append(target.Elems, PathElem{Name: name})
+	target.SelectLast = true
+	return a.NavigatePanel(1, target, func(err error) tea.Cmd {
+		if err != nil {
+			a.notifyIntentError("manifest %s/%s: %v", res.name, name, err)
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		defer cancel()
+		return a.setPanelMode(ctx, a.rightPanel, PanelModeManifest, "manifest preview mode")
+	})
 }
 
 func (a *App) notifyIntentError(format string, args ...interface{}) {
@@ -2560,13 +2537,10 @@ const (
 	logSectionEphemeral  = "ephemeral"
 )
 
-func (a *App) resolveLogsContainer(namespace string, intent *LogsIntent) (logsContainerTarget, error) {
+func resolveLogsContainer(ctx context.Context, cl *kccluster.Cluster, namespace string, intent *LogsIntent) (logsContainerTarget, error) {
 	var zero logsContainerTarget
-	if a.cl == nil {
-		return zero, fmt.Errorf("cluster not ready")
-	}
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-	obj, err := a.cl.GetByGVR(a.ctx, gvr, namespace, intent.Pod)
+	obj, err := cl.GetByGVR(ctx, gvr, namespace, intent.Pod)
 	if err != nil {
 		return zero, err
 	}

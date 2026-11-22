@@ -59,6 +59,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		return a, tea.Batch(cmds...)
+	case startupLogsTargetMsg:
+		if cmd := a.startStartupLogs(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return a, tea.Batch(cmds...)
 	case startupIntentMsg:
 		if cmd := a.applyStartupIntent(); cmd != nil {
 			cmds = append(cmds, cmd)
