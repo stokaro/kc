@@ -121,7 +121,7 @@ func createPod(t *testing.T, cl *kccluster.Cluster, namespace, name string) {
 		t.Fatalf("create pod %s/%s: %v", namespace, name, err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, p)
 	})
@@ -140,7 +140,7 @@ func createSecret(t *testing.T, cl *kccluster.Cluster, namespace, name string) {
 		t.Fatalf("create secret %s/%s: %v", namespace, name, err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, s)
 	})

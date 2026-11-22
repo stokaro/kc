@@ -125,7 +125,7 @@ func createPodWithEphemeralContainers(t *testing.T, cl *kccluster.Cluster, names
 		t.Fatalf("create pod %s/%s: %v", namespace, name, err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = c.Delete(delCtx, pod)
 	})

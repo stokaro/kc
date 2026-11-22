@@ -53,7 +53,7 @@ func createNamespace(t *testing.T, cl *kccluster.Cluster, name string) {
 		t.Fatalf("create namespace: %v", err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, ns)
 	})
@@ -72,7 +72,7 @@ func createConfigMap(t *testing.T, cl *kccluster.Cluster, namespace, name string
 		t.Fatalf("create configmap %s/%s: %v", namespace, name, err)
 	}
 	t.Cleanup(func() {
-		delCtx, cancelDel := context.WithTimeout(context.Background(), 5*time.Second)
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancelDel()
 		_ = cl.GetClient().Delete(delCtx, cm)
 	})

@@ -18,7 +18,7 @@ func TestNodeChildFolderPopulatesPodsEntry(t *testing.T) {
 	path := []string{"nodes", "node-a"}
 	folder := NewNodeChildFolder(deps, "node-a", path)
 
-	rows, err := folder.populate(context.Background())
+	rows, err := folder.populate(t.Context())
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestDepsForSelectorScopeSetsSelectorKey(t *testing.T) {
 	}
 	var gotKey string
 	deps := Deps{
-		Ctx: context.Background(),
+		Ctx: t.Context(),
 		ClusterKey: kccluster.Key{
 			KubeconfigPath: "/tmp/kubeconfig",
 			ContextName:    "ctx",
