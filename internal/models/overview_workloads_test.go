@@ -18,22 +18,25 @@ import (
 )
 
 func controllerRef(apiVersion, kind, name string, uid types.UID) []metav1.OwnerReference {
-	return []metav1.OwnerReference{{APIVersion: apiVersion, Kind: kind, Name: name, UID: uid, Controller: ptr.To(true)}}
+	return []metav1.OwnerReference{{APIVersion: apiVersion, Kind: kind, Name: name, UID: uid, Controller: new(true)}}
 }
 
 func ownedMeta(ns, name string, uid types.UID, owners []metav1.OwnerReference) metav1.ObjectMeta {
 	return metav1.ObjectMeta{Namespace: ns, Name: name, UID: uid, OwnerReferences: owners}
 }
 
-// ownedPod is a running pod owned by owners whose app container has the
-// given requests and limits.
-func ownedPod(ns, name string, owners []metav1.OwnerReference, res corev1.ResourceRequirements, ready bool) *corev1.Pod {
+// ownedPod is a running, ready pod owned by owners whose app container has
+// the given requests and limits.
+func ownedPod(ns, name string, owners []metav1.OwnerReference, res corev1.ResourceRequirements) *corev1.Pod {
 	p := overviewRunningPod(ns, name)
 	p.OwnerReferences = owners
 	p.Spec.Containers[0].Resources = res
-	if !ready {
-		p.Status.Conditions[0].Status = corev1.ConditionFalse
-	}
+	return p
+}
+
+// unready marks p not ready.
+func unready(p *corev1.Pod) *corev1.Pod {
+	p.Status.Conditions[0].Status = corev1.ConditionFalse
 	return p
 }
 
@@ -53,22 +56,22 @@ var (
 func workloadObjects() []crclient.Object {
 	rsRef := controllerRef("apps/v1", "ReplicaSet", "web-abc", "rs-uid")
 	limited := resources("100m", "64Mi", "200m", "128Mi")
-	succeeded := ownedPod("a", "web-done", rsRef, limited, false)
+	succeeded := unready(ownedPod("a", "web-done", rsRef, limited))
 	succeeded.Status.Phase = corev1.PodSucceeded
 	return []crclient.Object{
 		&appsv1.Deployment{ObjectMeta: ownedMeta("a", "web", "dep-uid", nil), Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](2)}},
 		&appsv1.ReplicaSet{ObjectMeta: ownedMeta("a", "web-abc", "rs-uid", controllerRef("apps/v1", "Deployment", "web", "dep-uid"))},
-		ownedPod("a", "web-1", rsRef, limited, true),
-		ownedPod("a", "web-2", rsRef, limited, false),
+		ownedPod("a", "web-1", rsRef, limited),
+		unready(ownedPod("a", "web-2", rsRef, limited)),
 		succeeded,
-		ownedPod("a", "orphan", controllerRef("apps/v1", "ReplicaSet", "gone", "gone-uid"), limited, true),
-		ownedPod("a", "stale", controllerRef("apps/v1", "ReplicaSet", "web-abc", "old-uid"), limited, true),
-		ownedPod("a", "rollout", controllerRef("argoproj.io/v1alpha1", "Rollout", "web", "ro-uid"), limited, true),
+		ownedPod("a", "orphan", controllerRef("apps/v1", "ReplicaSet", "gone", "gone-uid"), limited),
+		ownedPod("a", "stale", controllerRef("apps/v1", "ReplicaSet", "web-abc", "old-uid"), limited),
+		ownedPod("a", "rollout", controllerRef("argoproj.io/v1alpha1", "Rollout", "web", "ro-uid"), limited),
 		&batchv1.CronJob{ObjectMeta: ownedMeta("a", "nightly", "cron-uid", nil)},
 		&batchv1.Job{ObjectMeta: ownedMeta("a", "nightly-1", "job-uid", controllerRef("batch/v1", "CronJob", "nightly", "cron-uid"))},
-		ownedPod("a", "nightly-1-x", controllerRef("batch/v1", "Job", "nightly-1", "job-uid"), limited, true),
+		ownedPod("a", "nightly-1-x", controllerRef("batch/v1", "Job", "nightly-1", "job-uid"), limited),
 		&appsv1.StatefulSet{ObjectMeta: ownedMeta("a", "db", "sts-uid", nil), Spec: appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)}},
-		ownedPod("a", "db-0", controllerRef("apps/v1", "StatefulSet", "db", "sts-uid"), resources("100m", "64Mi", "", ""), true),
+		ownedPod("a", "db-0", controllerRef("apps/v1", "StatefulSet", "db", "sts-uid"), resources("100m", "64Mi", "", "")),
 	}
 }
 

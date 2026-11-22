@@ -16,11 +16,11 @@ import (
 // certificate returns a cert-manager Certificate with a Ready condition
 // (none when ready is "") and status.notAfter (none when notAfter is "").
 func certificate(ns, name, ready, reason, notAfter string) *unstructured.Unstructured {
-	u := &unstructured.Unstructured{Object: map[string]any{}}
+	u := &unstructured.Unstructured{Object: make(map[string]any)}
 	u.SetGroupVersionKind(ovCertificateGVK)
 	u.SetNamespace(ns)
 	u.SetName(name)
-	status := map[string]any{}
+	status := make(map[string]any)
 	if ready != "" {
 		status["conditions"] = []any{
 			map[string]any{"type": "Issuing", "status": "True"},

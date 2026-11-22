@@ -65,7 +65,7 @@ type workloadIndex struct {
 func objectKey(namespace, name string) string { return namespace + "/" + name }
 
 func newWorkloadIndex(rc *ruleContext) *workloadIndex {
-	idx := &workloadIndex{objects: map[schema.GroupVersionResource]map[string]*metav1.ObjectMeta{}}
+	idx := &workloadIndex{objects: make(map[schema.GroupVersionResource]map[string]*metav1.ObjectMeta)}
 	add := func(gvr schema.GroupVersionResource, n int, meta func(int) *metav1.ObjectMeta) {
 		if rc.in.missingReason(gvr) != "" {
 			return
@@ -132,7 +132,7 @@ func summarizeWorkloads(rc *ruleContext) (map[InfoWorkload]*overviewWorkloadSumm
 		return nil, nil
 	}
 	idx := newWorkloadIndex(rc)
-	out := map[InfoWorkload]*overviewWorkloadSummary{}
+	out := make(map[InfoWorkload]*overviewWorkloadSummary)
 	get := func(w InfoWorkload) *overviewWorkloadSummary {
 		s := out[w]
 		if s == nil {
@@ -161,7 +161,7 @@ func summarizeWorkloads(rc *ruleContext) (map[InfoWorkload]*overviewWorkloadSumm
 		desired(ovDaemonSetsGVR, d.ObjectMeta, d.Status.DesiredNumberScheduled)
 	}
 
-	byPod := map[string][]InfoWorkload{}
+	byPod := make(map[string][]InfoWorkload)
 	rc.scopedPods(func(p *corev1.Pod) {
 		if podTerminal(p) {
 			return

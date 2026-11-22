@@ -65,7 +65,7 @@ func TestInfoTargetNamesTheWorkloadUnderTheCursorEnvtest(t *testing.T) {
 	t.Cleanup(createNamespace(t, cl, ns))
 	labels := map[string]string{"app": "web"}
 	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "web"},
+		Namespace: ns, Name: "web",
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: corev1.PodTemplateSpec{

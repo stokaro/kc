@@ -28,30 +28,30 @@ func TestOverviewInfoWorkloadOnARealCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	const ns = "overview-workload"
-	mustCreate(t, cli, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
-	t.Cleanup(func() { _ = cli.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}) })
+	mustCreate(t, cli, &corev1.Namespace{Name: ns})
+	t.Cleanup(func() { _ = cli.Delete(ctx, &corev1.Namespace{Name: ns}) })
 
 	labels := map[string]string{"app": "web"}
 	template := corev1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta{Labels: labels},
-		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "nginx"}}},
+		Labels: labels,
+		Spec:   corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "nginx"}}},
 	}
 	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "web"},
-		Spec:       appsv1.DeploymentSpec{Replicas: ptr.To[int32](3), Selector: &metav1.LabelSelector{MatchLabels: labels}, Template: template},
+		Namespace: ns, Name: "web",
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](3), Selector: &metav1.LabelSelector{MatchLabels: labels}, Template: template},
 	}
 	mustCreate(t, cli, dep)
 	rs := &appsv1.ReplicaSet{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "web-abc", OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: "apps/v1", Kind: "Deployment", Name: dep.Name, UID: dep.UID, Controller: ptr.To(true),
-		}}},
+		Namespace: ns, Name: "web-abc", OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "apps/v1", Kind: "Deployment", Name: dep.Name, UID: dep.UID, Controller: new(true),
+		}},
 		Spec: appsv1.ReplicaSetSpec{Selector: &metav1.LabelSelector{MatchLabels: labels}, Template: template},
 	}
 	mustCreate(t, cli, rs)
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "web-abc-1", Labels: labels, OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: "apps/v1", Kind: "ReplicaSet", Name: rs.Name, UID: rs.UID, Controller: ptr.To(true),
-		}}},
+		Namespace: ns, Name: "web-abc-1", Labels: labels, OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "apps/v1", Kind: "ReplicaSet", Name: rs.Name, UID: rs.UID, Controller: new(true),
+		}},
 		Spec: template.Spec,
 	}
 	mustCreate(t, cli, pod)

@@ -68,7 +68,7 @@ func TestOverviewCertificatesOnARealCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustCreate(t, cli, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "certs"}})
+	mustCreate(t, cli, &corev1.Namespace{Name: "certs"})
 	now := time.Now()
 	at := func(d time.Duration) string { return now.Add(d).UTC().Format(time.RFC3339) }
 	for _, c := range []crclient.Object{
@@ -96,7 +96,7 @@ func installCertificateCRD(t *testing.T, cfg *rest.Config) {
 	}
 	preserve := true
 	crd := &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: "certificates.cert-manager.io"},
+		Name: "certificates.cert-manager.io",
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: "cert-manager.io",
 			Names: apiextensionsv1.CustomResourceDefinitionNames{Plural: "certificates", Singular: "certificate", Kind: "Certificate", ListKind: "CertificateList"},
