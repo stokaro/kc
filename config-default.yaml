@@ -2,6 +2,11 @@ layout:
   # Keep the menu bar titles on the top row, as in mc. false gives the row
   # to the panels; F9 still opens the bar.
   menuBarVisible: true
+  # Modes the panels start in: list, describe, manifest, logs or info.
+  # One panel must start in list mode. Panel modes are not saved, so these
+  # apply on every start; C-1 / C-2 switch them as usual.
+  leftPanelMode: list
+  rightPanelMode: info
 
 viewer:
   theme: dracula

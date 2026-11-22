@@ -405,8 +405,7 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(
 		a.loadCommandHotkeys(),
 		lookErr,
-		a.leftPanel.Init(),
-		a.rightPanel.Init(),
+		a.initPanels(),
 		a.terminal.Init(),
 		func() tea.Msg {
 			// Focus the terminal initially since it's the main input area
