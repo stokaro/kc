@@ -2,6 +2,7 @@ package table
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -270,103 +271,138 @@ func (m *BigTable) SelectedIDs() []string {
 	return out
 }
 
-// UpdateWithContext handles key navigation and selection toggling; it also
-// forwards other messages to the internal bubbles components. It returns a
-// batchable pair of commands for external composition.
-func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd, tea.Cmd) {
-	var c1, c2 tea.Cmd
-	switch v := msg.(type) {
-	case tea.KeyMsg:
-		switch v.String() {
-		case "ctrl+t", "insert":
-			if row := m.list.Lines(ctx, m.cursor, 1); len(row) == 1 {
-				id, _, _, _ := row[0].Columns()
-				if _, ok := m.selected[id]; ok {
-					delete(m.selected, id)
-				} else {
-					m.selected[id] = struct{}{}
-				}
-				// Move cursor down after toggling and keep visible
-				if m.cursor+1 < m.list.Len(ctx) {
-					m.cursor++
-					vis := m.bodyRowsHeight()
-					if m.cursor >= m.top+vis {
-						m.top = max(0, m.cursor-(vis-1))
-					}
-				}
-				m.rebuildWindow(ctx)
-			}
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-				if m.cursor < m.top {
-					m.top = m.cursor
-				}
-				m.rebuildWindow(ctx)
-			}
-		case "down", "j":
-			if m.cursor+1 < m.list.Len(ctx) {
-				m.cursor++
-				vis := m.bodyRowsHeight()
-				if m.cursor >= m.top+vis {
-					m.top = m.cursor - (vis - 1)
-				}
-				m.rebuildWindow(ctx)
-			}
-		case "pgup":
-			vis := max(m.bodyRowsHeight(), 1)
-			m.cursor -= vis
-			if m.cursor < 0 {
-				m.cursor = 0
-			}
-			if m.cursor < m.top {
-				m.top = m.cursor
-			}
-			m.rebuildWindow(ctx)
-		case "pgdown":
-			vis := max(m.bodyRowsHeight(), 1)
-			m.cursor += vis
-			if m.cursor >= m.list.Len(ctx) {
-				m.cursor = m.list.Len(ctx) - 1
-			}
-			if m.cursor >= m.top+vis {
-				m.top = max(0, m.cursor-(vis-1))
-			}
-			m.rebuildWindow(ctx)
-		case "home":
-			m.cursor = 0
-			m.top = 0
-			m.rebuildWindow(ctx)
-		case "end":
-			if n := m.list.Len(ctx); n > 0 {
-				m.cursor = n - 1
-				vis := m.bodyRowsHeight()
-				m.top = max(0, n-vis)
-				m.rebuildWindow(ctx)
-			}
-		case "left", "h":
-			if m.mode == ModeScroll && m.xOff > 0 {
-				m.xOff -= m.hStep
-				if m.xOff < 0 {
-					m.xOff = 0
-				}
-				m.rebuildWindow(ctx)
-			}
-		case "right", "l":
-			if m.mode == ModeScroll {
-				m.xOff += m.hStep
-				// clamp in rebuildWindow based on total width
-				if m.xOff < 0 {
-					m.xOff = 0
-				}
-				m.rebuildWindow(ctx)
-			}
-		}
+// UpdateWithContext handles key navigation and selection toggling. Both
+// returned commands are nil today; the pair keeps the signature batchable
+// for external composition.
+func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (first, second tea.Cmd) {
+	if v, ok := msg.(tea.KeyMsg); ok {
+		m.handleKey(ctx, v.String())
 	}
-	return c1, c2
+	return nil, nil
 }
 
-func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
+// handleKey applies one navigation or selection key.
+func (m *BigTable) handleKey(ctx context.Context, key string) {
+	switch key {
+	case "ctrl+t", "insert":
+		m.toggleCursorMark(ctx)
+	case "up", "k":
+		m.cursorUp(ctx)
+	case "down", "j":
+		m.cursorDown(ctx)
+	case "pgup":
+		m.pageUp(ctx)
+	case "pgdown":
+		m.pageDown(ctx)
+	case "home":
+		m.cursor = 0
+		m.top = 0
+		m.rebuildWindow(ctx)
+	case "end":
+		m.cursorEnd(ctx)
+	case "left", "h":
+		m.scrollLeft(ctx)
+	case "right", "l":
+		m.scrollRight(ctx)
+	}
+}
+
+// toggleCursorMark toggles the mark of the cursor row, then moves the cursor
+// down and keeps it visible.
+func (m *BigTable) toggleCursorMark(ctx context.Context) {
+	row := m.list.Lines(ctx, m.cursor, 1)
+	if len(row) != 1 {
+		return
+	}
+	id, _, _, _ := row[0].Columns()
+	if _, ok := m.selected[id]; ok {
+		delete(m.selected, id)
+	} else {
+		m.selected[id] = struct{}{}
+	}
+	if m.cursor+1 < m.list.Len(ctx) {
+		m.cursor++
+		vis := m.bodyRowsHeight()
+		if m.cursor >= m.top+vis {
+			m.top = max(0, m.cursor-(vis-1))
+		}
+	}
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) cursorUp(ctx context.Context) {
+	if m.cursor <= 0 {
+		return
+	}
+	m.cursor--
+	if m.cursor < m.top {
+		m.top = m.cursor
+	}
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) cursorDown(ctx context.Context) {
+	if m.cursor+1 >= m.list.Len(ctx) {
+		return
+	}
+	m.cursor++
+	vis := m.bodyRowsHeight()
+	if m.cursor >= m.top+vis {
+		m.top = m.cursor - (vis - 1)
+	}
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) pageUp(ctx context.Context) {
+	vis := max(m.bodyRowsHeight(), 1)
+	m.cursor = max(m.cursor-vis, 0)
+	if m.cursor < m.top {
+		m.top = m.cursor
+	}
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) pageDown(ctx context.Context) {
+	vis := max(m.bodyRowsHeight(), 1)
+	m.cursor += vis
+	if m.cursor >= m.list.Len(ctx) {
+		m.cursor = m.list.Len(ctx) - 1
+	}
+	if m.cursor >= m.top+vis {
+		m.top = max(0, m.cursor-(vis-1))
+	}
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) cursorEnd(ctx context.Context) {
+	n := m.list.Len(ctx)
+	if n <= 0 {
+		return
+	}
+	m.cursor = n - 1
+	vis := m.bodyRowsHeight()
+	m.top = max(0, n-vis)
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) scrollLeft(ctx context.Context) {
+	if m.mode != ModeScroll || m.xOff <= 0 {
+		return
+	}
+	m.xOff = max(m.xOff-m.hStep, 0)
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) scrollRight(ctx context.Context) {
+	if m.mode != ModeScroll {
+		return
+	}
+	// rebuildWindow clamps the offset to the total width.
+	m.xOff = max(m.xOff+m.hStep, 0)
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) Update(msg tea.Msg) (first, second tea.Cmd) {
 	ctx, cancel := context.WithTimeout(context.Background(), bigTableUpdateTimeout)
 	defer cancel()
 	return m.UpdateWithContext(ctx, msg)
@@ -381,24 +417,9 @@ func (m *BigTable) View() tea.View { return tea.NewView(strings.TrimRight(m.body
 // rebuildWindow sets the table rows to the current window [top:top+height)
 // and positions the table cursor at (cursor-top), updating the width cache.
 func (m *BigTable) rebuildWindow(ctx context.Context) {
-	// Compute how many data rows are visible and the total body height.
-	rowsVisible := m.bodyRowsHeight()
 	// rowsVisible already accounts for header and border lines.
-	n := max(m.list.Len(ctx), 0)
-	if m.cursor >= n {
-		m.cursor = max(0, n-1)
-	}
-	// rowsVisible already accounts for borders via bodyRowsHeight()
-	maxTop := max(0, n-rowsVisible)
-	if m.top > maxTop {
-		m.top = maxTop
-	}
-	if m.cursor < m.top {
-		m.top = m.cursor
-	}
-	if m.cursor >= m.top+rowsVisible {
-		m.top = max(0, m.cursor-(rowsVisible-1))
-	}
+	rowsVisible := m.bodyRowsHeight()
+	m.clampViewport(m.list.Len(ctx), rowsVisible)
 
 	// Render exactly the number of visible rows.
 	m.ensureWindow(ctx, rowsVisible)
@@ -411,92 +432,17 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 	t = t.BorderHeader(false).BorderRow(false).BorderColumn(m.bColumn)
 
 	// Fit mode is handled by lipgloss.table's Width; no manual slicing.
-
+	var idx []int
+	var headers []string
+	var rows [][]string
 	if m.mode == ModeScroll {
-		// Character-based horizontal panning over ASCII cell data.
-		idx, cuts, widths := m.slicePlanForScroll(m.xOff, m.w)
-		base := m.computeScrollBaseWidths()
-		// When the columns are narrower than the viewport, give the spare
-		// room to the first column, like the Name column of a file manager.
-		// Otherwise lipgloss.table spreads it evenly over all columns.
-		if slack := m.w - scrollPlanWidth(widths); slack > 0 && len(idx) > 0 && idx[0] == 0 && cuts[0] == 0 {
-			widths[0] += slack
-			base = append([]int(nil), base...)
-			base[0] += slack
-		}
-		headerAlign := m.styles.Header.GetAlignHorizontal()
-		headers := make([]string, len(idx))
-		for i, col := range idx {
-			title := alignTitle(m.cols[col].Title, base[col], headerAlign)
-			h := titleSlicePad(title, cuts[i], widths[i])
-			if !m.bColumn && i < len(idx)-1 {
-				h = ensureTrailingSpace(h)
-			}
-			headers[i] = h
-		}
-		t = t.Headers(headers...)
-		t = t.Rows(m.padRows(rowsToStringRowsSliced(m.window, idx, cuts, widths, !m.bColumn), len(idx), rowsVisible)...)
-		stylesPerRow := captureStylesSubset(m.window, idx)
-		selected := m.selected
-		t = t.StyleFunc(func(row, col int) lipgloss.Style {
-			if row == lgtable.HeaderRow {
-				return m.styles.Header
-			}
-			if row < 0 || row >= len(stylesPerRow) {
-				return m.styles.Cell
-			}
-			st := m.styles.Cell
-			if col < len(stylesPerRow[row]) && stylesPerRow[row][col] != nil {
-				st = (*stylesPerRow[row][col]).Inherit(st)
-			}
-			id, _, _, _ := m.window[row].Columns()
-			// Row-level overlays
-			focusedRow := m.focused && row == (m.cursor-m.top)
-			if focusedRow {
-				st = m.styles.Selector.Inherit(st)
-			}
-			if _, ok := selected[id]; ok {
-				st = m.styles.Marked.Inherit(st)
-			}
-			return st
-		})
+		idx, headers, rows = m.scrollContent()
 	} else {
-		// ModeFit: show all columns; lipgloss.table handles width.
-		visIdx := m.visibleColumnsAll()
-		headers := make([]string, len(visIdx))
-		for i := range visIdx {
-			h := m.cols[visIdx[i]].Title
-			if !m.bColumn && i < len(visIdx)-1 {
-				h = ensureTrailingSpace(h)
-			}
-			headers[i] = h
-		}
-		t = t.Headers(headers...)
-		t = t.Rows(m.padRows(rowsToStringRowsSubsetSep(m.window, visIdx, !m.bColumn), len(visIdx), rowsVisible)...)
-		stylesPerRow := captureStylesSubset(m.window, visIdx)
-		selected := m.selected
-		t = t.StyleFunc(func(row, col int) lipgloss.Style {
-			if row == lgtable.HeaderRow {
-				return m.styles.Header
-			}
-			if row < 0 || row >= len(stylesPerRow) {
-				return m.styles.Cell
-			}
-			st := m.styles.Cell
-			if col < len(stylesPerRow[row]) && stylesPerRow[row][col] != nil {
-				st = (*stylesPerRow[row][col]).Inherit(st)
-			}
-			id, _, _, _ := m.window[row].Columns()
-			focusedRow := m.focused && row == (m.cursor-m.top)
-			if focusedRow {
-				st = m.styles.Selector.Inherit(st)
-			}
-			if _, ok := selected[id]; ok {
-				st = m.styles.Marked.Inherit(st)
-			}
-			return st
-		})
+		idx, headers, rows = m.fitContent()
 	}
+	t = t.Headers(headers...)
+	t = t.Rows(m.padRows(rows, len(idx), rowsVisible)...)
+	t = t.StyleFunc(m.cellStyle(captureStylesSubset(m.window, idx)))
 
 	m.bodyRow = m.highlightCursorLine(strings.TrimRight(t.Render(), "\n"))
 	// Track focused ID for stability across updates.
@@ -505,6 +451,87 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 		if ok {
 			m.focusedID = id
 		}
+	}
+}
+
+// clampViewport keeps the cursor inside the n rows and the top row such that
+// the cursor stays within the rowsVisible rows of the body.
+func (m *BigTable) clampViewport(n, rowsVisible int) {
+	n = max(n, 0)
+	if m.cursor >= n {
+		m.cursor = max(0, n-1)
+	}
+	m.top = min(m.top, max(0, n-rowsVisible), m.cursor)
+	if m.cursor >= m.top+rowsVisible {
+		m.top = max(0, m.cursor-(rowsVisible-1))
+	}
+}
+
+// scrollContent returns the visible column indexes, the headers and the rows
+// of ModeScroll: character-based horizontal panning over ASCII cell data.
+func (m *BigTable) scrollContent() (idx []int, headers []string, rows [][]string) {
+	idx, cuts, widths := m.slicePlanForScroll(m.xOff, m.w)
+	base := m.computeScrollBaseWidths()
+	// When the columns are narrower than the viewport, give the spare
+	// room to the first column, like the Name column of a file manager.
+	// Otherwise lipgloss.table spreads it evenly over all columns.
+	if slack := m.w - scrollPlanWidth(widths); slack > 0 && len(idx) > 0 && idx[0] == 0 && cuts[0] == 0 {
+		widths[0] += slack
+		base = append([]int(nil), base...)
+		base[0] += slack
+	}
+	headerAlign := m.styles.Header.GetAlignHorizontal()
+	headers = make([]string, len(idx))
+	for i, col := range idx {
+		title := alignTitle(m.cols[col].Title, base[col], headerAlign)
+		h := titleSlicePad(title, cuts[i], widths[i])
+		if !m.bColumn && i < len(idx)-1 {
+			h = ensureTrailingSpace(h)
+		}
+		headers[i] = h
+	}
+	return idx, headers, rowsToStringRowsSliced(m.window, idx, cuts, widths, !m.bColumn)
+}
+
+// fitContent returns the column indexes, the headers and the rows of
+// ModeFit: all columns, and lipgloss.table handles the width.
+func (m *BigTable) fitContent() (idx []int, headers []string, rows [][]string) {
+	idx = m.visibleColumnsAll()
+	headers = make([]string, len(idx))
+	for i := range idx {
+		h := m.cols[idx[i]].Title
+		if !m.bColumn && i < len(idx)-1 {
+			h = ensureTrailingSpace(h)
+		}
+		headers[i] = h
+	}
+	return idx, headers, rowsToStringRowsSubsetSep(m.window, idx, !m.bColumn)
+}
+
+// cellStyle returns the lipgloss.table style function: the header style, the
+// row's own cell styles, and the cursor and mark overlays.
+func (m *BigTable) cellStyle(stylesPerRow [][]*lipgloss.Style) func(row, col int) lipgloss.Style {
+	selected := m.selected
+	return func(row, col int) lipgloss.Style {
+		if row == lgtable.HeaderRow {
+			return m.styles.Header
+		}
+		if row < 0 || row >= len(stylesPerRow) {
+			return m.styles.Cell
+		}
+		st := m.styles.Cell
+		if col < len(stylesPerRow[row]) && stylesPerRow[row][col] != nil {
+			st = stylesPerRow[row][col].Inherit(st)
+		}
+		id, _, _, _ := m.window[row].Columns()
+		// Row-level overlays
+		if m.focused && row == (m.cursor-m.top) {
+			st = m.styles.Selector.Inherit(st)
+		}
+		if _, ok := selected[id]; ok {
+			st = m.styles.Marked.Inherit(st)
+		}
+		return st
 	}
 }
 
@@ -599,7 +626,7 @@ func (m *BigTable) tryShiftDown(ctx context.Context, targetSize int) bool {
 	if len(extra) < need {
 		return false
 	}
-	m.window = append(trimmed, extra...)
+	m.window = slices.Concat(trimmed, extra)
 	m.windowTop = m.top
 	return true
 }
@@ -626,7 +653,7 @@ func (m *BigTable) tryShiftUp(ctx context.Context, targetSize int) bool {
 	if len(extra) < need {
 		return false
 	}
-	m.window = append(extra, remain...)
+	m.window = slices.Concat(extra, remain)
 	if len(m.window) > targetSize {
 		m.window = m.window[len(m.window)-targetSize:]
 	}
@@ -728,64 +755,30 @@ func (m *BigTable) visibleColumnsAll() []int {
 // slicePlanForScroll computes which columns and which horizontal slices of those
 // columns should be rendered to display a viewport of width vw starting at xOff.
 // Returns the column indices, per-column cut offsets, and per-column visible widths.
-func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
+func (m *BigTable) slicePlanForScroll(xOff, vw int) (idx, cuts, widths []int) {
 	n := len(m.cols)
 	if n == 0 || vw <= 0 {
 		return nil, nil, nil
 	}
 	// Compute dynamic base widths from current header titles and visible rows.
 	base := m.computeScrollBaseWidths()
-	// Precompute total width including separators to clamp xOff.
 	// Always budget 1 column between visible columns: either a space (when
 	// not using lipgloss borders) or the border glyph width (when enabled).
 	// The lipgloss table will render border columns when BorderColumn(true),
 	// so we must include their width in our horizontal plan.
-	sep := 1
-	total := 0
-	for i := range n {
-		w := base[i]
-		total += w
-		if i > 0 {
-			total += sep
-		}
-	}
-	if total <= vw {
-		xOff = 0
-	}
-	if xOff < 0 {
-		xOff = 0
-	}
-	if xOff > total-vw {
-		xOff = total - vw
-	}
-	if xOff < 0 {
-		xOff = 0
-	}
+	const sep = 1
+	xOff = clampScrollOffset(xOff, scrollPlanWidth(base), vw)
 	m.xOff = xOff // keep clamped value
 
-	var idx []int
-	var cuts []int
-	var widths []int
 	remaining := vw
 	pos := 0 // running position across full line including separators
 
 	for i := 0; i < n && remaining > 0; i++ {
-		// Account for the separator only when we render space-separated columns.
-		if i > 0 && sep > 0 {
-			if pos < xOff {
-				// If xOff lands on the separator, advance past it.
-				if pos+sep <= xOff {
-					pos += sep
-				}
-			} else if len(widths) > 0 {
-				// Consume viewport for the separator (spaces)
-				if remaining == 0 {
-					break
-				}
-				remaining -= sep
-				if remaining <= 0 {
-					break
-				}
+		if i > 0 {
+			var stop bool
+			pos, remaining, stop = scrollSeparator(pos, remaining, xOff, sep, len(widths) > 0)
+			if stop {
+				break
 			}
 		}
 
@@ -825,6 +818,36 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
 		return []int{i}, []int{cut}, []int{min(vw, w)}
 	}
 	return idx, cuts, widths
+}
+
+// clampScrollOffset limits a horizontal offset to [0, total-vw], and to 0
+// when the whole line of total columns fits into vw.
+func clampScrollOffset(xOff, total, vw int) int {
+	if total <= vw {
+		return 0
+	}
+	return max(0, min(xOff, total-vw))
+}
+
+// scrollSeparator accounts for the separator before a column. Left of the
+// viewport it moves pos past the separator when xOff is beyond it. Inside
+// the viewport, after the first visible column, the separator uses sep
+// columns of the remaining width. stop is true when no width is left.
+func scrollSeparator(pos, remaining, xOff, sep int, visible bool) (newPos, newRemaining int, stop bool) {
+	if pos < xOff {
+		if pos+sep <= xOff {
+			pos += sep
+		}
+		return pos, remaining, false
+	}
+	if !visible {
+		return pos, remaining, false
+	}
+	if remaining == 0 {
+		return pos, remaining, true
+	}
+	remaining -= sep
+	return pos, remaining, remaining <= 0
 }
 
 // scrollPlanWidth returns the rendered width of a scroll plan: the visible

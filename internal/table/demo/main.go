@@ -110,91 +110,8 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	ctx := context.Background()
 	switch v := msg.(type) {
 	case tea.KeyMsg:
-		switch v.String() {
-		case "q", "ctrl+c":
-			return a, tea.Quit
-		case "m":
-			cur := &a.left
-			if a.focus == 1 {
-				cur = &a.right
-			}
-			cur.ToggleMode(ctx)
-			return a, nil
-		case "i":
-			// Insert a new row after current
-			cur := &a.left
-			if a.focus == 1 {
-				cur = &a.right
-			}
-			if id, ok := cur.CurrentID(ctx); ok {
-				nr := table.SimpleRow{ID: fmt.Sprintf("id-%d", time.Now().UnixNano()%1_000_000_000)}
-				nr.SetColumn(0, nr.ID, nil)
-				nr.SetColumn(1, "OK", nil)
-				nr.SetColumn(2, "inserted row", nil)
-				switch l := cur.GetList().(type) {
-				case *table.SliceList:
-					l.InsertAfter(id, nr)
-					cur.SetList(ctx, l)
-				case *table.LinkedList:
-					l.InsertAfterID(id, nr)
-					cur.SetList(ctx, l)
-				}
-			}
-			return a, nil
-		case "d", "delete":
-			// Remove current row
-			cur := &a.left
-			if a.focus == 1 {
-				cur = &a.right
-			}
-			if id, ok := cur.CurrentID(ctx); ok {
-				switch l := cur.GetList().(type) {
-				case *table.SliceList:
-					l.RemoveIDs(id)
-					cur.SetList(ctx, l)
-				case *table.LinkedList:
-					l.RemoveIDs(id)
-					cur.SetList(ctx, l)
-				}
-			}
-			return a, nil
-		case "t":
-			// Toggle provider implementation
-			cur := &a.left
-			if a.focus == 1 {
-				cur = &a.right
-			}
-			list := cur.GetList()
-			src := table.LinesToRows(list.Lines(ctx, 0, list.Len(ctx)))
-			if _, isSlice := cur.GetList().(*table.SliceList); isSlice {
-				cur.SetList(ctx, table.NewLinkedList(src))
-			} else {
-				cur.SetList(ctx, table.NewSliceList(src))
-			}
-			return a, nil
-		case "b":
-			// Cycle inner border presets only (no outside frame, no underline)
-			// 0: none, 1: verticals
-			if a.focus == 0 {
-				a.bstateL = (a.bstateL + 1) % 2
-				a.left.BorderVertical(ctx, a.bstateL == 1)
-			} else {
-				a.bstateR = (a.bstateR + 1) % 2
-				a.right.BorderVertical(ctx, a.bstateR == 1)
-			}
-			return a, nil
-		case "tab":
-			// Switch focus between left and right tables (outer routes keys)
-			if a.focus == 0 {
-				a.focus = 1
-				a.left.Blur(ctx)
-				a.right.Focus(ctx)
-			} else {
-				a.focus = 0
-				a.right.Blur(ctx)
-				a.left.Focus(ctx)
-			}
-			return a, nil
+		if cmd, ok := a.handleKey(ctx, v.String()); ok {
+			return a, cmd
 		}
 	case tea.WindowSizeMsg:
 		// Reserve one line for the demo help header
@@ -227,6 +144,107 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return a, tea.Batch(cmds...)
+}
+
+// handleKey runs a demo key. It reports whether the key was one.
+func (a *app) handleKey(ctx context.Context, key string) (tea.Cmd, bool) {
+	cur := &a.left
+	if a.focus == 1 {
+		cur = &a.right
+	}
+	switch key {
+	case "q", "ctrl+c":
+		return tea.Quit, true
+	case "m":
+		cur.ToggleMode(ctx)
+	case "i":
+		insertRow(ctx, cur)
+	case "d", "delete":
+		removeRow(ctx, cur)
+	case "t":
+		toggleProvider(ctx, cur)
+	case "b":
+		a.cycleBorder(ctx)
+	case "tab":
+		a.switchFocus(ctx)
+	default:
+		return nil, false
+	}
+	return nil, true
+}
+
+// insertRow inserts a new row after the current one.
+func insertRow(ctx context.Context, cur *table.BigTable) {
+	id, ok := cur.CurrentID(ctx)
+	if !ok {
+		return
+	}
+	nr := table.SimpleRow{ID: fmt.Sprintf("id-%d", time.Now().UnixNano()%1_000_000_000)}
+	nr.SetColumn(0, nr.ID, nil)
+	nr.SetColumn(1, "OK", nil)
+	nr.SetColumn(2, "inserted row", nil)
+	switch l := cur.GetList().(type) {
+	case *table.SliceList:
+		l.InsertAfter(id, nr)
+		cur.SetList(ctx, l)
+	case *table.LinkedList:
+		l.InsertAfterID(id, nr)
+		cur.SetList(ctx, l)
+	}
+}
+
+// removeRow removes the current row.
+func removeRow(ctx context.Context, cur *table.BigTable) {
+	id, ok := cur.CurrentID(ctx)
+	if !ok {
+		return
+	}
+	switch l := cur.GetList().(type) {
+	case *table.SliceList:
+		l.RemoveIDs(id)
+		cur.SetList(ctx, l)
+	case *table.LinkedList:
+		l.RemoveIDs(id)
+		cur.SetList(ctx, l)
+	}
+}
+
+// toggleProvider switches the list between the slice and the linked list
+// implementation.
+func toggleProvider(ctx context.Context, cur *table.BigTable) {
+	list := cur.GetList()
+	src := table.LinesToRows(list.Lines(ctx, 0, list.Len(ctx)))
+	if _, isSlice := cur.GetList().(*table.SliceList); isSlice {
+		cur.SetList(ctx, table.NewLinkedList(src))
+	} else {
+		cur.SetList(ctx, table.NewSliceList(src))
+	}
+}
+
+// cycleBorder cycles the inner border presets of the focused table only (no
+// outside frame, no underline): 0 none, 1 verticals.
+func (a *app) cycleBorder(ctx context.Context) {
+	if a.focus == 0 {
+		a.bstateL = (a.bstateL + 1) % 2
+		a.left.BorderVertical(ctx, a.bstateL == 1)
+	} else {
+		a.bstateR = (a.bstateR + 1) % 2
+		a.right.BorderVertical(ctx, a.bstateR == 1)
+	}
+}
+
+// switchFocus moves the focus between the left and the right table; the
+// outer model routes the keys.
+func (a *app) switchFocus(ctx context.Context) {
+	if a.focus == 0 {
+		a.focus = 1
+		a.left.Blur(ctx)
+		a.right.Focus(ctx)
+	} else {
+		a.focus = 0
+		a.right.Blur(ctx)
+		a.left.Focus(ctx)
+	}
 }
 
 func (a app) View() tea.View {

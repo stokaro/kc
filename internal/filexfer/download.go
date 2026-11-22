@@ -163,29 +163,38 @@ func downloadEntry(ctx context.Context, src Source, root *os.Root, req Request, 
 		return res
 	}
 
-	if exists && !info.IsDir() {
-		return fail(fmt.Errorf("%s: exists and is not a directory", e.Name), "")
+	skipped, staging, err := downloadDir(ctx, src, root, req.Dir, e, counter, info, exists)
+	if err != nil {
+		return fail(err, staging)
 	}
-	// A directory is built in a private staging directory next to the
-	// destination and moved into place only when it is complete, so a
-	// failed or canceled copy leaves nothing that looks finished.
-	staging := "." + e.Name + ".kc-partial-" + randomSuffix()
+	res.Status, res.Notes = StatusCopied, notes(skipped)
+	return res
+}
+
+// downloadDir copies the directory e. It is built in a private staging
+// directory next to the destination and moved into place only when it is
+// complete, so a failed or canceled copy leaves nothing that looks finished.
+// It returns the staging name, which error messages replace with e.Name.
+func downloadDir(ctx context.Context, src Source, root *os.Root, dir string, e podfs.FileEntry, counter *Counter, info fs.FileInfo, exists bool) (skipped []string, staging string, err error) {
+	if exists && !info.IsDir() {
+		return nil, "", fmt.Errorf("%s: exists and is not a directory", e.Name)
+	}
+	staging = "." + e.Name + ".kc-partial-" + randomSuffix()
 	if err := root.Mkdir(staging, DirMode); err != nil {
-		return fail(fmt.Errorf("creating staging directory: %w", err), "")
+		return nil, "", fmt.Errorf("creating staging directory: %w", err)
 	}
 	defer func() { _ = root.RemoveAll(staging) }()
 	w := &writer{root: root, top: e.Name, as: staging, counter: counter}
-	if err := produce(ctx, src, req.Dir, e, w); err != nil {
-		return fail(err, staging)
+	if err := produce(ctx, src, dir, e, w); err != nil {
+		return nil, staging, err
 	}
 	if err := ctx.Err(); err != nil {
-		return fail(err, staging)
+		return nil, staging, err
 	}
 	if err := commit(root, staging, e.Name, exists); err != nil {
-		return fail(err, staging)
+		return nil, staging, err
 	}
-	res.Status, res.Notes = StatusCopied, notes(w.skipped)
-	return res
+	return w.skipped, staging, nil
 }
 
 // produce feeds one entry to w: from a tar stream when src has one, else by

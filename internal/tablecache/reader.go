@@ -519,7 +519,8 @@ func newTableWatch(upstream watch.Interface, convert func(watch.Event) ([]watch.
 
 func (w *tableWatch) stream() {
 	defer close(w.result)
-	defer w.source.Stop()
+	// A fallback replaces the source, so stop the one in use at the end.
+	defer func() { w.source.Stop() }()
 
 	for {
 		select {
@@ -527,49 +528,57 @@ func (w *tableWatch) stream() {
 			return
 		case evt, ok := <-w.source.ResultChan():
 			if !ok {
-				if w.fallback != nil && !w.fallbackUsed {
-					newSource, newConvert, err := w.fallback()
-					if err != nil {
-						status := apierrors.NewInternalError(err).Status()
-						w.forward(watch.Event{Type: watch.Error, Object: &status})
-						return
-					}
-					w.source = newSource
-					w.convert = newConvert
-					w.fallbackUsed = true
-					continue
-				}
-				return
-			}
-
-			events, err := w.convert(evt)
-			if errors.Is(err, errRequireFallback) {
-				if w.fallback == nil {
-					continue
-				}
-				newSource, newConvert, fbErr := w.fallback()
-				if fbErr != nil {
-					status := apierrors.NewInternalError(fbErr).Status()
-					w.forward(watch.Event{Type: watch.Error, Object: &status})
+				if w.fallback == nil || w.fallbackUsed || !w.useFallback() {
 					return
 				}
-				w.source.Stop()
-				w.source = newSource
-				w.convert = newConvert
-				w.fallbackUsed = true
 				continue
 			}
-			if err != nil {
-				status := apierrors.NewInternalError(err).Status()
-				w.forward(watch.Event{Type: watch.Error, Object: &status})
-				continue
-			}
-
-			for _, e := range events {
-				w.forward(e)
+			if !w.handle(evt) {
+				return
 			}
 		}
 	}
+}
+
+// useFallback replaces the source with the fallback watch. When the fallback
+// cannot start, it forwards the error and reports false.
+func (w *tableWatch) useFallback() bool {
+	newSource, newConvert, err := w.fallback()
+	if err != nil {
+		status := apierrors.NewInternalError(err).Status()
+		w.forward(watch.Event{Type: watch.Error, Object: &status})
+		return false
+	}
+	w.source = newSource
+	w.convert = newConvert
+	w.fallbackUsed = true
+	return true
+}
+
+// handle converts one source event and forwards the result. It reports
+// false when the stream has to end.
+func (w *tableWatch) handle(evt watch.Event) bool {
+	events, err := w.convert(evt)
+	if errors.Is(err, errRequireFallback) {
+		if w.fallback == nil {
+			return true
+		}
+		old := w.source
+		if !w.useFallback() {
+			return false
+		}
+		old.Stop()
+		return true
+	}
+	if err != nil {
+		status := apierrors.NewInternalError(err).Status()
+		w.forward(watch.Event{Type: watch.Error, Object: &status})
+		return true
+	}
+	for _, e := range events {
+		w.forward(e)
+	}
+	return true
 }
 
 func (w *tableWatch) forward(evt watch.Event) {
