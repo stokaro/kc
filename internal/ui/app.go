@@ -2828,16 +2828,20 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 	if filename == "" {
 		filename = "resource.txt"
 	}
+	return a.showCopyDialog(viewContentCopyRequest(a.modalTitleFromItem(item, title), filename, body))
+}
+
+// viewContentCopyRequest copies a viewer body as is. The body may be raw
+// bytes (binary ConfigMap and Secret keys), so it must not be transformed.
+func viewContentCopyRequest(subject, filename, body string) *copyRequest {
 	data := []byte(body)
-	subject := a.modalTitleFromItem(item, title)
-	req := &copyRequest{
+	return &copyRequest{
 		subject:  subject,
 		filename: filename,
 		fetch: func(context.Context) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(data)), nil
 		},
 	}
-	return a.showCopyDialog(req)
 }
 
 func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
