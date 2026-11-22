@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/models"
 )
 
 func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, tea.Cmd) {
@@ -225,6 +226,17 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
+		case "j":
+			// Esc j and Esc b are the fallbacks for M-j and M-b.
+			a.escPressed = false
+			if !a.showTerminal {
+				return a, a.openRelated(models.RelatedOwners)
+			}
+		case "b":
+			a.escPressed = false
+			if !a.showTerminal {
+				return a, a.openRelated(models.RelatedUsedBy)
+			}
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
@@ -279,6 +291,12 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		if msg.String() == copyCommandKey {
 			return a, a.copyPanelCommand()
+		}
+		switch msg.String() {
+		case ownersKey:
+			return a, a.openRelated(models.RelatedOwners)
+		case usedByKey:
+			return a, a.openRelated(models.RelatedUsedBy)
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys
