@@ -1469,6 +1469,13 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 			Columns:       columns,
 			Order:         objOrder,
 		}
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		if st, ok := panel.SortState(ctx); ok {
+			objConfig.Order = st.Applied
+			objConfig.SortKeys = st.Keys
+			objConfig.SortTitles = st.Titles
+		}
+		cancel()
 	}
 
 	var cmdConfig *ViewOptionsCommandConfig

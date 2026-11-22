@@ -77,6 +77,8 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `Tab`      | Switch panels.                                                                  |
 | `Ctrl+O`   | Toggle the integrated terminal.                                                 |
 | `Ctrl+S`   | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `Ctrl+S` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
+| `M-o`      | Sort the object list by the next column, ascending. `Esc o` does the same. The sorted column has `↑` (ascending) or `↓` (descending) after its title. |
+| `M-r`      | Reverse the sort of the object list. `Esc r` does the same. `F2` sets the column ("Sort by") and the direction ("Reverse") too. |
 | `M-a`      | In viewers: copy the whole content.                                             |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
 | `Ctrl+C`   | Quit.                                                                           |
@@ -139,7 +141,7 @@ Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
-- `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace.
+- `objects.order`, `objects.columns` – object list sort and wide/normal column display. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells and `<none>` come last. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace, and `namespace` orders the groups.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 
@@ -186,7 +188,7 @@ resources:
   favorites: []
 
 objects:
-  # Object list ordering: name | -name | creation | -creation
+  # Object list sort: a column key (name, age, status, restarts, ...) or creation; "-" sorts descending
   order: name
   # Columns mode for server-side Tables:
   # - normal: show priority 0 columns (kubectl default)
