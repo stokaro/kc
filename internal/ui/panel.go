@@ -113,14 +113,6 @@ func (p *Panel) frameColor() color.Color {
 	return uistyles.Current().Frame
 }
 
-func (p *Panel) escTimeoutValue() time.Duration {
-	timeout := p.cfg.Input.EscTimeout.Duration
-	if timeout <= 0 {
-		return defaultEscTimeout
-	}
-	return timeout
-}
-
 // StartCommand starts a custom command in the panel using an optional frame size.
 // When frameWidth/frameHeight are >0, the panel is resized for the command mode
 // before launching the widget to ensure bubbleterm dimensions are correct.
@@ -557,13 +549,6 @@ func (p *Panel) SetObjectOrder(ctx context.Context, order string) {
 	}
 }
 
-func (p *Panel) toggleColumnsMode(ctx context.Context) tea.Cmd {
-	if lw := p.listWidget(ctx); lw != nil {
-		return lw.ToggleColumnsMode(ctx)
-	}
-	return nil
-}
-
 func (p *Panel) ObjectOrder() string {
 	if lw := p.listWidget(nil); lw != nil {
 		return lw.ObjectOrder()
@@ -776,14 +761,6 @@ func (p *Panel) SetViewConfig(cfg *ViewConfig) {
 func (p *Panel) SetContextCountProvider(fn func() int) {
 	p.contextCountProvider = fn
 	p.invalidateRenderCache()
-}
-
-// countContexts returns the number of contexts or -1 if unknown.
-func (p *Panel) countContexts() int {
-	if p.contextCountProvider == nil {
-		return -1
-	}
-	return p.contextCountProvider()
 }
 
 // Init initializes the panel

@@ -282,27 +282,6 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 	return combinedView, nil
 }
 
-// refreshFoldersAfterViewChange reapplies the current folders to panels so that
-// folder population re-reads the latest panel config.
-func (a *App) refreshFoldersAfterViewChange() {
-	if a.leftNav != nil {
-		cur := a.leftNav.Current()
-		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		a.setPanelFolder(ctx, 0, cur, a.leftNav.HasBack())
-		a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
-		a.leftPanel.RefreshFolder(ctx)
-		cancel()
-	}
-	if a.rightNav != nil {
-		cur := a.rightNav.Current()
-		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		a.setPanelFolder(ctx, 1, cur, a.rightNav.HasBack())
-		a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
-		a.rightPanel.RefreshFolder(ctx)
-		cancel()
-	}
-}
-
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
 	if a.functionBar == nil {

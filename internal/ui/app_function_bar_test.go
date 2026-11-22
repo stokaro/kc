@@ -44,15 +44,6 @@ func (f *mockFolderFB) Find(ctx context.Context, query string) (int, table.Row, 
 func (f *mockFolderFB) Len(ctx context.Context) int         { return len(f.items) }
 func (f *mockFolderFB) RegisterDirtyListener(func()) func() { return func() {} }
 
-type mockBackItemFB struct{}
-
-func (m mockBackItemFB) Columns() (string, []string, []*lipgloss.Style, bool) {
-	return "__back__", []string{".."}, nil, true
-}
-func (m mockBackItemFB) IsBack() bool    { return true }
-func (m mockBackItemFB) Details() string { return "Back" }
-func (m mockBackItemFB) Path() []string  { return nil }
-
 type mockItemFB struct {
 	id string
 }

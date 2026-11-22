@@ -494,10 +494,6 @@ func (w *CommandWidget) SetWatchInterval(ctx context.Context, interval time.Dura
 	return nil
 }
 
-func (w *CommandWidget) restartWatchTimer() tea.Cmd {
-	return nil
-}
-
 func (w *CommandWidget) triggerHeartbeat() tea.Cmd {
 	w.armHeartbeat()
 	token := w.heartbeatToken

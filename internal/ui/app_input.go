@@ -576,13 +576,3 @@ func (a *App) interactiveCommandActive() bool {
 	}
 	return false
 }
-
-func (a *App) hasInteractiveCommandOnPanel() bool {
-	if a.showTerminal {
-		return false
-	}
-	if p := a.activePanelRef(); p != nil && p.HasInteractiveCommand() {
-		return true
-	}
-	return false
-}

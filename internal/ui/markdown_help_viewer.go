@@ -13,10 +13,6 @@ import (
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
-var helpLineStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color(uistyles.ColorModalBg)).
-	Foreground(lipgloss.Color(uistyles.ColorModalFg))
-
 // MarkdownHelpViewer renders embedded markdown content inside a windowed modal.
 type MarkdownHelpViewer struct {
 	markdown string

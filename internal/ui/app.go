@@ -224,13 +224,6 @@ type App struct {
 	lastClickTime  time.Time
 	lastClickPanel int
 	lastClickRowID string
-	// Suppress forwarding of mouse to terminal immediately after toggling fullscreen
-	suppressMouseUntil time.Time
-	// Resources options dialog state
-	prevResShowNonEmpty bool
-	prevResOrder        string
-	resOptsChanged      bool
-	resOptsConfirmed    bool
 	// Busy spinner state (lightweight, non-intrusive)
 	busyActive bool
 	busyLabel  string
@@ -1405,61 +1398,6 @@ func panelModeModalKey(idx int) string {
 	return "panel_mode_right"
 }
 
-func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
-	panel := a.panelByIndex(panelIdx)
-	if panel == nil {
-		return nil
-	}
-	modes := panel.AvailableModes()
-	if len(modes) == 0 {
-		modes = []PanelViewMode{PanelModeList}
-	}
-	model := NewPanelModeModel(panelIdx, modes, panel.Mode())
-	key := panelModeModalKey(panelIdx)
-	modal := a.modalManager.modals[key]
-	if modal == nil {
-		modal = NewModal("Panel Mode", model)
-		modal.SetCloseOnSingleEsc(true)
-		a.modalManager.Register(key, modal)
-	} else {
-		modal.SetContent(model)
-	}
-	leftPanelWidth, rightPanelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
-	panelWidth := leftPanelWidth
-	panelOffset := 0
-	if panelIdx == 1 {
-		panelWidth = rightPanelWidth
-		panelOffset = leftPanelWidth
-	}
-	if panelWidth <= 0 {
-		panelWidth = max(20, max(a.width/2, a.width))
-		panelOffset = 0
-	}
-	width := max(panelWidth/2, 24)
-	width = min(width, panelWidth-2)
-	width = min(width, a.width-4)
-	maxContentHeight := max(len(modes)+4, 6)
-	targetHeight := max(panelHeight/2, 6)
-	height := max(min(maxContentHeight, targetHeight), 6)
-	model.SetDimensions(max(1, width-4), max(1, height-3))
-	modal.SetDimensions(a.width, a.height)
-	bg, _ := a.renderMainView()
-	modal.SetWindowed(width, height, bg)
-	offsetX := panelOffset + max(0, (panelWidth-width)/2)
-	offsetY := headerOffset
-	modal.SetWindowOffset(offsetX, offsetY)
-	modal.SetOnClose(func() tea.Cmd { return nil })
-	a.showModal(key)
-	return nil
-}
-
-// Message handlers for function keys
-// showViewOptionsModal opens the appropriate View Options dialog (Resources or Objects)
-// depending on the active view context.
-func (a *App) showViewOptionsModal() tea.Cmd {
-	return a.showViewOptionsModalForPanel(a.activePanelRef())
-}
-
 func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 	if panel == nil {
 		panel = a.activePanelRef()
@@ -1846,20 +1784,6 @@ func (a *App) configureModalWindow(modal *Modal, content any, panelIdx int, back
 	modal.SetWindowOffset(offsetX, offsetY)
 }
 
-func (a *App) viewResource() tea.Cmd {
-	// TODO: Implement resource viewer
-	return nil
-}
-
-func (a *App) editResource() tea.Cmd {
-	// TODO: Implement resource editor
-	return nil
-}
-
-func (a *App) createNamespace() tea.Cmd {
-	return a.createNamespaceForPanel(a.activePanelRef())
-}
-
 func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 	if cmd := a.refuseReadOnly("Create namespace", access.CreateNamespaceChecks()...); cmd != nil {
 		return cmd
@@ -1904,10 +1828,6 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 	})
 	a.showModal("namespace_create")
 	return nil
-}
-
-func (a *App) deleteResource() tea.Cmd {
-	return a.deleteResourceForPanel(a.activePanelRef())
 }
 
 func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
@@ -1973,10 +1893,6 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	})
 	a.showModal("delete_confirm")
 	return nil
-}
-
-func (a *App) showContextMenu() tea.Cmd {
-	return a.showContextMenuForPanel(a.activePanelRef())
 }
 
 func (a *App) createNamespaceWithName(name string) tea.Cmd {
@@ -2058,19 +1974,6 @@ func (a *App) showHelp() tea.Cmd {
 	})
 	a.showModal("help")
 	return nil
-}
-
-func (a *App) viewItem() tea.Cmd {
-	return a.openViewerForPanel(a.activePanelRef())
-}
-
-func (a *App) editItem() tea.Cmd {
-	return a.editSelectionForPanel(a.activePanelRef())
-}
-
-// openViewerForSelection opens the focused item's viewer when available.
-func (a *App) openViewerForSelection() tea.Cmd {
-	return a.openViewerForPanel(a.activePanelRef())
 }
 
 func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
@@ -2236,11 +2139,6 @@ func (a *App) viewerTheme() string {
 		theme = a.cfg.Viewer.Theme
 	}
 	return theme
-}
-
-// editSelection triggers kubectl edit for the selected object.
-func (a *App) editSelection() tea.Cmd {
-	return a.editSelectionForPanel(a.activePanelRef())
 }
 
 func (a *App) editSelectionForPanel(panel *Panel) tea.Cmd {
@@ -2788,10 +2686,6 @@ func (a *App) refreshPanelAfterEdit(panelIdx int) {
 		panel.RefreshFolder(ctx)
 		cancel()
 	}
-}
-
-func (a *App) copyItem() tea.Cmd {
-	return a.copyItemForPanel(a.activePanelRef())
 }
 
 func (a *App) renameMoveItem() tea.Cmd {
@@ -3367,15 +3261,6 @@ func (a *App) initialNamespace() string {
 	return corev1.NamespaceDefault
 }
 
-// handleFolderNav processes back/forward navigation from panels and updates both panels.
-// currentNav returns the navigator for the active panel (left=0, right=1).
-func (a *App) currentNav() *navui.Navigator {
-	if a.activePanel == 0 {
-		return a.leftNav
-	}
-	return a.rightNav
-}
-
 func (a *App) navigatorDepth(nav *navui.Navigator) int {
 	if nav == nil {
 		return 0
@@ -3410,6 +3295,7 @@ func (a *App) syncPanelWithNavigator(panelIdx int) {
 	cancelUse()
 }
 
+// handleFolderNav processes back/forward navigation from panels and updates both panels.
 func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	var nav *navui.Navigator
 	var panelSet func(context.Context, models.Folder, bool)
@@ -3591,24 +3477,6 @@ func (a *App) logMsg(msg tea.Msg) {
 		copy(a.msgLog, a.msgLog[overflow:])
 		a.msgLog = a.msgLog[:len(a.msgLog)-overflow]
 	}
-}
-
-// resetMsgLog clears the diagnostic buffer.
-func (a *App) resetMsgLog() {
-	if a == nil {
-		return
-	}
-	a.msgLog = nil
-}
-
-// msgLogSnapshot copies the current diagnostic log for debugging or tests.
-func (a *App) msgLogSnapshot() []string {
-	if len(a.msgLog) == 0 {
-		return nil
-	}
-	out := make([]string, len(a.msgLog))
-	copy(out, a.msgLog)
-	return out
 }
 
 func describeTeaMsg(msg tea.Msg) string {

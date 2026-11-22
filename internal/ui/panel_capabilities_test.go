@@ -42,15 +42,6 @@ func (f *mockFolder) Len(ctx context.Context) int { return len(f.items) }
 
 func (f *mockFolder) RegisterDirtyListener(func()) func() { return func() {} }
 
-type mockBackItem struct{}
-
-func (m mockBackItem) Columns() (string, []string, []*lipgloss.Style, bool) {
-	return "__back__", []string{".."}, nil, true
-}
-func (m mockBackItem) IsBack() bool    { return true }
-func (m mockBackItem) Details() string { return "Back" }
-func (m mockBackItem) Path() []string  { return nil }
-
 type mockItem struct {
 	id string
 }

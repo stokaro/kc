@@ -347,38 +347,6 @@ func pasteInput(content string) string {
 	return "\x1b[200~" + content + "\x1b[201~"
 }
 
-type legacyKeyPressMsg struct {
-	key  tea.Key
-	text string
-}
-
-func (m legacyKeyPressMsg) String() string { return m.text }
-
-func (m legacyKeyPressMsg) Key() tea.Key { return m.key }
-
-func (m legacyKeyPressMsg) Keystroke() string {
-	if len(m.text) == 1 {
-		return m.text
-	}
-	return m.key.Keystroke()
-}
-
-type legacyKeyReleaseMsg struct {
-	key  tea.Key
-	text string
-}
-
-func (m legacyKeyReleaseMsg) String() string { return m.text }
-
-func (m legacyKeyReleaseMsg) Key() tea.Key { return m.key }
-
-func (m legacyKeyReleaseMsg) Keystroke() string {
-	if len(m.text) == 1 {
-		return m.text
-	}
-	return m.key.Keystroke()
-}
-
 func translateKeyForTerminal(msg tea.Msg) tea.Msg {
 	switch msg.(type) {
 	case tea.KeyMsg, tea.KeyPressMsg, tea.KeyReleaseMsg:
