@@ -188,7 +188,7 @@ The menu bar titles stay on the top row, as in mc, and the panels start under th
 
 Options > Menu bar visible (or `layout.menuBarVisible: false` in the config) hides the bar and gives the row to the panels; `F9` then draws the bar over the top row only while it is open. The entry saves the setting to `~/.kc/config.yaml`. The fullscreen terminal (`C-o`) and fullscreen viewers cover the bar, as in mc.
 
-- **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info; the current one is marked `*`), panel options, columns, reread, sort and reverse, row filter and faults only, namespace and context pickers.
+- **Left** / **Right**: listing mode (List, Describe, Manifest, Logs, Info, and Local files, which lists the local filesystem like `M-l`; the current one is marked `*`), panel options, columns, reread, sort and reverse, group by namespace, row filter and faults only, namespace and context pickers.
 - **File**: view, edit, copy, create namespace, delete, port forward, owners and used by, explain, marking and selecting rows, quick search, exit.
 - **Command**: the user menu (object actions and custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, compare objects, hotlist and panel history, help.
 - **Options**: panel width, the options of each panel, and whether the menu bar stays visible.
@@ -396,7 +396,7 @@ Read-only mode refuses `M-n` before the menu opens.
 - `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot.
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
-- `objects.order`, `objects.columns` – object list sort and wide/normal column display. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells and `<none>` come last. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace, and `namespace` orders the groups.
+- `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
 - `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation, and how long a cluster cache stays running after the last open folder that uses it is closed.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
@@ -505,6 +505,9 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+  # Lists across namespaces: group the rows by namespace and sort inside each
+  # one (true), or sort all rows by the sort column as one list (false)
+  groupByNamespace: true
 
 # Tint the panel frame and the context label per kubeconfig context. The
 # first matching entry wins. match is a name or a glob ("*" and "?"); regex is

@@ -266,9 +266,13 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 						TableMode:    tableMode,
 						Columns:      m.Objects.Columns,
 						ObjectsOrder: m.Objects.Order,
-						SaveDefault:  m.SaveDefault,
-						Accept:       m.Accept,
-						Close:        m.Close,
+
+						HasGroupByNamespace: m.Objects.HasGroupByNamespace,
+						GroupByNamespace:    m.Objects.GroupByNamespace,
+
+						SaveDefault: m.SaveDefault,
+						Accept:      m.Accept,
+						Close:       m.Close,
 					}
 					if _, cmd := a.Update(objMsg); cmd != nil {
 						subCmds = append(subCmds, cmd)
@@ -383,6 +387,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 							c.Objects.Columns = appconfig.ColumnsModeNormal
 						}
 						c.Objects.Order = m.ObjectsOrder
+						if m.HasGroupByNamespace {
+							c.Objects.GroupByNamespace = m.GroupByNamespace
+						}
 					}
 					change(a.cfg)
 					saveCmd = a.saveDefaults(change)
@@ -392,6 +399,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 					a.leftPanel.SetTableMode(ctxPanel, m.TableMode)
 					a.leftPanel.SetColumnsMode(ctxPanel, m.Columns)
 					a.leftPanel.SetObjectOrder(ctxPanel, m.ObjectsOrder)
+					if m.HasGroupByNamespace {
+						a.leftPanel.SetNamespaceGrouping(ctxPanel, m.GroupByNamespace)
+					}
 					a.syncPanelConfig(a.leftPanel)
 					cancelPanel()
 					if a.leftNav != nil {
@@ -407,6 +417,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 					a.rightPanel.SetTableMode(ctxPanel, m.TableMode)
 					a.rightPanel.SetColumnsMode(ctxPanel, m.Columns)
 					a.rightPanel.SetObjectOrder(ctxPanel, m.ObjectsOrder)
+					if m.HasGroupByNamespace {
+						a.rightPanel.SetNamespaceGrouping(ctxPanel, m.GroupByNamespace)
+					}
 					a.syncPanelConfig(a.rightPanel)
 					cancelPanel()
 					if a.rightNav != nil {

@@ -60,6 +60,9 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+  # Lists across namespaces: group the rows by namespace and sort inside each
+  # one (true), or sort all rows by the sort column as one list (false)
+  groupByNamespace: true
 
 nodeShell:
   # Off by default. "Start a node shell..." inside a node creates a
