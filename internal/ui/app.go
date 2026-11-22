@@ -104,13 +104,6 @@ type restartNamespaceCommandMsg struct {
 
 type startupIntentMsg struct{}
 
-type deleteTarget struct {
-	panelIdx  int
-	gvr       schema.GroupVersionResource
-	namespace string
-	name      string
-}
-
 type cachedView struct {
 	view   string
 	cursor *tea.Cursor
@@ -1799,14 +1792,9 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	gvr := obj.GVR()
-	name := obj.Name()
-	namespace := obj.Namespace()
-	target := deleteTarget{
-		panelIdx:  panelIdx,
-		gvr:       gvr,
-		namespace: namespace,
-		name:      name,
+	target, err := deleteTargetFor(panelIdx, obj)
+	if err != nil {
+		return a.ShowToast(fmt.Sprintf("Cannot delete %s: %v", kubectlResourceRef(obj.GVR(), obj.Name()), err), 5*time.Second)
 	}
 	a.pendingDelete = &target
 
@@ -1821,14 +1809,14 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 			return nil
 		}
 	}
-	resourceLabel := kubectlResourceRef(gvr, name)
-	a.deleteConfirm.Configure(resourceLabel, namespace)
+	resourceLabel := kubectlResourceRef(target.gvr, target.name)
+	a.deleteConfirm.Configure(resourceLabel, target.namespace, target.context)
 	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
 	modal.SetContent(a.deleteConfirm)
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
 	winW := min(max(50, a.width/2), a.width-4)
-	winH := min(8, a.height-4)
+	winH := min(9, a.height-4)
 	if winW < 40 {
 		winW = 40
 	}
@@ -1867,27 +1855,14 @@ func (a *App) createNamespaceWithName(name string) tea.Cmd {
 	})
 }
 
+// performDelete deletes the confirmed object instance on the cluster it
+// was read from; see executeDelete.
 func (a *App) performDelete(target deleteTarget) tea.Cmd {
+	root := a.ctx
 	return a.withBusy("Delete", 300*time.Millisecond, func() tea.Msg {
-		if a.cl == nil {
-			return resourceDeletedMsg{target: target, err: fmt.Errorf("cluster not ready")}
-		}
-		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+		ctx, cancel := context.WithTimeout(root, requestTimeout)
 		defer cancel()
-		kind, err := a.cl.RESTMapper().KindFor(target.gvr)
-		if err != nil {
-			return resourceDeletedMsg{target: target, err: err}
-		}
-		obj := &unstructured.Unstructured{}
-		obj.SetGroupVersionKind(kind)
-		obj.SetName(target.name)
-		if target.namespace != "" {
-			obj.SetNamespace(target.namespace)
-		}
-		if err := a.cl.GetClient().Delete(ctx, obj); err != nil {
-			return resourceDeletedMsg{target: target, err: err}
-		}
-		return resourceDeletedMsg{target: target}
+		return executeDelete(ctx, target)
 	})
 }
 

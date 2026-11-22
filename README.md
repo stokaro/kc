@@ -71,7 +71,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
-| `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
+| `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. |
 | `F9`       | Menu – Open custom commands menu.                                               |
 | `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
