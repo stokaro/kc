@@ -8,19 +8,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
 	tea "charm.land/bubbletea/v2"
 
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	"github.com/stokaro/kc/pkg/kubeconfig"
+	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/internal/models"
+	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func setupAppWithCluster(t *testing.T) (*App, *kccluster.Cluster) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
@@ -154,9 +155,7 @@ func TestStartupIntentGetOutputYAMLEnvtest(t *testing.T) {
 		},
 	}
 	app.startupIntentApplied = false
-	if cmd := app.applyStartupIntent(); cmd != nil {
-		cmd()
-	}
+	runStartupSelect(app, app.applyStartupIntent())
 
 	wantPath := "/pods"
 	if got := app.leftPanel.GetCurrentPath(); got != wantPath {
@@ -174,6 +173,66 @@ func TestStartupIntentGetOutputYAMLEnvtest(t *testing.T) {
 		t.Fatalf("expected right panel selection")
 	} else if path := "/" + strings.Join(item.Path(), "/"); path != "/pods/"+podName {
 		t.Fatalf("right panel selection path = %q, want namespace pod path", path)
+	}
+}
+
+// The intent runs right after the panels got a fresh root, before the root
+// knows whether pods is empty and shows its row (#84).
+func TestStartupIntentGetFreshRootEnvtest(t *testing.T) {
+	app, cl := setupAppWithCluster(t)
+	ns := "intent-fresh"
+	podName := "pod-fresh"
+	t.Cleanup(createNamespace(t, cl, ns))
+	t.Cleanup(createPod(t, cl, ns, podName, nil))
+	waitForNamespaceReady(t, app, ns)
+
+	hideEmptyTypes(app)
+	app.goToNamespace(ns)
+	app.startupIntent = StartupIntent{
+		Verb:      KubectlVerbGet,
+		Namespace: ns,
+		Get: &GetIntent{Tokens: []GetToken{
+			{Value: "po", ExplicitResource: true},
+			{Value: podName},
+		}},
+	}
+	app.startupIntentApplied = false
+	runStartupSelect(app, app.applyStartupIntent())
+
+	if got := app.leftPanel.GetCurrentPath(); got != "/pods" {
+		t.Fatalf("left panel path = %q, want /pods", got)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	item, ok := app.leftPanel.SelectedNavItem(ctx)
+	if !ok || item == nil {
+		t.Fatalf("no selection in the left panel")
+	}
+	if path := "/" + strings.Join(item.Path(), "/"); path != "/pods/"+podName {
+		t.Fatalf("selected %q, want /pods/%s", path, podName)
+	}
+}
+
+// An empty type has no row in the root at all (resources.showNonEmptyOnly);
+// kc get still opens its list.
+func TestStartupIntentGetEmptyTypeEnvtest(t *testing.T) {
+	app, cl := setupAppWithCluster(t)
+	ns := "intent-empty"
+	t.Cleanup(createNamespace(t, cl, ns))
+	waitForNamespaceReady(t, app, ns)
+
+	hideEmptyTypes(app)
+	app.goToNamespace(ns)
+	app.startupIntent = StartupIntent{
+		Verb:      KubectlVerbGet,
+		Namespace: ns,
+		Get:       &GetIntent{Tokens: []GetToken{{Value: "svc", ExplicitResource: true}}},
+	}
+	app.startupIntentApplied = false
+	runStartupSelect(app, app.applyStartupIntent())
+
+	if got := app.leftPanel.GetCurrentPath(); got != "/services" {
+		t.Fatalf("left panel path = %q, want /services", got)
 	}
 }
 
@@ -199,9 +258,7 @@ func TestStartupIntentLogsEnvtest(t *testing.T) {
 		},
 	}
 	app.startupIntentApplied = false
-	if cmd := app.applyStartupIntent(); cmd != nil {
-		cmd()
-	}
+	runStartupSelect(app, app.applyStartupIntent())
 
 	wantPath := fmt.Sprintf("/pods/%s/containers/%s", podName, container)
 	if got := app.leftPanel.GetCurrentPath(); got != wantPath {
@@ -213,6 +270,41 @@ func TestStartupIntentLogsEnvtest(t *testing.T) {
 		t.Fatalf("expected left panel selection on logs entry")
 	} else if path := "/" + strings.Join(item.Path(), "/"); !strings.HasSuffix(path, "/logs/latest") {
 		t.Fatalf("selected item path = %q, want logs/latest entry", path)
+	}
+}
+
+// TestStartupIntentGetAllNamespacesEnvtest mirrors kc -A get pods: the
+// left panel lists pods across all namespaces and keeps that scope.
+func TestStartupIntentGetAllNamespacesEnvtest(t *testing.T) {
+	app, cl := setupAppWithCluster(t)
+	ns := "intent-all"
+	t.Cleanup(createNamespace(t, cl, ns))
+	t.Cleanup(createPod(t, cl, ns, "pod-all", nil))
+
+	waitForNamespaceReady(t, app, ns)
+	app.allNamespaces = true
+	app.goToNamespace(app.initialNamespace())
+
+	app.startupIntent = StartupIntent{
+		Verb: KubectlVerbGet,
+		Get: &GetIntent{
+			Tokens: []GetToken{{Value: "pods", ExplicitResource: true}},
+		},
+	}
+	app.startupIntentApplied = false
+	runStartupSelect(app, app.applyStartupIntent())
+
+	if got := app.leftPanel.GetCurrentPath(); got != "/pods" {
+		t.Fatalf("left panel path = %q, want /pods", got)
+	}
+	for idx := range 2 {
+		if got := app.panelScope[idx]; got != models.AllNamespaces {
+			t.Fatalf("panel %d scope = %q, want all namespaces", idx, got)
+		}
+	}
+	nav, ok := app.leftNav.Current().(interface{ Namespace() string })
+	if !ok || nav.Namespace() != models.AllNamespaces {
+		t.Fatalf("left folder %T is not the all-namespaces pod list", app.leftNav.Current())
 	}
 }
 
@@ -241,7 +333,15 @@ func equalStringSets(a, b []string) bool {
 	return true
 }
 
-// runStartupSelect runs cmd and delivers the selection retries it produces,
+// hideEmptyTypes sets the panels to resources.showNonEmptyOnly, as App.Init
+// does with the default config.
+func hideEmptyTypes(app *App) {
+	app.leftPanel.SetResourceViewOptions(true, "alpha")
+	app.rightPanel.SetResourceViewOptions(true, "alpha")
+}
+
+// runStartupSelect runs cmd and delivers the messages of the startup flow
+// it produces (navigation waits, selection retries, the logs container),
 // as the program loop would; other messages are dropped.
 func runStartupSelect(app *App, cmd tea.Cmd) {
 	if cmd == nil {
@@ -252,7 +352,7 @@ func runStartupSelect(app *App, cmd tea.Cmd) {
 		for _, c := range msg {
 			runStartupSelect(app, c)
 		}
-	case startupSelectMsg:
+	case startupSelectMsg, panelWalkMsg, startupLogsTargetMsg:
 		_, next := app.Update(msg)
 		runStartupSelect(app, next)
 	}

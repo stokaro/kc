@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/internal/models"
 )
 
 func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, tea.Cmd) {
@@ -12,6 +13,13 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	press, isPress := msg.(tea.KeyPressMsg)
 	if !isPress {
 		return a, nil
+	}
+	// The key after C-x completes or cancels the prefix, whatever it is.
+	ctrlX := a.ctrlXPending
+	a.ctrlXPending = false
+	// The open menu bar takes every key until it closes.
+	if a.menuBar.IsOpen() {
+		return a, a.handleMenuBarKey(press)
 	}
 	// Interactive command focus: route all keys to the active panel widget first.
 	if a.interactiveCommandActive() {
@@ -35,6 +43,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		}
 	}
+	if ctrlX {
+		return a, a.handleCtrlXKey(press)
+	}
 	// Prefer modifier-aware matching to cover both KeyMsg and KeyPressMsg forms.
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
 		switch key.Code {
@@ -47,6 +58,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 				return a, cmd
 			}
 		}
+	}
+	// Hotkeys of custom commands; they never shadow the keys below.
+	if cmd, ok := a.handleCommandHotkey(press); ok {
+		return a, cmd
 	}
 	// Handle global shortcuts first
 	switch press.String() {
@@ -62,31 +77,73 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		}
 		return a, a.showViewOptionsModalForPanel(a.panelByIndex(1))
+	case accessViewKey:
+		return a, a.showAccessView()
+	case overviewKey:
+		if a.panelKeysFree() {
+			return a, a.openOverview()
+		}
 	case "alt+w":
 		if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
 			return a, tea.Batch(resizeCmds...)
 		}
 		return a, nil
 	case "ctrl+o":
-		// Toggle terminal mode
-		a.showTerminal = !a.showTerminal
-		a.terminal.SetShowPanels(!a.showTerminal)
-		a.invalidateView("ctrl+o toggle terminal")
-		a.invalidateFunctionBar("terminal toggle")
-		a.invalidateTerminalArea("terminal toggle")
-		// Always keep terminal focused for typing
-		a.terminal.Focus()
-		if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
-			return a, tea.Batch(resizeCmds...)
+		return a, a.toggleTerminal()
+
+	case "f9":
+		// F9 opens the pull-down menu bar, as in mc. The custom commands
+		// menu is on F2 (mc's user menu).
+		if !a.showTerminal {
+			a.openMenuBar(-1)
+			return a, nil
 		}
-		return a, nil
 
 	case "ctrl+u":
 		a.swapPanels()
 		return a, nil
 
+	case "alt+l":
+		return a, a.toggleLocalPanel()
+	case hotlistKey:
+		if !a.showTerminal {
+			return a, a.showHotlist()
+		}
+	case "alt+y":
+		if !a.showTerminal {
+			return a, a.historyBack()
+		}
+	case "alt+u":
+		if !a.showTerminal {
+			return a, a.historyForward()
+		}
+	case "alt+H", "alt+shift+h", "alt+shift+H":
+		if !a.showTerminal {
+			return a, a.showHistoryList()
+		}
+
 	case "ctrl+s", "alt+s":
 		if a.startQuickSearch() {
+			return a, nil
+		}
+
+	case rowFilterKey:
+		if a.panelKeysFree() {
+			return a, a.showRowFilterDialog()
+		}
+
+	case faultsOnlyKey:
+		if a.panelKeysFree() {
+			return a, a.toggleFaultsOnly()
+		}
+
+	case sortNextKey:
+		if a.changeObjectSort(nextSortOrder) {
+			return a, nil
+		}
+
+	case sortReverseKey:
+		if a.changeObjectSort(reverseSortOrder) {
 			return a, nil
 		}
 
@@ -132,6 +189,14 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return EscTimeoutMsg{}
 		})
 	} else if a.escPressed {
+		// Esc n is the fallback for M-n on a node list; elsewhere n goes on
+		// to the shell line as before.
+		if keyStr == "n" && !a.showTerminal {
+			if cmd, ok := a.openNodeActions(); ok {
+				a.escPressed = false
+				return a, cmd
+			}
+		}
 		// We're in an escape sequence, check for numbers
 		panel := a.activePanelRef()
 		caps := a.capabilitiesForPanel(panel)
@@ -153,7 +218,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.escPressed = false
 			if panel != nil {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				cmd := panel.invokeActionIfAllowed(ctx, PanelActionOptions)
+				cmd := panel.invokeActionIfAllowed(ctx, PanelActionMenu)
 				cancel()
 				return a, cmd
 			}
@@ -169,7 +234,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		case "4":
 			a.escPressed = false
-			if panel != nil && caps.CanEdit {
+			if panel != nil && (caps.CanEdit || a.readOnly()) {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 				cmd := panel.invokeActionIfAllowed(ctx, PanelActionEdit)
 				cancel()
@@ -190,7 +255,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, a.renameMoveItem() // Esc 6 = F6
 		case "7":
 			a.escPressed = false
-			if panel != nil && caps.CanCreateNS {
+			if panel != nil && (caps.CanCreateNS || a.readOnly()) {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 				cmd := panel.invokeActionIfAllowed(ctx, PanelActionCreateNamespace)
 				cancel()
@@ -199,7 +264,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		case "8":
 			a.escPressed = false
-			if panel != nil && caps.CanDelete {
+			if panel != nil && (caps.CanDelete || a.readOnly()) {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 				cmd := panel.invokeActionIfAllowed(ctx, PanelActionDelete)
 				cancel()
@@ -208,23 +273,85 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		case "9":
 			a.escPressed = false
-			if panel != nil && caps.HasContextMenu {
-				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				cmd := panel.invokeActionIfAllowed(ctx, PanelActionMenu)
-				cancel()
-				return a, cmd
-			}
+			a.openMenuBar(-1)
 			return a, nil
+		case "e":
+			// Esc e is the fallback for M-e.
+			a.escPressed = false
+			return a, a.explainSelection()
 		case "c":
 			// Esc c is the meta-key fallback for M-c (macOS Option does not
 			// send Alt by default).
 			a.escPressed = false
 			return a, a.copyPanelCommand()
+		case "x":
+			// Esc x is the fallback for M-x: shell in the selected container.
+			a.escPressed = false
+			return a, a.openContainerSession(models.ExecShell)
+		case "t":
+			// Esc t is the fallback for M-t: attach to the selected container.
+			a.escPressed = false
+			return a, a.openContainerSession(models.ExecAttach)
+		case "p":
+			// Esc p is the fallback for M-p (port forward).
+			a.escPressed = false
+			return a, a.portForwardForPanel(a.activePanelRef())
 		case "s":
 			// Esc s is the fallback for M-s, as in mc.
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
+		case "l":
+			// Esc l is the fallback for M-l.
+			a.escPressed = false
+			return a, a.toggleLocalPanel()
+		case "k":
+			// Esc k is the fallback for M-k (access view).
+			a.escPressed = false
+			return a, a.showAccessView()
+		case "j":
+			// Esc j and Esc b are the fallbacks for M-j and M-b.
+			a.escPressed = false
+			if !a.showTerminal {
+				return a, a.openRelated(models.RelatedOwners)
+			}
+		case "b":
+			a.escPressed = false
+			if !a.showTerminal {
+				return a, a.openRelated(models.RelatedUsedBy)
+			}
+		case "f":
+			// Esc f is the fallback for M-f.
+			a.escPressed = false
+			if a.panelKeysFree() {
+				return a, a.showRowFilterDialog()
+			}
+			return a, nil
+		case "y", "u", "H":
+			// Esc y, Esc u and Esc H are the fallbacks for M-y, M-u and
+			// M-H, as in mc.
+			a.escPressed = false
+			if a.showTerminal {
+				break
+			}
+			switch keyStr {
+			case "y":
+				return a, a.historyBack()
+			case "u":
+				return a, a.historyForward()
+			}
+			return a, a.showHistoryList()
+		case "o":
+			// Esc o and Esc r are the fallbacks for M-o and M-r.
+			a.escPressed = false
+			if a.changeObjectSort(nextSortOrder) {
+				return a, nil
+			}
+		case "r":
+			a.escPressed = false
+			if a.changeObjectSort(reverseSortOrder) {
+				return a, nil
+			}
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
@@ -234,6 +361,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		default:
 			// Not a number, cancel escape sequence
 			a.escPressed = false
+			if cmd, ok := a.commandHotkeyAfterEsc(press); ok {
+				return a, cmd
+			}
 			// Continue with normal key handling
 		}
 	}
@@ -260,6 +390,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		// If user typed in the 2-line terminal, Enter and C-c must be SENT to the terminal,
 		// then reset typed state to return focus to the panels.
 		if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() && !a.interactiveCommandActive() {
+			if msg.String() == "enter" {
+				if cmd, ok := a.interceptShellCd(); ok {
+					return a, cmd
+				}
+			}
 			cmd := a.updateTerminal(msg, "panel forwarded to terminal")
 			a.terminal.ClearTyped() // reset typed; next keys route to panels
 			return a, cmd
@@ -279,6 +414,33 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		if msg.String() == copyCommandKey {
 			return a, a.copyPanelCommand()
+		}
+		if msg.String() == nodeActionKey {
+			if cmd, ok := a.openNodeActions(); ok {
+				return a, cmd
+			}
+		}
+		if msg.String() == explainKey {
+			return a, a.explainSelection()
+		}
+		// C-x starts a two-key command, as in mc. While the shell line has
+		// typed text, C-x stays with the shell.
+		if msg.String() == ctrlXPrefixKey && (a.terminal == nil || !a.terminal.HasInput()) {
+			a.ctrlXPending = true
+			return a, nil
+		}
+		if msg.String() == portForwardKey {
+			return a, a.portForwardForPanel(a.activePanelRef())
+		}
+		switch msg.String() {
+		case ownersKey:
+			return a, a.openRelated(models.RelatedOwners)
+		case usedByKey:
+			return a, a.openRelated(models.RelatedUsedBy)
+		case containerShellKey:
+			return a, a.openContainerSession(models.ExecShell)
+		case containerAttachKey:
+			return a, a.openContainerSession(models.ExecAttach)
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys
@@ -303,6 +465,22 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 }
 
 // shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
+// toggleTerminal switches between the panels and the fullscreen terminal
+// (C-o, mc's "Switch panels on/off").
+func (a *App) toggleTerminal() tea.Cmd {
+	a.showTerminal = !a.showTerminal
+	a.terminal.SetShowPanels(!a.showTerminal)
+	a.invalidateView("ctrl+o toggle terminal")
+	a.invalidateFunctionBar("terminal toggle")
+	a.invalidateTerminalArea("terminal toggle")
+	// Always keep terminal focused for typing
+	a.terminal.Focus()
+	if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
+		return tea.Batch(resizeCmds...)
+	}
+	return nil
+}
+
 func (a *App) shouldRouteToPanel(key string) bool {
 	// Always route these keys to terminal
 	terminalKeys := []string{

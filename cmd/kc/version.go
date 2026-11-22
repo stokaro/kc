@@ -7,7 +7,7 @@ import (
 	"runtime/debug"
 
 	"github.com/alecthomas/kong"
-	"github.com/stokaro/kc"
+	"github.com/sttts/kc"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
@@ -26,10 +26,10 @@ type versionInfo struct {
 	serverVersion *apimachineryversion.Info
 }
 
-// versionFlag implements `kc --version`. It prints the client version and
-// exits while kong parses the command line, before kc reads a kubeconfig,
-// sets up logging or opens a connection. Package managers run it as their
-// install check, so it must work on a machine without cluster access.
+// versionFlag implements `kc --version`. Kong runs its hook while it parses
+// the command line, so kc prints the client version and exits before it reads
+// a kubeconfig, sets up logging or opens a connection. Package managers run
+// it as their install check on machines without cluster access.
 type versionFlag bool
 
 // BeforeReset is the kong hook that runs before flag values are applied.
@@ -55,7 +55,7 @@ func runVersionCommand(ctx context.Context, stdout, stderr io.Writer, clientOnly
 	printVersionInfo(stdout, info)
 	if serverErr != nil {
 		fmt.Fprintf(stderr, "Error fetching server version: %v\n", serverErr)
-		fmt.Fprintln(stderr, "Use 'kc version --client' to print only the client version.")
+		fmt.Fprintln(stderr, "Use 'kc version --client' or 'kc --version' to print only the client version.")
 		return serverErr
 	}
 	return nil
@@ -83,7 +83,7 @@ func buildDiscoveryClient(ctx context.Context) (serverVersionGetter, error) {
 	}, nil
 }
 
-// clientVersionInfo returns what kc knows about itself without any I/O.
+// clientVersionInfo returns what kc knows about itself, without any I/O.
 func clientVersionInfo() versionInfo {
 	bi, _ := debug.ReadBuildInfo()
 	v, c, d := resolveBuildVersion(version, commit, date, bi)
@@ -95,10 +95,10 @@ func clientVersionInfo() versionInfo {
 	}
 }
 
-// resolveBuildVersion fills in values that the release build did not set
-// through -ldflags. A binary from `go install ...@vX.Y.Z` has no ldflags, but
-// the toolchain records the module version, and a build from a git checkout
-// records the commit and its time.
+// resolveBuildVersion fills in the values a release build sets through
+// -ldflags when the binary was built without them. `go install ...@vX.Y.Z`
+// records the module version in the build info, and a build from a git
+// checkout records the commit and its time. Values from -ldflags win.
 func resolveBuildVersion(v, c, d string, bi *debug.BuildInfo) (string, string, string) {
 	if bi == nil {
 		return v, c, d

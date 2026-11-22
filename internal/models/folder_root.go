@@ -34,6 +34,8 @@ func (f *RootFolder) NamespaceScope() string { return f.namespace }
 
 func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, 64)
+	// The overview costs nothing until it is entered.
+	rows = append(rows, overviewRootItem(f.Deps, f.namespace, f.Path()))
 	nameStyle := WhiteStyle()
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
@@ -63,7 +65,27 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 		return nil, err
 	}
 	groupItems = append(groupItems, clusterItems...)
+	rows = append(rows, newHelmEntryItem(f.Deps, f.namespace, f.Path()))
+	if row, ok := portForwardsRootRow(f.Deps, f.Path()); ok {
+		rows = append(rows, row)
+	}
 	rows = append(rows, f.ResourcesFolder.finalize(ctx, groupItems)...)
 
 	return rows, nil
+}
+
+// RegisterDirtyListener also repaints the root when a port forward starts
+// or ends, so the /port-forwards entry and its count stay current.
+func (f *RootFolder) RegisterDirtyListener(fn func()) func() {
+	cancel := f.ClusterResourcesFolder.RegisterDirtyListener(fn)
+	if f.Deps.PortForwards == nil {
+		return cancel
+	}
+	unsubscribe := f.Deps.PortForwards.Subscribe(f.Refresh)
+	return func() {
+		unsubscribe()
+		if cancel != nil {
+			cancel()
+		}
+	}
 }

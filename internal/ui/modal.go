@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -184,6 +185,25 @@ func (m *Modal) SetDanger(on bool) { m.danger = on }
 // SetMode configures the modal presentation style.
 func (m *Modal) SetMode(mode ModalMode) { m.mode = mode }
 
+// escAltKey turns a plain character typed after Esc into the matching Meta
+// key: "a" becomes "alt+a". Keys with modifiers other than Shift, and keys
+// that are not a single character, are left alone.
+func escAltKey(msg tea.KeyMsg) (tea.KeyPressMsg, bool) {
+	press, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return tea.KeyPressMsg{}, false
+	}
+	key := press.Key()
+	if key.Mod&^tea.ModShift != 0 {
+		return tea.KeyPressMsg{}, false
+	}
+	runes := []rune(key.Text)
+	if len(runes) != 1 || !unicode.IsPrint(runes[0]) || unicode.IsSpace(runes[0]) {
+		return tea.KeyPressMsg{}, false
+	}
+	return tea.KeyPressMsg(tea.Key{Code: runes[0], Mod: tea.ModAlt}), true
+}
+
 // Update handles messages and updates the modal state
 func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !m.visible {
@@ -239,6 +259,15 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Unhandled number: cancel esc sequence
 				m.escPressed = false
 				return m, nil
+			}
+		default:
+			// Esc <char> is the fallback for M-<char> (Esc c copies the
+			// command, Esc a the output), as on the panels.
+			if m.escPressed {
+				m.escPressed = false
+				if alt, ok := escAltKey(msg); ok {
+					rerouted = alt
+				}
 			}
 		}
 	case tea.MouseMsg:

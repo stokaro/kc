@@ -45,5 +45,19 @@ func (f *ChildResourceTypesFolder) populate(ctx context.Context) ([]table.Row, e
 		})
 		rows = append(rows, item)
 	}
+	if WorkloadLogsSupported(f.parentGVR) {
+		spec := WorkloadLogsSpec{
+			Namespace:    f.parentNamespace,
+			Workload:     f.parentGVR,
+			WorkloadName: f.parentName,
+			Follow:       true,
+			TailLines:    DefaultLogsTailLines,
+		}
+		path := append(append([]string{}, f.Path()...), "logs")
+		item := NewWorkloadLogItem(f.Deps, "logs", []string{"logs"}, path, spec)
+		item.RowItem.details = "Stream logs of all pods and containers"
+		rows = append(rows, item)
+	}
+	rows = append(rows, extraObjectRows(f.Deps, f.parentGVR, f.parentNamespace, f.parentName, f.Path())...)
 	return rows, nil
 }

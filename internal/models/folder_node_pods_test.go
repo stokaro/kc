@@ -77,13 +77,14 @@ func TestDepsForSelectorScopeSetsSelectorKey(t *testing.T) {
 			KubeconfigPath: "/tmp/kubeconfig",
 			ContextName:    "ctx",
 		},
-		NamespaceFactory: func(_ context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, error) {
+		NamespaceFactory: func(_ context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, func(), error) {
 			gotKey = key.SelectorKey
-			return &kccluster.Cluster{}, nil
+			return &kccluster.Cluster{}, func() {}, nil
 		},
 	}
 
-	out := deps.ForSelectorScope(scope)
+	out, release := deps.ForSelectorScope(scope)
+	defer release()
 	if out.ClusterKey.SelectorKey == "" {
 		t.Fatalf("expected SelectorKey to be set")
 	}

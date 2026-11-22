@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -79,4 +80,35 @@ func splitResourceName(value string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid resource/name value %q", value)
 	}
 	return res, name, nil
+}
+
+// errAllNamespacesLogs rejects kc logs -A: a pod name is only unique in one
+// namespace, and kubectl logs has no -A either.
+var errAllNamespacesLogs = errors.New("kc logs does not accept -A/--all-namespaces; a pod name needs one namespace, use -n")
+
+// checkAllNamespacesGet rejects object names with -A, as kubectl does: a
+// name is only unique in one namespace. Only the first argument and
+// comma lists name types; a TYPE/NAME pair or a later plain argument is a
+// name.
+func checkAllNamespacesGet(intent *ui.GetIntent) error {
+	for _, tok := range intent.Tokens {
+		if tok.ExplicitName || !tok.ExplicitResource {
+			return fmt.Errorf("a resource cannot be retrieved by name across all namespaces: %q; drop -A or use -n", tok.Original)
+		}
+	}
+	return nil
+}
+
+// newRunConfig maps the parsed flags to the UI startup options. ns is the
+// namespace deriveStartupIntent chose.
+func newRunConfig(cli *cliFlags, intent ui.StartupIntent, ns string) ui.RunConfig {
+	return ui.RunConfig{
+		Context:           strings.TrimSpace(cli.Context),
+		Namespace:         ns,
+		AllNamespaces:     cli.AllNamespaces,
+		StartupIntent:     intent,
+		ImpersonateUser:   strings.TrimSpace(cli.As),
+		ImpersonateUID:    strings.TrimSpace(cli.AsUID),
+		ImpersonateGroups: append([]string(nil), cli.AsGroup...),
+	}
 }

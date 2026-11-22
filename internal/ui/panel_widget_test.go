@@ -75,8 +75,9 @@ func (s *selectionSpyWidget) View(context.Context, panelcontent.Frame) tea.View 
 }
 func (s *selectionSpyWidget) SetFocus(context.Context, bool) {}
 func (s *selectionSpyWidget) Teardown(context.Context)       {}
-func (s *selectionSpyWidget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) {
+func (s *selectionSpyWidget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) tea.Cmd {
 	s.events = append(s.events, sel)
+	return nil
 }
 
 func TestPanelDescribeModeReplaysSelection(t *testing.T) {

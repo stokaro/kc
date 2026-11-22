@@ -122,7 +122,7 @@ func TestObjectsFolderInstallsAgeHooks(t *testing.T) {
 		},
 	}
 
-	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName)
+	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName, nil)
 	if len(rows) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(rows))
 	}
@@ -173,7 +173,7 @@ func TestObjectsFolderMarksDeletingRowsRed(t *testing.T) {
 		},
 	}
 
-	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName)
+	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName, nil)
 	var deleting table.Row
 	for _, row := range rows {
 		id, _, _, _ := row.Columns()
@@ -201,7 +201,7 @@ func TestObjectsFolderRowsFromListDeletingStyle(t *testing.T) {
 	obj.SetDeletionTimestamp(&ts)
 	list.Items = append(list.Items, obj)
 
-	rows := folder.rowsFromList(list, appconfig.ObjectsOrderName)
+	rows := folder.rowsFromList(list, appconfig.ObjectsOrderName, nil)
 	if len(rows) != 1 {
 		t.Fatalf("expected one row, got %d", len(rows))
 	}
@@ -242,7 +242,7 @@ func TestObjectsFolderReadyStylerFromTableRows(t *testing.T) {
 	row.SetTableTarget(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
 	rl.Items = append(rl.Items, row)
 
-	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName)
+	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName, nil)
 	if len(rows) != 1 {
 		t.Fatalf("expected one row, got %d", len(rows))
 	}

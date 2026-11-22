@@ -40,12 +40,38 @@ type WidgetDeps struct {
 	SelectionChanged func(context.Context, Selection) tea.Cmd
 	SelectedItem     func(context.Context) (models.Item, bool)
 	Describe         DescribeFunc
-	Post             func(tea.Msg)
-	Config           *appconfig.Config
+	// Paused reports whether background refreshes should wait, e.g. while
+	// a dialog is open. Nil never pauses.
+	Paused func() bool
+	Post   func(tea.Msg)
+	Config *appconfig.Config
 }
 
-// DescribeFunc renders describe output for widget selections.
-type DescribeFunc func(context.Context, describe.Target) (describe.Result, error)
+// DescribeFunc prepares the reads behind a Describe view. It runs on the UI
+// goroutine and must not do I/O; the returned functions run in a tea.Cmd.
+type DescribeFunc func(describe.Target) DescribeReads
+
+// DescribeReads are the background reads for one describe target.
+type DescribeReads struct {
+	// Describe renders kubectl describe output. It issues API requests.
+	Describe func() (describe.Result, error)
+	// Version returns the object's resourceVersion from the shared cache,
+	// or "" when it is unknown. Nil means unknown.
+	Version func() string
+}
+
+// BackgroundMsg is the result of a widget's background work. The app hands
+// it to every widget of both panels, active or not and even behind a dialog,
+// so a widget never waits for a result that was swallowed on the way.
+type BackgroundMsg interface {
+	WidgetBackground()
+}
+
+// Refresher widgets reload what they show when the shared cache changed.
+// Refresh is cheap to call often; the widget limits how often it reloads.
+type Refresher interface {
+	Refresh(context.Context) tea.Cmd
+}
 
 // Selection represents the widget's current selection identity.
 type Selection struct {
@@ -81,6 +107,10 @@ type FrameInfoRequest struct {
 	Width int
 }
 
+// LoadingStatus is the header status of a widget whose content for the
+// current selection has not arrived yet.
+const LoadingStatus = "loading..."
+
 // FrameInfo describes breadcrumb overrides and status strings.
 type FrameInfo struct {
 	Breadcrumb      string
@@ -92,8 +122,9 @@ type FrameInfo struct {
 }
 
 // SelectionListener widgets opt in to selection change notifications.
+// The returned command loads the new content in the background.
 type SelectionListener interface {
-	OnSelectionChanged(context.Context, Selection)
+	OnSelectionChanged(context.Context, Selection) tea.Cmd
 }
 
 // Action identifies panel-level shortcuts widgets may invoke.

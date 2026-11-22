@@ -10,6 +10,9 @@ const (
 	KubectlVerbGet KubectlVerb = "get"
 	// KubectlVerbLogs tracks kubectl logs invocations.
 	KubectlVerbLogs KubectlVerb = "logs"
+	// KubectlVerbOverview starts in /overview (kc overview); kubectl has
+	// no such verb.
+	KubectlVerbOverview KubectlVerb = "overview"
 )
 
 // StartupIntent captures CLI-driven startup requests (kubectl parity flows).

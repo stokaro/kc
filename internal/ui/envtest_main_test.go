@@ -1,30 +1,19 @@
 package ui
 
 import (
-	"context"
-	kctesting "github.com/stokaro/kc/internal/testing"
-	"k8s.io/client-go/rest"
 	"os"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"testing"
+
+	kctesting "github.com/sttts/kc/internal/testing"
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+	"k8s.io/client-go/rest"
 )
 
-var (
-	testCfg *rest.Config
-	testCtx context.Context
-	testEnv *envtest.Environment
-)
+// testCfg points at the package-wide envtest control plane. It is nil when
+// envtest did not start; tests guard with kcenvtest.Require.
+var testCfg *rest.Config
 
 func TestMain(m *testing.M) {
 	kctesting.SetupLogging()
-	testEnv = &envtest.Environment{}
-	cfg, err := testEnv.Start()
-	if err == nil && cfg != nil {
-		testCfg = cfg
-	}
-	code := m.Run()
-	if testEnv != nil && testCfg != nil {
-		_ = testEnv.Stop()
-	}
-	os.Exit(code)
+	os.Exit(kcenvtest.Main(m, &testCfg))
 }

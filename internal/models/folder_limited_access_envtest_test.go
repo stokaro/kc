@@ -5,10 +5,12 @@ import (
 	"testing"
 	"time"
 
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	table "github.com/stokaro/kc/internal/table"
-	kctesting "github.com/stokaro/kc/internal/testing"
-	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
+	kccluster "github.com/sttts/kc/internal/cluster"
+	table "github.com/sttts/kc/internal/table"
+	kctesting "github.com/sttts/kc/internal/testing"
+	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,9 +19,7 @@ import (
 )
 
 func TestLimitedUserSeesAllowedResourcesOnly(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 
 	ctx := t.Context()
 	adminCl, err := kccluster.New(testCfg)

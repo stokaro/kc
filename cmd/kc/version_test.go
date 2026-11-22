@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/alecthomas/kong"
-	"github.com/stokaro/kc"
+	"github.com/sttts/kc"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
 )
 
@@ -101,18 +101,18 @@ func TestResolveBuildVersion(t *testing.T) {
 		wantV, wantC, wantD string
 	}{
 		{
-			name: "no build info keeps defaults",
+			name: "no build info keeps the defaults",
 			v:    "dev", c: "unknown", d: "unknown",
 			wantV: "dev", wantC: "unknown", wantD: "unknown",
 		},
 		{
-			name: "go install fills module version",
+			name: "go install records the module version",
 			v:    "dev", c: "unknown", d: "unknown",
 			bi:    &debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}},
 			wantV: "v1.2.3", wantC: "unknown", wantD: "unknown",
 		},
 		{
-			name: "local build without module version keeps dev",
+			name: "checkout build keeps dev and takes the commit",
 			v:    "dev", c: "unknown", d: "unknown",
 			bi:    &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}, Settings: vcs},
 			wantV: "dev", wantC: "0123abcd", wantD: "2026-01-02T03:04:05Z",
@@ -135,16 +135,17 @@ func TestResolveBuildVersion(t *testing.T) {
 	}
 }
 
-// errExit stops kong after a hook asked it to exit, so the test can check the
-// exit code without ending the test process.
-type errExit struct{ code int }
+// exitCalled stops kong after a hook asked it to exit, so the test can read
+// the exit code without ending the test process.
+type exitCalled struct{ code int }
 
 func TestVersionFlagPrintsClientVersionAndExits(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	var cli cliFlags
 	opts := append(cliOptions(),
 		kong.Writers(&out, &out),
-		kong.Exit(func(code int) { panic(errExit{code: code}) }),
+		kong.Exit(func(code int) { panic(exitCalled{code: code}) }),
 	)
 	parser, err := kong.New(&cli, opts...)
 	if err != nil {
@@ -155,7 +156,7 @@ func TestVersionFlagPrintsClientVersionAndExits(t *testing.T) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				e, ok := r.(errExit)
+				e, ok := r.(exitCalled)
 				if !ok {
 					panic(r)
 				}
@@ -168,18 +169,37 @@ func TestVersionFlagPrintsClientVersionAndExits(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0; output %q", code, out.String())
 	}
-	for _, want := range []string{"kc Version: ", "Client Version (client-go): " + kc.ClientGoVersion()} {
+	for _, want := range []string{"kc Version: ", "Client Version (client-go): " + kc.ClientGoVersion(), "Commit: ", "Date: "} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output %q does not contain %q", out.String(), want)
 		}
 	}
 	if strings.Contains(out.String(), "Server Version") {
-		t.Fatalf("--version must not print a server version, got %q", out.String())
+		t.Fatalf("--version printed a server version: %q", out.String())
+	}
+}
+
+func TestVersionClientFlagParses(t *testing.T) {
+	t.Parallel()
+	var cli cliFlags
+	parser, err := kong.New(&cli, cliOptions()...)
+	if err != nil {
+		t.Fatalf("kong.New: %v", err)
+	}
+	ctx, err := parser.Parse([]string{"version", "--client"})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !commandMatches(ctx.Command(), "kc version", "version") {
+		t.Fatalf("command = %q, want version", ctx.Command())
+	}
+	if !cli.Version.Client {
+		t.Fatalf("--client was not set")
 	}
 }
 
 func TestRunVersionCommandClientOnly(t *testing.T) {
-	// A kubeconfig path that does not exist: --client must not read it.
+	// A kubeconfig that does not exist: --client must not read it.
 	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "missing"))
 	var stdout, stderr bytes.Buffer
 	if err := runVersionCommand(t.Context(), &stdout, &stderr, true); err != nil {
@@ -188,14 +208,17 @@ func TestRunVersionCommandClientOnly(t *testing.T) {
 	if !strings.Contains(stdout.String(), "kc Version: ") {
 		t.Fatalf("stdout %q has no kc version", stdout.String())
 	}
+	if strings.Contains(stdout.String(), "Server Version") {
+		t.Fatalf("stdout %q has a server version", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 }
 
-// runMainEnv makes the test binary run main() instead of the tests, so the
-// tests below exercise the real command line end to end, as the Homebrew
-// formula test does, without building a second binary.
+// runMainEnv makes the test binary run main() instead of the tests. The
+// tests below use it to run the real command line end to end, as a package
+// smoke test does, without building a second binary.
 const runMainEnv = "KC_TEST_RUN_MAIN"
 
 func TestMain(m *testing.M) {
@@ -207,8 +230,9 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// offlineEnv returns an environment with an empty home directory, a
-// kubeconfig path that does not exist and no in-cluster service variables.
+// offlineEnv returns the current environment with an empty home directory, a
+// kubeconfig path that does not exist and no in-cluster service variables, so
+// a child kc cannot find any cluster.
 func offlineEnv(t *testing.T) []string {
 	t.Helper()
 	home := t.TempDir()
@@ -231,14 +255,15 @@ func offlineEnv(t *testing.T) []string {
 func TestVersionWithoutClusterAccess(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name     string
-		args     []string
-		wantCode int
-		wantOut  string
+		name       string
+		args       []string
+		wantCode   int
+		wantStderr string
 	}{
-		{name: "version flag", args: []string{"--version"}, wantCode: 0, wantOut: "kc Version: "},
-		{name: "version client", args: []string{"version", "--client"}, wantCode: 0, wantOut: "kc Version: "},
-		{name: "version needs a cluster", args: []string{"version"}, wantCode: 1, wantOut: "kc Version: "},
+		{name: "version flag", args: []string{"--version"}},
+		{name: "version flag after a subcommand", args: []string{"get", "pods", "--version"}},
+		{name: "version client", args: []string{"version", "--client"}},
+		{name: "version needs a cluster", args: []string{"version"}, wantCode: 1, wantStderr: "kc version --client"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -258,11 +283,14 @@ func TestVersionWithoutClusterAccess(t *testing.T) {
 			if code != tc.wantCode {
 				t.Fatalf("exit code = %d, want %d; stdout %q, stderr %q", code, tc.wantCode, stdout.String(), stderr.String())
 			}
-			if !strings.Contains(stdout.String(), tc.wantOut) {
-				t.Fatalf("stdout %q does not contain %q", stdout.String(), tc.wantOut)
+			if !strings.Contains(stdout.String(), "kc Version: ") {
+				t.Fatalf("stdout %q has no kc version", stdout.String())
 			}
-			if tc.wantCode == 0 && strings.Contains(stdout.String(), "Server Version") {
-				t.Fatalf("client-only output has a server version: %q", stdout.String())
+			if strings.Contains(stdout.String(), "Server Version") {
+				t.Fatalf("stdout %q has a server version", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tc.wantStderr) {
+				t.Fatalf("stderr %q does not contain %q", stderr.String(), tc.wantStderr)
 			}
 		})
 	}

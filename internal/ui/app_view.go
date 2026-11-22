@@ -13,6 +13,9 @@ import (
 
 // View renders the application
 func (a *App) View() tea.View {
+	if a.nodeShell != nil {
+		return a.renderNodeShell()
+	}
 	if view, cursor, ok := a.mainViewCache.get(); ok {
 		v := viewWithCursor(view, cursor)
 		v.AltScreen = true
@@ -79,6 +82,10 @@ func (a *App) View() tea.View {
 		return v
 	}
 
+	if a.menuBar.IsOpen() {
+		// The menu bar owns the keyboard; no cursor blinks under it.
+		mainView, mainCursor = a.overlayMenuBar(mainView), nil
+	}
 	a.mainViewCache.set(mainView, mainCursor)
 	v := viewWithCursor(mainView, mainCursor)
 	v.AltScreen = true
@@ -357,7 +364,12 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 	state := a.functionBarState()
 	keys := panelFunctionKeys(state)
 	i := functionKeyAt(len(keys), state.Width, x)
-	if i < 0 || !keys[i].Enabled {
+	if i < 0 {
+		return nil
+	}
+	if !keys[i].Enabled && !(a.readOnly() && mutatingFunctionKey(keys[i].ID)) {
+		// A grayed key does nothing, except that read-only mode explains
+		// why its write keys are grayed.
 		return nil
 	}
 	panel := a.activePanelRef()
@@ -372,8 +384,6 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 	switch keys[i].ID {
 	case functionKeyHelp:
 		return invoke(PanelActionHelp)
-	case functionKeyOptions:
-		return invoke(PanelActionOptions)
 	case functionKeyView:
 		return invoke(PanelActionView)
 	case functionKeyEdit:
@@ -388,6 +398,9 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 		return invoke(PanelActionDelete)
 	case functionKeyCommands:
 		return invoke(PanelActionMenu)
+	case functionKeyPullDown:
+		a.openMenuBar(-1)
+		return nil
 	case functionKeyQuit:
 		return tea.Quit
 	case functionKeyFocus:

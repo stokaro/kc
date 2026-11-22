@@ -27,7 +27,17 @@ type ScopePickerModel struct {
 	height   int
 	onSelect func(scopeChoice) tea.Cmd
 	onCancel func() tea.Cmd
+	// typed offers the filter text itself as the last entry when it is a
+	// valid name that no entry has (see AllowTypedEntry).
+	typed bool
+	// onKey, when set, sees each key before the picker does, with the
+	// highlighted choice (nil when the list is empty). It reports whether
+	// it used the key.
+	onKey func(key string, current *scopeChoice) (bool, tea.Cmd)
 }
+
+// typedEntry marks the typed name in visible.
+const typedEntry = -1
 
 func NewScopePickerModel(choices []scopeChoice, current string, onSelect func(scopeChoice) tea.Cmd, onCancel func() tea.Cmd) *ScopePickerModel {
 	m := &ScopePickerModel{choices: choices, onSelect: onSelect, onCancel: onCancel}
@@ -41,6 +51,12 @@ func NewScopePickerModel(choices []scopeChoice, current string, onSelect func(sc
 }
 
 func (m *ScopePickerModel) Init() tea.Cmd { return nil }
+
+// SetChoices replaces the entries and keeps the highlight in range.
+func (m *ScopePickerModel) SetChoices(choices []scopeChoice) {
+	m.choices = choices
+	m.refilter()
+}
 
 // HandleModalEscape makes one Esc clear the filter, or close the picker
 // when there is none, instead of the modal's Esc Esc sequence.
@@ -68,6 +84,10 @@ func (m *ScopePickerModel) refilter() {
 		if q == "" || strings.Contains(strings.ToLower(c.Label), q) {
 			m.visible = append(m.visible, i)
 		}
+	}
+	if m.typedAvailable() {
+		// Last, so Enter still picks a known name the filter matches.
+		m.visible = append(m.visible, typedEntry)
 	}
 	m.selected = min(m.selected, max(0, len(m.visible)-1))
 	m.ensureVisible()
@@ -111,6 +131,16 @@ func (m *ScopePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if m.onKey != nil {
+		var current *scopeChoice
+		if m.selected < len(m.visible) {
+			c := m.choices[m.visible[m.selected]]
+			current = &c
+		}
+		if used, cmd := m.onKey(key.String(), current); used {
+			return m, cmd
+		}
+	}
 	switch key.String() {
 	case "esc":
 		if m.filter != "" {
@@ -140,7 +170,7 @@ func (m *ScopePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if m.selected < len(m.visible) && m.onSelect != nil {
-			return m, m.onSelect(m.choices[m.visible[m.selected]])
+			return m, m.onSelect(m.choiceAt(m.selected))
 		}
 	default:
 		if key.Text != "" && key.Mod == 0 {
@@ -165,7 +195,7 @@ func (m *ScopePickerModel) clickRow(mouse tea.Mouse) tea.Cmd {
 	if m.onSelect == nil {
 		return nil
 	}
-	return m.onSelect(m.choices[m.visible[i]])
+	return m.onSelect(m.choiceAt(i))
 }
 
 func (m *ScopePickerModel) View() tea.View {
@@ -175,7 +205,7 @@ func (m *ScopePickerModel) View() tea.View {
 	var lines []string
 	end := min(len(m.visible), m.scroll+m.listRows())
 	for i := m.scroll; i < end; i++ {
-		c := m.choices[m.visible[i]]
+		c := m.choiceAt(i)
 		style, noteStyle := row, note
 		if i == m.selected {
 			style, noteStyle = sel, sel
@@ -193,6 +223,9 @@ func (m *ScopePickerModel) View() tea.View {
 		lines = append(lines, row.Width(m.width).Render(""))
 	}
 	filter := " Filter: " + m.filter
+	if m.typed {
+		filter = " Name or filter: " + m.filter
+	}
 	if len(m.visible) == 0 {
 		filter += "  (no match)"
 	}

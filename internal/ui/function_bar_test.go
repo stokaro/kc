@@ -127,7 +127,7 @@ func TestFunctionKeySlotsMatchRenderedLabels(t *testing.T) {
 
 func TestFunctionBarNumbersRightAligned(t *testing.T) {
 	plain := ansi.Strip(renderFunctionKeySlots(panelFunctionKeys(functionBarState{Width: 200}), 200))
-	for _, want := range []string{" 1Help", " 9Commands", "10Quit"} {
+	for _, want := range []string{" 1Help", " 2Menu", " 9PullDn", "10Quit"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("expected %q in bar, got %q", want, plain)
 		}

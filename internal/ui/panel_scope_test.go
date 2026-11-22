@@ -10,7 +10,7 @@ import (
 )
 
 func TestRenderScopeLabel(t *testing.T) {
-	out, hits := renderScopeLabel(panelScopeLabel{Context: "mba", Namespace: "kube-system"}, "─", 1, 60)
+	out, hits := renderScopeLabel(panelScopeLabel{Context: "mba", Namespace: "kube-system"}, "─", 1, 60, nil)
 	if got := ansi.Strip(out); got != "─ mba : kube-system " {
 		t.Fatalf("label = %q", got)
 	}
@@ -25,11 +25,11 @@ func TestRenderScopeLabel(t *testing.T) {
 		}
 	}
 
-	out, _ = renderScopeLabel(panelScopeLabel{Context: "mba", Namespace: models.AllNamespaces}, "─", 1, 60)
+	out, _ = renderScopeLabel(panelScopeLabel{Context: "mba", Namespace: models.AllNamespaces}, "─", 1, 60, nil)
 	if !strings.Contains(ansi.Strip(out), "all namespaces") {
 		t.Fatalf("all namespaces label = %q", ansi.Strip(out))
 	}
-	if out, _ := renderScopeLabel(panelScopeLabel{}, "─", 1, 60); out != "" {
+	if out, _ := renderScopeLabel(panelScopeLabel{}, "─", 1, 60, nil); out != "" {
 		t.Fatalf("no context should draw nothing, got %q", out)
 	}
 }

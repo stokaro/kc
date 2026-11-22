@@ -74,6 +74,40 @@ func isCommandApplicable(cmd appconfig.CommandConfig, item models.Item, selected
 	return true
 }
 
+// commandTargets returns the rows a custom command acts on: every marked
+// row when any is marked, in the order given, otherwise the highlighted
+// row alone. The highlighted row never joins a marked selection.
+func commandTargets(highlighted models.Item, marked []Item) []models.Item {
+	targets := make([]models.Item, 0, max(len(marked), 1))
+	for _, m := range marked {
+		if m.Item != nil {
+			targets = append(targets, m.Item)
+		}
+	}
+	if len(targets) > 0 {
+		return targets
+	}
+	if highlighted == nil {
+		return nil
+	}
+	return append(targets, highlighted)
+}
+
+// isCommandApplicableToTargets reports whether cmd may run on all targets.
+// A command without supportsMultiSelection is not offered for several
+// targets, and showFor must match every target, not only the first.
+func isCommandApplicableToTargets(cmd appconfig.CommandConfig, targets []models.Item, activeNamespace string) bool {
+	if len(targets) == 0 {
+		return isCommandApplicable(cmd, nil, 0, activeNamespace)
+	}
+	for _, t := range targets {
+		if !isCommandApplicable(cmd, t, len(targets), activeNamespace) {
+			return false
+		}
+	}
+	return true
+}
+
 func deriveNamespace(item models.Item, selected []Item, folderNamespace string) string {
 	if ns := namespaceFromItem(item); ns != "" {
 		return ns

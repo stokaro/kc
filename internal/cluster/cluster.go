@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes/scheme"
+	authorizationv1client "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	toolscache "k8s.io/client-go/tools/cache"
@@ -65,6 +66,10 @@ type Cluster struct {
 	discoSeq       int
 
 	selectorScope map[schema.GroupVersionResource]crcache.ByObject
+
+	// namespace is the only namespace the informer cache watches, or "".
+	namespace string
+	access    *ListWatchAccess
 }
 
 // Option configures Cluster.
@@ -78,7 +83,10 @@ type options struct {
 // WithRefreshInterval sets the discovery/RESTMapper refresh interval (default 30s).
 func WithRefreshInterval(d time.Duration) Option { return func(o *options) { o.refresh = d } }
 
-// WithNamespaceScope restricts the controller-runtime cache to a single namespace.
+// WithNamespaceScope restricts the informer cache to one namespace
+// (cache.Options.DefaultNamespaces): namespaced informers list and watch only
+// there, cluster-scoped informers stay cluster-wide. Users whose RBAC grants
+// a type only in some namespaces can still watch it this way.
 func WithNamespaceScope(ns string) Option {
 	return func(o *options) {
 		o.namespace = strings.TrimSpace(ns)
@@ -108,26 +116,23 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 		cfg.Burst = 100
 	}
 
-	// controller-runtime cluster using the default cache; we keep it unchanged.
 	// We initialize discovery/mapper lazily in ensureDiscovery() before first use.
-	cacheHTTPClient, err := namespaceHTTPClient(cfg, o.namespace)
+	selectorObjs, err := selectorObjects(cfg, o.selectors)
 	if err != nil {
 		return nil, err
 	}
-
-	selectorObjs, err := selectorObjects(cfg, cacheHTTPClient, o.selectors)
-	if err != nil {
-		return nil, err
-	}
+	defaultNamespaces := namespaceScope(o.namespace)
 
 	cl, err := crcluster.New(cfg, func(co *crcluster.Options) {
-		if cacheHTTPClient != nil {
-			co.Cache.HTTPClient = cacheHTTPClient
-		}
+		co.Cache.DefaultNamespaces = defaultNamespaces
 		if len(selectorObjs) > 0 {
 			co.Cache.ByObject = selectorObjs
 		}
 	})
+	if err != nil {
+		return nil, err
+	}
+	authz, err := authorizationv1client.NewForConfig(rest.CopyConfig(cfg))
 	if err != nil {
 		return nil, err
 	}
@@ -140,16 +145,15 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 		gvrKinds:      make(map[schema.GroupVersionResource]schema.GroupVersionKind),
 		storageMu:     sync.RWMutex{},
 		selectorScope: copySelectorScope(o.selectors),
+		namespace:     o.namespace,
+		access:        NewListWatchAccess(authz),
 	}
 	// Pre-initialize discovery/mapper/dynamic client lazily so methods can be used early.
 	_ = c.ensureDiscovery()
 
 	// Build a dedicated table-aware cache for Row/RowList alongside the default cache.
 	// Register Row/RowList types in the scheme so the cache can marshal them.
-	tableCacheOpts := crcache.Options{}
-	if cacheHTTPClient != nil {
-		tableCacheOpts.HTTPClient = cacheHTTPClient
-	}
+	tableCacheOpts := crcache.Options{DefaultNamespaces: defaultNamespaces}
 	if len(selectorObjs) > 0 {
 		tableCacheOpts.ByObject = selectorObjs
 	}
@@ -326,32 +330,39 @@ func (c *Cluster) restClientForGV(gv schema.GroupVersion) (*rest.RESTClient, err
 	return rest.RESTClientFor(cfg)
 }
 
-func namespaceHTTPClient(cfg *rest.Config, namespace string) (*http.Client, error) {
+// namespaceScope is the cache.Options.DefaultNamespaces for a cache limited
+// to namespace; nil for all namespaces.
+func namespaceScope(namespace string) map[string]crcache.Config {
 	if namespace == "" {
-		return nil, nil
+		return nil
 	}
-	copyCfg := rest.CopyConfig(cfg)
-	transport, err := rest.TransportFor(copyCfg)
-	if err != nil {
-		return nil, err
-	}
-	return &http.Client{
-		Transport: newNamespaceRoundTripper(namespace, transport),
-		Timeout:   copyCfg.Timeout,
-	}, nil
+	return map[string]crcache.Config{namespace: {}}
 }
 
-func selectorObjects(cfg *rest.Config, httpClient *http.Client, selectors map[schema.GroupVersionResource]crcache.ByObject) (map[crclient.Object]crcache.ByObject, error) {
+// Namespace returns the one namespace the informer cache watches, or "" when
+// it watches all namespaces.
+func (c *Cluster) Namespace() string { return c.namespace }
+
+// CanListWatchAllNamespaces reports whether the cluster's user may list and
+// watch gvr in all namespaces, which a shared informer needs. Answers are
+// cached for the life of the cluster; see ListWatchAccess.
+func (c *Cluster) CanListWatchAllNamespaces(ctx context.Context, gvr schema.GroupVersionResource) (bool, error) {
+	return c.access.AllNamespaces(ctx, gvr)
+}
+
+// CanListWatchInNamespace reports whether the cluster's user may list and
+// watch gvr in namespace, which a namespace-scoped informer needs.
+func (c *Cluster) CanListWatchInNamespace(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (bool, error) {
+	return c.access.InNamespace(ctx, gvr, namespace)
+}
+
+func selectorObjects(cfg *rest.Config, selectors map[schema.GroupVersionResource]crcache.ByObject) (map[crclient.Object]crcache.ByObject, error) {
 	if len(selectors) == 0 {
 		return nil, nil
 	}
-	client := httpClient
-	if client == nil {
-		var err error
-		client, err = rest.HTTPClientFor(cfg)
-		if err != nil {
-			return nil, err
-		}
+	client, err := rest.HTTPClientFor(cfg)
+	if err != nil {
+		return nil, err
 	}
 	mapper, err := apiutil.NewDynamicRESTMapper(cfg, client)
 	if err != nil {
@@ -464,7 +475,9 @@ func (c *Cluster) listFromInformer(ctx context.Context, gvr schema.GroupVersionR
 	}
 	iinf, ok := informer.(indexerInformer)
 	if !ok {
-		return nil, fmt.Errorf("informer missing indexer for %s", gvr.String())
+		// A namespace-scoped cache hands out an informer that spans its
+		// namespaces and has no single indexer; read it through the cache.
+		return listFromCache(ctx, cache, gvk, namespace)
 	}
 	if !iinf.HasSynced() {
 		return nil, fmt.Errorf("informer not synced for %s", gvr.String())
@@ -486,6 +499,19 @@ func (c *Cluster) listFromInformer(ctx context.Context, gvr schema.GroupVersionR
 			continue
 		}
 		out.Items = append(out.Items, *u.DeepCopy())
+	}
+	return out, nil
+}
+
+func listFromCache(ctx context.Context, cache crcache.Cache, gvk schema.GroupVersionKind, namespace string) (*unstructured.UnstructuredList, error) {
+	out := &unstructured.UnstructuredList{}
+	out.SetGroupVersionKind(schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind + "List"})
+	var opts []crclient.ListOption
+	if namespace != "" {
+		opts = append(opts, crclient.InNamespace(namespace))
+	}
+	if err := cache.List(ctx, out, opts...); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

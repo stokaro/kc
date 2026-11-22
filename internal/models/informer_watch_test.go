@@ -2,34 +2,26 @@ package models
 
 import (
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	kctesting "github.com/stokaro/kc/internal/testing"
-	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
+	kccluster "github.com/sttts/kc/internal/cluster"
+	kctesting "github.com/sttts/kc/internal/testing"
+	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func TestStartInformerForResourceEmitsSyncedAndWatches(t *testing.T) {
 	t.Parallel()
 
-	env := &envtest.Environment{}
-	cfg, err := env.Start()
-	if err != nil || cfg == nil {
-		if err != nil && strings.Contains(err.Error(), "operation not permitted") {
-			t.Skipf("envtest unavailable: %v", err)
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = env.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	cl, err := kccluster.New(cfg)
 	if err != nil {

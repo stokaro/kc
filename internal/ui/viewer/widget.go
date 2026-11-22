@@ -11,8 +11,9 @@ import (
 	chroma "github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/stokaro/kc/internal/overlay"
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/sttts/kc/internal/overlay"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 const (
@@ -46,9 +47,12 @@ type Widget struct {
 	width  int
 	height int
 
-	raw          string
-	rawLines     []string
-	lines        []string
+	raw      string
+	rawLines []string
+	lines    []string
+	// styled holds the shown form of rawLines in plain mode once
+	// AppendStyledLines was used; nil otherwise.
+	styled       []string
 	theme        string
 	plain        bool
 	wrapMode     bool
@@ -100,9 +104,14 @@ func New(theme string) *Widget {
 
 // SetContent replaces the text body and metadata, re-running syntax highlighting.
 func (w *Widget) SetContent(text string, meta Metadata) {
+	if meta.MimeType == BinaryMIME {
+		text = BinaryPreview([]byte(text))
+		meta.Language = "plaintext"
+	}
 	w.raw = text
 	w.metadata = meta
 	w.rawLines = strings.Split(text, "\n")
+	w.styled = nil
 	w.updateMaxLineWidth()
 	if w.plain {
 		w.lines = append([]string{}, w.rawLines...)
@@ -113,6 +122,30 @@ func (w *Widget) SetContent(text string, meta Metadata) {
 	w.hOffset = 0
 	w.sel = selection{}
 	w.clearSearchState()
+}
+
+// UpdateContent replaces the text like SetContent, for a newer version of the
+// same document: the scroll position and a committed search stay. A mouse
+// selection is dropped because its positions may no longer match the text.
+func (w *Widget) UpdateContent(text string, meta Metadata) {
+	offset, hOffset := w.offset, w.hOffset
+	w.raw = text
+	w.metadata = meta
+	w.rawLines = strings.Split(text, "\n")
+	w.updateMaxLineWidth()
+	if w.plain {
+		w.lines = append([]string{}, w.rawLines...)
+	} else {
+		w.highlight()
+	}
+	w.sel = selection{}
+	if w.searchRe != nil {
+		w.updateSearchMatches()
+	}
+	w.offset = offset
+	w.scrollBy(0)
+	w.hOffset = hOffset
+	w.clampHorizontalOffset()
 }
 
 // SetPlainMode toggles syntax highlighting; when plain mode is enabled, content
@@ -175,10 +208,62 @@ func (w *Widget) AppendLines(lines []string) {
 			w.lines = make([]string, 0, len(lines))
 		}
 		w.lines = append(w.lines, lines...)
+		if w.styled != nil {
+			w.styled = append(w.styled, lines...)
+		}
 	} else {
 		w.highlight()
 	}
 	w.extendSearchMatches(start, lines)
+}
+
+// SetLines replaces the body with lines and keeps the metadata, the search
+// query and the scroll position (clamped to the new length). The logs viewer
+// uses it to show the same log in another format or filter without losing
+// the search.
+func (w *Widget) SetLines(lines []string) {
+	w.rawLines = append([]string(nil), lines...)
+	w.styled = nil
+	w.raw = strings.Join(lines, "\n")
+	w.updateMaxLineWidth()
+	if w.plain {
+		w.lines = append([]string(nil), lines...)
+	} else {
+		w.highlight()
+	}
+	w.offset = min(w.offset, max(0, len(w.lines)-w.page()))
+	w.sel = selection{}
+	w.searchMatchIndex = make(map[int][]int)
+	w.searchMatches = w.searchMatches[:0]
+	w.activeMatch = -1
+	if w.searchRe == nil {
+		return
+	}
+	for idx, line := range w.rawLines {
+		w.appendMatchesForLine(idx, line, w.searchRe)
+	}
+	if len(w.searchMatches) > 0 {
+		w.activeMatch = w.firstMatchFromView()
+	}
+}
+
+// AppendStyledLines appends lines whose shown form differs from their text
+// only by ANSI styling, such as the colored prefix of a merged log. Search,
+// selection and copy work on text; plain mode shows styled. Outside plain
+// mode it is AppendLines(text).
+func (w *Widget) AppendStyledLines(text, styled []string) {
+	if !w.plain || len(text) != len(styled) {
+		w.AppendLines(text)
+		return
+	}
+	if w.styled == nil {
+		w.styled = append(make([]string, 0, len(w.rawLines)+len(text)), w.rawLines...)
+	}
+	n := len(w.lines)
+	w.AppendLines(text)
+	// AppendLines extended lines and styled with text; show styled instead.
+	copy(w.lines[n:], styled)
+	copy(w.styled[len(w.styled)-len(styled):], styled)
 }
 
 // SetCallbacks configures optional edit/theme/close handlers.
@@ -386,6 +471,10 @@ func (w *Widget) searchSummary() string {
 func (w *Widget) highlight() {
 	if w.raw == "" {
 		w.lines = []string{""}
+		return
+	}
+	if w.plain && w.styled != nil {
+		w.lines = append([]string(nil), w.styled...)
 		return
 	}
 	ensureCustomStyles()
@@ -707,6 +796,11 @@ func (w *Widget) extendSearchMatches(startLine int, lines []string) {
 func (w *Widget) appendMatchesForLine(lineIdx int, line string, re *regexp.Regexp) {
 	if re == nil {
 		return
+	}
+	// Match the text as shown: color codes (the logs viewer's level colors,
+	// a container's own colors) must neither match nor split a match.
+	if strings.IndexByte(line, '\x1b') >= 0 {
+		line = ansi.Strip(line)
 	}
 	for _, m := range re.FindAllStringIndex(line, -1) {
 		if m[1] <= m[0] {

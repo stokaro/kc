@@ -2,18 +2,21 @@ package ui
 
 import (
 	"context"
+	"image/color"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	models "github.com/stokaro/kc/internal/models"
-	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
-	listwidget "github.com/stokaro/kc/internal/ui/panelcontent/list"
-	manifestwidget "github.com/stokaro/kc/internal/ui/panelcontent/manifest"
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
-	"github.com/stokaro/kc/pkg/appconfig"
+	kccluster "github.com/sttts/kc/internal/cluster"
+	models "github.com/sttts/kc/internal/models"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
+	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
+	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
+	"github.com/sttts/kc/internal/ui/skin"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
+	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -24,6 +27,7 @@ type Panel struct {
 	// bottom border; scopeHits are the clickable columns of the last render.
 	scope                panelScopeLabel
 	scopeHits            scopeHits
+	contextColors        skin.ContextColors
 	search               quickSearch
 	title                string
 	frameWidth           int
@@ -31,7 +35,6 @@ type Panel struct {
 	width                int
 	height               int
 	currentPath          string
-	pathHistory          []string
 	viewConfig           *ViewConfig
 	contextCountProvider func() int
 	actionHandlers       PanelActionHandlers
@@ -43,6 +46,7 @@ type Panel struct {
 	commandInteractive   bool
 	commandFocused       bool
 	commandConfig        *appconfig.CommandConfig
+	commandExec          CommandExecSupplier
 	messagePoster        func(tea.Msg)
 	commandFocusHandler  func(bool) tea.Cmd
 	lastSelectionID      string
@@ -69,7 +73,6 @@ func NewPanel(title string, cfg ...*appconfig.Config) *Panel {
 	p := &Panel{
 		title:           title,
 		currentPath:     "/",
-		pathHistory:     make([]string, 0),
 		mode:            PanelModeList,
 		cfg:             conf,
 		widgets:         make(map[PanelViewMode]PanelWidget),
@@ -79,13 +82,33 @@ func NewPanel(title string, cfg ...*appconfig.Config) *Panel {
 		return listwidget.New(panel.listWidgetDeps())
 	})
 	p.RegisterMode(PanelModeDescribe, func(panel *Panel) panelcontent.Widget {
-		return newPlaceholderWidget(panel, "Describe mode placeholder", "Describe")
+		return describewidget.New(panel.manifestWidgetDeps())
 	})
 	p.RegisterMode(PanelModeManifest, func(panel *Panel) panelcontent.Widget {
 		return manifestwidget.New(panel.manifestWidgetDeps())
 	})
 	// Command widget is registered dynamically when StartCommand is called.
 	return p
+}
+
+// SetContextColors sets the rules that tint the frame for the panel's
+// context.
+func (p *Panel) SetContextColors(cc skin.ContextColors) {
+	p.contextColors = cc
+	p.invalidateRenderCache()
+}
+
+// contextTint is the frame color configured for the panel's context, if any.
+func (p *Panel) contextTint() (color.Color, bool) {
+	return p.contextColors.For(p.scope.Context)
+}
+
+// frameColor is the color of the frame lines: the context tint or the skin's.
+func (p *Panel) frameColor() color.Color {
+	if c, ok := p.contextTint(); ok {
+		return c
+	}
+	return uistyles.Current().Frame
 }
 
 func (p *Panel) escTimeoutValue() time.Duration {
@@ -111,6 +134,7 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 	p.commandConfig = &cfgCopy
 	p.commandInteractive = config.Interactive
 	widget := NewCommandWidget(p.listWidgetDeps(), config)
+	widget.SetExecSupplier(p.commandExec)
 	widget.SetInteractive(config.Interactive)
 	widget.SetFocusChangedHandler(p.setCommandFocus)
 
@@ -282,7 +306,10 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 		p.lastSelectionID = sel.ID
 	}
 	p.lastSelection = sel.Item
-	p.notifySelectionListeners(ctx, sel)
+	// Only the list reports here. Describe and Manifest widgets follow the
+	// other panel through NotifySelection; this panel's hidden list must not
+	// replace what they show.
+	p.notifySelectionObservers(ctx, sel)
 	if changed || sel.Force {
 		p.invalidateRenderCache()
 	}
@@ -344,8 +371,8 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 		}); selCmd != nil {
 			cmds = append(cmds, selCmd)
 		}
-	} else {
-		p.notifySelectionListeners(ctx, panelcontent.Selection{Path: p.currentPath})
+	} else if selCmd := p.notifySelectionListeners(ctx, panelcontent.Selection{Path: p.currentPath}); selCmd != nil {
+		cmds = append(cmds, selCmd)
 	}
 	switch len(cmds) {
 	case 0:
@@ -542,6 +569,18 @@ func (p *Panel) ObjectOrder() string {
 	return "name"
 }
 
+// SortState returns the columns of the shown object list and the order it
+// is sorted by. ok is false when the panel shows no sortable list.
+func (p *Panel) SortState(ctx context.Context) (listwidget.SortState, bool) {
+	if p.mode != PanelModeList {
+		return listwidget.SortState{}, false
+	}
+	if lw := p.listWidget(ctx); lw != nil {
+		return lw.SortState()
+	}
+	return listwidget.SortState{}, false
+}
+
 // HasInteractiveCommand reports whether the active command widget is interactive.
 func (p *Panel) HasInteractiveCommand() bool {
 	return p.mode == PanelModeCommand && p.commandInteractive
@@ -606,7 +645,7 @@ func (p *Panel) SelectByRowID(ctx context.Context, id string) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.SelectByRowID(ctx, id)
 	}
-	p.notifySelectionListeners(ctx, panelcontent.Selection{ID: id, Path: p.currentPath})
+	p.notifySelectionObservers(ctx, panelcontent.Selection{ID: id, Path: p.currentPath})
 }
 
 // SelectRowIDs marks multiple rows as selected and focuses the first match.
@@ -615,7 +654,7 @@ func (p *Panel) SelectRowIDs(ctx context.Context, ids []string) {
 		lw.SelectRowIDs(ctx, ids)
 	}
 	if len(ids) > 0 {
-		p.notifySelectionListeners(ctx, panelcontent.Selection{ID: ids[0], Path: p.currentPath})
+		p.notifySelectionObservers(ctx, panelcontent.Selection{ID: ids[0], Path: p.currentPath})
 	}
 }
 
@@ -668,8 +707,9 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 	})
 }
 
-// NotifySelection explicitly broadcasts a selection change to widgets.
-func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection) {
+// NotifySelection explicitly broadcasts a selection change to widgets. The
+// returned command loads the active widget's new content in the background.
+func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
 	if sel.Path == "" {
 		sel.Path = p.currentPath
 	}
@@ -686,7 +726,34 @@ func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection)
 	}
 	p.invalidateRenderCache()
 	ctrllog.FromContext(ctx).WithName("panel").Info("notify selection", "panel", p.title, "mode", p.mode, "selectionID", sel.ID, "force", sel.Force, "hasItem", sel.Item != nil)
-	p.notifySelectionListeners(ctx, sel)
+	return p.notifySelectionListeners(ctx, sel)
+}
+
+// RefreshContent asks the active widget to reload what it shows because the
+// shared cache changed. The widget limits how often it really reloads.
+func (p *Panel) RefreshContent(ctx context.Context) tea.Cmd {
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		if r, ok := widget.(panelcontent.Refresher); ok {
+			return r.Refresh(ctx)
+		}
+	}
+	return nil
+}
+
+// DeliverBackground hands the result of background work to every widget of
+// the panel, active or not; each widget takes only its own results.
+func (p *Panel) DeliverBackground(ctx context.Context, msg panelcontent.BackgroundMsg) tea.Cmd {
+	var cmds []tea.Cmd
+	for _, widget := range p.widgets {
+		if widget == nil {
+			continue
+		}
+		if cmd, handled := widget.Update(ctx, msg); handled {
+			p.invalidateRenderCache()
+			cmds = append(cmds, cmd)
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 // SetResourceCatalog injects the namespaced resource catalog (plural -> GVK).
@@ -751,7 +818,8 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f1":
 			action, mapped = PanelActionHelp, true
 		case "f2":
-			action, mapped = PanelActionOptions, true
+			// F2 is the user menu, as in mc; F9 opens the menu bar in App.
+			action, mapped = PanelActionMenu, true
 		case "f3":
 			action, mapped = PanelActionView, true
 		case "f4":
@@ -762,8 +830,6 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			action, mapped = PanelActionCreateNamespace, true
 		case "f8":
 			action, mapped = PanelActionDelete, true
-		case "f9":
-			action, mapped = PanelActionMenu, true
 		}
 		if mapped {
 			actCtx, actCancel := context.WithTimeout(context.Background(), panelContextTimeout)
@@ -1035,10 +1101,10 @@ func (p *Panel) renderFramedFooter(content string, width int) (string, int) {
 	frame := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderTop(false).
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue).
-		Background(lipgloss.Blue).
-		Foreground(lipgloss.Color(uistyles.ColorWhite)).
+		BorderForeground(p.frameColor()).
+		BorderBackground(uistyles.Current().Background).
+		Background(uistyles.Current().Background).
+		Foreground(uistyles.Current().Foreground).
 		Width(width).
 		Render(content)
 	return frame, lipgloss.Height(frame)
@@ -1049,8 +1115,8 @@ func (p *Panel) renderFramedFooter(content string, width int) (string, int) {
 func (p *Panel) attachFooterStatus(footer string, info panelcontent.FrameInfo, width int) string {
 	lines := strings.Split(footer, "\n")
 	borderStyle := lipgloss.NewStyle().
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue)
+		BorderForeground(p.frameColor()).
+		BorderBackground(uistyles.Current().Background)
 	statusInfo := info
 	statusInfo.BottomIndicator = ""
 	lines[len(lines)-1] = p.composeBottomBorder(lipgloss.NormalBorder(), borderStyle, statusInfo, width, modeLabel(p.mode))
@@ -1124,11 +1190,12 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 		title = "/"
 	}
 
+	pal := uistyles.Current()
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue).
-		Background(lipgloss.Blue).
+		BorderForeground(p.frameColor()).
+		BorderBackground(pal.Background).
+		Background(pal.Background).
 		Width(width).
 		Height(height)
 	if p.commandFocused {
@@ -1144,13 +1211,13 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 	var labelStyle lipgloss.Style
 	if focused {
 		labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Black).
-			Background(lipgloss.White).
+			Foreground(pal.TitleForeground).
+			Background(pal.TitleBackground).
 			Padding(0, 1)
 	} else {
 		labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.White).
-			Background(lipgloss.Blue).
+			Foreground(pal.Foreground).
+			Background(pal.Background).
 			Padding(0, 1)
 	}
 	if p.commandFocused {
@@ -1242,7 +1309,20 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 		left += label
 		contentWidth -= lipgloss.Width(label)
 	} else if strings.TrimSpace(mode) != "" {
-		scope, hits := renderScopeLabel(p.scope, borderStyle.Render(border.Bottom), leftWidth, contentWidth/2)
+		var tint color.Color
+		if c, ok := p.contextTint(); ok && !p.commandFocused {
+			tint = c
+		}
+		scope, hits := renderScopeLabel(p.scope, borderStyle.Render(border.Bottom), leftWidth, contentWidth/2, tint)
+		if f, ok := p.RowFilter(); ok && f.Active() {
+			from := lipgloss.Width(left) + lipgloss.Width(scope)
+			label := renderRowFilter(f.Label(), borderStyle.Render(border.Bottom), (contentWidth-lipgloss.Width(scope))/2)
+			if label != "" {
+				hits.filterFrom = from + lipgloss.Width(border.Bottom)
+				hits.filterTo = from + lipgloss.Width(label)
+				scope += label
+			}
+		}
 		p.scopeHits = hits
 		left += scope
 		contentWidth -= lipgloss.Width(scope)
@@ -1437,7 +1517,21 @@ func (p *Panel) ColumnTitles(ctx context.Context) []string {
 	return nil
 }
 
-func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.Selection) {
+// notifySelectionListeners tells the active widget about sel, then the
+// observers. Inactive widgets learn the selection when SetMode activates them.
+func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
+	sel = p.completeSelection(ctx, sel)
+	var cmd tea.Cmd
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		if listener, ok := widget.(panelcontent.SelectionListener); ok {
+			cmd = listener.OnSelectionChanged(ctx, sel)
+		}
+	}
+	p.notifySelectionObservers(ctx, sel)
+	return cmd
+}
+
+func (p *Panel) completeSelection(ctx context.Context, sel panelcontent.Selection) panelcontent.Selection {
 	if sel.Path == "" {
 		sel.Path = p.currentPath
 	}
@@ -1449,11 +1543,11 @@ func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.S
 	if sel.Item != nil {
 		p.lastSelection = sel.Item
 	}
-	for _, widget := range p.widgets {
-		if listener, ok := widget.(panelcontent.SelectionListener); ok && widget != nil {
-			listener.OnSelectionChanged(ctx, sel)
-		}
-	}
+	return sel
+}
+
+func (p *Panel) notifySelectionObservers(ctx context.Context, sel panelcontent.Selection) {
+	sel = p.completeSelection(ctx, sel)
 	for _, obs := range p.selectionObservers {
 		if obs == nil || p.messagePoster == nil {
 			continue

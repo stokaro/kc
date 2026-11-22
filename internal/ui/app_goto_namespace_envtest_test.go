@@ -5,17 +5,17 @@ import (
 	"testing"
 	"time"
 
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	models "github.com/stokaro/kc/internal/models"
-	"github.com/stokaro/kc/pkg/kubeconfig"
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
+	kccluster "github.com/sttts/kc/internal/cluster"
+	models "github.com/sttts/kc/internal/models"
+	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGoToNamespaceEmptyStaysClusterScope(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
@@ -53,9 +53,7 @@ func TestGoToNamespaceEmptyStaysClusterScope(t *testing.T) {
 }
 
 func TestGoToNamespaceExistingNavigatesPanels(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)

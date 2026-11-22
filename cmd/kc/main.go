@@ -33,18 +33,23 @@ var (
 )
 
 type cliFlags struct {
-	Kubeconfig string         `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
-	Namespace  string         `help:"Namespace to open on startup" short:"n"`
-	PprofAddr  string         `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
-	Verbosity  int            `help:"klog verbosity level (same as --v)" name:"v"`
-	As         string         `help:"Username to impersonate for the operation (regular user or service account)"`
-	AsGroup    []string       `help:"Group to impersonate for the operation (repeatable)"`
-	AsUID      string         `help:"UID to impersonate for the operation"`
-	ShowVer    versionFlag    `name:"version" help:"Print the kc version and exit; does not contact the cluster"`
-	Root       rootCommand    `cmd:"" hidden:"true" default:"1"`
-	Get        getCommand     `cmd:"get" help:"Mirror kubectl get"`
-	Logs       logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
-	Version    versionCommand `cmd:"version" help:"Show version information"`
+	Kubeconfig    string         `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
+	Context       string         `help:"Kubeconfig context to open (kubeconfig is not changed)"`
+	Namespace     string         `help:"Namespace to open on startup" short:"n"`
+	AllNamespaces bool           `help:"Open all namespaces (wins over -n, as in kubectl)" short:"A" name:"all-namespaces"`
+	PprofAddr     string         `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
+	Verbosity     int            `help:"klog verbosity level (same as --v)" name:"v"`
+	As            string         `help:"Username to impersonate for the operation (regular user or service account)"`
+	AsGroup       []string       `help:"Group to impersonate for the operation (repeatable)"`
+	AsUID         string         `help:"UID to impersonate for the operation"`
+	ReadOnly      bool           `name:"readonly" xor:"readonly" help:"Open every context read-only: no edit, delete, namespace creation, debug helper or dangerous commands"`
+	Write         bool           `xor:"readonly" help:"Allow writes in every context, ignoring the readOnly config"`
+	ShowVersion   versionFlag    `name:"version" help:"Print the kc version and exit; does not read a kubeconfig or contact a cluster"`
+	Root          rootCommand    `cmd:"" hidden:"true" default:"1"`
+	Get           getCommand     `cmd:"get" help:"Mirror kubectl get"`
+	Logs          logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
+	Overview      struct{}       `cmd:"overview" help:"Start in the cluster overview (/overview) of the namespace, or of all namespaces with -A"`
+	Version       versionCommand `cmd:"version" help:"Show version information"`
 }
 
 type rootCommand struct{}
@@ -61,7 +66,7 @@ type logsCommand struct {
 }
 
 type versionCommand struct {
-	Client bool `help:"Print only the client version; do not read a kubeconfig or contact the cluster"`
+	Client bool `help:"Print only the client version; do not read a kubeconfig or contact a cluster"`
 }
 
 // cutoverWriter routes writes to stderr+file until cutover is called, after which
@@ -149,15 +154,10 @@ func main() {
 	}()
 
 	// Run the application
-	runCfg := ui.RunConfig{
-		Namespace:          ns,
-		StartupIntent:      intent,
-		DebugLogPath:       debugLogPath,
-		SwitchToFileLogger: switchToUILogger,
-		ImpersonateUser:    strings.TrimSpace(cli.As),
-		ImpersonateUID:     strings.TrimSpace(cli.AsUID),
-		ImpersonateGroups:  append([]string(nil), cli.AsGroup...),
-	}
+	runCfg := newRunConfig(&cli, intent, ns)
+	runCfg.DebugLogPath = debugLogPath
+	runCfg.SwitchToFileLogger = switchToUILogger
+	runCfg.ReadOnly = readOnlyOverride(&cli)
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -173,6 +173,19 @@ func cliOptions() []kong.Option {
 	}
 }
 
+// readOnlyOverride maps --readonly and --write to the UI's read-only
+// override. Kong refuses both at once (xor), so at most one is set.
+func readOnlyOverride(cli *cliFlags) ui.ReadOnlyOverride {
+	switch {
+	case cli.ReadOnly:
+		return ui.ReadOnlyForced
+	case cli.Write:
+		return ui.ReadOnlyWriteForced
+	default:
+		return ui.ReadOnlyFromConfig
+	}
+}
+
 func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, error) {
 	var intent ui.StartupIntent
 	if cli == nil {
@@ -181,6 +194,9 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 
 	switch {
 	case commandMatches(cmd, "", "kc", "kc root", "root"):
+		if cli.AllNamespaces {
+			return intent, "", nil
+		}
 		return intent, strings.TrimSpace(cli.Namespace), nil
 	case commandMatches(cmd, "kc get", "get"):
 		if len(cli.Get.Targets) == 0 {
@@ -191,6 +207,12 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 			return intent, "", err
 		}
 		ns := selectNamespace(cli.Namespace, "")
+		if cli.AllNamespaces {
+			if err := checkAllNamespacesGet(getIntent); err != nil {
+				return intent, "", err
+			}
+			ns = ""
+		}
 		intent.Verb = ui.KubectlVerbGet
 		intent.Namespace = ns
 		intent.Get = getIntent
@@ -198,6 +220,9 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 	case commandMatches(cmd, "kc logs", "logs"):
 		if strings.TrimSpace(cli.Logs.Pod) == "" {
 			return intent, "", errors.New("kc logs requires a pod name")
+		}
+		if cli.AllNamespaces {
+			return intent, "", errAllNamespacesLogs
 		}
 		logsIntent := &ui.LogsIntent{
 			Pod:       strings.TrimSpace(cli.Logs.Pod),
@@ -208,6 +233,14 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 		intent.Verb = ui.KubectlVerbLogs
 		intent.Namespace = ns
 		intent.Logs = logsIntent
+		return intent, ns, nil
+	case commandMatches(cmd, "kc overview", "overview"):
+		ns := selectNamespace(cli.Namespace, "")
+		if cli.AllNamespaces {
+			ns = ""
+		}
+		intent.Verb = ui.KubectlVerbOverview
+		intent.Namespace = ns
 		return intent, ns, nil
 	default:
 		return intent, "", fmt.Errorf("unsupported command %q", cmd)
@@ -370,7 +403,8 @@ func showHelp() {
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  kc [flags]")
-	fmt.Println("  kc version")
+	fmt.Println("  kc version [--client]")
+	fmt.Println("  kc --version")
 	fmt.Println("  kc get <resource> [name] [flags]")
 	fmt.Println("  kc logs <pod> [flags]")
 	fmt.Println()
@@ -382,15 +416,16 @@ func showHelp() {
 	fmt.Println()
 	fmt.Println("Key Bindings:")
 	fmt.Println("  F1          Help")
-	fmt.Println("  F2          Resource selector")
+	fmt.Println("  F2          User menu (object actions, custom commands)")
 	fmt.Println("  F3          View resource")
 	fmt.Println("  F4          Edit resource")
 	fmt.Println("  F5          Copy")
 	fmt.Println("  F6          Rename/Move")
 	fmt.Println("  F7          Create namespace")
 	fmt.Println("  F8          Delete resource")
-	fmt.Println("  F9          Context menu")
+	fmt.Println("  F9          Menu bar")
 	fmt.Println("  F10         Quit")
+	fmt.Println("  M-p         Port forward (pods, containers, services)")
 	fmt.Println("  C-o         Toggle terminal")
 	fmt.Println("  Tab         Switch panels")
 	fmt.Println("  C-c         Quit")
@@ -398,6 +433,9 @@ func showHelp() {
 	fmt.Println("Navigation:")
 	fmt.Println("  ↑/↓         Navigate items")
 	fmt.Println("  Enter       Enter directory/resource")
+	fmt.Println("  M-y / M-u   Back / forward in the panel history")
+	fmt.Println("  M-H         Panel history list")
+	fmt.Println(`  C-\         Hotlist (saved locations)`)
 	fmt.Println("  Space       Select item")
 	fmt.Println("  A           Select all")
 	fmt.Println("  U           Unselect all")

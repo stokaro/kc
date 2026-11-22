@@ -66,6 +66,11 @@ func isLeafRow(row table.Row) bool {
 	if _, ok := row.(models.Enterable); ok {
 		return false
 	}
+	// A link to a live object carries its own "@" marker, like a symlink
+	// in mc.
+	if _, ok := row.(models.ObjectLink); ok {
+		return false
+	}
 	if back, ok := row.(models.Back); ok && back.IsBack() {
 		return false
 	}

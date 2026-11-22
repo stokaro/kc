@@ -1,15 +1,18 @@
 package models
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
 	"time"
 
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	table "github.com/stokaro/kc/internal/table"
-	kctesting "github.com/stokaro/kc/internal/testing"
-	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
+	kccluster "github.com/sttts/kc/internal/cluster"
+	table "github.com/sttts/kc/internal/table"
+	kctesting "github.com/sttts/kc/internal/testing"
+	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -18,21 +21,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func TestFoldersProduceExpectedRows(t *testing.T) {
 	t.Parallel()
 
-	env := &envtest.Environment{}
-	cfg, err := env.Start()
-	if err != nil || cfg == nil {
-		if err != nil && strings.Contains(err.Error(), "operation not permitted") {
-			t.Skipf("envtest unavailable: %v", err)
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = env.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -104,6 +98,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	assertRows(t, "configmap-objects", objs, map[string][]string{
 		"cm1": {"/cm1"},
 	})
+	assertManifest(t, objs, "envtest", "testns", "cm1")
 
 	keysPath := []string{"namespaces", "testns", "configmaps", "cm1"}
 	keys := NewConfigMapKeysFolder(deps, keysPath, "testns", "cm1")
@@ -112,6 +107,23 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 		"a": {"a"},
 		"b": {"b"},
 	})
+
+	// A binary-only ConfigMap lists its binaryData keys; a mixed one lists
+	// both fields with a Type column. Keys contain dots on purpose.
+	binKeys := NewConfigMapKeysFolder(deps, []string{"namespaces", "testns", "configmaps", "cm-bin"}, "testns", "cm-bin")
+	waitFolder(t, binKeys)
+	assertRows(t, "configmap-binary-keys", binKeys, map[string][]string{
+		"blob.v1.bin": {"blob.v1.bin", "binary", "10 B"},
+	})
+	mixKeys := NewConfigMapKeysFolder(deps, []string{"namespaces", "testns", "configmaps", "cm-mix"}, "testns", "cm-mix")
+	waitFolder(t, mixKeys)
+	assertRows(t, "configmap-mixed-keys", mixKeys, map[string][]string{
+		"app.conf": {"app.conf", "text", "4 B"},
+		"logo.png": {"logo.png", "binary", "8 B"},
+	})
+	assertKeyBytes(t, binKeys, "blob.v1.bin", envtestNonUTF8)
+	assertKeyBytes(t, mixKeys, "logo.png", envtestPNG)
+	assertKeyBytes(t, mixKeys, "app.conf", []byte("a: b"))
 
 	secPath := []string{"namespaces", "testns", "secrets", "sec1"}
 	secs := NewSecretKeysFolder(deps, secPath, "testns", "sec1")
@@ -122,12 +134,67 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	})
 }
 
+// assertManifest checks that the object rows of f can read their manifest
+// for comparison, and name their context.
+func assertManifest(t *testing.T, f Folder, wantCtx, ns, name string) {
+	t.Helper()
+	ctx := t.Context()
+	for _, r := range f.Lines(ctx, 0, f.Len(ctx)) {
+		src, ok := r.(ManifestSource)
+		if !ok || src.Name() != name {
+			continue
+		}
+		if got := src.ContextName(); got != wantCtx {
+			t.Fatalf("ContextName() = %q, want %q", got, wantCtx)
+		}
+		obj, err := src.Manifest(ctx)
+		if err != nil {
+			t.Fatalf("Manifest: %v", err)
+		}
+		if obj.GetNamespace() != ns || obj.GetName() != name {
+			t.Fatalf("Manifest returned %s/%s, want %s/%s", obj.GetNamespace(), obj.GetName(), ns, name)
+		}
+		return
+	}
+	t.Fatalf("no ManifestSource row named %q", name)
+}
+
 func seedData(t *testing.T, cli crclient.Client) {
 	t.Helper()
 	mustCreate(t, cli, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}})
 	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a": "A", "b": "B"}})
+	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm-bin", Namespace: "testns"}, BinaryData: map[string][]byte{"blob.v1.bin": envtestNonUTF8}})
+	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm-mix", Namespace: "testns"}, Data: map[string]string{"app.conf": "a: b"}, BinaryData: map[string][]byte{"logo.png": envtestPNG}})
 	mustCreate(t, cli, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sec1", Namespace: "testns"}, Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}})
 	mustCreate(t, cli, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}})
+}
+
+var (
+	envtestNonUTF8 = []byte{0x00, 0xff, 0xfe, 0x9b, 0x1b, '[', '2', 'J', 0x00, 0x80}
+	envtestPNG     = []byte("\x89PNG\r\n\x1a\n")
+)
+
+// assertKeyBytes reads a key through the item's view content, the body F5
+// writes, and compares it byte for byte with what was stored.
+func assertKeyBytes(t *testing.T, f interface {
+	ItemByID(context.Context, string) (Item, bool)
+}, key string, want []byte) {
+	t.Helper()
+	item, ok := f.ItemByID(t.Context(), key)
+	if !ok {
+		t.Fatalf("key %q: no item", key)
+	}
+	v, ok := item.(Viewable)
+	if !ok {
+		t.Fatalf("key %q: item %T is not viewable", key, item)
+	}
+	_, body, _, _, _, err := v.ViewContent()
+	if err != nil {
+		t.Fatalf("key %q: view: %v", key, err)
+	}
+	if !bytes.Equal([]byte(body), want) {
+		t.Fatalf("key %q: body %x, want %x", key, body, want)
+	}
 }
 
 func mustCreate(t *testing.T, cli crclient.Client, obj crclient.Object) {
@@ -182,15 +249,7 @@ func assertRows(t *testing.T, name string, f interface {
 func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 	t.Parallel()
 
-	env := &envtest.Environment{}
-	cfg, err := env.Start()
-	if err != nil || cfg == nil {
-		if err != nil && strings.Contains(err.Error(), "operation not permitted") {
-			t.Skipf("envtest unavailable: %v", err)
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	defer func() { _ = env.Stop() }()
+	cfg := kcenvtest.Start(t)
 
 	cl, err := kccluster.New(cfg)
 	if err != nil {

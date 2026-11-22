@@ -3,15 +3,15 @@ package models
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
+	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/pkg/appconfig"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func TestResourceGroupItemNotifyIfChanged(t *testing.T) {
@@ -86,15 +86,7 @@ func TestResourceGroupItemPeeksStopAfterForbidden(t *testing.T) {
 	cfg := appconfig.Default()
 	cfg.Resources.PeekInterval.Duration = time.Second
 
-	env := &envtest.Environment{}
-	testCfg, err := env.Start()
-	if err != nil || testCfg == nil {
-		if err != nil && strings.Contains(err.Error(), "operation not permitted") {
-			t.Skipf("envtest unavailable: %v", err)
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	t.Cleanup(func() { _ = env.Stop() })
+	testCfg := kcenvtest.Start(t)
 
 	cl, err := kccluster.New(testCfg)
 	if err != nil {

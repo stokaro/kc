@@ -2,20 +2,27 @@ package manifest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	models "github.com/stokaro/kc/internal/models"
-	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
-	"github.com/stokaro/kc/internal/ui/viewer"
+	models "github.com/sttts/kc/internal/models"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	"github.com/sttts/kc/internal/ui/panelcontent/reload"
+	"github.com/sttts/kc/internal/ui/viewer"
 )
 
-// Widget renders resource manifests using the shared viewer widget.
+// Widget renders resource manifests using the shared viewer widget. The
+// manifest is read in the background, because a cache read waits for the
+// informer to sync, and it is reread when the shared cache changed.
 type Widget struct {
-	deps   panelcontent.WidgetDeps
-	viewer *viewer.Widget
-	sel    panelcontent.Selection
+	deps     panelcontent.WidgetDeps
+	viewer   *viewer.Widget
+	sel      panelcontent.Selection
+	loader   *reload.Loader
+	shownKey string // key of the content in the viewer
 }
 
 // New constructs a manifest widget backed by the generic viewer.
@@ -24,6 +31,7 @@ func New(deps panelcontent.WidgetDeps) *Widget {
 	return &Widget{
 		deps:   deps,
 		viewer: w,
+		loader: &reload.Loader{Paused: deps.Paused},
 	}
 }
 
@@ -41,6 +49,12 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		}
 		w.viewer.Resize(width, height)
 		return nil, true
+	}
+	if res, apply, cmd, handled := w.loader.Update(msg); handled {
+		if apply {
+			w.show(res)
+		}
+		return cmd, true
 	}
 	return w.viewersUpdate(msg)
 }
@@ -60,7 +74,7 @@ func (w *Widget) View(ctx context.Context, frame panelcontent.Frame) tea.View {
 	}))
 }
 
-func (w *Widget) SetFocus(context.Context, bool) {}
+func (w *Widget) SetFocus(_ context.Context, focused bool) { w.loader.SetActive(focused) }
 
 func (w *Widget) Teardown(context.Context) {}
 
@@ -87,6 +101,9 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	}
 	if breadcrumb != "" {
 		info.Breadcrumb = breadcrumb
+	}
+	if w.loader.Loading() {
+		info.HeaderStatus = panelcontent.LoadingStatus
 	}
 	above, below := w.viewer.ScrollIndicators()
 	if above {
@@ -115,13 +132,23 @@ func (w *Widget) apiPathForSelection() string {
 	return ""
 }
 
-// OnSelectionChanged refreshes the manifest for the provided selection.
-func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Selection) {
+// OnSelectionChanged loads the manifest for a new selection, or refreshes it
+// when the selection still names the same item.
+func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
 	w.sel = sel
-	w.refresh(ctx)
+	return w.load(ctx)
 }
 
-func (w *Widget) refresh(ctx context.Context) {
+// Refresh rereads the manifest; the viewer changes only when the text did.
+func (w *Widget) Refresh(context.Context) tea.Cmd {
+	return w.loader.Refresh()
+}
+
+type content struct {
+	title, body, lang, mime, filename string
+}
+
+func (w *Widget) load(ctx context.Context) tea.Cmd {
 	item := w.sel.Item
 	if item == nil && w.deps.SelectedItem != nil {
 		if i, ok := w.deps.SelectedItem(ctx); ok {
@@ -129,31 +156,72 @@ func (w *Widget) refresh(ctx context.Context) {
 		}
 	}
 	if item == nil {
-		w.viewer.SetContent("Select a resource to view its manifest.", viewer.Metadata{Title: "Manifest"})
-		return
+		w.setStatic("Select a resource to view its manifest.")
+		return nil
 	}
-	modelItem, _ := item.(models.Item)
-	var viewable models.Viewable
-	if v, ok := item.(models.Viewable); ok {
-		viewable = v
-	} else if modelItem != nil {
-		if v, ok := modelItem.(models.Viewable); ok {
-			viewable = v
+	viewable, ok := item.(models.Viewable)
+	if !ok {
+		w.setStatic("Selected resource does not expose manifest content.")
+		return nil
+	}
+	key := itemKey(item)
+	if key != w.loader.Key() && w.shownKey == "" {
+		w.viewer.SetContent("Loading...", viewer.Metadata{Title: "Manifest"})
+	}
+	return w.loader.Show(key, func(known string) reload.Result {
+		title, body, lang, mime, filename, err := viewable.ViewContent()
+		if err != nil {
+			return reload.Result{Err: err}
 		}
-	}
-	if viewable == nil {
-		w.viewer.SetContent("Selected resource does not expose manifest content.", viewer.Metadata{Title: "Manifest"})
-		return
-	}
-	title, body, lang, mime, filename, err := viewable.ViewContent()
-	if err != nil {
-		w.viewer.SetContent("Failed to load manifest: "+err.Error(), viewer.Metadata{Title: "Manifest"})
-		return
-	}
-	w.viewer.SetContent(body, viewer.Metadata{
-		Title:    title,
-		Language: lang,
-		MimeType: mime,
-		Filename: filename,
+		version := bodyVersion(body)
+		if version == known {
+			return reload.Result{Version: version, Unchanged: true}
+		}
+		return reload.Result{
+			Value:   content{title: title, body: body, lang: lang, mime: mime, filename: filename},
+			Version: version,
+		}
 	})
+}
+
+func (w *Widget) show(res reload.Result) {
+	body := ""
+	meta := viewer.Metadata{Title: "Manifest"}
+	if res.Err != nil {
+		body = "Failed to load manifest: " + res.Err.Error()
+	} else {
+		c, _ := res.Value.(content)
+		body = c.body
+		meta = viewer.Metadata{Title: c.title, Language: c.lang, MimeType: c.mime, Filename: c.filename}
+	}
+	key := w.loader.Key()
+	if key == w.shownKey {
+		w.viewer.UpdateContent(body, meta)
+		return
+	}
+	w.shownKey = key
+	w.viewer.SetContent(body, meta)
+}
+
+func (w *Widget) setStatic(body string) {
+	w.loader.Show("", nil)
+	w.shownKey = ""
+	w.viewer.SetContent(body, viewer.Metadata{Title: "Manifest"})
+}
+
+// itemKey identifies the shown item: the full GVR plus namespace and name for
+// objects, the item path for anything else (keys, containers).
+func itemKey(item models.Item) string {
+	path := strings.Join(item.Path(), "/")
+	if obj, ok := item.(models.ObjectItem); ok && obj != nil {
+		gvr := obj.GVR()
+		return gvr.GroupVersion().String() + "/" + gvr.Resource + "/" + obj.Namespace() + "/" + obj.Name() + "|" + path
+	}
+	return "path|" + path
+}
+
+// bodyVersion is a short fingerprint of the manifest text.
+func bodyVersion(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(sum[:8])
 }

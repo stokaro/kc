@@ -50,7 +50,8 @@ func TestOrderRowIndicesGroupsByNamespace(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := names(orderRowIndices(items, tc.order, tc.byNamespace)); !slices.Equal(got, tc.want) {
+			idxs, _ := orderRowIndices(items, nil, tc.order, tc.byNamespace)
+			if got := names(idxs); !slices.Equal(got, tc.want) {
 				t.Fatalf("order = %v\nwant    %v", got, tc.want)
 			}
 		})

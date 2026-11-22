@@ -2,6 +2,9 @@ version: 2
 
 project_name: kc
 
+# The release pipeline is described in docs/RELEASING.md and the decisions
+# behind it in docs/adr/0119-release-pipeline.md.
+
 builds:
   - id: kc
     main: ./cmd/kc
@@ -10,16 +13,27 @@ builds:
     goarch: [amd64, arm64]
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    # The variables live in package main, so these paths do not contain the
+    # module path.
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
+      - -X main.date={{.CommitDate}}
+
+# A snapshot is not a release. Name it after the commit, not after whatever
+# tag `git describe` finds (the newest tags come from upstream).
+snapshot:
+  version_template: '0.0.0-SNAPSHOT-{{ .ShortCommit }}'
 
 archives:
   - id: kc
     wrap_in_directory: false
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
     files:
       - LICENSE
       - README.md
@@ -28,37 +42,23 @@ checksum:
   name_template: '{{ .ProjectName }}_checksums.txt'
   algorithm: sha256
 
+# Keyless signing with cosign: the release workflow signs the checksum file
+# with its GitHub OIDC identity, so there is no signing key to store or
+# rotate. Verify with:
+#   cosign verify-blob --bundle kc_checksums.txt.sigstore.json kc_checksums.txt \
+#     --certificate-identity-regexp '^https://github.com/stokaro/kc/' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 signs:
-  - id: archive-signatures
-    cmd: gpg
+  - id: checksums
+    cmd: cosign
+    signature: '${artifact}.sigstore.json'
     args:
-      - --batch
-      - --pinentry-mode
-      - loopback
-      - --passphrase-file
-      - '{{ .Env.GPG_PASSPHRASE_FILE }}'
-      - --armor
-      - --detach-sign
-      - --output
-      - '${signature}'
-      - '${artifact}'
-    signature: '${artifact}.asc'
-    artifacts: archive
-  - id: checksum-signatures
-    cmd: gpg
-    args:
-      - --batch
-      - --pinentry-mode
-      - loopback
-      - --passphrase-file
-      - '{{ .Env.GPG_PASSPHRASE_FILE }}'
-      - --armor
-      - --detach-sign
-      - --output
-      - '${signature}'
-      - '${artifact}'
-    signature: '${artifact}.asc'
+      - sign-blob
+      - --yes
+      - --bundle=${signature}
+      - ${artifact}
     artifacts: checksum
+    output: true
 
 release:
   github:
@@ -68,32 +68,35 @@ release:
 
 changelog:
   use: git
+  sort: asc
 
-# The Homebrew tap is stokaro/homebrew-tap (`brew install --cask stokaro/tap/kc`).
-# Publishing to it needs the HOMEBREW_TAP_GITHUB_TOKEN secret. Without it the
-# cask is generated into dist/ but not pushed, so a release still succeeds
-# before the tap exists. See docs/RELEASING.md and docs/adr/0061-publish-fork.md.
+# Homebrew gets a cask only. GoReleaser deprecates `brews`, and `goreleaser
+# check` refuses a configuration that has one. The cask also installs on
+# Linux. Users run `brew install --cask stokaro/kc/kc`.
 homebrew_casks:
   - name: kc
     ids: [kc]
+    binaries: [kc]
     homepage: https://github.com/stokaro/kc
-    description: Two-panel Kubernetes TUI built entirely with AI
+    description: Two-panel Kubernetes TUI inspired by Midnight Commander
     license: Apache-2.0
     directory: Casks
     repository:
       owner: stokaro
-      name: homebrew-tap
+      name: homebrew-kc
       branch: main
-      token: '{{ envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}'
-    skip_upload: '{{ if isEnvSet "HOMEBREW_TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
+    # The upload is not optional. The release workflow refuses to start
+    # without the token, so a release never finishes green with the tap left
+    # behind. Snapshots skip the publish phase, and with it this token.
+    skip_upload: false
     commit_author:
-      name: kc release bot
+      name: github-actions[bot]
       email: 41898282+github-actions[bot]@users.noreply.github.com
-    binaries:
-      - kc
-    # Release builds without Apple notarization would be refused by
-    # Gatekeeper; drop the quarantine flag the download sets. Harmless for
-    # notarized builds.
+    commit_msg_template: 'Update the kc cask to {{ .Tag }}'
+    # Builds without Apple notarization would be blocked by Gatekeeper.
+    # Remove the quarantine attribute the download sets; it does no harm on a
+    # notarized build.
     hooks:
       post:
         install_steps: |
@@ -101,9 +104,11 @@ homebrew_casks:
             run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/kc"]
           end
 
+# Runs only when the Apple secrets exist (see docs/RELEASING.md).
 notarize:
   macos:
-    - enabled: '{{ and (isEnvSet "MACOS_SIGN_P12") (isEnvSet "MACOS_NOTARY_KEY") }}'
+    # Empty, not unset, is what GitHub Actions passes for a missing secret.
+    - enabled: '{{ and (ne (envOrDefault "MACOS_SIGN_P12" "") "") (ne (envOrDefault "MACOS_NOTARY_KEY" "") "") }}'
       ids: [kc]
       sign:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
@@ -113,4 +118,5 @@ notarize:
         key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
         key: "{{ .Env.MACOS_NOTARY_KEY }}"
         wait: true
+        # Apple refuses tokens that live longer; GoReleaser allows at most 20m.
         timeout: 20m

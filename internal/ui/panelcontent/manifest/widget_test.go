@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -59,11 +60,15 @@ func TestFrameInfoProvidesIndicatorsAndStatus(t *testing.T) {
 		ns:  "default",
 		nm:  "stub",
 	}
-	w.OnSelectionChanged(ctx, panelcontent.Selection{
+	w.SetFocus(ctx, true)
+	cmd := w.OnSelectionChanged(ctx, panelcontent.Selection{
 		ID:   "stub",
 		Path: "/namespaces/default/pods/stub",
 		Item: item,
 	})
+	if _, handled := w.Update(ctx, cmd()); !handled {
+		t.Fatalf("expected the widget to take its load result")
+	}
 
 	info := w.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: 40})
 	if info.SuppressFooter {
@@ -81,5 +86,68 @@ func TestFrameInfoProvidesIndicatorsAndStatus(t *testing.T) {
 	expectedBreadcrumb := "/namespaces/default/pods/stub"
 	if info.Breadcrumb != expectedBreadcrumb {
 		t.Fatalf("expected breadcrumb %q, got %q", expectedBreadcrumb, info.Breadcrumb)
+	}
+}
+
+// countingViewable returns body and counts ViewContent calls.
+type countingViewable struct {
+	viewableStub
+	body  *string
+	calls *int
+}
+
+func (c countingViewable) ViewContent() (string, string, string, string, string, error) {
+	*c.calls++
+	return "Manifest", *c.body, "yaml", "text/yaml", "stub.yaml", nil
+}
+
+func TestManifestLoadsInBackgroundAndRefreshKeepsScroll(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	w := New(panelcontent.WidgetDeps{})
+	w.loader.After = func(_ time.Duration, fn func(time.Time) tea.Msg) tea.Cmd {
+		return func() tea.Msg { return fn(time.Now()) }
+	}
+	_, _ = w.Update(ctx, tea.WindowSizeMsg{Width: 40, Height: 3})
+	w.SetFocus(ctx, true)
+
+	lines := make([]string, 20)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %02d", i+1)
+	}
+	body := strings.Join(lines, "\n")
+	calls := 0
+	item := countingViewable{viewableStub: viewableStub{path: []string{"a"}}, body: &body, calls: &calls}
+
+	cmd := w.OnSelectionChanged(ctx, panelcontent.Selection{Item: item})
+	if calls != 0 {
+		t.Fatalf("ViewContent ran on the UI goroutine")
+	}
+	if got := w.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: 40}).HeaderStatus; got != panelcontent.LoadingStatus {
+		t.Fatalf("expected loading status, got %q", got)
+	}
+	_, _ = w.Update(ctx, cmd())
+	_, _ = w.Update(ctx, tea.KeyPressMsg{Code: tea.KeyPgDown})
+	before, _ := w.viewer.Position()
+	if before <= 3 {
+		t.Fatalf("expected PgDn to scroll, position %d", before)
+	}
+
+	refresh := func() {
+		t.Helper()
+		tick, _ := w.Update(ctx, w.Refresh(ctx)())
+		_, _ = w.Update(ctx, tick())
+	}
+	lines[0] = "changed"
+	body = strings.Join(lines, "\n")
+	refresh()
+	if calls != 2 {
+		t.Fatalf("expected a second read, got %d", calls)
+	}
+	if !strings.Contains(w.viewer.PlainText(), "changed") {
+		t.Fatalf("expected the refreshed manifest in the viewer")
+	}
+	if after, _ := w.viewer.Position(); after != before {
+		t.Fatalf("refresh moved the view from %d to %d", before, after)
 	}
 }

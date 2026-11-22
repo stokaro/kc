@@ -56,6 +56,10 @@ type CommandWidget struct {
 	escArmed       bool
 	escTimerToken  int
 	onFocusChanged func(bool) tea.Cmd
+	// exec supplies the cluster and identity; execSlot names this
+	// widget's generated kubeconfig.
+	exec     CommandExecSupplier
+	execSlot string
 	// Last known content size (panel content rectangle)
 	lastSize panelcontent.Size
 }
@@ -75,8 +79,13 @@ func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConf
 		log:         ctrllog.Log.WithName("command"),
 		post:        deps.Post,
 		interactive: config.Interactive,
+		execSlot:    nextCommandSlot(),
 	}
 }
+
+// SetExecSupplier sets where the command gets its execution context. With
+// none, the command inherits kc's environment.
+func (w *CommandWidget) SetExecSupplier(s CommandExecSupplier) { w.exec = s }
 
 func (w *CommandWidget) Init(ctx context.Context) tea.Cmd {
 	return nil
@@ -90,6 +99,9 @@ func (w *CommandWidget) Teardown(ctx context.Context) {
 		_ = w.cmd.Process.Kill()
 	}
 	w.running = false
+	if w.exec != nil {
+		w.exec.ReleaseCommandExec(w.execSlot)
+	}
 }
 
 func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
@@ -316,8 +328,24 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 		w.running = false
 	}
 
+	// Resolve the cluster and identity now, so a restart after a context
+	// switch runs against the new context.
+	var run CommandExec
+	if w.exec != nil {
+		ns := ""
+		if len(w.pendingItems) > 0 {
+			ns = namespaceFromItem(w.pendingItems[0])
+		}
+		var err error
+		if run, err = w.exec.CommandExec(w.execSlot, ns); err != nil {
+			w.err = fmt.Errorf("preparing kubeconfig: %w", err)
+			w.log.Error(err, "preparing command kubeconfig failed", "name", w.config.Name)
+			return nil
+		}
+	}
+
 	// Render command template
-	cmdStr, err := RenderCommand(w.config.Command, w.pendingItems, w.pendingGVR)
+	cmdStr, err := RenderCommandIn(w.config.Command, w.pendingItems, w.pendingGVR, run.Context)
 	if err != nil {
 		w.err = err
 		w.log.Error(err, "render command template failed", "name", w.config.Name)
@@ -346,10 +374,7 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 	// Prepare command
 	// Use sh -c to execute the command string
 	shell := "sh"
-	w.cmd = exec.Command(shell, "-c", cmdStr)
-
-	// TODO: Inject KUBECONFIG env var
-	// w.cmd.Env = append(os.Environ(), "KUBECONFIG=...")
+	w.cmd = commandProcess(shell, cmdStr, run)
 
 	// Setup exit handler
 	term.GetEmulator().SetOnExit(func(code string) {
@@ -383,6 +408,8 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 		"args", w.cmd.Args,
 		"dir", w.cmd.Dir,
 		"env", envVars,
+		"context", run.Context.Context,
+		"namespace", run.Context.Namespace,
 	)
 
 	return tea.Batch(

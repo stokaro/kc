@@ -20,6 +20,7 @@ type DeleteConfirmModel struct {
 	width, height int
 	target        string
 	namespace     string
+	context       string
 	focus         int // 0=yes, 1=no
 	buttonRect    [2]buttonRect
 }
@@ -37,10 +38,12 @@ func NewDeleteConfirmModel() *DeleteConfirmModel {
 func (m *DeleteConfirmModel) Init() tea.Cmd          { return nil }
 func (m *DeleteConfirmModel) SetDimensions(w, h int) { m.width, m.height = w, h }
 
-// Configure sets the resource details displayed in the dialog.
-func (m *DeleteConfirmModel) Configure(target, namespace string) {
+// Configure sets the resource details displayed in the dialog. context is
+// the kubeconfig context the object was read from; empty hides the line.
+func (m *DeleteConfirmModel) Configure(target, namespace, context string) {
 	m.target = target
 	m.namespace = namespace
+	m.context = context
 	m.focus = 1 // default to "No"
 }
 
@@ -113,6 +116,10 @@ func (m *DeleteConfirmModel) View() tea.View {
 		title = fmt.Sprintf("Delete %s in namespace %q?", m.target, m.namespace)
 	}
 	titleView := bg.Copy().Bold(true).Align(lipgloss.Center).Render(title)
+	lines := []string{titleView}
+	if m.context != "" {
+		lines = append(lines, bg.Copy().Align(lipgloss.Center).Render(fmt.Sprintf("Context: %s", m.context)))
+	}
 	helpView := bg.Copy().Faint(true).Align(lipgloss.Center).Render("←/→ Switch • Enter: Confirm • Esc: Cancel")
 	options := []string{
 		m.renderOption("Yes", buttonWidth, m.focus == 0),
@@ -125,7 +132,7 @@ func (m *DeleteConfirmModel) View() tea.View {
 	bodyView := bg.Copy().Align(lipgloss.Center).Render(bodyRow)
 	rowWidth := lipgloss.Width(bodyRow)
 	leftPad := max(0, (innerWidth-rowWidth)/2)
-	bodyLine := 2 // title (0), spacer (1), buttons (2)
+	bodyLine := len(lines) + 1 // title and context lines, spacer, buttons
 	yesWidth := lipgloss.Width(options[0])
 	noWidth := lipgloss.Width(options[1])
 	m.buttonRect[0] = buttonRect{x: leftPad, y: bodyLine, w: yesWidth, h: 1}
@@ -136,7 +143,8 @@ func (m *DeleteConfirmModel) View() tea.View {
 		h: 1,
 	}
 	spacer := bg.Copy().Render("")
-	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, titleView, spacer, bodyView, spacer, helpView))
+	lines = append(lines, spacer, bodyView, spacer, helpView)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
 func (m *DeleteConfirmModel) renderOption(label string, width int, focused bool) string {

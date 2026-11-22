@@ -19,7 +19,7 @@ type PanelModeModel struct {
 
 func NewPanelModeModel(panelIdx int, modes []PanelViewMode, active PanelViewMode) *PanelModeModel {
 	if len(modes) == 0 {
-		modes = []PanelViewMode{PanelModeList, PanelModeDescribe, PanelModeManifest, PanelModeCommand}
+		modes = PanelModeOrder()
 	}
 	cur := 0
 	for i := range modes {
@@ -123,6 +123,10 @@ func modeLabel(mode PanelViewMode) string {
 		return "Describe"
 	case PanelModeManifest:
 		return "Manifest"
+	case PanelModeLogs:
+		return "Logs"
+	case PanelModeInfo:
+		return "Info"
 	case PanelModeCommand:
 		return "Command"
 	default:

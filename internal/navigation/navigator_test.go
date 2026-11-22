@@ -97,3 +97,26 @@ func TestNavigatorClosesDiscardedFolders(t *testing.T) {
 		t.Fatalf("Close must close the rest once: root=%d child=%d grand=%d", root.closed, child.closed, grand.closed)
 	}
 }
+
+func TestNavigator_Steps(t *testing.T) {
+	root := mkFolder(nil, "pods")
+	pods := mkFolder([]string{"pods"}, "nginx")
+	nginx := mkFolder([]string{"pods", "nginx"}, "containers")
+
+	nav := NewNavigator(root)
+	if got := nav.Steps(); got != nil {
+		t.Fatalf("Steps at root = %v, want nil", got)
+	}
+	nav.SetSelectionID("pods")
+	nav.Push(pods)
+	nav.SetSelectionID("nginx")
+	nav.Push(nginx)
+	nav.SetSelectionID("containers") // the cursor, not an entered row
+	if got := strings.Join(nav.Steps(), ","); got != "pods,nginx" {
+		t.Fatalf("Steps = %q, want pods,nginx", got)
+	}
+	nav.Back()
+	if got := strings.Join(nav.Steps(), ","); got != "pods" {
+		t.Fatalf("Steps after Back = %q, want pods", got)
+	}
+}

@@ -3,17 +3,17 @@ package models
 import (
 	"testing"
 
-	kccluster "github.com/stokaro/kc/internal/cluster"
-	"github.com/stokaro/kc/pkg/appconfig"
+	"github.com/sttts/kc/internal/testing/kcenvtest"
+
+	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 )
 
 // Verify that forbidden peeks mark the resource group as empty/blocked for a limited user.
 func TestResourceGroupItemLimitedAccessBlocksPeeks(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
+	kcenvtest.Require(t, testCfg)
 
 	ctx := t.Context()
 	adminCl, err := kccluster.New(testCfg)
