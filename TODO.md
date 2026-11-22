@@ -13,7 +13,7 @@ Terminal context manager for the integrated PTY session (`internal/ui/termctx`).
 - [x] Unit tests for the context manager (`termctx/manager_test.go`).
 
 ## Backlog
-- [ ] mc-style pull-down menu bar on F9 — #48
+- [x] mc-style pull-down menu bar on F9 — #48
 - [ ] Describe/Manifest panel modes: refresh when the object changes, describe off the UI thread — #47
 - [ ] Logs panel mode that follows the other panel's selection — #49
 - [ ] Top/metrics: usage columns and sorting by consumption — #44, #37

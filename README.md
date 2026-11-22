@@ -66,14 +66,15 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | Key        | Action                                                                          |
 |------------|---------------------------------------------------------------------------------|
 | `F1`       | Help – opens the README.md markdown viewer (windowed modal).                    |
-| `F2`       | Options – context-aware panel options or viewer theme dialog.                   |
+| `F2`       | User menu – the custom commands menu, as in mc. In viewers: the theme dialog.    |
 | `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, etc. Closes the viewer again. |
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
 | `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
-| `F9`       | Menu – Open custom commands menu.                                               |
+| `F9`       | Menu bar – Left, File, Command, Options, Right, as in mc (see below).            |
 | `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
+| `M-F1`, `M-F2` | Panel options of the left or right panel: sort order, columns, non-empty only, width. |
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
@@ -85,13 +86,24 @@ Viewers show the kubectl command that prints the same content on their last line
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
 
+## Menu Bar
+
+`F9` (or `Esc 9`, or a click on `9 PullDn`) opens a menu bar on the top row, as in mc. Every entry runs an action that also has a key, and shows that key on the right, so the menus double as a key reference.
+
+- **Left** / **Right**: listing mode (List, Describe, Manifest; the current one is marked `*`), panel options, columns, reread, namespace and context pickers.
+- **File**: view, edit, copy, create namespace, delete, marking and selecting rows, quick search, exit.
+- **Command**: the user menu (custom commands, `F2`), swap panels, switch panels on/off, copy the kubectl command, help.
+- **Options**: panel width and the options of each panel.
+
+`Left`/`Right` move between menus, `Up`/`Down` between entries, `Enter` runs the entry and `Esc` closes the bar. The highlighted letter of a title opens that menu; the highlighted letter of an entry runs it (`M-<letter>` always picks a title). Entries that do not apply to the current selection are dim. With the mouse, click a title to open its menu, click an entry to run it, click anywhere else to close the bar.
+
 ## Context and Namespace
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
 
 ## Custom Commands
 
-You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F9** menu. Commands run in a terminal panel and can use templates to reference the selected item.
+You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F2** user menu (also under **Command** in the `F9` menu bar). Commands run in a terminal panel and can use templates to reference the selected item.
 By default, kc ships with `Top Nodes` (global) and `Top Pods` (namespace-scoped) until you define your own commands.
 
 ### Configuration Example
