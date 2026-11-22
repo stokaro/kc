@@ -79,6 +79,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
 | `M-a`      | In viewers: copy the whole content.                                             |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
+| `M-n`      | In the node list: cordon, uncordon or drain the marked nodes (see [Node Actions](#node-actions)). `Esc n` does the same. |
 | `C-c`      | Quit.                                                                           |
 
 Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
@@ -131,6 +132,15 @@ commands:
 
 ### Templating
 Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `{{.Version}}`, `{{.Resource}}`.
+
+## Node Actions
+
+In the node list (`/nodes`), `M-n` (or `Esc n`) opens a menu for the marked nodes, or the node under the cursor when none is marked:
+
+- **Cordon...** and **Uncordon...** set or clear `spec.unschedulable`, like `kubectl cordon` and `kubectl uncordon`. Nodes that are already in that state are left alone.
+- **Drain...** asks for the grace period (`-1` uses each pod's own), a timeout per node (`0` waits as long as it takes), and whether to skip DaemonSet pods, delete emptyDir data and evict pods without a controller (`--force`). kc then reads the nodes' pods and refuses at once, changing nothing, when kubectl would refuse them. Otherwise the red dialog shows what the drain does and the equivalent `kubectl drain` command.
+
+A drain cordons all the nodes first and then evicts their pods node by node through the Eviction API, which respects PodDisruptionBudgets. Mirror pods and, when chosen, DaemonSet pods stay. A dialog shows per node the pods evicted and remaining and the pods a budget refuses; those are asked again every five seconds. `Esc` cancels the drain; the nodes stay cordoned. Cordoned nodes are shown in red, like nodes that are not ready.
 
 ## Configuration
 

@@ -690,6 +690,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.showConfirm(msg.Action)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case nodeActionMsg:
+		return a, a.handleNodeActionMsg(msg)
 	case startupSelectMsg:
 		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
 	case contextSwitchedMsg:
@@ -952,6 +954,10 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case confirmResultMsg:
 		// The confirmation dialog answers itself.
+		return true
+	case nodeActionMsg:
+		// Node action dialogs answer themselves, and a drain reports
+		// progress while its dialog is open.
 		return true
 	}
 	return false

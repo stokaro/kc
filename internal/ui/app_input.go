@@ -132,6 +132,14 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return EscTimeoutMsg{}
 		})
 	} else if a.escPressed {
+		// Esc n is the fallback for M-n on a node list; elsewhere n goes on
+		// to the shell line as before.
+		if keyStr == "n" && !a.showTerminal {
+			if cmd, ok := a.openNodeActions(); ok {
+				a.escPressed = false
+				return a, cmd
+			}
+		}
 		// We're in an escape sequence, check for numbers
 		panel := a.activePanelRef()
 		caps := a.capabilitiesForPanel(panel)
@@ -279,6 +287,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		if msg.String() == copyCommandKey {
 			return a, a.copyPanelCommand()
+		}
+		if msg.String() == nodeActionKey {
+			if cmd, ok := a.openNodeActions(); ok {
+				return a, cmd
+			}
 		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys
