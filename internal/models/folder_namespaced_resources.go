@@ -37,7 +37,8 @@ func (f *NamespacedResourcesFolder) populate(ctx context.Context) ([]table.Row, 
 	if err != nil {
 		return nil, err
 	}
-	rows := f.ResourcesFolder.finalize(ctx, specs)
+	rows := []table.Row{newHelmEntryItem(f.Deps, f.namespace, f.Path())}
+	rows = append(rows, f.ResourcesFolder.finalize(ctx, specs)...)
 	return rows, nil
 }
 

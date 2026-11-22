@@ -11,6 +11,7 @@ A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, B
 - **Kubectl-compatible startup intents:** `kc get ...` and `kc logs ...` parse familiar CLI syntax and launch directly into the matching folders, multi-selecting objects and opening manifest/log viewers when requested (`docs/designs/cli-intents.md`).
 - **Hierarchy-first navigation:** resource groups → object folders → virtual subfolders (pod containers, ConfigMap/Secret keys, etc.). Every row is keyed by full `group/version/resource`.
 - **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices) via per-object child folders so related resources stay discoverable in the tree.
+- **Helm releases:** `/helm` lists releases with their stored values, manifest, notes, hooks and revision history, and links each manifest object to the live object (read-only, no `helm` binary needed).
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **CPU and memory usage:** when the cluster serves `metrics.k8s.io` (metrics-server), pod lists show `CPU`, `MEM`, `%CPU/R` (of requests) and `%MEM/L` (of limits), and node lists show `CPU`, `%CPU`, `MEM` and `%MEM` (of allocatable). Wide mode adds `%CPU/L` and `%MEM/R` for pods and `CPU/A` and `MEM/A` for nodes. kc reads the metrics every 15 seconds, only while such a list is on screen and no dialog is open. `n/a` means no metrics for the object yet, no request or limit to compare with, or metrics kc may not read.
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
@@ -178,6 +179,18 @@ For CronJobs (`batch/v1`):
 - **Suspend/Resume...** sets `spec.suspend`. The dialog says which of the two it does.
 
 An action is hidden when the resource does not offer the API verb it needs (`patch` for Suspend/Resume).
+
+## Helm Releases
+
+`/helm`, the first row of the panel root and of `/namespaces/<name>`, lists the Helm releases of that scope: name, namespace, newest revision, status, chart, app version and last update. kc reads the release records Helm stores as Secrets (type `helm.sh/release.v1`) from its shared cache; it does not need the `helm` binary and never changes a release. `F3` on a release shows its stored status, like `helm status`.
+
+Enter a release for its newest revision:
+
+- `values`, `manifest`, `notes` and `hooks` open with `F3` and save with `F5`. They are the content stored in the release record, not the live state; the viewer shows the matching `helm get` command.
+- `/resources` lists the objects of the stored manifest with a Live column (`yes`, `missing`, `denied`, `type not served`). `Enter` on an object (marked `@`, like a link in mc) opens the live object in the other panel; `F3` shows the object as the release stored it.
+- `/history` lists every stored revision; enter one to see its values, manifest and objects.
+
+kc needs get, list and watch on Secrets in all namespaces for this, because its cache watches Secrets cluster-wide. Without that access `/helm` shows a row that says what is missing and the `helm list` command to use instead. Releases stored with `HELM_DRIVER=configmap` or `sql` are not shown.
 
 ## Custom Commands
 

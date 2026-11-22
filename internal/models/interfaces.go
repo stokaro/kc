@@ -56,11 +56,14 @@ type NodeShellRequest struct {
 	Pod       string
 }
 
-// ObjectRef names one Kubernetes object by its full GVR.
+// ObjectRef names one Kubernetes object by its full GVR. Namespaced is
+// set by callers that know the resource scope (Helm release manifests);
+// others leave it false and use Namespace.
 type ObjectRef struct {
-	GVR       schema.GroupVersionResource
-	Namespace string
-	Name      string
+	GVR        schema.GroupVersionResource
+	Namespaced bool
+	Namespace  string
+	Name       string
 }
 
 // ClusterAction is a change to the cluster that the UI confirms first.
@@ -95,6 +98,19 @@ type ActionEnv struct {
 type ActionEnvProvider interface {
 	ActionEnv() (ActionEnv, bool)
 }
+
+// ObjectLink is a row that refers to a live object listed elsewhere, such
+// as an object of a Helm release manifest. Enter opens the object in the
+// other panel. Missing is non-empty when the object is known not to be in
+// the cluster; the UI shows it as a message.
+type ObjectLink interface {
+	Item
+	LinkTarget() (ref ObjectRef, missing string)
+}
+
+// OpenObjectRequest asks the UI to show the linked object in the other
+// panel.
+type OpenObjectRequest struct{ Link ObjectLink }
 
 // ObjectItem identifies items backed by Kubernetes objects.
 type ObjectItem interface {

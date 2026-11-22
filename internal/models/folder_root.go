@@ -63,6 +63,7 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 		return nil, err
 	}
 	groupItems = append(groupItems, clusterItems...)
+	rows = append(rows, newHelmEntryItem(f.Deps, f.namespace, f.Path()))
 	if row, ok := portForwardsRootRow(f.Deps, f.Path()); ok {
 		rows = append(rows, row)
 	}

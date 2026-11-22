@@ -204,3 +204,44 @@ func logsCommand(deps Deps, spec LogsSpec) string {
 	}
 	return kubectlCommand(deps, args...)
 }
+
+// helmCommand joins helm arguments like kubectlCommand; helm names the
+// context flag --kube-context.
+func helmCommand(deps Deps, args ...string) string {
+	parts := []string{"helm"}
+	if deps.CtxName != "" && deps.CtxName != deps.KubectlContext {
+		parts = append(parts, "--kube-context", shellQuote(deps.CtxName))
+	}
+	for _, a := range args {
+		parts = append(parts, shellQuote(a))
+	}
+	return strings.Join(parts, " ")
+}
+
+// helmListCommand lists every release in the scope, whatever its status,
+// as the Helm folder does.
+func helmListCommand(deps Deps, namespace string) string {
+	if namespace == AllNamespaces {
+		return helmCommand(deps, "list", "-a", "-A")
+	}
+	return helmCommand(deps, "list", "-a", "-n", namespace)
+}
+
+func (f *HelmReleasesFolder) KubectlCommand() string {
+	return helmListCommand(f.Deps, f.namespace)
+}
+
+func (f *HelmReleaseFolder) KubectlCommand() string {
+	args := append([]string{"status", f.release, "-n", f.namespace}, revisionArgs(f.revision)...)
+	return helmCommand(f.Deps, args...)
+}
+
+func (f *HelmHistoryFolder) KubectlCommand() string {
+	return helmCommand(f.Deps, "history", f.release, "-n", f.namespace)
+}
+
+// KubectlCommand compares the stored manifest with the live objects.
+func (f *HelmResourcesFolder) KubectlCommand() string {
+	args := append([]string{"get", "manifest", f.rel.Name, "-n", f.rel.Namespace}, revisionArgs(f.revision)...)
+	return helmCommand(f.Deps, args...) + " | " + kubectlCommand(f.Deps, "get", "-f", "-")
+}

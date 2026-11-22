@@ -962,6 +962,12 @@ const informerStartTimeout = 5 * time.Second
 const listFailureGrace = 10 * time.Second
 
 func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, onEvent func(), onStop func()) (func(), error) {
+	return startFilteredInformer(deps, gvr, namespace, name, nil, onEvent, onStop)
+}
+
+// startFilteredInformer is startInformerForResource with an extra filter on
+// the event's object; a nil filter accepts every object.
+func startFilteredInformer(deps Deps, gvr schema.GroupVersionResource, namespace, name string, filter func(metav1.Object) bool, onEvent func(), onStop func()) (func(), error) {
 	if deps.Cl == nil {
 		return nil, nil
 	}
@@ -997,7 +1003,7 @@ func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namesp
 	}
 	reg, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			if !matchesTarget(obj, namespace, name) {
+			if !matchesFiltered(obj, namespace, name, filter) {
 				return
 			}
 			if onEvent != nil {
@@ -1005,7 +1011,7 @@ func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namesp
 			}
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			if !matchesTarget(newObj, namespace, name) {
+			if !matchesFiltered(newObj, namespace, name, filter) {
 				return
 			}
 			if onEvent != nil {
@@ -1013,7 +1019,7 @@ func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namesp
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			if !matchesTarget(obj, namespace, name) {
+			if !matchesFiltered(obj, namespace, name, filter) {
 				return
 			}
 			if onEvent != nil {
@@ -1100,6 +1106,17 @@ func matchesTarget(obj interface{}, namespace, name string) bool {
 		return false
 	}
 	return true
+}
+
+func matchesFiltered(obj interface{}, namespace, name string, filter func(metav1.Object) bool) bool {
+	if !matchesTarget(obj, namespace, name) {
+		return false
+	}
+	if filter == nil {
+		return true
+	}
+	accessor, ok := accessorForEvent(obj)
+	return ok && filter(accessor)
 }
 
 func (o *ObjectsFolder) installAgeHooks(hooks []*ageCellHook) {

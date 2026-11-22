@@ -757,6 +757,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a.handleKeyMsg(msg, cmds)
 	case models.ConfirmRequest:
 		return a, a.showConfirm(msg.Action)
+	case models.OpenObjectRequest:
+		return a, a.openLinkedObject(msg.Link)
+	case linkSelectMsg:
+		return a, a.selectLinkedRow(msg)
 	case portForwardPlanMsg, portForwardInputMsg, portForwardStartedMsg:
 		return a, a.handlePortForwardMsg(msg)
 	case confirmResultMsg:
