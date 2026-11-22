@@ -314,7 +314,7 @@ func (a *App) renderFunctionKeys() string {
 func (a *App) functionBarState() functionBarState {
 	state := functionBarState{
 		Width:        a.width,
-		ToastActive:  a.toastActive,
+		ToastActive:  a.toastActive && !a.toastOnCommandLine(),
 		ToastText:    a.toastText,
 		ToastInfo:    a.toastInfo,
 		ShowTerminal: a.showTerminal,
@@ -334,7 +334,7 @@ func (a *App) functionBarState() functionBarState {
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
 func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
-	if a.toastActive {
+	if a.toastActive && !a.toastOnCommandLine() {
 		return nil
 	}
 	if !a.showTerminal {

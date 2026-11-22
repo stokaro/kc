@@ -47,7 +47,34 @@ func (a *App) panelCommand() string {
 }
 
 func (a *App) renderCommandLine() string {
+	if a.toastOnCommandLine() {
+		return renderToast(a.toastText, a.toastInfo, a.width)
+	}
 	return renderCommandLine(a.panelCommand(), a.width)
+}
+
+// toastOnCommandLine reports whether the toast covers the command line. It
+// does whenever that line is shown, so the function keys stay visible; with
+// the line hidden the toast takes the function bar instead.
+func (a *App) toastOnCommandLine() bool {
+	return a.toastActive && a.commandLineHeight() > 0
+}
+
+// renderToast draws a message across a whole line: red for errors, cyan
+// for information.
+func renderToast(msg string, info bool, width int) string {
+	if lipgloss.Width(msg) > width {
+		if width > 1 {
+			msg = sliceANSIColsRaw(msg, 0, width-1) + "…"
+		} else {
+			msg = sliceANSIColsRaw(msg, 0, max(0, width))
+		}
+	}
+	style := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.White).Bold(true)
+	if info {
+		style = style.Background(lipgloss.Cyan).Foreground(lipgloss.Black)
+	}
+	return style.Width(width).Render(msg)
 }
 
 func renderCommandLine(command string, width int) string {
@@ -89,7 +116,7 @@ func (a *App) commandLineY() int {
 
 // commandLineCopyHit reports whether x falls on the copy button.
 func (a *App) commandLineCopyHit(x int) bool {
-	return a.panelCommand() != "" && x >= a.width-lipgloss.Width(renderCopyHint()) && x < a.width
+	return !a.toastOnCommandLine() && a.panelCommand() != "" && x >= a.width-lipgloss.Width(renderCopyHint()) && x < a.width
 }
 
 // copyResultMsg reports a finished copy. Without a modal it becomes a toast;
