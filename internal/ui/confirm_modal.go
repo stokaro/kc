@@ -149,5 +149,9 @@ func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
 	if err := action.Confirm(); err != nil {
 		return a.ShowToast("Failed: "+err.Error(), 5*time.Second)
 	}
+	if f, ok := action.(models.ConfirmFollowUp); ok {
+		next := f.FollowUp()
+		return func() tea.Msg { return next }
+	}
 	return nil
 }

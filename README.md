@@ -89,6 +89,10 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In 
 
 Each panel has a namespace scope, shown at the left of its bottom border next to the context (`mba : default`). The panel root lists the resource types of that scope, then namespaces and the cluster-scoped types. Click the namespace to pick another one, or "All namespaces" (like `kubectl -A`). Lists across all namespaces get a Namespace column; resource counts are skipped there, because counting would watch every object in the cluster. `/namespaces/<name>` still works for browsing a namespace without changing the scope. Click the context name to switch kc to another kubeconfig context; both panels then show that cluster, starting in the context's namespace. The scope and the context are kc state only; kubeconfig is never changed.
 
+## Node Shell
+
+With `nodeShell.enabled: true` (optionally limited to `nodeShell.contexts`), entering a node shows `Start a node shell...` under `/pods`. `Enter` opens a red confirmation that names the context, node, namespace, pod and image and shows a similar `kubectl debug node/...` command. After `Start`, kc creates a privileged pod on the node (`nodeName`, host PID, network and IPC namespaces, tolerating every taint) and opens a root shell in the host namespaces (`nsenter -t 1 -m -u -i -n -p`) full screen. `exit` or `C-]` ends the shell; kc then deletes the pod, and also when kc quits. While the shell is open kc keeps a second exec stream as a heartbeat; if kc dies, the pod stops about a minute later, and after `nodeShell.maxDuration` in any case. A stopped pod stays as a `Completed` object; leftovers carry the label `app.kubernetes.io/component=kc-node-shell`. Pod security admission must allow privileged pods in `nodeShell.namespace` (`pod-security.kubernetes.io/enforce=privileged`); otherwise the create fails and kc shows the error.
+
 ## Custom Commands
 
 You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F9** menu. Commands run in a terminal panel and can use templates to reference the selected item.
@@ -142,6 +146,7 @@ Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `
 - `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
+- `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -192,6 +197,21 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+
+nodeShell:
+  # Off by default. "Start a node shell..." inside a node creates a
+  # privileged pod with the host PID, network and IPC namespaces on that
+  # node and opens a root shell in the host namespaces.
+  enabled: false
+  # Limit the node shell to these kube contexts; empty means all contexts.
+  # contexts: [kind-dev]
+  # The image needs sh and nsenter.
+  image: docker.io/library/busybox:1.36.1
+  # Namespace of the shell pod; pod security admission must allow
+  # privileged pods there.
+  namespace: default
+  # activeDeadlineSeconds of the pod: it stops after this time even in use.
+  maxDuration: 8h
 ```
 
 ## Contributing / Source

@@ -52,6 +52,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.pendingCmdsMu.Unlock()
 	viewWasValid := a.mainViewCache.valid
 
+	// An open node shell owns the keyboard and the screen.
+	if a.nodeShell != nil {
+		cmd, handled := a.updateNodeShell(msg)
+		cmds = append(cmds, cmd)
+		if handled {
+			return a, tea.Batch(cmds...)
+		}
+	}
+
 	// Always adapt size
 	switch msg := msg.(type) {
 	case startupIntentMsg:
@@ -690,6 +699,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.showConfirm(msg.Action)
 	case confirmResultMsg:
 		return a, a.handleConfirmResult(msg)
+	case models.NodeShellRequest:
+		return a, tea.Batch(append(cmds, a.startNodeShell(msg))...)
+	case nodeShellStartedMsg:
+		return a, tea.Batch(append(cmds, a.handleNodeShellStarted(msg))...)
+	case execEndedMsg:
+		return a, tea.Batch(append(cmds, a.handleExecEnded(msg))...)
+	case nodeShellDeletedMsg:
+		return a, tea.Batch(append(cmds, a.handleNodeShellDeleted(msg))...)
 	case startupSelectMsg:
 		return a, a.selectStartupRows(msg.ids, msg.path, msg.attempt)
 	case contextSwitchedMsg:
