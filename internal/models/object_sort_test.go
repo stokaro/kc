@@ -81,7 +81,7 @@ func TestOrderRowIndicesByColumnValue(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			idxs, sortBy := orderRowIndices(tc.items, tc.cols, tc.order, false)
+			idxs, sortBy := orderRowIndices(tc.items, tc.cols, tc.order, oneNamespace)
 			if got := sortedNames(tc.items, idxs); !slices.Equal(got, tc.want) {
 				t.Errorf("order %q = %v, want %v", tc.order, got, tc.want)
 			}
@@ -112,7 +112,7 @@ func TestOrderRowIndicesNamespaceStaysOuterKey(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.order, func(t *testing.T) {
 			t.Parallel()
-			idxs, _ := orderRowIndices(items, cols, tc.order, true)
+			idxs, _ := orderRowIndices(items, cols, tc.order, groupedNamespaces)
 			if got := sortedNames(items, idxs); !slices.Equal(got, tc.want) {
 				t.Errorf("order %q = %v, want %v", tc.order, got, tc.want)
 			}

@@ -323,6 +323,12 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			if !a.showTerminal {
 				return a, a.openRelated(models.RelatedUsedBy)
 			}
+		case "d":
+			// Esc d is the fallback for M-d (depends on).
+			a.escPressed = false
+			if !a.showTerminal {
+				return a, a.openRelated(models.RelatedDependsOn)
+			}
 		case "f":
 			// Esc f is the fallback for M-f.
 			a.escPressed = false
@@ -440,6 +446,8 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, a.openRelated(models.RelatedOwners)
 		case usedByKey:
 			return a, a.openRelated(models.RelatedUsedBy)
+		case dependsOnKey:
+			return a, a.openRelated(models.RelatedDependsOn)
 		case containerShellKey:
 			return a, a.openContainerSession(models.ExecShell)
 		case containerAttachKey:

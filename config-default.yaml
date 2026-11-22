@@ -2,6 +2,11 @@ layout:
   # Keep the menu bar titles on the top row, as in mc. false gives the row
   # to the panels; F9 still opens the bar.
   menuBarVisible: true
+  # Modes the panels start in: list, describe, manifest, logs or info.
+  # One panel must start in list mode. Panel modes are not saved, so these
+  # apply on every start; C-1 / C-2 switch them as usual.
+  leftPanelMode: list
+  rightPanelMode: info
 
 viewer:
   theme: dracula
@@ -59,6 +64,9 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+  # Lists across namespaces: group the rows by namespace and sort inside each
+  # one (true), or sort all rows by the sort column as one list (false)
+  groupByNamespace: true
 
 nodeShell:
   # Off by default. "Start a node shell..." inside a node creates a
@@ -113,12 +121,12 @@ overview:
   podsWarnPercent: 90
   # A ResourceQuota is flagged when any used value reaches this percent.
   quotaWarnPercent: 80
-  # Measured CPU and memory usage of a node (metrics.k8s.io), in percent
-  # of allocatable.
+  # Measured CPU and memory usage (metrics.k8s.io): of the pods on a node,
+  # in percent of allocatable, and of the node itself, of capacity.
   usageWarnPercent: 80
   usageFailPercent: 90
-  # A node is "under-req" when its usage is at least this many times its
-  # requests and reaches underRequestedMinPercent of allocatable.
+  # A node is "under-req" when its pods use at least this many times what
+  # they request and reach underRequestedMinPercent of allocatable.
   underRequestedFactor: 2
   underRequestedMinPercent: 25
   # A container near its memory limit (OOM soon) or at its CPU limit

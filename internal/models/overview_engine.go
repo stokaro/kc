@@ -84,9 +84,13 @@ type overviewEngine struct {
 
 	// Kubelet stats: read every statsEvery for the nodes of the last
 	// recompute, in the background.
-	statsFetch  func() (statsFetcher, error)
-	statsEvery  time.Duration
-	statsBusy   bool
+	statsFetch func() (statsFetcher, error)
+	statsEvery time.Duration
+	statsBusy  bool
+	// statsDenied stops the stats rounds after one where every node said
+	// forbidden: the identity may not use nodes/proxy, and asking each
+	// node again every minute only adds 403s.
+	statsDenied bool
 	statsLast   time.Time
 	statsRes    *statsResult
 	lastNodes   []string
@@ -113,7 +117,7 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 	}
 	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps) }
 	e.measure = func() *overviewMeasured {
-		return measuredUsage(deps, namespace, false, e, func() { e.dirty.Store(true) })
+		return measuredUsage(deps, namespace, e, func() { e.dirty.Store(true) })
 	}
 	e.statsEvery = overviewStatsEvery
 	var once sync.Once
@@ -300,7 +304,7 @@ func (e *overviewEngine) refreshMeasured(ctx context.Context) {
 	}
 	e.mu.Lock()
 	e.lastMeasure = m
-	due := !e.statsBusy && e.statsFetch != nil && len(e.lastNodes) > 0 &&
+	due := !e.statsBusy && !e.statsDenied && e.statsFetch != nil && len(e.lastNodes) > 0 &&
 		(e.statsLast.IsZero() || e.now().Sub(e.statsLast) >= e.statsEvery)
 	if due && e.deps.Activity.Paused() {
 		due = false
@@ -328,6 +332,7 @@ func (e *overviewEngine) pollStats(ctx context.Context, nodes []string) {
 	}
 	e.mu.Lock()
 	e.statsRes = &res
+	e.statsDenied = res.denied
 	e.statsBusy = false
 	e.mu.Unlock()
 	e.dirty.Store(true)
@@ -336,7 +341,7 @@ func (e *overviewEngine) pollStats(ctx context.Context, nodes []string) {
 // measuredLocked joins the latest usage and stats into what one recompute
 // uses. e.mu must be held.
 func (e *overviewEngine) measuredLocked() *overviewMeasured {
-	m := &overviewMeasured{nodesReason: "not measured", podsReason: "not measured"}
+	m := &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", clusterPodsReason: "not measured"}
 	if e.lastMeasure != nil {
 		cp := *e.lastMeasure
 		m = &cp

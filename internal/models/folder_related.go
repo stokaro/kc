@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
+	meta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -21,12 +24,15 @@ const (
 	RelatedOwners RelatedKind = iota
 	// RelatedUsedBy lists the objects that use an object.
 	RelatedUsedBy
+	// RelatedDependsOn lists the objects an object names in its spec.
+	RelatedDependsOn
 )
 
 // Path segments of the related-objects folders under an object.
 const (
-	OwnersSegment = "owners"
-	UsedBySegment = "used-by"
+	OwnersSegment    = "owners"
+	UsedBySegment    = "used-by"
+	DependsOnSegment = "requires"
 )
 
 var (
@@ -34,25 +40,30 @@ var (
 	ErrNoOwners = errors.New("the object has no owner")
 	// ErrNoUsedBy means kc does not know what uses objects of this type.
 	ErrNoUsedBy = errors.New("kc does not know what uses objects of this type")
+	// ErrNoDependsOn means kc does not know what objects of this type
+	// depend on.
+	ErrNoDependsOn = errors.New("kc does not know what objects of this type depend on")
 )
 
-// RelatedSource is a folder whose object rows can open their owners and
-// used-by folders.
+// RelatedSource is a folder whose object rows can open their owners,
+// used-by and depends-on folders.
 type RelatedSource interface {
 	RelatedFolder(ctx context.Context, kind RelatedKind, item ObjectItem) (Folder, error)
 }
 
 var _ RelatedSource = (*BaseFolder)(nil)
 
-// RelatedFolder builds the owners or used-by folder of an object row of this
+// RelatedFolder builds a related-objects folder of an object row of this
 // folder. It reads the cache and may block until an informer syncs, so call
 // it off the UI thread.
 func (b *BaseFolder) RelatedFolder(ctx context.Context, kind RelatedKind, item ObjectItem) (Folder, error) {
 	return NewRelatedFolder(ctx, b.Deps, kind, item.GVR(), item.Namespace(), item.Name(), item.Path())
 }
 
-// RelatedObjectsFolder lists objects related to one object: its owners or
-// the objects that use it. Rows come from the shared cache only.
+// RelatedObjectsFolder lists objects related to one object: its owners, the
+// objects that use it, or the objects it depends on. Rows come from the
+// shared cache only (or a namespace cache when the user may read a type only
+// there).
 type RelatedObjectsFolder struct {
 	*BaseFolder
 	kind      RelatedKind
@@ -60,39 +71,79 @@ type RelatedObjectsFolder struct {
 	namespace string
 	name      string
 	finder    UsedByFinder
+	dependsOn DependsOnFinder
+	reader    *scopedReader
+	watches   []relatedWatch // what the rows depend on
 	rows      *liveObjectRowSource
 	release   func() // gives up the unscoped cluster
 }
 
-// NewRelatedFolder builds the folder at objectPath/owners or
-// objectPath/used-by. It returns ErrNoOwners when the object has no owner
-// references and ErrNoUsedBy when no used-by finder is registered for gvr.
+// NewRelatedFolder builds the folder at objectPath/owners,
+// objectPath/used-by or objectPath/requires. It returns ErrNoOwners when
+// the object has no owner references, ErrNoUsedBy when no used-by finder is
+// registered for gvr, and ErrNoDependsOn when no depends-on finder is.
 func NewRelatedFolder(ctx context.Context, deps Deps, kind RelatedKind, gvr schema.GroupVersionResource, namespace, name string, objectPath []string) (*RelatedObjectsFolder, error) {
 	deps, release := deps.unscoped()
-	f := &RelatedObjectsFolder{kind: kind, gvr: gvr, namespace: namespace, name: name, release: release}
-	segment := OwnersSegment
+	return newRelatedFolder(ctx, deps, newScopedReader(depsResolver(deps)), release, kind, gvr, namespace, name, objectPath)
+}
+
+func newRelatedFolder(ctx context.Context, deps Deps, reader *scopedReader, release func(), kind RelatedKind, gvr schema.GroupVersionResource, namespace, name string, objectPath []string) (*RelatedObjectsFolder, error) {
+	f := &RelatedObjectsFolder{kind: kind, gvr: gvr, namespace: namespace, name: name, reader: reader, release: release}
+	fail := func(err error) (*RelatedObjectsFolder, error) {
+		reader.Close()
+		release()
+		return nil, err
+	}
+	self := relatedWatch{gvr: gvr, namespace: namespace, name: name}
+	var segment string
 	switch kind {
 	case RelatedOwners:
-		obj, err := deps.Cl.GetByGVR(ctx, gvr, namespace, name)
+		obj, err := reader.GetByGVR(ctx, gvr, namespace, name)
 		if err != nil {
-			release()
-			return nil, err
+			return fail(err)
 		}
 		if len(obj.GetOwnerReferences()) == 0 {
-			release()
-			return nil, ErrNoOwners
+			return fail(ErrNoOwners)
 		}
+		segment = OwnersSegment
+		f.watches = []relatedWatch{self}
 	case RelatedUsedBy:
 		finder, ok := UsedByFor(gvr)
 		if !ok {
-			release()
-			return nil, ErrNoUsedBy
+			return fail(ErrNoUsedBy)
 		}
 		f.finder = finder
 		segment = UsedBySegment
+		for _, s := range finder.Sources {
+			f.watches = append(f.watches, relatedWatch{gvr: s, namespace: namespace})
+		}
+	case RelatedDependsOn:
+		finder, ok := DependsOnFor(gvr)
+		if !ok {
+			return fail(ErrNoDependsOn)
+		}
+		f.dependsOn = finder
+		segment = DependsOnSegment
+		obj, err := reader.GetByGVR(ctx, gvr, namespace, name)
+		if err != nil {
+			return fail(err)
+		}
+		dependencies, err := finder(obj)
+		if err != nil {
+			return fail(err)
+		}
+		// Watch the object and the types it names, so a target that
+		// appears or goes away shows at once. The types come from the
+		// object as it is now; a new type in a later spec is read but not
+		// watched until the folder is opened again.
+		f.watches = append([]relatedWatch{self}, dependencyWatches(dependencies)...)
 	default:
-		release()
-		return nil, fmt.Errorf("unknown related kind %d", kind)
+		return fail(fmt.Errorf("unknown related kind %d", kind))
+	}
+	// Decide the scope of every watched type here, off the UI thread;
+	// startWatch runs on it and only uses these decisions.
+	for _, w := range f.watches {
+		reader.scopeFor(w.gvr, w.namespace)
 	}
 	path := append(append([]string(nil), objectPath...), segment)
 	f.BaseFolder = NewBaseFolder(deps, []table.Column{{Title: " Name"}, {Title: "Resource"}, {Title: "Namespace"}, {Title: "Relation"}}, path)
@@ -106,13 +157,45 @@ func NewRelatedFolder(ctx context.Context, deps Deps, kind RelatedKind, gvr sche
 	return f, nil
 }
 
-// Kind reports whether the folder lists owners or users.
+// relatedWatch is one watch of a related folder: a type in a namespace,
+// filtered to one name when name is set.
+type relatedWatch struct {
+	relatedScopeKey
+	name string
+}
+
+// dependencyWatches returns one watch per target type and namespace, in
+// order. A type with one target is filtered to its name, so events of other
+// objects of the type (every node, every ConfigMap of the namespace) do not
+// refresh the folder.
+func dependencyWatches(deps []Dependency) []relatedWatch {
+	var out []relatedWatch
+	index := make(map[relatedScopeKey]int)
+	for _, d := range deps {
+		k := relatedScopeKey{gvr: d.GVR, namespace: d.Namespace}
+		i, ok := index[k]
+		if !ok {
+			index[k] = len(out)
+			out = append(out, relatedWatch{relatedScopeKey: k, name: d.Name})
+			continue
+		}
+		if out[i].name != d.Name {
+			out[i].name = ""
+		}
+	}
+	return out
+}
+
+// Kind reports what the folder lists.
 func (f *RelatedObjectsFolder) Kind() RelatedKind { return f.kind }
 
-// Close stops the folder's watches and gives up the unscoped cluster.
+// Close stops the folder's watches and gives up the clusters it holds.
 func (f *RelatedObjectsFolder) Close() {
 	if f.rows != nil {
 		f.rows.Close()
+	}
+	if f.reader != nil {
+		f.reader.Close()
 	}
 	if f.release != nil {
 		f.release()
@@ -122,10 +205,14 @@ func (f *RelatedObjectsFolder) Close() {
 
 // KubectlCommand prints what the folder is built from.
 func (f *RelatedObjectsFolder) KubectlCommand() string {
-	if f.kind == RelatedOwners {
+	switch f.kind {
+	case RelatedOwners, RelatedDependsOn:
 		args := []string{"get", kubectlResource(f.gvr), f.name}
 		if f.namespace != "" {
 			args = append(args, "-n", f.namespace)
+		}
+		if f.kind == RelatedDependsOn {
+			return kubectlCommand(f.Deps, append(args, "-o", "yaml")...) + "  # the objects its spec names"
 		}
 		return kubectlCommand(f.Deps, append(args, "-o", "jsonpath={.metadata.ownerReferences}")...)
 	}
@@ -142,29 +229,22 @@ func (f *RelatedObjectsFolder) KubectlCommand() string {
 	return kubectlCommand(f.Deps, args...) + "  # that use " + kubectlResource(f.gvr) + "/" + f.name
 }
 
-// startWatch watches what the rows depend on: the object itself for
-// owners, the finder's source types for used-by, in the object's namespace.
+// startWatch watches what the rows depend on in the scope decided for each
+// type. A type the user may not list and watch is not watched: its informer
+// would never sync.
 func (f *RelatedObjectsFolder) startWatch(onEvent, onStop func()) (func(), error) {
-	type watch struct {
-		gvr  schema.GroupVersionResource
-		name string
-	}
-	var watches []watch
-	if f.kind == RelatedOwners {
-		watches = append(watches, watch{gvr: f.gvr, name: f.name})
-	} else {
-		for _, s := range f.finder.Sources {
-			watches = append(watches, watch{gvr: s})
-		}
-	}
 	var cancels []func()
 	cancelAll := func() {
 		for _, c := range cancels {
 			c()
 		}
 	}
-	for _, w := range watches {
-		cancel, err := startInformerForResource(f.Deps, w.gvr, f.namespace, w.name, onEvent, nil)
+	for _, w := range f.watches {
+		sc, ok := f.reader.decided(w.gvr, w.namespace)
+		if !ok || sc.scope == scopeDenied || sc.deps.Cl == nil {
+			continue
+		}
+		cancel, err := startInformerForResource(sc.deps, w.gvr, w.namespace, w.name, onEvent, nil)
 		if err != nil {
 			cancelAll()
 			return nil, err
@@ -183,34 +263,76 @@ func (f *RelatedObjectsFolder) startWatch(onEvent, onStop func()) (func(), error
 
 func (f *RelatedObjectsFolder) populate(ctx context.Context) ([]table.Row, error) {
 	log := ctrllog.FromContext(ctx).WithName("related")
-	var refs []RelatedRef
-	switch f.kind {
-	case RelatedOwners:
-		obj, err := f.Deps.Cl.GetByGVR(ctx, f.gvr, f.namespace, f.name)
-		if err != nil {
-			return nil, err
-		}
-		refs = ResolveOwners(f.Deps.Cl.RESTMapper(), f.namespace, obj.GetOwnerReferences())
-		refs = checkOwners(ctx, f.Deps.Cl, refs)
-	case RelatedUsedBy:
-		found, err := f.finder.Find(ctx, f.Deps.Cl, f.namespace, f.name)
-		if err != nil {
-			return nil, err
-		}
-		refs = found
-		sort.SliceStable(refs, func(i, j int) bool {
-			a, b := refs[i], refs[j]
-			if a.GVR.String() != b.GVR.String() {
-				return a.GVR.String() < b.GVR.String()
-			}
-			if a.Namespace != b.Namespace {
-				return a.Namespace < b.Namespace
-			}
-			return a.Name < b.Name
-		})
+	refs, err := f.findRefs(ctx)
+	if err != nil {
+		return nil, err
 	}
 	log.V(1).Info("related objects", "kind", f.kind, "gvr", f.gvr.String(), "namespace", f.namespace, "name", f.name, "count", len(refs))
-	return relatedRows(f.Deps, f.Path(), refs), nil
+	return relatedRows(f.Deps, f.rowDeps, f.Path(), refs), nil
+}
+
+func (f *RelatedObjectsFolder) findRefs(ctx context.Context) ([]RelatedRef, error) {
+	switch f.kind {
+	case RelatedOwners:
+		obj, err := f.reader.GetByGVR(ctx, f.gvr, f.namespace, f.name)
+		if err != nil {
+			return nil, err
+		}
+		refs := ResolveOwners(f.Deps.Cl.RESTMapper(), f.namespace, obj.GetOwnerReferences())
+		return checkOwners(ctx, f.reader, refs), nil
+	case RelatedDependsOn:
+		obj, err := f.reader.GetByGVR(ctx, f.gvr, f.namespace, f.name)
+		if err != nil {
+			return nil, err
+		}
+		return f.dependencyRefs(ctx, obj)
+	default:
+		return findUsers(ctx, f.reader, f.Deps.Cl.RESTMapper(), f.finder, f.namespace, f.name)
+	}
+}
+
+func (f *RelatedObjectsFolder) dependencyRefs(ctx context.Context, obj *unstructured.Unstructured) ([]RelatedRef, error) {
+	found, err := f.dependsOn(obj)
+	if err != nil {
+		return nil, err
+	}
+	return dependencyRefs(ctx, f.reader, found), nil
+}
+
+// rowDeps returns the Deps a row's viewer and child folder read through:
+// the scope decided for its type and namespace, so a user who may read a
+// type only in a namespace can open it from here.
+func (f *RelatedObjectsFolder) rowDeps(ref RelatedRef) Deps {
+	if sc, ok := f.reader.decided(ref.GVR, ref.Namespace); ok && sc.scope != scopeDenied && sc.deps.Cl != nil {
+		return sc.deps
+	}
+	return f.Deps
+}
+
+// findUsers runs a used-by finder and adds the controllers of the pods it
+// found. A source the user may not list gives a row that says the result is
+// incomplete instead of an error or an empty folder.
+func findUsers(ctx context.Context, r RelatedReader, mapper meta.RESTMapper, finder UsedByFinder, namespace, name string) ([]RelatedRef, error) {
+	found, err := finder.Find(ctx, r, namespace, name)
+	if err != nil {
+		partial, ok := partialRef(namespace, err)
+		if !ok {
+			return nil, err
+		}
+		return []RelatedRef{partial}, nil
+	}
+	refs := slices.Concat(found, workloadRefs(ctx, r, mapper, found))
+	sort.SliceStable(refs, func(i, j int) bool {
+		a, b := refs[i], refs[j]
+		if a.GVR.String() != b.GVR.String() {
+			return a.GVR.String() < b.GVR.String()
+		}
+		if a.Namespace != b.Namespace {
+			return a.Namespace < b.Namespace
+		}
+		return a.Name < b.Name
+	})
+	return refs, nil
 }
 
 // RelatedRowID is the row ID of a related object: the full GVR, the
@@ -225,8 +347,9 @@ func RelatedRowID(ref RelatedRef) string {
 // relatedRows renders refs as rows. An object that can be opened is an
 // object row that behaves like the row in its own list: Enter opens its
 // child folder when the type has one, F3 shows its YAML. A reference that
-// cannot be opened is a dim plain row that says why.
-func relatedRows(deps Deps, folderPath []string, refs []RelatedRef) []table.Row {
+// cannot be opened is a dim plain row that says why. depsFor returns the
+// Deps a row reads through; nil uses deps for every row.
+func relatedRows(deps Deps, depsFor func(RelatedRef) Deps, folderPath []string, refs []RelatedRef) []table.Row {
 	rows := make([]table.Row, 0, len(refs))
 	seen := make(map[string]bool, len(refs))
 	for _, ref := range refs {
@@ -248,23 +371,27 @@ func relatedRows(deps Deps, folderPath []string, refs []RelatedRef) []table.Row 
 			rows = append(rows, row)
 			continue
 		}
+		rowDeps := deps
+		if depsFor != nil {
+			rowDeps = depsFor(ref)
+		}
 		ctor, hasChild := ChildFor(ref.GVR)
 		title := ref.Name
 		if hasChild {
 			title = "/" + ref.Name
 		}
 		obj := NewObjectRow(id, []string{title, resource, ref.Namespace, relation}, basePath, ref.GVR, ref.Namespace, ref.Name, WhiteStyle())
-		obj.WithViewContent(objectViewContent(deps, ref.GVR, ref.Namespace, ref.Name))
+		obj.WithViewContent(objectViewContent(rowDeps, ref.GVR, ref.Namespace, ref.Name))
 		args := []string{"get", kubectlResource(ref.GVR), ref.Name}
 		if ref.Namespace != "" {
 			args = append(args, "-n", ref.Namespace)
 		}
-		obj.SetViewCommand(kubectlCommand(deps, append(args, "-o", "yaml")...))
+		obj.SetViewCommand(kubectlCommand(rowDeps, append(args, "-o", "yaml")...))
 		obj.RowItem.details = objectDetails(ref.Namespace, ref.Name, ref.GVR.Resource, ref.GVR.GroupVersion().String())
 		if hasChild && ctor != nil {
 			r := ref
 			rows = append(rows, NewObjectWithChildItem(obj, func() (Folder, error) {
-				return ctor(deps, r.Namespace, r.Name, basePath), nil
+				return ctor(rowDeps, r.Namespace, r.Name, basePath), nil
 			}))
 			continue
 		}

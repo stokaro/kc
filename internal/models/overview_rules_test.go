@@ -37,6 +37,11 @@ func readyNode(name, cpu, mem string, pods int64) *corev1.Node {
 				corev1.ResourceMemory: resource.MustParse(mem),
 				corev1.ResourcePods:   *resource.NewQuantity(pods, resource.DecimalSI),
 			},
+			// Capacity equals allocatable unless a test sets it (withCapacity).
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(cpu),
+				corev1.ResourceMemory: resource.MustParse(mem),
+			},
 			Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}},
 		},
 	}
@@ -520,7 +525,7 @@ func TestOverviewCapacity(t *testing.T) {
 
 	cpu := mustFinding(t, r, "capacity/cpu")
 	// requests 1+2+2 = 5 of 8 cores; limits 2+4 = 6 of 8.
-	if cpu.value != "use n/a req 62% lim 75%" {
+	if cpu.value != "pods n/a req 62% lim 75% of alloc, node n/a" {
 		t.Fatalf("cpu value = %q", cpu.value)
 	}
 	// n1: requests 3/4 = 75%, limits 6/4 = 150%: overcommitted.
@@ -530,14 +535,14 @@ func TestOverviewCapacity(t *testing.T) {
 	if got := targetKeys(cpu); !slices.Equal(got, []string{"nodes:n1", "nodes:n2"}) {
 		t.Fatalf("cpu targets = %v, the most loaded first", got)
 	}
-	if !strings.Contains(cpu.targets[0].value, "req 75% lim 150% overcommitted") {
+	if !strings.Contains(cpu.targets[0].value, "req 75% lim 150% of alloc, node n/a overcommitted") {
 		t.Fatalf("n1 value = %q", cpu.targets[0].value)
 	}
 
 	mem := mustFinding(t, r, "capacity/memory")
 	// requests 1+1+1 Gi = 3 of 16 Gi; limits 4+6 = 10 of 16, but all on
 	// n1 with 8 Gi: the row is overcommitted while the sum looks fine.
-	if mem.value != "use n/a req 19% lim 62%" || mem.state != "overcommitted" {
+	if mem.value != "pods n/a req 18% lim 62% of alloc, node n/a" || mem.state != "overcommitted" {
 		t.Fatalf("memory = %q %q", mem.value, mem.state)
 	}
 
@@ -553,10 +558,10 @@ func TestOverviewCapacityUsagePlugsIn(t *testing.T) {
 	in := loadOverviewInput(t.Context(), cl, AllNamespaces, nil)
 	m := &overviewMeasured{nodes: map[string]usageValues{"n1": {cpu: 1000, mem: 2 << 30}}}
 	r := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, m)
-	if got := mustFinding(t, r, "capacity/cpu").value; got != "use 25% req 0% lim 0%" {
+	if got := mustFinding(t, r, "capacity/cpu").value; got != "pods n/a req 0% lim 0% of alloc, node 25% of cap" {
 		t.Fatalf("cpu with usage = %q", got)
 	}
-	if got := mustFinding(t, r, "capacity/memory").value; got != "use 25% req 0% lim 0%" {
+	if got := mustFinding(t, r, "capacity/memory").value; got != "pods n/a req 0% lim 0% of alloc, node 25% of cap" {
 		t.Fatalf("memory with usage = %q", got)
 	}
 }

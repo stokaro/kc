@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -57,6 +58,11 @@ type Cluster struct {
 	storageMu      sync.RWMutex
 	storageCounts  map[schema.GroupResource]int
 	storageFetched time.Time
+	// storageRetryAt holds off reads of /metrics after a failure: maxAge
+	// after an error, storageForbiddenHold after a 401 or 403. A user
+	// without get on /metrics would otherwise send a 403 for every
+	// resource count.
+	storageRetryAt time.Time
 
 	gvrKindsMu sync.Mutex
 	gvrKinds   map[schema.GroupVersionResource]schema.GroupVersionKind
@@ -603,20 +609,37 @@ func (c *Cluster) StorageCount(ctx context.Context, gvr schema.GroupVersionResou
 func (c *Cluster) refreshStorageMetrics(ctx context.Context, maxAge time.Duration) bool {
 	c.storageMu.RLock()
 	ageOk := !c.storageFetched.IsZero() && time.Since(c.storageFetched) < maxAge && c.storageCounts != nil
+	held := time.Now().Before(c.storageRetryAt)
 	c.storageMu.RUnlock()
 	if ageOk {
 		return true
 	}
-	counts, err := c.fetchStorageMetrics(ctx)
-	if err != nil {
+	if held {
 		return false
 	}
+	counts, err := c.fetchStorageMetrics(ctx)
 	c.storageMu.Lock()
+	defer c.storageMu.Unlock()
+	if err != nil {
+		hold := maxAge
+		if errors.Is(err, errStorageMetricsForbidden) {
+			hold = max(hold, storageForbiddenHold)
+		}
+		c.storageRetryAt = time.Now().Add(hold)
+		return false
+	}
 	c.storageCounts = counts
 	c.storageFetched = time.Now()
-	c.storageMu.Unlock()
+	c.storageRetryAt = time.Time{}
 	return true
 }
+
+// storageForbiddenHold is how long a 401 or 403 from /metrics stops
+// further reads; counts then come from peeks.
+const storageForbiddenHold = 10 * time.Minute
+
+// errStorageMetricsForbidden is a 401 or 403 from /metrics.
+var errStorageMetricsForbidden = errors.New("metrics: forbidden")
 
 func (c *Cluster) fetchStorageMetrics(ctx context.Context) (map[schema.GroupResource]int, error) {
 	cfg := rest.CopyConfig(c.GetConfig())
@@ -635,6 +658,9 @@ func (c *Cluster) fetchStorageMetrics(ctx context.Context) (map[schema.GroupReso
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("%w (status %d)", errStorageMetricsForbidden, resp.StatusCode)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("metrics: unexpected status %d", resp.StatusCode)
 	}

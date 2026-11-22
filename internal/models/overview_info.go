@@ -2,7 +2,6 @@ package models
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"time"
 
@@ -14,46 +13,30 @@ import (
 // overviewNodeSummary is the load of one node, kept in the report for the
 // Info panel mode.
 type overviewNodeSummary struct {
-	name                   string
-	cpuUse, cpuReq, cpuLim int64 // millicores
-	cpuAlloc, cpuCap       int64
-	memUse, memReq, memLim int64 // bytes
-	memAlloc, memCap       int64
-	hasUse                 bool // node usage from NodeMetrics
-	// cpuPodUse and memPodUse sum the PodMetrics of the pods bound to the
-	// node, in every namespace; hasPodUse is false when PodMetrics of
-	// every namespace cannot be read.
-	cpuPodUse, memPodUse int64
-	hasPodUse            bool
-	pods, podsAlloc      int64
-	disk                 fsUse // node and separate image filesystem
-	hasDisk              bool
+	name            string
+	cpu, mem        capacityAmounts // the same figures as the /overview rows
+	pods, podsAlloc int64
+	disk            fsUse // node and separate image filesystem
+	hasDisk         bool
 }
 
 // overviewInfoInput is what the Info mode reads from a recompute beyond the
 // node and pod summaries: the scope, why usage is not known, and how many
 // pods the scope has, so an empty scope is told from missing metrics.
 type overviewInfoInput struct {
-	namespace         string
-	nodesReason       string // why node usage is not known
-	podsReason        string // why the scope's pod usage is not known
-	clusterPodsReason string // why the pod usage of every namespace is not known
-	podsMissing       string // why pods cannot be read
-	scopedPods        int    // pods of the scope that have not terminated
-	scopedPodsOnNode  map[string]int
+	namespace        string
+	podsReason       string // why the scope's pod usage is not known
+	podsMissing      string // why pods cannot be read
+	scopedPods       int    // pods of the scope that have not terminated
+	scopedPodsOnNode map[string]int
 }
 
 func infoInput(rc *ruleContext) overviewInfoInput {
 	in := overviewInfoInput{
-		namespace:         rc.in.namespace,
-		nodesReason:       rc.m.nodesReason,
-		podsReason:        rc.m.podsReason,
-		clusterPodsReason: rc.m.clusterPodsReason,
-		podsMissing:       rc.in.missingReason(ovPodsGVR),
-		scopedPodsOnNode:  make(map[string]int),
-	}
-	if in.clusterPodsReason == "" && rc.m.clusterPods == nil {
-		in.clusterPodsReason = "not measured"
+		namespace:        rc.in.namespace,
+		podsReason:       rc.m.podsReason,
+		podsMissing:      rc.in.missingReason(ovPodsGVR),
+		scopedPodsOnNode: make(map[string]int),
 	}
 	rc.scopedPods(func(p *corev1.Pod) {
 		if podTerminal(p) {
@@ -79,20 +62,9 @@ func summarizeNodes(rc *ruleContext) []overviewNodeSummary {
 		return nil
 	}
 	loads := nodeLoads(rc)
-	podUse := nodePodUsage(rc)
 	out := make([]overviewNodeSummary, 0, len(loads))
 	for _, l := range loads {
-		s := overviewNodeSummary{
-			name:   l.node.Name,
-			cpuUse: l.cpuUse, cpuReq: l.cpuReq, cpuLim: l.cpuLim, cpuAlloc: l.cpuAlloc,
-			memUse: l.memUse, memReq: l.memReq, memLim: l.memLim, memAlloc: l.memAlloc,
-			cpuCap: l.node.Status.Capacity.Cpu().MilliValue(), memCap: l.node.Status.Capacity.Memory().Value(),
-			hasUse: l.hasUse, pods: l.pods, podsAlloc: l.podsAlloc,
-		}
-		if podUse != nil {
-			u := podUse[l.node.Name]
-			s.cpuPodUse, s.memPodUse, s.hasPodUse = u.cpu, u.mem, true
-		}
+		s := overviewNodeSummary{name: l.node.Name, cpu: l.cpu, mem: l.mem, pods: l.pods, podsAlloc: l.podsAlloc}
 		if st := rc.m.stats[l.node.Name]; st != nil {
 			for _, fs := range []fsUse{st.nodeFS, separateImageFS(st)} {
 				if fs.known() {
@@ -103,29 +75,6 @@ func summarizeNodes(rc *ruleContext) []overviewNodeSummary {
 			}
 		}
 		out = append(out, s)
-	}
-	return out
-}
-
-// nodePodUsage sums the measured usage of the pods bound to each node, in
-// every namespace, the way kubectl top pods -A adds up: pods without a
-// PodMetrics entry yet count as zero. It is nil when that usage is not known.
-func nodePodUsage(rc *ruleContext) map[string]usageValues {
-	if rc.m.clusterPodsReason != "" || rc.m.clusterPods == nil {
-		return nil
-	}
-	out := make(map[string]usageValues)
-	for i := range rc.in.pods {
-		p := &rc.in.pods[i]
-		if p.Spec.NodeName == "" || podTerminal(p) {
-			continue
-		}
-		u := out[p.Spec.NodeName]
-		for _, c := range rc.m.clusterPods[usageObjectKey(p.Namespace, p.Name)] {
-			u.cpu += c.cpu
-			u.mem += c.mem
-		}
-		out[p.Spec.NodeName] = u
 	}
 	return out
 }
@@ -224,14 +173,8 @@ type OverviewInfo struct {
 
 // NewOverviewInfo returns the Info source for deps' cluster in namespace
 // (AllNamespaces for the whole cluster). It starts nothing until Summary.
-// Unlike /overview it also reads the PodMetrics of every namespace, so the
-// pod usage of a node covers every pod on it whatever the scope.
 func NewOverviewInfo(deps Deps, namespace string) *OverviewInfo {
-	e := newOverviewEngine(deps, namespace)
-	e.measure = func() *overviewMeasured {
-		return measuredUsage(deps, namespace, true, e, func() { e.dirty.Store(true) })
-	}
-	return &OverviewInfo{engine: e}
+	return &OverviewInfo{engine: newOverviewEngine(deps, namespace)}
 }
 
 // Close stops the engine.
@@ -266,41 +209,30 @@ func infoSummary(report *overviewReport, err error, cfgIn appconfig.OverviewConf
 	}
 	out.UsageAt = report.usageAt
 	var sum overviewNodeSummary
-	found, allUse, allPodUse, anyDisk := false, true, true, false
+	var cpus, mems []capacityAmounts
+	anyDisk := false
 	for _, n := range report.nodes {
 		if node != "" && n.name != node {
 			continue
 		}
-		found = true
-		sum.cpuUse, sum.cpuReq, sum.cpuLim, sum.cpuAlloc, sum.cpuCap = sum.cpuUse+n.cpuUse, sum.cpuReq+n.cpuReq, sum.cpuLim+n.cpuLim, sum.cpuAlloc+n.cpuAlloc, sum.cpuCap+n.cpuCap
-		sum.memUse, sum.memReq, sum.memLim, sum.memAlloc, sum.memCap = sum.memUse+n.memUse, sum.memReq+n.memReq, sum.memLim+n.memLim, sum.memAlloc+n.memAlloc, sum.memCap+n.memCap
-		sum.cpuPodUse, sum.memPodUse = sum.cpuPodUse+n.cpuPodUse, sum.memPodUse+n.memPodUse
+		cpus, mems = append(cpus, n.cpu), append(mems, n.mem)
 		sum.pods, sum.podsAlloc = sum.pods+n.pods, sum.podsAlloc+n.podsAlloc
-		allUse = allUse && n.hasUse
-		allPodUse = allPodUse && n.hasPodUse
 		if n.hasDisk {
 			anyDisk = true
 			sum.disk.used += n.disk.used
 			sum.disk.capacity += n.disk.capacity
 		}
 	}
-	if !found {
+	if len(cpus) == 0 {
 		note := "nodes and pods cannot be read"
 		if node != "" {
 			note = "node " + node + " is not known"
 		}
 		out.Bars = []InfoBar{{Label: "CPU", Detail: note}, {Label: "Memory", Detail: note}, {Label: "Pods", Detail: note}, {Label: "Disk", Detail: note}}
 	} else {
-		info := report.info
-		cpu := capacityAmounts{
-			podUse: sum.cpuPodUse, nodeUse: sum.cpuUse, req: sum.cpuReq, lim: sum.cpuLim, alloc: sum.cpuAlloc, capacity: sum.cpuCap,
-			hasPodUse: allPodUse, hasNodeUse: allUse, podReason: info.clusterPodsReason, nodeReason: info.nodesReason,
-		}
-		mem := cpu
-		mem.podUse, mem.nodeUse, mem.req, mem.lim, mem.alloc, mem.capacity = sum.memPodUse, sum.memUse, sum.memReq, sum.memLim, sum.memAlloc, sum.memCap
 		out.Bars = []InfoBar{
-			capacityBar(cfg, "CPU", cpu, formatCores, "cores"),
-			capacityBar(cfg, "Memory", mem, formatGiBFixed, "Gi"),
+			capacityBar(cfg, "CPU", sumCapacity(cpus), formatCores, "cores"),
+			capacityBar(cfg, "Memory", sumCapacity(mems), formatGiBFixed, "Gi"),
 			podsBar(cfg, sum.pods, sum.podsAlloc),
 			diskBar(cfg, anyDisk, sum.disk, diskNote(report)),
 		}
@@ -347,30 +279,6 @@ func topNote(info overviewInfoInput, node string) string {
 	return "metrics unavailable: " + reason
 }
 
-// capacityAmounts are the CPU or memory figures of one node or the sum of
-// several.
-type capacityAmounts struct {
-	podUse, nodeUse, req, lim, alloc, capacity int64
-	hasPodUse, hasNodeUse                      bool
-	podReason, nodeReason                      string
-}
-
-// infoState is the severity and word of one line of a capacity bar.
-type infoState struct {
-	sev  overviewSeverity
-	flag string
-}
-
-// suffix returns " (flag)", or "" when the line is ok.
-func (s infoState) suffix() string {
-	if s.flag == "" || s.flag == "ok" {
-		return ""
-	}
-	return " (" + s.flag + ")"
-}
-
-var infoStateOK = infoState{sev: severityOK, flag: "ok"}
-
 // capacityBar shows CPU or memory on one base per line:
 //
 //	pods 2.3/10.4 Gi allocatable, 22%    PodMetrics of the pods on the nodes
@@ -388,79 +296,32 @@ func capacityBar(cfg appconfig.OverviewConfig, label string, a capacityAmounts, 
 	if a.alloc <= 0 {
 		return InfoBar{Label: label, Detail: "no allocatable " + label}
 	}
-	reqPct, limPct, podPct := truncPercent(a.req, a.alloc), truncPercent(a.lim, a.alloc), truncPercent(a.podUse, a.alloc)
-	reqState := infoStateOK
-	switch {
-	case reqPct >= float64(cfg.RequestsFailPercent):
-		reqState = infoState{severityFailed, "full"}
-	case reqPct >= float64(cfg.RequestsWarnPercent):
-		reqState = infoState{severityWarning, "high"}
-	}
-	limState := infoStateOK
-	if limPct > float64(cfg.LimitsWarnPercent) {
-		limState = infoState{severityWarning, "overcommitted"}
-	}
-
-	bar := InfoBar{Label: label, Known: true}
-	worst := max(reqState.sev, limState.sev)
+	j := judgeCapacity(cfg, a)
+	bar := InfoBar{Label: label, Known: true, Health: j.worst().sev.RowHealth()}
 	var nodeLine string
-	nodeState := infoStateOK
 	switch {
-	case a.hasNodeUse && a.capacity > 0:
-		nodePct := truncPercent(a.nodeUse, a.capacity)
-		nodeState = usageState(cfg, nodePct)
-		nodeLine = fmt.Sprintf("node %s/%s %s capacity, %s%s", format(a.nodeUse), format(a.capacity), unit, percentText(nodePct), nodeState.suffix())
+	case j.nodeKnown:
+		nodeLine = fmt.Sprintf("node %s/%s %s capacity, %s%s", format(a.nodeUse), format(a.capacity), unit, percentText(j.nodePct), j.node.suffix())
 	case a.hasNodeUse:
 		nodeLine = fmt.Sprintf("node %s %s, capacity not reported", format(a.nodeUse), unit)
 	default:
 		nodeLine = "node use n/a: " + a.nodeReason
 	}
-	worst = max(worst, nodeState.sev)
-
-	limLine := fmt.Sprintf("lim %s%s", percentText(limPct), limState.suffix())
+	limLine := fmt.Sprintf("lim %s%s", percentText(j.limPct), j.lim.suffix())
 	if a.hasPodUse {
-		podState := usageState(cfg, podPct)
-		if podState.sev != severityFailed && underRequested(cfg, podPct, reqPct) {
-			podState = infoState{severityWarning, flagUnderRequested}
-		}
-		bar.Percent, bar.Usage, bar.Flag = podPct, true, podState.flag
-		bar.Detail = fmt.Sprintf("pods %s/%s %s allocatable, %s%s", format(a.podUse), format(a.alloc), unit, percentText(podPct), podState.suffix())
-		bar.More = []string{nodeLine, fmt.Sprintf("req %s%s, %s", percentText(reqPct), reqState.suffix(), limLine)}
-		worst = max(worst, podState.sev)
+		bar.Percent, bar.Usage, bar.Flag = j.podPct, true, j.pod.flag
+		bar.Detail = fmt.Sprintf("pods %s/%s %s allocatable, %s%s", format(a.podUse), format(a.alloc), unit, percentText(j.podPct), j.pod.suffix())
+		bar.More = []string{nodeLine, fmt.Sprintf("req %s%s, %s", percentText(j.reqPct), j.req.suffix(), limLine)}
+		return bar
+	}
+	bar.Percent, bar.Flag = j.reqPct, j.req.flag
+	bar.Detail = fmt.Sprintf("req %s/%s %s allocatable, %s%s", format(a.req), format(a.alloc), unit, percentText(j.reqPct), j.req.suffix())
+	if !a.hasNodeUse && a.nodeReason == a.podReason {
+		bar.More = []string{limLine, "use n/a: " + a.podReason}
 	} else {
-		bar.Percent, bar.Flag = reqPct, reqState.flag
-		bar.Detail = fmt.Sprintf("req %s/%s %s allocatable, %s%s", format(a.req), format(a.alloc), unit, percentText(reqPct), reqState.suffix())
-		if !a.hasNodeUse && a.nodeReason == a.podReason {
-			bar.More = []string{limLine, "use n/a: " + a.podReason}
-		} else {
-			bar.More = []string{limLine, "pods use n/a: " + a.podReason, nodeLine}
-		}
+		bar.More = []string{limLine, "pods use n/a: " + a.podReason, nodeLine}
 	}
-	bar.Health = worst.RowHealth()
 	return bar
-}
-
-// usageState classifies measured usage with the overview's usage
-// thresholds.
-func usageState(cfg appconfig.OverviewConfig, pct float64) infoState {
-	switch {
-	case pct >= float64(cfg.UsageFailPercent):
-		return infoState{severityFailed, "full"}
-	case pct >= float64(cfg.UsageWarnPercent):
-		return infoState{severityWarning, "high"}
-	}
-	return infoStateOK
-}
-
-// truncPercent is v of of in whole percent, truncated as kubectl describe
-// node prints it: 25.97% is 25%.
-func truncPercent(v, of int64) float64 {
-	return math.Floor(percent(v, of))
-}
-
-// percentText prints a whole percentage, truncated.
-func percentText(pct float64) string {
-	return fmt.Sprintf("%.0f%%", math.Floor(pct))
 }
 
 // formatCores prints millicores as cores with one decimal.

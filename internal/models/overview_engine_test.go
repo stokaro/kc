@@ -266,7 +266,7 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		if got := rowCells(t, rows, "health/pods-crashloop"); !slices.Equal(got, []string{"/pods crash looping", "2", "failed"}) {
 			t.Fatalf("crash loop row = %v", got)
 		}
-		if got := rowCells(t, rows, "capacity/cpu"); got[1] != "use n/a req 0% lim 0%" {
+		if got := rowCells(t, rows, "capacity/cpu"); got[1] != "pods n/a req 0% lim 0% of alloc, node n/a" {
 			t.Fatalf("cpu row = %v, want use n/a", got)
 		}
 

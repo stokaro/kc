@@ -213,6 +213,12 @@ type LayoutConfig struct {
 	// default; the panels start one row lower. When false the top row
 	// belongs to the panels and the bar shows only while F9 has it open.
 	MenuBarVisible bool `json:"menuBarVisible"`
+	// LeftPanelMode and RightPanelMode are the modes the panels start in:
+	// list, describe, manifest, logs or info. At least one panel starts in
+	// list mode. Panel modes are not saved between runs, so these apply on
+	// every start.
+	LeftPanelMode  PanelStartMode `json:"leftPanelMode"`
+	RightPanelMode PanelStartMode `json:"rightPanelMode"`
 }
 
 type Config struct {
@@ -258,13 +264,14 @@ type OverviewConfig struct {
 	// QuotaWarnPercent flags a ResourceQuota when any used value reaches
 	// this percent of its hard limit.
 	QuotaWarnPercent int `json:"quotaWarnPercent"`
-	// UsageWarnPercent and UsageFailPercent compare the measured CPU and
-	// memory usage of a node (metrics.k8s.io) with its allocatable.
+	// UsageWarnPercent and UsageFailPercent judge the measured CPU and
+	// memory usage (metrics.k8s.io): of the pods on a node against its
+	// allocatable, and of the node itself against its capacity.
 	UsageWarnPercent int `json:"usageWarnPercent"`
 	UsageFailPercent int `json:"usageFailPercent"`
-	// UnderRequestedFactor marks a node "under-requested" when its measured
-	// usage is at least this many times what its pods request, and the
-	// usage reaches UnderRequestedMinPercent of allocatable. The scheduler
+	// UnderRequestedFactor marks a node "under-requested" when the measured
+	// usage of its pods is at least this many times what they request, and
+	// that usage reaches UnderRequestedMinPercent of allocatable. The scheduler
 	// then keeps placing pods on a node that is busier than it thinks.
 	UnderRequestedFactor     float64 `json:"underRequestedFactor"`
 	UnderRequestedMinPercent int     `json:"underRequestedMinPercent"`
@@ -486,6 +493,11 @@ type ObjectsConfig struct {
 	Order string `json:"order"`
 	// Columns controls which columns are shown. Valid values are ColumnsModeNormal and ColumnsModeWide.
 	Columns string `json:"columns"`
+	// GroupByNamespace groups a list across namespaces by namespace and
+	// sorts inside each namespace, as kubectl get -A prints it. When false
+	// the sort column orders all rows at once, so the pod with the most
+	// memory comes first whatever its namespace.
+	GroupByNamespace bool `json:"groupByNamespace"`
 }
 
 type TerminalMode string
@@ -516,7 +528,11 @@ type TableConfig struct {
 
 func Default() *Config {
 	return &Config{
-		Layout: LayoutConfig{MenuBarVisible: true},
+		Layout: LayoutConfig{
+			MenuBarVisible: true,
+			LeftPanelMode:  PanelStartList,
+			RightPanelMode: PanelStartInfo,
+		},
 		Viewer: ViewerConfig{
 			Theme: "dracula",
 			Mode:  ViewerModeScroll,
@@ -549,7 +565,7 @@ func Default() *Config {
 			// Favorites empty by default so we can seed them from discovery's "all" category.
 			Favorites: nil,
 		},
-		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
+		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal, GroupByNamespace: true},
 		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
 		NodeShell: NodeShellConfig{
 			Enabled:     false,
@@ -612,6 +628,7 @@ func shellEnv() string {
 // normalizeLoaded fills zero values and folds invalid values of a config
 // read from a file to the values kc uses.
 func normalizeLoaded(cfg *Config) {
+	cfg.Layout.normalize()
 	if cfg.Viewer.Theme == "" {
 		cfg.Viewer.Theme = "dracula"
 	}
