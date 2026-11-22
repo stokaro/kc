@@ -90,6 +90,16 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		}
 
+	case sortNextKey:
+		if a.changeObjectSort(nextSortOrder) {
+			return a, nil
+		}
+
+	case sortReverseKey:
+		if a.changeObjectSort(reverseSortOrder) {
+			return a, nil
+		}
+
 	case "tab":
 		if a.interactiveCommandActive() {
 			break
@@ -225,6 +235,17 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.escPressed = false
 			a.startQuickSearch()
 			return a, nil
+		case "o":
+			// Esc o and Esc r are the fallbacks for M-o and M-r.
+			a.escPressed = false
+			if a.changeObjectSort(nextSortOrder) {
+				return a, nil
+			}
+		case "r":
+			a.escPressed = false
+			if a.changeObjectSort(reverseSortOrder) {
+				return a, nil
+			}
 		case "w":
 			a.escPressed = false
 			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {

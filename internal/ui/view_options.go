@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -107,7 +108,12 @@ type ViewOptionsResourcesConfig struct {
 type ViewOptionsObjectsConfig struct {
 	ShowTableMode bool
 	Columns       string
-	Order         string
+	// Order is the order the list is sorted by, e.g. "-age".
+	Order string
+	// SortKeys and SortTitles list the columns "Sort by" offers. Without
+	// them it offers Name only.
+	SortKeys   []string
+	SortTitles []string
 }
 
 // ViewOptionsCommandConfig configures the Command section.
@@ -236,6 +242,7 @@ const (
 	viewOptionObjectTableMode
 	viewOptionObjectColumns
 	viewOptionObjectOrder
+	viewOptionObjectReverse
 	viewOptionCommandWatch
 	viewOptionViewerTheme
 	viewOptionViewerWrapMode
@@ -284,7 +291,10 @@ type ViewOptionsModel struct {
 		enabled    bool
 		showTable  bool
 		columnsIdx int
-		orderIdx   int
+		sortKeys   []string
+		sortTitles []string
+		sortIdx    int
+		reverse    bool
 	}
 
 	viewer struct {
@@ -378,7 +388,8 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		model.objects.enabled = true
 		model.objects.showTable = cfg.Objects.ShowTableMode
 		model.objects.columnsIdx = objectColumnsIndexFor(cfg.Objects.Columns)
-		model.objects.orderIdx = objectOrderIndexFor(cfg.Objects.Order)
+		model.objects.sortKeys, model.objects.sortTitles, model.objects.sortIdx, model.objects.reverse =
+			objectSortChoices(cfg.Objects.SortKeys, cfg.Objects.SortTitles, cfg.Objects.Order)
 
 		model.appendSectionSpacerIfNeeded()
 		model.entries = append(model.entries, viewOptionEntry{
@@ -394,6 +405,7 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		model.entries = append(model.entries,
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectColumns},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectOrder},
+			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectReverse},
 		)
 	}
 
@@ -565,13 +577,45 @@ func objectColumnsIndexFor(columns string) int {
 	return 0
 }
 
-func objectOrderIndexFor(order string) int {
-	for i, key := range objOrderKeys {
-		if strings.EqualFold(key, order) {
-			return i
+// objectSortChoices returns the columns "Sort by" cycles through, the one
+// order sorts by, and whether order is descending, like mc's Sort order
+// dialog with its Reverse box. A key the columns lack (a wide column in
+// normal mode) is kept as an extra choice, so the dialog does not change
+// the order unasked.
+func objectSortChoices(keys, titles []string, order string) ([]string, []string, int, bool) {
+	order = appconfig.NormalizeObjectsOrder(order)
+	desc := strings.HasPrefix(order, "-")
+	key := strings.TrimPrefix(order, "-")
+	if key == appconfig.ObjectsOrderCreation {
+		key, desc = "age", !desc
+	}
+	if len(keys) == 0 {
+		keys, titles = []string{appconfig.ObjectsOrderName}, []string{"Name"}
+	}
+	keys = append([]string(nil), keys...)
+	labels := make([]string, len(keys))
+	for i := range keys {
+		labels[i] = keys[i]
+		if i < len(titles) && titles[i] != "" {
+			labels[i] = titles[i]
 		}
 	}
-	return 0
+	idx := slices.Index(keys, key)
+	if idx < 0 {
+		keys = append(keys, key)
+		labels = append(labels, key)
+		idx = len(keys) - 1
+	}
+	return keys, labels, idx, desc
+}
+
+// objectOrder composes the order the Objects section selects.
+func (m *ViewOptionsModel) objectOrder() string {
+	key := m.objects.sortKeys[m.objects.sortIdx]
+	if m.objects.reverse {
+		return "-" + key
+	}
+	return key
 }
 
 func commandWatchIndexFor(interval time.Duration) int {
@@ -765,17 +809,17 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 			m.objects.columnsIdx = 0
 		}
 	case viewOptionObjectOrder:
-		if len(objOrderKeys) == 0 {
+		n := len(m.objects.sortKeys)
+		if n == 0 {
 			return
 		}
 		if delta < 0 {
-			m.objects.orderIdx--
-			if m.objects.orderIdx < 0 {
-				m.objects.orderIdx = len(objOrderKeys) - 1
-			}
+			m.objects.sortIdx = (m.objects.sortIdx - 1 + n) % n
 		} else {
-			m.objects.orderIdx = (m.objects.orderIdx + 1) % len(objOrderKeys)
+			m.objects.sortIdx = (m.objects.sortIdx + 1) % n
 		}
+	case viewOptionObjectReverse:
+		m.objects.reverse = !m.objects.reverse
 	case viewOptionViewerTheme:
 		if !m.viewer.enabled || len(m.viewer.themeNames) == 0 {
 			return
@@ -867,7 +911,7 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 		msg.Objects = &ViewOptionsObjectsPayload{
 			ShowTableOption: m.objects.showTable,
 			Columns:         objColumnsKeys[m.objects.columnsIdx],
-			Order:           objOrderKeys[m.objects.orderIdx],
+			Order:           m.objectOrder(),
 		}
 	}
 	if m.viewer.enabled {
@@ -927,7 +971,12 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 	case viewOptionObjectColumns:
 		return "Columns", objColumnsLabels[m.objects.columnsIdx]
 	case viewOptionObjectOrder:
-		return "Objects order", objOrderLabels[m.objects.orderIdx]
+		return "Sort by", m.objects.sortTitles[m.objects.sortIdx]
+	case viewOptionObjectReverse:
+		if m.objects.reverse {
+			return "Reverse", "Yes"
+		}
+		return "Reverse", "No"
 	case viewOptionCommandWatch:
 		if len(commandWatchLabels) == 0 {
 			return "Watch", "-"

@@ -548,6 +548,18 @@ func (p *Panel) ObjectOrder() string {
 	return "name"
 }
 
+// SortState returns the columns of the shown object list and the order it
+// is sorted by. ok is false when the panel shows no sortable list.
+func (p *Panel) SortState(ctx context.Context) (listwidget.SortState, bool) {
+	if p.mode != PanelModeList {
+		return listwidget.SortState{}, false
+	}
+	if lw := p.listWidget(ctx); lw != nil {
+		return lw.SortState()
+	}
+	return listwidget.SortState{}, false
+}
+
 // HasInteractiveCommand reports whether the active command widget is interactive.
 func (p *Panel) HasInteractiveCommand() bool {
 	return p.mode == PanelModeCommand && p.commandInteractive

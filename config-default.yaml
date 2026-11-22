@@ -39,7 +39,7 @@ resources:
   favorites: []
 
 objects:
-  # Object list ordering: name | -name | creation | -creation
+  # Object list sort: a column key (name, age, status, restarts, ...) or creation; "-" sorts descending
   order: name
   # Columns mode for server-side Tables:
   # - normal: show priority 0 columns (kubectl default)
