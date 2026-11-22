@@ -647,13 +647,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(cmds...)
 	case resourceDeletedMsg:
 		if msg.err != nil {
+			text := deleteResultText(msg)
 			if a.toastLogger != nil {
-				a.enqueueCmd(a.toastLogger.Errorf("Delete %s failed: %v", kubectlResourceRef(msg.target.gvr, msg.target.name), msg.err))
+				a.enqueueCmd(a.toastLogger.Errorf("%s", text))
 			} else {
-				a.enqueueCmd(a.ShowToast(fmt.Sprintf("Delete failed: %v", msg.err), 5*time.Second))
+				a.enqueueCmd(a.ShowToast(text, 5*time.Second))
 			}
-			return a, nil
 		}
+		// Refresh on failure too: a replaced or vanished object means the
+		// panel shows stale rows.
 		a.refreshPanelAfterEdit(msg.target.panelIdx)
 		return a, nil
 	case EscTimeoutMsg:
