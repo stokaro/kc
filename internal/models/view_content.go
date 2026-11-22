@@ -96,7 +96,10 @@ func keyViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name,
 	}
 }
 
-func containerViewContent(deps Deps, namespace, pod, container string) ViewContentFunc {
+// containerViewContent renders the spec of one container of a pod. kind
+// selects the pod spec list the container lives in, so the viewer reads the
+// same entry as the kubectl command shown for the row.
+func containerViewContent(deps Deps, namespace, pod, container string, kind containerKind) ViewContentFunc {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	return func() (string, string, string, string, string, error) {
 		obj, err := getForView(deps, gvr, namespace, pod)
@@ -106,9 +109,9 @@ func containerViewContent(deps Deps, namespace, pod, container string) ViewConte
 		if obj == nil {
 			return "", "", "", "", "", ErrNoViewContent
 		}
-		m := findContainer(obj.Object, container)
+		m := findContainer(obj.Object, kind, container)
 		if m == nil {
-			return "", "", "", "", "", fmt.Errorf("container %q not found", container)
+			return "", "", "", "", "", fmt.Errorf("%s %q not found", containerKindLabel(kind), container)
 		}
 		out, err := yaml.Marshal(m)
 		if err != nil {
@@ -119,37 +122,36 @@ func containerViewContent(deps Deps, namespace, pod, container string) ViewConte
 	}
 }
 
-func findContainer(obj map[string]interface{}, name string) map[string]interface{} {
-	if arr, found, _ := unstructured.NestedSlice(obj, "spec", "containers"); found {
-		for _, c := range arr {
-			if m, ok := c.(map[string]interface{}); ok {
-				if n, _ := m["name"].(string); n == name {
-					return m
-				}
-			}
-		}
+// findContainer returns the entry named name in the pod spec list that kind
+// selects (spec.containers, spec.initContainers or spec.ephemeralContainers).
+// Every entry, ephemeral ones included, carries its name in a top-level
+// "name" field; none of them has metadata of its own.
+func findContainer(obj map[string]interface{}, kind containerKind, name string) map[string]interface{} {
+	arr, found, _ := unstructured.NestedSlice(obj, "spec", containerField(kind))
+	if !found {
+		return nil
 	}
-	if arr, found, _ := unstructured.NestedSlice(obj, "spec", "initContainers"); found {
-		for _, c := range arr {
-			if m, ok := c.(map[string]interface{}); ok {
-				if n, _ := m["name"].(string); n == name {
-					return m
-				}
-			}
+	for _, c := range arr {
+		m, ok := c.(map[string]interface{})
+		if !ok {
+			continue
 		}
-	}
-	if arr, found, _ := unstructured.NestedSlice(obj, "spec", "ephemeralContainers"); found {
-		for _, c := range arr {
-			if m, ok := c.(map[string]interface{}); ok {
-				if metadata, ok := m["metadata"].(map[string]interface{}); ok {
-					if n, _ := metadata["name"].(string); n == name {
-						return m
-					}
-				}
-			}
+		if n, _ := m["name"].(string); n == name {
+			return m
 		}
 	}
 	return nil
+}
+
+func containerKindLabel(kind containerKind) string {
+	switch kind {
+	case containerKindInit:
+		return "init container"
+	case containerKindEphemeral:
+		return "ephemeral container"
+	default:
+		return "container"
+	}
 }
 
 func isProbablyText(b []byte) bool {

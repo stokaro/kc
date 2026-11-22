@@ -19,6 +19,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	readmedoc "github.com/sttts/kc"
+	"github.com/sttts/kc/internal/atomicfile"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
@@ -2887,22 +2888,9 @@ func (a *App) copyToPath(req *copyRequest, dest string) error {
 		return err
 	}
 	defer reader.Close()
-	file, err := os.Create(dest)
-	if err != nil {
-		return err
-	}
-	closed := false
-	defer func() {
-		if !closed {
-			_ = file.Close()
-		}
-	}()
-	if _, err := io.Copy(file, reader); err != nil {
-		_ = os.Remove(dest)
-		return err
-	}
-	closed = true
-	return file.Close()
+	// The destination changes only after the whole stream was written, and a
+	// new export is private: it may hold decoded Secret values.
+	return atomicfile.Write(ctx, dest, reader)
 }
 
 type copyRequest struct {
