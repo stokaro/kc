@@ -6,13 +6,11 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/stokaro/kc/internal/access"
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/portforward"
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
 // portForwardKey opens the port forward dialog on a pod, container or
@@ -162,14 +160,6 @@ type portForwardModel struct {
 
 func newPortForwardModel(plan *models.PortForwardPlan) *portForwardModel {
 	m := &portForwardModel{plan: plan}
-	confirmStyle := lipgloss.NewStyle().
-		Padding(0, 3).
-		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
-		Foreground(lipgloss.Color(uistyles.ColorWhite))
-	confirmFocused := confirmStyle.
-		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
-		Foreground(lipgloss.Color(uistyles.ColorBlack)).
-		Bold(true)
 	m.modal = NewTextInputModal(TextInputModalConfig{
 		Title:        "Port forward",
 		Label:        "Local:remote",
@@ -189,7 +179,6 @@ func newPortForwardModel(plan *models.PortForwardPlan) *portForwardModel {
 		ResultMsg: func(r TextInputModalResult) tea.Msg {
 			return portForwardInputMsg{value: r.Value, confirm: r.Confirm, close: r.Close}
 		},
-		ButtonStyles: TextInputModalButtonStyles{Confirm: &confirmStyle, ConfirmFocused: &confirmFocused},
 	})
 	return m
 }
@@ -206,6 +195,7 @@ func (m *portForwardModel) PreferredSize(maxW, maxH int) (width, height int) {
 func (m *portForwardModel) FooterHints() []FooterHint { return m.modal.FooterHints() }
 func (m *portForwardModel) FocusInput() tea.Cmd       { return m.modal.FocusInput() }
 func (m *portForwardModel) View() tea.View            { return m.modal.View() }
+func (m *portForwardModel) RuleRows() []int           { return m.modal.RuleRows() }
 
 // Update keeps the kubectl command in step with the typed value.
 func (m *portForwardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

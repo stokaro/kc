@@ -41,10 +41,39 @@ type RelatedRef struct {
 	// cluster does not serve, or an owner that no longer exists.
 	Problem string
 
+	// UID is the object's UID when it is known: owner references and
+	// objects kc read.
+	UID types.UID
 	// Owner references only.
-	UID        types.UID
 	APIVersion string
 	Kind       string
+
+	// ownerRefs are the owner references of a listed pod, for the workload
+	// rows of a used-by folder.
+	ownerRefs []metav1.OwnerReference
+}
+
+// Problems of related objects that cannot be opened. They read the same in
+// every related folder so a user can tell them apart.
+const (
+	problemNotFound  = "not found"
+	problemReplaced  = "not found (an object with another UID has the name)"
+	problemForbidden = "forbidden"
+)
+
+// readProblem says why reading a related object failed; empty when err is
+// nil.
+func readProblem(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case apierrors.IsNotFound(err):
+		return problemNotFound
+	case apierrors.IsForbidden(err):
+		return problemForbidden
+	default:
+		return "unreadable: " + err.Error()
+	}
 }
 
 // RelatedReader reads objects from the shared controller-runtime cache.
@@ -114,12 +143,10 @@ func checkOwners(ctx context.Context, r RelatedReader, owners []RelatedRef) []Re
 		}
 		obj, err := r.GetByGVR(ctx, o.GVR, o.Namespace, o.Name)
 		switch {
-		case apierrors.IsNotFound(err):
-			o.Problem = "not found"
 		case err != nil:
-			o.Problem = "unreadable: " + err.Error()
+			o.Problem = readProblem(err)
 		case obj != nil && o.UID != "" && obj.GetUID() != o.UID:
-			o.Problem = "not found (an object with another UID has the name)"
+			o.Problem = problemReplaced
 		}
 	}
 	return owners
@@ -129,38 +156,47 @@ func checkOwners(ctx context.Context, r RelatedReader, owners []RelatedRef) []Re
 type PodReference struct {
 	GVR  schema.GroupVersionResource
 	Name string
-	Via  string
+	// Via is the field of the pod spec that names the object, such as
+	// "volumes[cfg]", "containers[app].envFrom" or "containers[app].env[A,B]".
+	Via string
 }
 
 // PodReferences lists the ConfigMaps, Secrets, PersistentVolumeClaims and
 // the ServiceAccount a pod uses, through volumes (also projected and generic
 // ephemeral ones), env, envFrom, imagePullSecrets and serviceAccountName.
-// Each object and way appears once, in spec order.
+// Each object and field appears once, in spec order.
 func PodReferences(pod *corev1.Pod) []PodReference {
 	if pod == nil {
 		return nil
 	}
+	return podSpecReferences(&pod.Spec, pod.Name)
+}
+
+// podSpecReferences is PodReferences for a pod spec. podName names the
+// claims of generic ephemeral volumes; a pod template has no pod name yet,
+// so those claims are left out when it is empty.
+func podSpecReferences(spec *corev1.PodSpec, podName string) []PodReference {
 	c := podRefCollector{seen: make(map[PodReference]bool)}
-	spec := &pod.Spec
 	sa := spec.ServiceAccountName
+	via := "serviceAccountName"
 	if sa == "" {
-		sa = spec.DeprecatedServiceAccount
+		sa, via = spec.DeprecatedServiceAccount, "serviceAccount"
 	}
-	c.add(serviceAccountGVR, sa, "serviceAccount")
+	c.add(serviceAccountGVR, sa, via)
 	for _, s := range spec.ImagePullSecrets {
 		c.add(secretGVR, s.Name, "imagePullSecrets")
 	}
 	for _, v := range spec.Volumes {
-		c.volume(pod.Name, v)
+		c.volume(podName, v)
 	}
 	for _, ct := range spec.InitContainers {
-		c.env(ct.Env, ct.EnvFrom)
+		c.env("initContainers["+ct.Name+"]", ct.Env, ct.EnvFrom)
 	}
 	for _, ct := range spec.Containers {
-		c.env(ct.Env, ct.EnvFrom)
+		c.env("containers["+ct.Name+"]", ct.Env, ct.EnvFrom)
 	}
 	for _, ct := range spec.EphemeralContainers {
-		c.env(ct.Env, ct.EnvFrom)
+		c.env("ephemeralContainers["+ct.Name+"]", ct.Env, ct.EnvFrom)
 	}
 	return c.out
 }
@@ -184,47 +220,70 @@ func (c *podRefCollector) add(gvr schema.GroupVersionResource, name, via string)
 }
 
 func (c *podRefCollector) volume(podName string, v corev1.Volume) {
+	field := "volumes[" + v.Name + "]"
 	switch {
 	case v.ConfigMap != nil:
-		c.add(configMapGVR, v.ConfigMap.Name, "volume")
+		c.add(configMapGVR, v.ConfigMap.Name, field)
 	case v.Secret != nil:
-		c.add(secretGVR, v.Secret.SecretName, "volume")
+		c.add(secretGVR, v.Secret.SecretName, field)
 	case v.PersistentVolumeClaim != nil:
-		c.add(pvcGVR, v.PersistentVolumeClaim.ClaimName, "volume")
+		c.add(pvcGVR, v.PersistentVolumeClaim.ClaimName, field)
 	case v.Ephemeral != nil:
 		// The ephemeral volume controller names the claim <pod>-<volume>.
-		c.add(pvcGVR, podName+"-"+v.Name, "ephemeral volume")
+		if podName != "" {
+			c.add(pvcGVR, podName+"-"+v.Name, field+".ephemeral")
+		}
 	case v.Projected != nil:
 		for _, src := range v.Projected.Sources {
 			if src.ConfigMap != nil {
-				c.add(configMapGVR, src.ConfigMap.Name, "projected volume")
+				c.add(configMapGVR, src.ConfigMap.Name, field+".projected")
 			}
 			if src.Secret != nil {
-				c.add(secretGVR, src.Secret.Name, "projected volume")
+				c.add(secretGVR, src.Secret.Name, field+".projected")
 			}
 		}
 	}
 }
 
-func (c *podRefCollector) env(env []corev1.EnvVar, envFrom []corev1.EnvFromSource) {
+// env adds the objects one container names in envFrom and env. The env
+// variables that read one object are listed together: env[A,B].
+func (c *podRefCollector) env(container string, env []corev1.EnvVar, envFrom []corev1.EnvFromSource) {
 	for _, e := range envFrom {
 		if e.ConfigMapRef != nil {
-			c.add(configMapGVR, e.ConfigMapRef.Name, "envFrom")
+			c.add(configMapGVR, e.ConfigMapRef.Name, container+".envFrom")
 		}
 		if e.SecretRef != nil {
-			c.add(secretGVR, e.SecretRef.Name, "envFrom")
+			c.add(secretGVR, e.SecretRef.Name, container+".envFrom")
 		}
+	}
+	type target struct {
+		gvr  schema.GroupVersionResource
+		name string
+	}
+	var order []target
+	vars := make(map[target][]string)
+	note := func(t target, variable string) {
+		if t.name == "" {
+			return
+		}
+		if _, ok := vars[t]; !ok {
+			order = append(order, t)
+		}
+		vars[t] = append(vars[t], variable)
 	}
 	for _, e := range env {
 		if e.ValueFrom == nil {
 			continue
 		}
-		if e.ValueFrom.ConfigMapKeyRef != nil {
-			c.add(configMapGVR, e.ValueFrom.ConfigMapKeyRef.Name, "env")
+		if r := e.ValueFrom.ConfigMapKeyRef; r != nil {
+			note(target{configMapGVR, r.Name}, e.Name)
 		}
-		if e.ValueFrom.SecretKeyRef != nil {
-			c.add(secretGVR, e.ValueFrom.SecretKeyRef.Name, "env")
+		if r := e.ValueFrom.SecretKeyRef; r != nil {
+			note(target{secretGVR, r.Name}, e.Name)
 		}
+	}
+	for _, t := range order {
+		c.add(t.gvr, t.name, container+".env["+strings.Join(vars[t], ",")+"]")
 	}
 }
 
@@ -341,7 +400,11 @@ func podsUsing(ctx context.Context, r RelatedReader, target schema.GroupVersionR
 			}
 		}
 		if len(vias) > 0 {
-			out = append(out, RelatedRef{GVR: podGVR, Namespace: pod.Namespace, Name: pod.Name, Relation: strings.Join(vias, ", ")})
+			out = append(out, RelatedRef{
+				GVR: podGVR, Namespace: pod.Namespace, Name: pod.Name, UID: pod.UID,
+				Relation:  strings.Join(vias, ", "),
+				ownerRefs: pod.OwnerReferences,
+			})
 		}
 	}
 	return out, nil

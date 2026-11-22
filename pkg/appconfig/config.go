@@ -30,6 +30,38 @@ type LogsViewerConfig struct {
 	// --max-log-requests. Further streams wait for a free slot. Zero or
 	// less means DefaultLogsMaxRequests.
 	MaxRequests int `json:"maxRequests"`
+	// MaxLines bounds the lines one logs viewer or Logs panel keeps; older
+	// lines are dropped. Zero or less means DefaultLogsMaxLines.
+	MaxLines int `json:"maxLines"`
+	// MaxMemoryMiB bounds the estimated memory of the lines one logs viewer
+	// or Logs panel keeps, in MiB; older lines are dropped. Zero or less
+	// means DefaultLogsMaxMemoryMiB.
+	MaxMemoryMiB int `json:"maxMemoryMiB"`
+}
+
+// Defaults of viewer.logs.maxLines and viewer.logs.maxMemoryMiB.
+const (
+	DefaultLogsMaxLines     = 100_000
+	DefaultLogsMaxMemoryMiB = 64
+)
+
+// EffectiveMaxLines returns MaxLines, or the default when it is not
+// positive.
+func (c LogsViewerConfig) EffectiveMaxLines() int {
+	if c.MaxLines <= 0 {
+		return DefaultLogsMaxLines
+	}
+	return c.MaxLines
+}
+
+// EffectiveMaxMemoryBytes returns MaxMemoryMiB in bytes, or the default when
+// it is not positive.
+func (c LogsViewerConfig) EffectiveMaxMemoryBytes() int64 {
+	mib := c.MaxMemoryMiB
+	if mib <= 0 {
+		mib = DefaultLogsMaxMemoryMiB
+	}
+	return int64(mib) << 20
 }
 
 // DefaultLogsTail is the default for viewer.logs.tail.
@@ -232,13 +264,14 @@ type OverviewConfig struct {
 	// QuotaWarnPercent flags a ResourceQuota when any used value reaches
 	// this percent of its hard limit.
 	QuotaWarnPercent int `json:"quotaWarnPercent"`
-	// UsageWarnPercent and UsageFailPercent compare the measured CPU and
-	// memory usage of a node (metrics.k8s.io) with its allocatable.
+	// UsageWarnPercent and UsageFailPercent judge the measured CPU and
+	// memory usage (metrics.k8s.io): of the pods on a node against its
+	// allocatable, and of the node itself against its capacity.
 	UsageWarnPercent int `json:"usageWarnPercent"`
 	UsageFailPercent int `json:"usageFailPercent"`
-	// UnderRequestedFactor marks a node "under-requested" when its measured
-	// usage is at least this many times what its pods request, and the
-	// usage reaches UnderRequestedMinPercent of allocatable. The scheduler
+	// UnderRequestedFactor marks a node "under-requested" when the measured
+	// usage of its pods is at least this many times what they request, and
+	// that usage reaches UnderRequestedMinPercent of allocatable. The scheduler
 	// then keeps placing pods on a node that is busier than it thinks.
 	UnderRequestedFactor     float64 `json:"underRequestedFactor"`
 	UnderRequestedMinPercent int     `json:"underRequestedMinPercent"`
@@ -503,7 +536,12 @@ func Default() *Config {
 		Viewer: ViewerConfig{
 			Theme: "dracula",
 			Mode:  ViewerModeScroll,
-			Logs:  LogsViewerConfig{Tail: DefaultLogsTail, MaxRequests: DefaultLogsMaxRequests},
+			Logs: LogsViewerConfig{
+				Tail:         DefaultLogsTail,
+				MaxRequests:  DefaultLogsMaxRequests,
+				MaxLines:     DefaultLogsMaxLines,
+				MaxMemoryMiB: DefaultLogsMaxMemoryMiB,
+			},
 		},
 		Panel: PanelConfig{
 			Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}},

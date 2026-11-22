@@ -144,7 +144,7 @@ func TestDrainProgressCancelThenClose(t *testing.T) {
 		{Node: "b", Phase: nodeaction.PhaseWaiting},
 	}})
 	text := ansi.Strip(view.View().Content)
-	for _, want := range []string{"evicting", "app/db-0: The disruption budget db", "Esc cancels", "[ Cancel ]"} {
+	for _, want := range []string{"evicting", "app/db-0: The disruption budget db", "Esc cancels", "[< Cancel >]"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("view lacks %q:\n%s", want, text)
 		}
@@ -165,7 +165,7 @@ func TestDrainProgressCancelThenClose(t *testing.T) {
 	}
 
 	view.finish(nodeaction.Result{}, errors.New("drain node a canceled with 1 pod left"))
-	if text := ansi.Strip(view.View().Content); !strings.Contains(text, "! drain node a canceled") || !strings.Contains(text, "[ Close ]") {
+	if text := ansi.Strip(view.View().Content); !strings.Contains(text, "! drain node a canceled") || !strings.Contains(text, "[< Close >]") {
 		t.Errorf("finished view:\n%s", text)
 	}
 	if handled, _ := view.HandleModalEscape(nodeKey("esc")); handled {
