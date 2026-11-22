@@ -10,7 +10,7 @@
   - List: `Lines(top, num int) []Row`, `Above(rowID string, num int) []Row`, `Below(rowID string, num int) []Row`.
 - Selector line: visible when focused. If the selected row disappears, move selection to the next row; if none, move to previous.
 - Highly dynamic data: optimize for frequent updates; preserve scroll/cursor; minimal reflow.
-- Selection: toggle with Ctrl+T or Insert; selected rows use a configurable selection style.
+- Selection: toggle with C-t or Insert; selected rows use a configurable selection style.
 - Reusability: component should be reusable across views; avoid coupling to resource types.
 - Styling: header, borders, and column separators must be customizable (including no borders) following Bubble Tea v2 + lipgloss conventions; provide good defaults and full overrides.
 - Dependencies policy: always import Bubble Tea/Bubbles/Lipgloss using `/v2` paths; run `go mod tidy` after changes.
