@@ -27,6 +27,10 @@ type ScopePickerModel struct {
 	height   int
 	onSelect func(scopeChoice) tea.Cmd
 	onCancel func() tea.Cmd
+	// onKey, when set, sees each key before the picker does, with the
+	// highlighted choice (nil when the list is empty). It reports whether
+	// it used the key.
+	onKey func(key string, current *scopeChoice) (bool, tea.Cmd)
 }
 
 func NewScopePickerModel(choices []scopeChoice, current string, onSelect func(scopeChoice) tea.Cmd, onCancel func() tea.Cmd) *ScopePickerModel {
@@ -41,6 +45,12 @@ func NewScopePickerModel(choices []scopeChoice, current string, onSelect func(sc
 }
 
 func (m *ScopePickerModel) Init() tea.Cmd { return nil }
+
+// SetChoices replaces the entries and keeps the highlight in range.
+func (m *ScopePickerModel) SetChoices(choices []scopeChoice) {
+	m.choices = choices
+	m.refilter()
+}
 
 // HandleModalEscape makes one Esc clear the filter, or close the picker
 // when there is none, instead of the modal's Esc Esc sequence.
@@ -110,6 +120,16 @@ func (m *ScopePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
+	}
+	if m.onKey != nil {
+		var current *scopeChoice
+		if m.selected < len(m.visible) {
+			c := m.choices[m.visible[m.selected]]
+			current = &c
+		}
+		if used, cmd := m.onKey(key.String(), current); used {
+			return m, cmd
+		}
 	}
 	switch key.String() {
 	case "esc":

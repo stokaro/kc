@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/sttts/kc/internal/objectaction"
 	"github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 )
@@ -21,12 +22,46 @@ type CommandSelectorModel struct {
 	targetNamespace string
 	targetLeft      bool
 	onSelect        func(appconfig.CommandConfig) tea.Cmd
+	onAction        func(objectaction.Action) tea.Cmd
 	onCancel        func() tea.Cmd
 }
 
 type commandSelectorEntry struct {
 	header  string
 	command *appconfig.CommandConfig
+	action  *objectaction.Action
+}
+
+func (e commandSelectorEntry) selectable() bool { return e.command != nil || e.action != nil }
+
+func (e commandSelectorEntry) label() string {
+	switch {
+	case e.action != nil:
+		return e.action.Label
+	case e.command != nil:
+		return e.command.Name
+	default:
+		return ""
+	}
+}
+
+// objectActionsTitle heads the built-in actions, above the user commands.
+const objectActionsTitle = "Object Actions"
+
+// AddObjectActions puts built-in actions for the selected object above
+// the configured commands and selects the first one.
+func (m *CommandSelectorModel) AddObjectActions(actions []objectaction.Action, onAction func(objectaction.Action) tea.Cmd) {
+	if len(actions) == 0 {
+		return
+	}
+	entries := []commandSelectorEntry{{header: objectActionsTitle}}
+	for i := range actions {
+		entries = append(entries, commandSelectorEntry{action: &actions[i]})
+	}
+	m.entries = append(entries, m.entries...)
+	m.onAction = onAction
+	m.selected = firstSelectable(m.entries)
+	m.scroll = 0
 }
 
 func NewCommandSelectorModel(commands []appconfig.CommandConfig, targetPanel, targetNamespace string, targetLeft bool, onSelect func(appconfig.CommandConfig) tea.Cmd, onCancel func() tea.Cmd) *CommandSelectorModel {
@@ -83,8 +118,15 @@ func (m *CommandSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			m.moveSelection(1)
 		case "enter":
-			if m.selected >= 0 && m.selected < len(m.entries) && m.entries[m.selected].command != nil {
-				return m, m.onSelect(*m.entries[m.selected].command)
+			if m.selected < 0 || m.selected >= len(m.entries) {
+				return m, nil
+			}
+			entry := m.entries[m.selected]
+			switch {
+			case entry.action != nil && m.onAction != nil:
+				return m, m.onAction(*entry.action)
+			case entry.command != nil && m.onSelect != nil:
+				return m, m.onSelect(*entry.command)
 			}
 		}
 	}
@@ -130,7 +172,7 @@ func (m *CommandSelectorModel) View() tea.View {
 			}
 			continue
 		}
-		if entry.command == nil {
+		if !entry.selectable() {
 			continue
 		}
 		cursor := "  "
@@ -140,7 +182,7 @@ func (m *CommandSelectorModel) View() tea.View {
 			cursor = "> "
 			style = focusStyle
 		}
-		name := entry.command.Name
+		name := entry.label()
 		line := fmt.Sprintf("%s%s", cursor, name)
 		s.WriteString(style.Width(lineWidth).Render(line))
 		if i < end-1 {
@@ -171,7 +213,7 @@ func (m *CommandSelectorModel) moveSelection(delta int) {
 		if next < 0 || next >= len(m.entries) {
 			break
 		}
-		if m.entries[next].command != nil {
+		if m.entries[next].selectable() {
 			m.selected = next
 			break
 		}
@@ -225,7 +267,7 @@ func sectionTitle(t appconfig.CommandType) string {
 
 func firstSelectable(entries []commandSelectorEntry) int {
 	for i, e := range entries {
-		if e.command != nil {
+		if e.selectable() {
 			return i
 		}
 	}
@@ -240,8 +282,8 @@ func (m *CommandSelectorModel) PreferredSize(maxContentWidth, maxContentHeight i
 			maxLen = max(maxLen, lipgloss.Width(e.header))
 			continue
 		}
-		if e.command != nil {
-			line := fmt.Sprintf("> %s", e.command.Name)
+		if e.selectable() {
+			line := fmt.Sprintf("> %s", e.label())
 			if w := lipgloss.Width(line); w > maxLen {
 				maxLen = w
 			}
