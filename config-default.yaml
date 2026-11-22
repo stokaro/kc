@@ -69,6 +69,24 @@ portForward:
   # addresses like kubectl; 0.0.0.0 exposes them to the network.
   address: 127.0.0.1
 
+# Columns per resource type, keyed by group/version/resource (v1/pods for
+# the core group). An entry with jsonPath adds a column computed from the
+# object, like `kubectl get -o custom-columns`; wide: true shows it only in
+# wide mode. An entry with hide: true hides the server column of that name;
+# name "*" hides all server columns except Name. Example:
+#
+# columns:
+#   apps/v1/deployments:
+#     - name: IMAGE
+#       jsonPath: .spec.template.spec.containers[*].image
+#     - name: Up-to-date
+#       hide: true
+#   v1/pods:
+#     - name: NODE-IP
+#       jsonPath: .status.hostIP
+#       wide: true
+columns: {}
+
 commands:
   - name: Top Nodes
     command: kubectl top nodes

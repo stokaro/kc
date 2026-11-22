@@ -157,7 +157,7 @@ func TestObjectsFolderSortMarkAcrossNamespaces(t *testing.T) {
 		t.Run(tc.order, func(t *testing.T) {
 			t.Parallel()
 			folder := NewObjectsFolder(Deps{}, gvr, "", []string{"pods"}, nil)
-			rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, tc.order)
+			rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, tc.order, nil)
 			ids := make([]string, len(rows))
 			for i, r := range rows {
 				ids[i], _, _, _ = r.Columns()

@@ -171,6 +171,9 @@ type Config struct {
 	// Contexts color panels per kubeconfig context; the first matching
 	// entry wins.
 	Contexts []ContextColorConfig `json:"contexts"`
+	// Columns adds and hides object list columns per resource type, keyed
+	// by group/version/resource (see ColumnsKey). Empty by default.
+	Columns map[string][]CustomColumn `json:"columns,omitempty"`
 }
 
 // NodeShellConfig controls the node shell: a privileged pod pinned to a

@@ -226,6 +226,7 @@ A command acts on the marked rows when any are marked, otherwise on the highligh
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns` – object list sort and wide/normal column display. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells and `<none>` come last. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first; the order applies inside each namespace, and `namespace` orders the groups.
+- `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation, and how long a cluster cache stays running after the last open folder that uses it is closed.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 - `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
@@ -233,6 +234,30 @@ A command acts on the marked rows when any are marked, otherwise on the highligh
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
+
+### Custom Columns
+
+Object lists show the columns the API server sends (`kubectl get`). The `columns` section adds columns computed from the object and hides server columns, per resource type:
+
+```yaml
+columns:
+  apps/v1/deployments:
+    - name: IMAGE
+      jsonPath: .spec.template.spec.containers[*].image
+    - name: Up-to-date
+      hide: true
+  v1/pods:
+    - name: NODE-IP
+      jsonPath: .status.hostIP
+      wide: true
+```
+
+- Keys are `group/version/resource`; the core group has no group part (`v1/pods`, `v1/configmaps`). A key for one version does not apply to another.
+- `jsonPath` takes the same expressions as `kubectl get -o custom-columns` (`.spec.x`, `{.spec.x}`, `[*]`, filters). Several matches are joined with commas; no match prints `<none>`. Added columns come after the server columns.
+- `wide: true` shows an added column only in wide mode (`objects.columns: wide`).
+- `hide: true` hides the server column of that name (case does not matter). `name: "*"` with `hide: true` hides every server column except Name, so the list shows only your columns. Name is never hidden.
+- A bad entry is reported once on the command line when the first list opens; its column stays empty.
+- When added columns are shown, the command line shows the matching `kubectl get ... -o custom-columns=...` command.
 
 `C-s` ("Save as defaults") in an option dialog reads the file again and writes only the settings that dialog shows, so custom commands and keys kc does not know stay as they are. The file is replaced atomically and keeps its permissions; a symbolic link is written through to its target. The command line says whether the settings were saved or apply to this session only.
 
@@ -326,6 +351,10 @@ portForward:
   # reachable from this machine only; "localhost" listens on both loopback
   # addresses like kubectl; 0.0.0.0 exposes them to the network.
   address: 127.0.0.1
+
+# Columns per resource type, keyed by group/version/resource (v1/pods for
+# the core group). See "Custom Columns" above.
+columns: {}
 ```
 
 ### Panel colors

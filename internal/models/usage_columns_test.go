@@ -330,7 +330,7 @@ func TestUsageColumnsInFolderRows(t *testing.T) {
 		{appconfig.ColumnsModeWide, []string{"Name", "Status", "CPU", "MEM", "%CPU/R", "%CPU/L", "%MEM/R", "%MEM/L"}, []string{"/a", "Running", "250m", "100Mi", "50", usageNA, usageNA, "25"}},
 	}
 	for _, tc := range tests {
-		rows := folder.rowsFromRowList(merged, tc.mode, appconfig.ObjectsOrderName)
+		rows := folder.rowsFromRowList(merged, tc.mode, appconfig.ObjectsOrderName, nil)
 		folder.installAgeHooks(nil)
 		var titles []string
 		for _, c := range folder.Columns() {

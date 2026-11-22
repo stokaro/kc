@@ -109,7 +109,7 @@ func TestObjectsFolderRowsCarryFilterFacts(t *testing.T) {
 	pending.SetLabels(map[string]string{"app": "web"})
 	list.Items = append(list.Items, pending)
 
-	rows := folder.rowsFromList(list, "name")
+	rows := folder.rowsFromList(list, "name", nil)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}

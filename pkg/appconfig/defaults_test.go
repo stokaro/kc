@@ -136,4 +136,8 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if !reflect.DeepEqual(a.NodeShell, b.NodeShell) {
 		t.Fatalf("nodeShell mismatch: yaml=%+v code=%+v", a.NodeShell, b.NodeShell)
 	}
+	// No custom columns by default; the sample may spell that as {}.
+	if len(a.Columns) != 0 || len(b.Columns) != 0 {
+		t.Fatalf("columns mismatch: yaml=%v code=%v, want none", a.Columns, b.Columns)
+	}
 }
