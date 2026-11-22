@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/tablecache"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -35,6 +36,43 @@ func TestRowStylerReadyCondition(t *testing.T) {
 	}
 	if style != NotReadyStyle() {
 		t.Fatalf("expected NotReadyStyle pointer")
+	}
+}
+
+func TestRowStylerCordonedNode(t *testing.T) {
+	ready := []interface{}{map[string]interface{}{"type": "Ready", "status": "True"}}
+	tests := []struct {
+		name string
+		spec map[string]interface{}
+		want *lipgloss.Style
+	}{
+		{name: "schedulable", spec: map[string]interface{}{}, want: nil},
+		{name: "unschedulable false", spec: map[string]interface{}{"unschedulable": false}, want: nil},
+		{name: "cordoned", spec: map[string]interface{}{"unschedulable": true}, want: NotReadyStyle()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Node",
+				"spec":       tt.spec,
+				"status":     map[string]interface{}{"conditions": ready},
+			}}
+			info := RowStyleInfo{
+				GVR:          schema.GroupVersionResource{Version: "v1", Resource: "nodes"},
+				GVK:          schema.GroupVersionKind{Version: "v1", Kind: "Node"},
+				ObjectMeta:   metav1.ObjectMeta{Name: "n"},
+				Unstructured: node,
+				BaseStyle:    WhiteStyle(),
+			}
+			want := tt.want
+			if want == nil {
+				want = info.BaseStyle
+			}
+			if got := applyRowStylers(info); got != want {
+				t.Fatalf("style = %p, want %p", got, want)
+			}
+		})
 	}
 }
 

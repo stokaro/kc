@@ -121,7 +121,20 @@ func registerReadyStylers() {
 
 	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}, styler)
 	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}, styler)
+	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}, rowStylerFunc(cordonedNodeStyle))
 	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, styler)
+}
+
+// cordonedNodeStyle shows a cordoned node (spec.unschedulable) like a
+// node that is not ready: no new pods go there.
+func cordonedNodeStyle(info RowStyleInfo) *lipgloss.Style {
+	if info.Unstructured == nil {
+		return info.BaseStyle
+	}
+	if cordoned, _, _ := unstructured.NestedBool(info.Unstructured.Object, "spec", "unschedulable"); cordoned {
+		return NotReadyStyle()
+	}
+	return info.BaseStyle
 }
 
 func registerJobStyler() {
