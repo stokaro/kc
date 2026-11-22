@@ -1,83 +1,38 @@
 package models
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
+	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	table "github.com/stokaro/kc/internal/table"
 )
 
-// RowFilter hides rows of an object list. The text works like k9s' filter:
+// RowFilter hides rows of an object list. The text is a list of terms
+// separated by spaces, and a row must match every term:
 //
-//	nginx        rows whose name matches the regular expression (any case)
-//	!nginx       rows whose name does not match
-//	-l app=web   rows whose labels match the label selector
+//	nginx           the name matches the regular expression (any case)
+//	!nginx          the name does not match
+//	-l app=web      the labels match the label selector
+//	-n web,api      the namespace is one of the listed ones
+//	cpu>500m        a column compares as given (see ParseRowFilter)
 //
 // FaultsOnly keeps only the rows whose object is in a fault state (see
 // RowHealth). The zero value filters nothing.
 type RowFilter struct {
 	text       string
-	pattern    *regexp.Regexp
-	invert     bool
+	terms      []filterTerm
 	selector   labels.Selector
 	FaultsOnly bool
-}
-
-// ParseRowFilter parses a filter text. Empty text is no filter.
-func ParseRowFilter(text string) (RowFilter, error) {
-	text = strings.TrimSpace(text)
-	f := RowFilter{text: text}
-	if text == "" {
-		return f, nil
-	}
-	if rest, ok := cutFlag(text, "-l"); ok {
-		if rest == "" {
-			return RowFilter{}, fmt.Errorf("label selector is empty")
-		}
-		sel, err := labels.Parse(rest)
-		if err != nil {
-			return RowFilter{}, fmt.Errorf("invalid label selector: %w", err)
-		}
-		f.text = "-l " + rest
-		f.selector = sel
-		return f, nil
-	}
-	expr := text
-	if strings.HasPrefix(expr, "!") {
-		f.invert = true
-		expr = strings.TrimSpace(expr[1:])
-		if expr == "" {
-			return RowFilter{}, fmt.Errorf("pattern after ! is empty")
-		}
-	}
-	if _, err := regexp.Compile(expr); err != nil {
-		return RowFilter{}, fmt.Errorf("invalid regular expression: %w", err)
-	}
-	re, err := regexp.Compile("(?i)" + expr)
-	if err != nil {
-		return RowFilter{}, fmt.Errorf("invalid regular expression: %w", err)
-	}
-	f.pattern = re
-	return f, nil
-}
-
-// cutFlag returns the text after flag when text starts with flag followed
-// by a space or the end of the text.
-func cutFlag(text, flag string) (string, bool) {
-	rest, ok := strings.CutPrefix(text, flag)
-	if !ok || (rest != "" && rest[0] != ' ' && rest[0] != '\t') {
-		return "", false
-	}
-	return strings.TrimSpace(rest), true
 }
 
 // Text returns the filter text in its canonical form.
 func (f RowFilter) Text() string { return f.text }
 
-// Selector returns the label selector, or "" when the filter has none.
+// Selector returns the label selector of all -l terms, or "" when the
+// filter has none.
 func (f RowFilter) Selector() string {
 	if f.selector == nil {
 		return ""
@@ -105,10 +60,18 @@ func (f RowFilter) Label() string {
 type RowFacts struct {
 	// Name is the object name; ID is the row ID, which is "namespace/name"
 	// in lists across namespaces. The pattern matches either.
-	Name   string
-	ID     string
-	Labels map[string]string
-	Health RowHealth
+	Name      string
+	ID        string
+	Namespace string
+	Labels    map[string]string
+	Health    RowHealth
+	// Created is the creation time, which the age column compares by.
+	Created time.Time
+
+	// cols holds the list's cells for column terms; row is this row's
+	// index in it.
+	cols *filterColumns
+	row  int
 }
 
 // Matches reports whether the filter keeps a row.
@@ -119,9 +82,8 @@ func (f RowFilter) Matches(r RowFacts) bool {
 	if f.selector != nil && !f.selector.Matches(labels.Set(r.Labels)) {
 		return false
 	}
-	if f.pattern != nil {
-		hit := f.pattern.MatchString(r.Name) || (r.ID != r.Name && f.pattern.MatchString(r.ID))
-		if hit == f.invert {
+	for _, t := range f.terms {
+		if !t.matches(r) {
 			return false
 		}
 	}
@@ -214,11 +176,58 @@ func (s *liveObjectRowSource) applyFilterLocked() {
 }
 
 // rowFactsFor collects the filter facts of an object row.
-func rowFactsFor(info RowStyleInfo, id string) RowFacts {
+// ns is the row's namespace, cols the listing's cells and row the row's
+// index in them.
+func rowFactsFor(info RowStyleInfo, id, ns string, cols *filterColumns, row int) RowFacts {
 	return RowFacts{
-		Name:   info.ObjectMeta.Name,
-		ID:     id,
-		Labels: info.ObjectMeta.Labels,
-		Health: ClassifyRowHealth(info.GVR, info.Unstructured),
+		Name:      info.ObjectMeta.Name,
+		ID:        id,
+		Namespace: ns,
+		Labels:    info.ObjectMeta.Labels,
+		Health:    ClassifyRowHealth(info.GVR, info.Unstructured),
+		Created:   info.ObjectMeta.CreationTimestamp.Time,
+		cols:      cols,
+		row:       row,
 	}
+}
+
+// withCustomCells returns cells padded to n with the added cells after
+// them. Without added cells it returns cells as they are.
+func withCustomCells(cells []any, n int, custom []string) []any {
+	if len(custom) == 0 {
+		return cells
+	}
+	width := max(n, len(cells))
+	out := make([]any, width, width+len(custom))
+	copy(out, cells)
+	for _, c := range custom {
+		out = append(out, c)
+	}
+	return out
+}
+
+// customColumnDefs describes the added columns for column filter terms.
+func customColumnDefs(cc *customColumns) []metav1.TableColumnDefinition {
+	cols := cc.tableColumns()
+	defs := make([]metav1.TableColumnDefinition, len(cols))
+	for i, c := range cols {
+		defs[i] = metav1.TableColumnDefinition{Name: strings.TrimSpace(c.Title), Type: "string"}
+	}
+	return defs
+}
+
+// setFilterColumns records the cells of the last listing for column terms.
+func (o *ObjectsFolder) setFilterColumns(fc *filterColumns) {
+	o.sortMu.Lock()
+	o.filterCols = fc
+	o.sortMu.Unlock()
+}
+
+// ValidateRowFilter reports column terms of f that name no column of this
+// list, or values the column cannot hold.
+func (o *ObjectsFolder) ValidateRowFilter(f RowFilter) error {
+	o.sortMu.Lock()
+	fc := o.filterCols
+	o.sortMu.Unlock()
+	return f.validateColumns(fc)
 }
