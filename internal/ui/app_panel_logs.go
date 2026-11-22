@@ -128,11 +128,18 @@ func openPanelAllContainers(root context.Context, cl *kccluster.Cluster, spec mo
 	return logswidget.Stream{Spec: spec, Containers: containers, Body: src, Cancel: cancel}, nil
 }
 
-// followOtherPanelLogs starts a panel that just entered Logs mode on the
-// other panel's selection. The mode chooser replays the selection itself,
-// but the C-1 / C-2 cycle keys do not.
-func (a *App) followOtherPanelLogs(ctx context.Context, panel *Panel) tea.Cmd {
-	if panel == nil || panel.Mode() != PanelModeLogs {
+// followOtherPanel starts a panel that just entered Describe, Manifest or
+// Logs mode on the other panel's selection. Panel.SetMode gives the new
+// widget the panel's own cursor row, and the mode chooser replays the
+// other selection itself, but the C-1 / C-2 cycle keys and the F9 menu do
+// not. Info mode resolves the other panel on its own.
+func (a *App) followOtherPanel(ctx context.Context, panel *Panel) tea.Cmd {
+	if panel == nil {
+		return nil
+	}
+	switch panel.Mode() {
+	case PanelModeDescribe, PanelModeManifest, PanelModeLogs:
+	default:
 		return nil
 	}
 	idx, ok := a.panelIndexFor(panel)
