@@ -137,7 +137,7 @@ func TestDeleteConfirmEnterTriggersMessage(t *testing.T) {
 	}
 	app.pendingDelete = &target
 
-	app.deleteConfirm.Configure("pods.v1./demo", "default")
+	app.deleteConfirm.Configure("pods.v1./demo", "default", "kind-dev")
 	app.deleteConfirm.SetDimensions(40, 8)
 	modal.SetContent(app.deleteConfirm)
 	modal.SetDimensions(app.width, app.height)
