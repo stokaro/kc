@@ -112,6 +112,8 @@ type Config struct {
 	Objects    ObjectsConfig       `json:"objects"`
 	Terminal   TerminalConfig      `json:"terminal"`
 	Commands   []CommandConfig     `json:"commands"`
+	// ReadOnly opens contexts in read-only mode; see ReadOnlyConfig.
+	ReadOnly ReadOnlyConfig `json:"readOnly"`
 }
 
 type CommandType string
@@ -154,6 +156,9 @@ type CommandConfig struct {
 	WatchInterval          metav1.Duration      `json:"watchInterval"`
 	Debounce               metav1.Duration      `json:"debounce"`
 	OnExit                 CommandExitBehavior  `json:"onExit"`
+	// Dangerous marks a command that changes the cluster. Read-only mode
+	// hides and refuses dangerous commands; every other command still runs.
+	Dangerous bool `json:"dangerous,omitempty"`
 }
 
 // ObjectsConfig controls object-list specific options.

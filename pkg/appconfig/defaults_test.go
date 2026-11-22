@@ -124,4 +124,18 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Resources.PeekInterval.Duration != b.Resources.PeekInterval.Duration {
 		t.Fatalf("resources.peekInterval mismatch: yaml=%v code=%v", a.Resources.PeekInterval.Duration, b.Resources.PeekInterval.Duration)
 	}
+	if a.ReadOnly.Enabled != b.ReadOnly.Enabled {
+		t.Fatalf("readOnly.enabled mismatch: yaml=%v code=%v", a.ReadOnly.Enabled, b.ReadOnly.Enabled)
+	}
+	if len(a.ReadOnly.Contexts) != 0 || len(b.ReadOnly.Contexts) != 0 {
+		t.Fatalf("readOnly.contexts must be empty by default: yaml=%v code=%v", a.ReadOnly.Contexts, b.ReadOnly.Contexts)
+	}
+	if len(a.Commands) != len(b.Commands) {
+		t.Fatalf("commands count mismatch: yaml=%d code=%d", len(a.Commands), len(b.Commands))
+	}
+	for i := range b.Commands {
+		if a.Commands[i].Dangerous != b.Commands[i].Dangerous {
+			t.Fatalf("commands[%d].dangerous mismatch: yaml=%v code=%v", i, a.Commands[i].Dangerous, b.Commands[i].Dangerous)
+		}
+	}
 }

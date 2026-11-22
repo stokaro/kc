@@ -60,3 +60,13 @@ commands:
     watchInterval: 5s
     debounce: 500ms
     onExit: keep-open
+
+# Read-only mode: kc refuses edits (F4), deletes (F8), namespace creation
+# (F7), the pod filesystem debug helper and commands marked dangerous.
+# --readonly turns it on for every context, --write turns it off.
+readOnly:
+  # true makes every context read-only.
+  enabled: false
+  # Context names or globs ("*" any run of characters, "?" one), for
+  # example "*prod*". A pattern must match the whole name.
+  contexts: []
