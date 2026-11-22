@@ -16,7 +16,7 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
 - **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, and an mc-style search dialog (`F7`: normal, regular expression or wildcard search, case sensitive, backwards, whole words; `n`/`Shift+F7` for the next match). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
-- **Container internals:** each pod container exposes `/logs` plus a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
+- **Container internals:** each pod container exposes `/logs`, a `shell` row and a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
 - **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker.
 - **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
 
@@ -79,7 +79,11 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). `M-s` and `Esc s` do the same. |
 | `M-a`      | In viewers: copy the whole content.                                             |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
+| `M-x`      | Shell in the container of the selected container or pod row: `kubectl exec -it` runs `bash`, or `sh` when the image has no bash. On a pod row kc takes the container named by the `kubectl.kubernetes.io/default-container` annotation, else the first one; open the pod's `/containers` folder to pick another. kc hands the terminal to kubectl and comes back when the shell ends. `Esc x` does the same. Enter on a container's `shell` row does the same. |
+| `M-t`      | Attach to the main process of the selected container or pod (`kubectl attach`, with `-i` and `-t` when the container has stdin and a TTY). Keys go to that process, so ending it ends the container. `Esc t` does the same. |
 | `C-c`      | Quit.                                                                           |
+
+Shell and attach run kubectl with the panel's kubeconfig, context and impersonation (`--as`, `--as-group`, `--as-uid`), and print the equivalent kubectl command before the session starts. Ephemeral containers work the same way. When the image has no shell, kc says so; the `/root` row can still browse its files through the podfs debug helper.
 
 Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
 
