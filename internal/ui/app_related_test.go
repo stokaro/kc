@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -73,6 +75,13 @@ func TestHandleRelatedFolder(t *testing.T) {
 			wantClosed: 1,
 		},
 		{
+			name: "dropped and closed when a newer lookup replaced it",
+			msg: func(from, result models.Folder) relatedFolderMsg {
+				return relatedFolderMsg{panelIdx: 0, from: from, selID: "web", folder: result, canceled: true}
+			},
+			wantClosed: 1,
+		},
+		{
 			name: "an info message opens nothing",
 			msg: func(from, _ models.Folder) relatedFolderMsg {
 				return relatedFolderMsg{panelIdx: 0, from: from, info: "pods/web has no owner"}
@@ -119,7 +128,7 @@ func TestHandleRelatedFolder(t *testing.T) {
 
 func TestRelatedKeysNeedAnObject(t *testing.T) {
 	t.Parallel()
-	for _, key := range []rune{'j', 'b'} {
+	for _, key := range []rune{'j', 'b', 'd'} {
 		a, _ := relatedTestApp(t, []table.Row{models.NewRowItem("plain", []string{"plain"}, nil, nil)})
 		_, cmd := a.handleKeyMsg(tea.KeyPressMsg{Code: key, Mod: tea.ModAlt}, nil)
 		if cmd == nil {
@@ -129,5 +138,22 @@ func TestRelatedKeysNeedAnObject(t *testing.T) {
 		if !ok || !msg.info {
 			t.Fatalf("M-%c: got %#v, want an info toast", key, msg)
 		}
+	}
+}
+
+// A lookup replaced by a newer one reports nothing, not even its error;
+// the same error from a lookup still wanted is shown.
+func TestReplacedRelatedLookupIsSilent(t *testing.T) {
+	t.Parallel()
+	a, root := relatedTestApp(t, nil)
+	if a.toastLogger == nil {
+		t.Fatalf("test app has no toast logger; the check below would pass vacuously")
+	}
+	err := errors.Join(context.Canceled, errors.New("pods/web"))
+	if cmd := a.handleRelatedFolder(relatedFolderMsg{panelIdx: 0, from: root, err: err, canceled: true}); cmd != nil {
+		t.Fatalf("replaced lookup returned a command")
+	}
+	if cmd := a.handleRelatedFolder(relatedFolderMsg{panelIdx: 0, from: root, err: err}); cmd == nil {
+		t.Fatalf("a wanted lookup's error was dropped")
 	}
 }

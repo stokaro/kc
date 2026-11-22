@@ -310,6 +310,9 @@ type App struct {
 	// call; cd - goes there.
 	prevLocation [2]*PanelPath
 	explainDocs  *explain.Loader // OpenAPI v3 documents for M-e, per cluster and group-version
+	// relatedCancel cancels the owners, used-by or requires lookup in
+	// flight; a new lookup replaces it. See app_related.go.
+	relatedCancel context.CancelFunc
 
 	// interrupts is held while kubectl owns the terminal, so the SIGINT
 	// of its C-c does not quit kc; see interrupt_gate.go.

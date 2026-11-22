@@ -104,9 +104,12 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 		t.Fatalf("used-by folder: %v", err)
 	}
 	defer usedBy.Close()
-	waitRows(t, usedBy, 1)
+	// The pod and the ReplicaSet that runs it; the non-controller owner
+	// is not followed.
+	waitRows(t, usedBy, 2)
 	assertRows(t, "used-by", usedBy, map[string][]string{
-		"v1/pods/related/web-1-abc": {"/web-1-abc", "pods", ns, "volume"},
+		"v1/pods/related/web-1-abc":         {"/web-1-abc", "pods", ns, "volumes[v]"},
+		"apps/v1/replicasets/related/web-1": {"/web-1", "replicasets.apps", ns, "controller of pods/web-1-abc"},
 	})
 	if _, _, ok := usedBy.Find(ctx, "v1/pods/related/unrelated"); ok {
 		t.Fatalf("used-by lists a pod that does not use the configmap")
@@ -114,9 +117,9 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 
 	// A new user appears through the watch on pods.
 	mustCreate(t, cli, usingPod("late"))
-	waitRows(t, usedBy, 2)
+	waitRows(t, usedBy, 3)
 	assertRows(t, "used-by after create", usedBy, map[string][]string{
-		"v1/pods/related/late": {"/late", "pods", ns, "volume"},
+		"v1/pods/related/late": {"/late", "pods", ns, "volumes[v]"},
 	})
 }
 

@@ -12,11 +12,13 @@ import (
 	"github.com/stokaro/kc/internal/models"
 )
 
-// Keys that open the owners and used-by folders of the selected object.
-// Esc j and Esc b do the same where Option does not act as Meta.
+// Keys that open the owners, used-by and requires folders of the selected
+// object. Esc j, Esc b and Esc d do the same where Option does not act as
+// Meta.
 const (
-	ownersKey = "alt+j"
-	usedByKey = "alt+b"
+	ownersKey    = "alt+j"
+	usedByKey    = "alt+b"
+	dependsOnKey = "alt+d"
 )
 
 // relatedFolderMsg carries a built owners or used-by folder back to the UI
@@ -29,10 +31,12 @@ type relatedFolderMsg struct {
 	firstID  string // row to put the cursor on, empty for none
 	info     string // shown instead of opening a folder
 	err      error
+	canceled bool // a newer lookup replaced this one
 }
 
-// openRelated builds the owners or used-by folder of the selected object off
-// the UI thread; handleRelatedFolder opens it.
+// openRelated builds a related-objects folder of the selected object off the
+// UI thread; handleRelatedFolder opens it. A new lookup cancels the one in
+// flight, whose result is then dropped.
 func (a *App) openRelated(kind models.RelatedKind) tea.Cmd {
 	panel := a.activePanelRef()
 	if panel == nil {
@@ -51,45 +55,65 @@ func (a *App) openRelated(kind models.RelatedKind) tea.Cmd {
 	}
 	obj, ok := item.(models.ObjectItem)
 	if !ok || obj.GVR().Empty() || obj.Name() == "" {
-		return a.ShowInfo("Select an object to see its owners or users", 2*time.Second)
+		return a.ShowInfo("Select an object to see its owners, users or requirements", 2*time.Second)
 	}
 	selID, _, _, _ := obj.Columns()
 	panelIdx := a.activePanel
 	label := "Reading owners"
-	if kind == models.RelatedUsedBy {
+	switch kind {
+	case models.RelatedUsedBy:
 		label = "Finding users"
+	case models.RelatedDependsOn:
+		label = "Reading requirements"
 	}
-	root := a.ctx
+	if a.relatedCancel != nil {
+		a.relatedCancel()
+	}
+	lookupCtx, lookupCancel := context.WithTimeout(a.ctx, requestTimeout)
+	a.relatedCancel = lookupCancel
 	return a.withBusy(label, 300*time.Millisecond, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(root, requestTimeout)
-		defer cancel()
-		msg := relatedFolderMsg{panelIdx: panelIdx, from: from, selID: selID}
-		folder, err := src.RelatedFolder(ctx, kind, obj)
-		what := obj.GVR().Resource + "/" + obj.Name()
-		switch {
-		case errors.Is(err, models.ErrNoOwners):
-			msg.info = what + " has no owner"
-			return msg
-		case errors.Is(err, models.ErrNoUsedBy):
-			msg.info = "kc does not know what uses " + obj.GVR().Resource
-			return msg
-		case err != nil:
-			msg.err = fmt.Errorf("%s: %w", what, err)
-			return msg
+		defer lookupCancel()
+		msg := buildRelated(lookupCtx, src, kind, obj)
+		msg.panelIdx, msg.from, msg.selID = panelIdx, from, selID
+		if errors.Is(lookupCtx.Err(), context.Canceled) {
+			// A newer lookup replaced this one; its result is not wanted.
+			msg.canceled = true
 		}
-		// Load the rows here, off the UI thread, so the cursor can go to
-		// the first one as soon as the folder opens.
-		folder.Len(ctx)
-		for _, row := range folder.Lines(ctx, 0, 2) {
-			if back, ok := row.(models.Back); ok && back.IsBack() {
-				continue
-			}
-			msg.firstID, _, _, _ = row.Columns()
-			break
-		}
-		msg.folder = folder
 		return msg
 	})
+}
+
+// buildRelated builds the folder and loads its first rows.
+func buildRelated(ctx context.Context, src models.RelatedSource, kind models.RelatedKind, obj models.ObjectItem) relatedFolderMsg {
+	var msg relatedFolderMsg
+	folder, err := src.RelatedFolder(ctx, kind, obj)
+	what := obj.GVR().Resource + "/" + obj.Name()
+	switch {
+	case errors.Is(err, models.ErrNoOwners):
+		msg.info = what + " has no owner"
+		return msg
+	case errors.Is(err, models.ErrNoUsedBy):
+		msg.info = "kc does not know what uses " + obj.GVR().Resource
+		return msg
+	case errors.Is(err, models.ErrNoDependsOn):
+		msg.info = "kc does not know what " + obj.GVR().Resource + " require"
+		return msg
+	case err != nil:
+		msg.err = fmt.Errorf("%s: %w", what, err)
+		return msg
+	}
+	// Load the rows here, off the UI thread, so the cursor can go to
+	// the first one as soon as the folder opens.
+	folder.Len(ctx)
+	for _, row := range folder.Lines(ctx, 0, 2) {
+		if back, ok := row.(models.Back); ok && back.IsBack() {
+			continue
+		}
+		msg.firstID, _, _, _ = row.Columns()
+		break
+	}
+	msg.folder = folder
+	return msg
 }
 
 // handleRelatedFolder opens a folder built by openRelated in the panel the
@@ -97,6 +121,10 @@ func (a *App) openRelated(kind models.RelatedKind) tea.Cmd {
 func (a *App) handleRelatedFolder(msg relatedFolderMsg) tea.Cmd {
 	panel := a.panelByIndex(msg.panelIdx)
 	stale := panel == nil || a.activePanel != msg.panelIdx || panel.Folder() != msg.from
+	if msg.canceled {
+		stale = true
+		msg.err, msg.info = nil, ""
+	}
 	if msg.err != nil {
 		if a.toastLogger != nil {
 			return a.toastLogger.Errorf("%v", msg.err)
@@ -107,7 +135,10 @@ func (a *App) handleRelatedFolder(msg relatedFolderMsg) tea.Cmd {
 		return a.ShowInfo(msg.info, 2*time.Second)
 	}
 	if stale {
-		ctrllog.FromContext(a.ctx).WithName("related").V(1).Info("dropping related folder, panel changed", "panel", msg.panelIdx)
+		ctrllog.FromContext(a.ctx).WithName("related").V(1).Info("dropping related folder, panel changed or lookup replaced", "panel", msg.panelIdx)
+		if msg.folder == nil {
+			return nil
+		}
 		if c, ok := msg.folder.(interface{ Close() }); ok {
 			c.Close()
 		}

@@ -43,7 +43,7 @@ func TestPodReferences(t *testing.T) {
 		{
 			name: "serviceAccountName wins over the deprecated field",
 			pod:  corev1.Pod{Spec: corev1.PodSpec{ServiceAccountName: "new", DeprecatedServiceAccount: "old"}},
-			want: []PodReference{{GVR: serviceAccountGVR, Name: "new", Via: "serviceAccount"}},
+			want: []PodReference{{GVR: serviceAccountGVR, Name: "new", Via: "serviceAccountName"}},
 		},
 		{
 			name: "volumes of every supported kind",
@@ -63,12 +63,12 @@ func TestPodReferences(t *testing.T) {
 				}},
 			},
 			want: []PodReference{
-				{GVR: configMapGVR, Name: "cm", Via: "volume"},
-				{GVR: secretGVR, Name: "sec", Via: "volume"},
-				{GVR: pvcGVR, Name: "data", Via: "volume"},
-				{GVR: pvcGVR, Name: "web-scratch", Via: "ephemeral volume"},
-				{GVR: configMapGVR, Name: "pcm", Via: "projected volume"},
-				{GVR: secretGVR, Name: "psec", Via: "projected volume"},
+				{GVR: configMapGVR, Name: "cm", Via: "volumes[c]"},
+				{GVR: secretGVR, Name: "sec", Via: "volumes[s]"},
+				{GVR: pvcGVR, Name: "data", Via: "volumes[p]"},
+				{GVR: pvcGVR, Name: "web-scratch", Via: "volumes[scratch].ephemeral"},
+				{GVR: configMapGVR, Name: "pcm", Via: "volumes[proj].projected"},
+				{GVR: secretGVR, Name: "psec", Via: "volumes[proj].projected"},
 			},
 		},
 		{
@@ -87,11 +87,11 @@ func TestPodReferences(t *testing.T) {
 				EphemeralContainers: []corev1.EphemeralContainer{{Name: "debug", Env: []corev1.EnvVar{cmEnv("debug-cm")}}},
 			}},
 			want: []PodReference{
-				{GVR: secretGVR, Name: "init-sec", Via: "envFrom"},
-				{GVR: configMapGVR, Name: "app-cm", Via: "envFrom"},
-				{GVR: configMapGVR, Name: "key-cm", Via: "env"},
-				{GVR: secretGVR, Name: "key-sec", Via: "env"},
-				{GVR: configMapGVR, Name: "debug-cm", Via: "env"},
+				{GVR: secretGVR, Name: "init-sec", Via: "initContainers[init].envFrom"},
+				{GVR: configMapGVR, Name: "app-cm", Via: "containers[app].envFrom"},
+				{GVR: configMapGVR, Name: "key-cm", Via: "containers[app].env[A]"},
+				{GVR: secretGVR, Name: "key-sec", Via: "containers[app].env[S]"},
+				{GVR: configMapGVR, Name: "debug-cm", Via: "ephemeralContainers[debug].env[A]"},
 			},
 		},
 		{
@@ -100,17 +100,20 @@ func TestPodReferences(t *testing.T) {
 			want: []PodReference{{GVR: secretGVR, Name: "regcred", Via: "imagePullSecrets"}},
 		},
 		{
-			name: "same object and way once, another way again",
+			name: "one row per field, the variables of one container together",
 			pod: corev1.Pod{Spec: corev1.PodSpec{
 				Volumes: []corev1.Volume{{Name: "c", ConfigMap: &corev1.ConfigMapVolumeSource{Name: "cm"}}},
 				Containers: []corev1.Container{
-					{Name: "a", Env: []corev1.EnvVar{cmEnv("cm")}},
-					{Name: "b", Env: []corev1.EnvVar{cmEnv("cm")}},
+					{Name: "a", Env: []corev1.EnvVar{cmEnv("cm"), {Name: "B", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{Name: "cm", Key: "b"}}}}},
+					{Name: "b", Env: []corev1.EnvVar{cmEnv("cm")},
+						EnvFrom: []corev1.EnvFromSource{{ConfigMapRef: &corev1.ConfigMapEnvSource{Name: "cm"}}, {ConfigMapRef: &corev1.ConfigMapEnvSource{Name: "cm"}}}},
 				},
 			}},
 			want: []PodReference{
-				{GVR: configMapGVR, Name: "cm", Via: "volume"},
-				{GVR: configMapGVR, Name: "cm", Via: "env"},
+				{GVR: configMapGVR, Name: "cm", Via: "volumes[c]"},
+				{GVR: configMapGVR, Name: "cm", Via: "containers[a].env[A,B]"},
+				{GVR: configMapGVR, Name: "cm", Via: "containers[b].envFrom"},
+				{GVR: configMapGVR, Name: "cm", Via: "containers[b].env[A]"},
 			},
 		},
 	}
@@ -345,7 +348,7 @@ func TestUsedByFinders(t *testing.T) {
 		want      []string // id + relation
 	}{
 		{name: "pods using a configmap, own namespace only", target: configMapGVR, namespace: "shop", object: "cfg",
-			want: []string{"v1/pods/shop/uses-cfg volume, envFrom"}},
+			want: []string{"v1/pods/shop/uses-cfg volumes[c], containers[a].envFrom"}},
 		{name: "configmap nobody uses", target: configMapGVR, namespace: "shop", object: "unused", want: nil},
 		{name: "services selecting a pod, none without selector", target: podGVR, namespace: "shop", object: "uses-cfg",
 			want: []string{"v1/services/shop/web selector"}},
@@ -407,7 +410,7 @@ func TestRelatedRows(t *testing.T) {
 		{Name: "w", Relation: "owner", APIVersion: "example.com/v1", Kind: "Widget", Problem: "unknown kind"},
 		{GVR: deploymentGVR, Namespace: "shop", Name: "gone", Relation: "owner", Problem: "not found"},
 	}
-	rows := relatedRows(Deps{}, []string{"pods", "web-1-abc", OwnersSegment}, refs)
+	rows := relatedRows(Deps{}, nil, []string{"pods", "web-1-abc", OwnersSegment}, refs)
 	if len(rows) != 4 {
 		t.Fatalf("rows = %d, want 4 (duplicate dropped)", len(rows))
 	}

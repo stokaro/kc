@@ -108,6 +108,7 @@ func (a *App) fileMenuItems() []menubar.Item {
 		{Label: "Port &forward...", Shortcut: "M-p", Run: func() tea.Cmd { return a.portForwardForPanel(a.activePanelRef()) }},
 		{Label: "&Owners", Shortcut: "M-j", Run: func() tea.Cmd { return a.openRelated(models.RelatedOwners) }},
 		{Label: "Used &by", Shortcut: "M-b", Run: func() tea.Cmd { return a.openRelated(models.RelatedUsedBy) }},
+		{Label: "&Requires", Shortcut: "M-d", Run: func() tea.Cmd { return a.openRelated(models.RelatedDependsOn) }},
 		{Label: "Ex&plain", Shortcut: "M-e", Run: a.explainSelection},
 		menubar.Separator(),
 		{Label: "&Toggle mark", Shortcut: "C-t", Disabled: !list, Run: a.panelKey(idx, ctrlKey('t'))},
