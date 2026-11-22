@@ -49,7 +49,7 @@ func TestStartInformerForResourceEmitsSyncedAndWatches(t *testing.T) {
 	eventCh := make(chan struct{}, 8)
 	var stopped atomic.Bool
 	cancelWatch, err := startInformerForResource(deps, gvrPods, nsName, "", func() {
-		if seen.Add(1) <= int32(cap(eventCh)) {
+		if int(seen.Add(1)) <= cap(eventCh) {
 			select {
 			case eventCh <- struct{}{}:
 			default:

@@ -11,7 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/stokaro/kc/internal/portforward"
-	table "github.com/stokaro/kc/internal/table"
 )
 
 func TestPortForwardTargetFor(t *testing.T) {
@@ -239,5 +238,4 @@ func TestPortForwardsFolderAndRootRow(t *testing.T) {
 	if _, ok := portForwardsRootRow(deps, nil); ok {
 		t.Fatal("root still shows /port-forwards after the last forward stopped")
 	}
-	var _ table.Row = row
 }

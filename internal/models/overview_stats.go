@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -86,7 +87,16 @@ func (s *kubeletFsStats) use() fsUse {
 	if s == nil || s.CapacityBytes == nil || s.UsedBytes == nil {
 		return fsUse{}
 	}
-	return fsUse{used: int64(*s.UsedBytes), capacity: int64(*s.CapacityBytes)}
+	return fsUse{used: bytesToInt64(*s.UsedBytes), capacity: bytesToInt64(*s.CapacityBytes)}
+}
+
+// bytesToInt64 converts a kubelet byte count, clamping values past
+// math.MaxInt64 instead of letting them wrap to negative numbers.
+func bytesToInt64(b uint64) int64 {
+	if b > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(b)
 }
 
 // decodeKubeletSummary reads the filesystems and the claim volumes of a
@@ -145,7 +155,7 @@ type statsResult struct {
 // time. It does not read them on a cluster with more than maxNodes nodes.
 // Forbidden on every node means the identity may not use nodes/proxy.
 func pollNodeStats(ctx context.Context, fetch statsFetcher, nodes []string, maxNodes int) statsResult {
-	res := statsResult{stats: map[string]*nodeStats{}, errors: map[string]string{}}
+	res := statsResult{stats: make(map[string]*nodeStats), errors: make(map[string]string)}
 	switch {
 	case fetch == nil:
 		res.reason = "no cluster connection"
@@ -268,7 +278,7 @@ when a filesystem runs low. Enter lists the nodes, the fullest first.`,
 			f.targets = append(f.targets, overviewTarget{gvr: ovNodesGVR, name: n.Name, value: value, severity: severityUnknown})
 			continue
 		}
-		parts := []string{}
+		parts := make([]string, 0)
 		pct := 0.0
 		for _, fs := range []struct {
 			label string
@@ -336,7 +346,7 @@ as the volume's capacity, so their percentages say little.`, rc.cfg.VolumeWarnPe
 		return f
 	}
 	return countFinding(rc, f, []schema.GroupVersionResource{ovNodesGVR}, func() []overviewTarget {
-		seen := map[string]bool{}
+		seen := make(map[string]bool)
 		var out []overviewTarget
 		nodes := make([]string, 0, len(rc.m.stats))
 		for n := range rc.m.stats {

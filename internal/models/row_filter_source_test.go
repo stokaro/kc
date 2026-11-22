@@ -6,6 +6,7 @@ package models
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -126,13 +127,7 @@ func TestObjectsFolderRowsCarryFilterFacts(t *testing.T) {
 
 func assertIDs(t *testing.T, rows []table.Row, want ...string) {
 	t.Helper()
-	got := rowIDs(rows)
-	if len(got) != len(want) {
+	if got := rowIDs(rows); !slices.Equal(got, want) {
 		t.Fatalf("rows = %v, want %v", got, want)
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			t.Fatalf("rows = %v, want %v", got, want)
-		}
 	}
 }
