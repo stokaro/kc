@@ -1,0 +1,19 @@
+# The default kc skin: Midnight Commander's blue panels.
+# Copy this file to ~/.kc/skins/<name>.yaml and set panel.skin: <name> to
+# make your own. Colors are ANSI names (red, bright-cyan, gray), ANSI 256
+# indexes (0-255) or hex values (#rrggbb, #rgb). Leave a color out to keep
+# the value shown here.
+panel:
+  background: blue
+  foreground: white
+  frame: white
+  header: yellow
+  marked: yellow
+  cursor:
+    foreground: black
+    background: cyan
+  title:
+    foreground: black
+    background: white
+  context: bright-yellow
+  namespace: bright-cyan

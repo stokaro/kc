@@ -9,6 +9,8 @@ panel:
   width:
     leftPercent: 50
     rightPercent: 50
+  # Panel colors: a built-in skin (mc, dark) or ~/.kc/skins/<name>.yaml.
+  skin: mc
 
 input:
   escTimeout: 1s
@@ -60,3 +62,14 @@ commands:
     watchInterval: 5s
     debounce: 500ms
     onExit: keep-open
+
+# Tint the panel frame and the context label per kubeconfig context. The
+# first matching entry wins. match is a name or a glob ("*" and "?"); regex is
+# a Go regular expression. Colors: ANSI names (red, bright-cyan), 0-255 or
+# #rrggbb. Example:
+#   contexts:
+#     - match: "*prod*"
+#       color: red
+#     - regex: "^kind-"
+#       color: green
+contexts: []
