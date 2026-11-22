@@ -15,8 +15,9 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// viewReadTimeout bounds a read for the viewer. The read runs on the UI
-// thread and goes through the cache, which waits for the informer to sync;
+// viewReadTimeout bounds a read for the viewer. F3 runs the read on the UI
+// thread (the Manifest panel mode runs it in a tea.Cmd), and it goes through
+// the cache, which waits for the informer to sync;
 // without a bound an informer that cannot sync would hang kc.
 const viewReadTimeout = 5 * time.Second
 
