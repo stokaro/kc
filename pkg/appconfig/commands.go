@@ -100,8 +100,10 @@ var builtinHotkeys = map[string]string{
 	"M-p":     "port forward",
 	"M-r":     "reverse sort",
 	"M-s":     "quick search",
+	"M-t":     "attach to a container",
 	"M-u":     "history forward",
 	"M-w":     "cycle panel width",
+	"M-x":     "shell in a container",
 	"M-y":     "history back",
 	"C-x C-d": "compare manifests",
 }

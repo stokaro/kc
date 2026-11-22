@@ -26,7 +26,7 @@ const commandMenuModal = "command_menu"
 // into its templates, so restarts (watch ticks, namespace follow) reuse
 // them without asking again. item and namespace are what the menu was
 // opened on; they fill the prompt defaults and the confirmation.
-func (a *App) guardCommand(item models.Item, namespace string, run func(appconfig.CommandConfig) tea.Cmd) func(appconfig.CommandConfig) tea.Cmd {
+func (a *App) guardCommand(targets []models.Item, namespace string, run func(appconfig.CommandConfig) tea.Cmd) func(appconfig.CommandConfig) tea.Cmd {
 	return func(cmd appconfig.CommandConfig) tea.Cmd {
 		if err := appconfig.ValidateCommand(cmd); err != nil {
 			a.hideModalName(commandMenuModal)
@@ -36,7 +36,7 @@ func (a *App) guardCommand(item models.Item, namespace string, run func(appconfi
 			return run(cmd)
 		}
 		a.hideModalName(commandMenuModal)
-		items, gvr := commandPreviewTarget(cmd, item, namespace)
+		items, gvr := commandPreviewTarget(cmd, targets, namespace)
 		if len(cmd.Prompts) == 0 {
 			return a.confirmCommand(cmd, items, gvr, run)
 		}
@@ -47,23 +47,24 @@ func (a *App) guardCommand(item models.Item, namespace string, run func(appconfi
 }
 
 // commandPreviewTarget returns the items and GVR the menu passes to cmd:
-// the namespace for namespace commands, the row under the cursor for the
-// others.
-func commandPreviewTarget(cmd appconfig.CommandConfig, item models.Item, namespace string) ([]models.Item, schema.GroupVersionResource) {
+// the namespace for namespace commands, the marked rows (or the row under
+// the cursor) for the others, as commandTargets picks them.
+func commandPreviewTarget(cmd appconfig.CommandConfig, targets []models.Item, namespace string) ([]models.Item, schema.GroupVersionResource) {
 	if cmd.Type == appconfig.CommandTypeNamespace {
 		if namespace == "" || namespace == namespacePlaceholder {
 			return nil, schema.GroupVersionResource{}
 		}
 		return []models.Item{namespaceCommandItem{namespace: namespace}}, schema.GroupVersionResource{}
 	}
-	if item == nil {
+	if len(targets) == 0 {
 		return nil, schema.GroupVersionResource{}
 	}
+	// The fallback GVR the run uses: the first target's.
 	var gvr schema.GroupVersionResource
-	if obj, ok := item.(models.ObjectItem); ok {
+	if obj, ok := targets[0].(models.ObjectItem); ok {
 		gvr = obj.GVR()
 	}
-	return []models.Item{item}, gvr
+	return targets, gvr
 }
 
 func (a *App) commandError(cmd appconfig.CommandConfig, err error) tea.Cmd {

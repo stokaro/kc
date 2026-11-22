@@ -16,11 +16,10 @@ import (
 const commandChordPrefix = "C-x"
 
 // commandHotkeys maps the hotkeys of custom commands to their index in
-// cfg.Commands and tracks a pending C-x prefix.
+// cfg.Commands. C-x chords complete in handleCtrlXKey, which owns the
+// prefix.
 type commandHotkeys struct {
-	keys   map[string]int
-	chords bool // some hotkey starts with C-x
-	chord  bool // C-x was typed, the next key completes the chord
+	keys map[string]int
 }
 
 // loadCommandHotkeys validates the custom commands of the loaded
@@ -33,11 +32,6 @@ func (a *App) loadCommandHotkeys() tea.Cmd {
 	}
 	keys, err := appconfig.ValidateCommands(a.cfg.Commands)
 	a.commandKeys.keys = keys
-	for k := range keys {
-		if strings.HasPrefix(k, commandChordPrefix+" ") {
-			a.commandKeys.chords = true
-		}
-	}
 	if err == nil {
 		return nil
 	}
@@ -91,30 +85,35 @@ func hotkeyOf(press tea.KeyPressMsg) string {
 	return b.String()
 }
 
-// handleCommandHotkey runs the custom command bound to press, or completes
-// a C-x chord. It reports whether it used the key. A key after C-x that
-// completes no chord is dropped, as mc does.
+// handleCommandHotkey runs the custom command bound to press. It reports
+// whether it used the key. C-x chords are completed by handleCtrlXKey.
 func (a *App) handleCommandHotkey(press tea.KeyPressMsg) (tea.Cmd, bool) {
 	if a.showTerminal || len(a.commandKeys.keys) == 0 {
-		a.commandKeys.chord = false
 		return nil, false
 	}
 	key := hotkeyOf(press)
-	if a.commandKeys.chord {
-		a.commandKeys.chord = false
-		if idx, ok := a.commandKeys.keys[commandChordPrefix+" "+key]; ok && key != "" {
-			return a.runCommandHotkey(idx), true
-		}
-		return nil, true
-	}
-	if key == commandChordPrefix && a.commandKeys.chords && (a.terminal == nil || !a.terminal.HasInput()) {
-		a.commandKeys.chord = true
-		return nil, true
+	if key == "" || key == commandChordPrefix {
+		return nil, false
 	}
 	if idx, ok := a.commandKeys.keys[key]; ok {
 		return a.runCommandHotkey(idx), true
 	}
 	return nil, false
+}
+
+// commandChord runs the custom command bound to C-x followed by press.
+func (a *App) commandChord(press tea.KeyPressMsg) tea.Cmd {
+	if a.showTerminal {
+		return nil
+	}
+	key := hotkeyOf(press)
+	if key == "" {
+		return nil
+	}
+	if idx, ok := a.commandKeys.keys[commandChordPrefix+" "+key]; ok {
+		return a.runCommandHotkey(idx)
+	}
+	return nil
 }
 
 // commandHotkeyAfterEsc runs the command bound to M-<key> when key follows

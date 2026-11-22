@@ -187,18 +187,27 @@ func TestCommandHotkeyDispatch(t *testing.T) {
 	}
 	// An unbound key after C-x is dropped, the chord ends.
 	pressHotkeyApp(t, app, tea.Key{Code: 'x', Mod: tea.ModCtrl})
-	if cmd, ok := app.handleCommandHotkey(tea.KeyPressMsg{Code: '9', Text: "9"}); !ok || cmd != nil {
+	if !app.ctrlXPending {
+		t.Fatalf("C-x must arm the prefix")
+	}
+	if cmd := pressHotkeyApp(t, app, tea.Key{Code: '9', Text: "9"}); cmd != nil || app.modalManager.IsModalVisible() {
 		t.Fatalf("the key after C-x must be used up")
 	}
-	if app.commandKeys.chord {
+	if app.ctrlXPending {
 		t.Fatalf("the chord must end after one key")
 	}
 	if _, ok := app.handleCommandHotkey(tea.KeyPressMsg{Code: '1', Text: "1"}); ok {
 		t.Fatalf("1 without C-x must not run the chord")
 	}
+	// The user chord runs after C-x, through the same prefix as C-x C-d.
+	pressHotkeyApp(t, app, tea.Key{Code: 'x', Mod: tea.ModCtrl})
+	pressHotkeyApp(t, app, tea.Key{Code: '1', Text: "1"})
+	_ = modalText(t, app, commandConfirmModal)
+	app.hideModalName(commandConfirmModal)
 	// With text on the shell line, C-x stays with the shell.
 	app.terminal.hasTyped = true
-	if _, ok := app.handleCommandHotkey(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl}); ok {
+	pressHotkeyApp(t, app, tea.Key{Code: 'x', Mod: tea.ModCtrl})
+	if app.ctrlXPending {
 		t.Fatalf("C-x must go to the shell line while it has text")
 	}
 }

@@ -24,13 +24,14 @@ const (
 	compareReadTimeout = 10 * time.Second
 )
 
-// handleCtrlXKey runs the command for the key typed after C-x. Keys
-// without a command are dropped, as mc does.
-func (a *App) handleCtrlXKey(key string) tea.Cmd {
-	if key == compareKey {
+// handleCtrlXKey runs the command for the key typed after C-x: kc's own
+// chords first, then the C-x hotkeys of custom commands. Keys without a
+// command are dropped, as mc does.
+func (a *App) handleCtrlXKey(press tea.KeyPressMsg) tea.Cmd {
+	if press.String() == compareKey {
 		return a.compareSelectedObjects()
 	}
-	return nil
+	return a.commandChord(press)
 }
 
 // selectedManifestSource returns the object under the cursor of panel.

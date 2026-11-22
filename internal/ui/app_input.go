@@ -44,7 +44,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 	}
 	if ctrlX {
-		return a, a.handleCtrlXKey(press.String())
+		return a, a.handleCtrlXKey(press)
 	}
 	// Prefer modifier-aware matching to cover both KeyMsg and KeyPressMsg forms.
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {

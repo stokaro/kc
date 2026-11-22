@@ -53,9 +53,8 @@ Constraints:
    modifier (they would take typing on the command line), single
    `C-<letter>` keys (kc and the shell line use nearly all of them; mc users
    put their own keys behind `C-x`), `F1` to `F10`, modifiers on function
-   keys, and the built-in keys listed in `builtinHotkeys` (main plus the
-   open pull requests: `M-a M-b M-c M-e M-f M-H M-j M-k M-l M-o M-p M-r M-s
-   M-u M-w M-y`, `C-x C-d`).
+   keys, and the built-in keys listed in `builtinHotkeys` (`M-a M-b M-c M-e
+   M-f M-H M-j M-k M-l M-o M-p M-r M-s M-t M-u M-w M-x M-y`, `C-x C-d`).
 
 3. **Validation at load, without changing the configuration.**
    `App.Init` calls `loadCommandHotkeys`, which runs
@@ -86,13 +85,11 @@ Constraints:
    built-in keys. `Esc <digit>` stays the F-key, so `M-<digit>` hotkeys have
    no fallback.
 
-6. **`C-x` chords.** A small prefix state in `commandHotkeys` arms after
-   `C-x` (only when some hotkey is a chord and the shell line is empty) and
-   the next key completes or cancels it; an unbound key is dropped, as in
-   mc. The check runs before the global keys, so `C-x C-s` does not start the
-   quick search. #94 adds its own `C-x` prefix for `C-x C-d`; when both are
-   merged, the two prefixes must become one: #94's `handleCtrlXKey` should
-   fall back to the user chords and the state here should go.
+6. **`C-x` chords.** kc has one `C-x` prefix (#94, for `C-x C-d`): it arms
+   while the shell line is empty, and the next key completes or cancels it;
+   an unbound key is dropped, as in mc. `handleCtrlXKey` runs kc's own
+   chords first and then the user's `C-x` hotkeys. The prefix is checked
+   before the global keys, so `C-x C-s` does not start the quick search.
 
 7. **Prompt answers are bound into the template text.** When the dialog
    closes, `cmdtemplate.Bind` replaces `.Input.<name>` in the command and

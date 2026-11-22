@@ -109,7 +109,7 @@ func (s *Store) read() (*Config, map[string]any, error) {
 		return nil, nil, &LoadError{Path: s.path, Err: err}
 	}
 	cfg := Default()
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	if err := unmarshalOverDefaults(data, cfg); err != nil {
 		return nil, nil, &LoadError{Path: s.path, Err: err}
 	}
 	var raw map[string]any
