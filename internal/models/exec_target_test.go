@@ -114,6 +114,12 @@ func TestExecTargetKubectlArgs(t *testing.T) {
 			}, shell...),
 		},
 		{
+			name:   "a merged KUBECONFIG list goes in the environment, not --kubeconfig",
+			target: withCluster(plain, kccluster.Key{KubeconfigPath: "/k/a:/k/b", ContextName: "dev"}),
+			mode:   ExecAttach,
+			want:   []string{"--context", "dev", "attach", "web-0", "-n", "shop", "-c", "app"},
+		},
+		{
 			name:   "attach without stdin or tty only streams",
 			target: plain,
 			mode:   ExecAttach,
@@ -232,5 +238,18 @@ func TestContainerFoldersCarryExecTargets(t *testing.T) {
 	}
 	if cmd := shell.(interface{ ViewCommand() string }).ViewCommand(); !strings.HasPrefix(cmd, "kubectl --as alice exec -it web-0 -n shop -c debugger -- sh -c ") {
 		t.Fatalf("shell row command = %q", cmd)
+	}
+}
+
+func withCluster(t ExecTarget, k kccluster.Key) ExecTarget {
+	t.Cluster = k
+	return t
+}
+
+func TestExecTargetKubeconfigEnv(t *testing.T) {
+	t.Parallel()
+	list := ExecTarget{Cluster: kccluster.Key{KubeconfigPath: "/k/a:/k/b"}}
+	if got := list.KubeconfigEnv(); got != "/k/a:/k/b" {
+		t.Errorf("KubeconfigEnv() = %q", got)
 	}
 }

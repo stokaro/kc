@@ -48,6 +48,16 @@ func TestKubectlArgs(t *testing.T) {
 			},
 		},
 		{
+			name: "a merged KUBECONFIG list is not a --kubeconfig file",
+			ctx:  execctx.Context{Kubeconfig: "/k/b.yaml", Load: "/k/a.yaml:/k/b.yaml", Context: "b"},
+			want: []string{"--context", "b"},
+		},
+		{
+			name: "a single loaded file is",
+			ctx:  execctx.Context{Kubeconfig: "/k/b.yaml", Load: "/k/b.yaml", Context: "b"},
+			want: []string{"--kubeconfig", "/k/b.yaml", "--context", "b"},
+		},
+		{
 			name: "groups without user",
 			ctx:  execctx.Context{Context: "b", Impersonation: execctx.Impersonation{Groups: []string{"g1", "g2"}}},
 			want: []string{"--context", "b", "--as-group", "g1", "--as-group", "g2"},

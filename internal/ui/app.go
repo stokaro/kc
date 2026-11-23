@@ -986,7 +986,7 @@ func (a *App) currentClusterKey() kccluster.Key {
 		return kccluster.Key{}
 	}
 	return kccluster.Key{
-		KubeconfigPath:       a.currentCtx.Kubeconfig.Path,
+		KubeconfigPath:       a.currentCtx.LoadPath(),
 		ContextName:          a.currentCtx.Name,
 		ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
 		ImpersonateUID:       strings.TrimSpace(a.impersonateUID),
@@ -1198,9 +1198,11 @@ func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
 	mapper := a.cl.RESTMapper()
 	disco := a.cl.DiscoveryClient()
 	var loader clientcmd.ClientConfig
-	if a.currentCtx != nil && a.currentCtx.Kubeconfig != nil && a.currentCtx.Kubeconfig.Config != nil {
-		overrides := &clientcmd.ConfigOverrides{CurrentContext: a.currentCtx.Name}
-		loader = clientcmd.NewDefaultClientConfig(*a.currentCtx.Kubeconfig.Config, overrides)
+	if a.currentCtx != nil {
+		if cfg := a.currentCtx.LoadedConfig(); cfg != nil {
+			overrides := &clientcmd.ConfigOverrides{CurrentContext: a.currentCtx.Name}
+			loader = clientcmd.NewDefaultClientConfig(*cfg, overrides)
+		}
 	}
 	return describe.NewRenderer(cfg, mapper, disco, loader)
 }
@@ -3242,7 +3244,7 @@ func (a *App) initData(ctx context.Context) error {
 	log.Info("starting cluster pool")
 	a.clPool.Start()
 	k := kccluster.Key{
-		KubeconfigPath:       a.currentCtx.Kubeconfig.Path,
+		KubeconfigPath:       a.currentCtx.LoadPath(),
 		ContextName:          a.currentCtx.Name,
 		ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
 		ImpersonateUID:       strings.TrimSpace(a.impersonateUID),

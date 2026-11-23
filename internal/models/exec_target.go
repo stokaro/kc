@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 // ExecMode selects what an exec session does in a container.
@@ -231,7 +232,9 @@ func (t ExecTarget) verbArgs(mode ExecMode) []string {
 // current context is.
 func (t ExecTarget) KubectlArgs(mode ExecMode) []string {
 	var args []string
-	if p := strings.TrimSpace(t.Cluster.KubeconfigPath); p != "" {
+	// --kubeconfig takes one file; a merged $KUBECONFIG list goes in the
+	// environment instead (KubeconfigEnv).
+	if p := strings.TrimSpace(t.Cluster.KubeconfigPath); p != "" && !kubeconfig.IsList(p) {
 		args = append(args, "--kubeconfig", p)
 	}
 	if c := strings.TrimSpace(t.Cluster.ContextName); c != "" {
@@ -239,6 +242,12 @@ func (t ExecTarget) KubectlArgs(mode ExecMode) []string {
 	}
 	args = append(args, t.impersonationArgs()...)
 	return append(args, t.verbArgs(mode)...)
+}
+
+// KubeconfigEnv is the KUBECONFIG value kubectl runs with: the panel's
+// kubeconfig, a single file or a list that kubectl merges.
+func (t ExecTarget) KubeconfigEnv() string {
+	return strings.TrimSpace(t.Cluster.KubeconfigPath)
 }
 
 // Command is the kubectl command line shown to the user. Like the other
