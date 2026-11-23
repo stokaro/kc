@@ -327,6 +327,8 @@ func (w *Widget) lines(width, height int) []string {
 		s := l.text
 		if focus >= 0 && l.consumer == focus {
 			s = uistyles.PanelItemSelectedStyle.Width(width).Render(ansi.Strip(s))
+		} else {
+			s = uistyles.KeepPanelColors(s)
 		}
 		out = append(out, s)
 	}
@@ -527,16 +529,23 @@ func barBlock(b models.InfoBar, h *history, now time.Time, width, cells int) []s
 	default:
 		return out
 	}
-	view, ok := s.render(now, width-len(indent)-1)
+	// The frame marks both ends of the window, so the newest samples at
+	// the right read as the end of a time axis, not as stray marks.
+	view, ok := s.render(now, width-len(indent)-1-2-len(windowMark))
 	if !ok {
 		return out
 	}
-	if view.line != "" {
-		out = append(out, indent+view.line)
-	}
 	para(view.label, models.RowHealthUnknown)
-	return out
+	if view.line != "" {
+		out = append(out, indent+"▕"+view.line+"▏"+windowMark)
+	}
+	// A blank line ends the block, so the label does not read as the
+	// heading of the next bar.
+	return append(out, "")
 }
+
+// windowMark follows a sparkline: the time its frame spans.
+var windowMark = " " + shortAge(historyWindow)
 
 // styled renders s like a row of an object list in state h; ok and unknown
 // lines stay plain.

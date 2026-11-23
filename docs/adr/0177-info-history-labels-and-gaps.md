@@ -1,6 +1,6 @@
 # 0177. Info history: labels, time window and gaps
 
-- Status: Accepted
+- Status: Accepted; label format and placement superseded by 0233
 - Date: 2026-11-23
 - Issue: #177
 
