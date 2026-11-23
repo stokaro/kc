@@ -176,8 +176,13 @@ func (w *Widget) promHistoryLines(width int) []string {
 // window, gaps blank, scaled from zero to the largest value.
 func promSeriesLine(label string, h promhistory.History, ps []promhistory.Point, width int, format func(float64) string) string {
 	head := fmt.Sprintf(" %-*s", labelWidth, label)
-	if ps == nil {
+	switch {
+	case ps == nil:
 		return head + "no series"
+	case len(ps) == 0:
+		// A series whose samples are all NaN or infinite, or that has no
+		// values: missing data, not zero usage.
+		return head + "no finite samples in this window"
 	}
 	peak, end := math.Inf(-1), ""
 	for _, p := range ps {

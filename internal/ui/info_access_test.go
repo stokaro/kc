@@ -43,7 +43,7 @@ func TestGatedInfo(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				var opened atomic.Int32
 				inner := &fakeSummarizer{}
-				g := newGatedInfo(t.Context(), tc.check, func() infowidget.Summarizer {
+				g := newGatedInfo(t.Context(), tc.check, nil, models.AllNamespaces, func() infowidget.Summarizer {
 					opened.Add(1)
 					return inner
 				})
@@ -79,7 +79,7 @@ func TestGatedInfoLoadsUntilAnswered(t *testing.T) {
 			case <-ctx.Done():
 			}
 			return true, nil
-		}, func() infowidget.Summarizer { return &fakeSummarizer{} })
+		}, nil, models.AllNamespaces, func() infowidget.Summarizer { return &fakeSummarizer{} })
 		if s := g.Summary(models.InfoFocus{}); !s.Loading {
 			t.Fatalf("summary before the answer = %+v, want Loading", s)
 		}
@@ -90,4 +90,44 @@ func TestGatedInfoLoadsUntilAnswered(t *testing.T) {
 		}
 		g.Close()
 	})
+}
+
+// TestGatedInfoInANamespace: in a namespace scope, pods readable in the
+// namespace are enough to start the engine; a user who may not read them
+// there either gets a message that names the namespace.
+func TestGatedInfoInANamespace(t *testing.T) {
+	denyAll := func(context.Context, schema.GroupVersionResource) (bool, error) { return false, nil }
+	tests := []struct {
+		name       string
+		inNS       func(context.Context, schema.GroupVersionResource, string) (bool, error)
+		wantEngine bool
+	}{
+		{name: "pods readable in the namespace", inNS: func(_ context.Context, gvr schema.GroupVersionResource, ns string) (bool, error) {
+			return gvr.Resource == "pods" && ns == "shop", nil
+		}, wantEngine: true},
+		{name: "pods denied in the namespace", inNS: func(context.Context, schema.GroupVersionResource, string) (bool, error) { return false, nil }},
+		{name: "review fails", inNS: func(context.Context, schema.GroupVersionResource, string) (bool, error) {
+			return false, errors.New("timeout")
+		}, wantEngine: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var opened atomic.Int32
+				g := newGatedInfo(t.Context(), denyAll, tc.inNS, "shop", func() infowidget.Summarizer {
+					opened.Add(1)
+					return &fakeSummarizer{}
+				})
+				synctest.Wait()
+				s := g.Summary(models.InfoFocus{})
+				switch {
+				case tc.wantEngine && (s.Node != "engine" || opened.Load() != 1):
+					t.Fatalf("summary = %+v, opened %d; want the engine's", s, opened.Load())
+				case !tc.wantEngine && (s.Err != infoNotPermittedIn("shop") || opened.Load() != 0):
+					t.Fatalf("summary = %+v, opened %d; want %q and no engine", s, opened.Load(), infoNotPermittedIn("shop"))
+				}
+				g.Close()
+			})
+		})
+	}
 }

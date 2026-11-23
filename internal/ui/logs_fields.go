@@ -70,12 +70,28 @@ func (v *LogsViewer) focusRecord() (logview.Seq, bool) {
 		return 0, false
 	}
 	if v.context != nil {
-		if line < len(v.context.lines) {
-			return v.context.lines[line].Seq, true
-		}
-		return 0, false
+		return v.context.seqAt(line)
 	}
 	return v.log.SeqAt(line)
+}
+
+// contextNoticeRows is the number of rows contextDisplay puts before the
+// first context line: the note that older lines were dropped.
+func (c *logsContext) noticeRows() int {
+	if c.complete {
+		return 0
+	}
+	return 1
+}
+
+// seqAt returns the record on display row line of the context view. A
+// notice row is no record.
+func (c *logsContext) seqAt(line int) (logview.Seq, bool) {
+	i := line - c.noticeRows()
+	if i < 0 || i >= len(c.lines) {
+		return 0, false
+	}
+	return c.lines[i].Seq, true
 }
 
 // pushView remembers the current view for M-z.
@@ -136,7 +152,7 @@ func (v *LogsViewer) showContext(seq logview.Seq, sameSource bool) error {
 	v.refreshDisplay()
 	for i, l := range lines {
 		if l.Kind == logview.ContextAnchor {
-			v.inner.ScrollToLine(max(0, i-v.height/3))
+			v.inner.ScrollToLine(max(0, i+v.context.noticeRows()-v.height/3))
 		}
 	}
 	return nil
@@ -180,6 +196,8 @@ func (v *LogsViewer) showRecord(seq logview.Seq) {
 // lines that also pass the filter, and the other lines are indented.
 func (v *LogsViewer) contextDisplay() []string {
 	c := v.context
+	// The rows before the lines are counted by noticeRows; keep the two
+	// in step, so a row maps to its own record.
 	out := make([]string, 0, len(c.lines)+1)
 	if !c.complete {
 		out = append(out, "[kc] older lines were dropped to stay within the limits")

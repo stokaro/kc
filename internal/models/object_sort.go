@@ -60,9 +60,10 @@ func resolveObjectSort(order string, cols []metav1.TableColumnDefinition, byName
 			return objectSort{key: sortKeyNamespace, column: -1, desc: desc}
 		}
 	}
+	nameCol := nameColumn(cols)
 	for i, c := range cols {
-		if i == 0 {
-			continue // the first column is the name
+		if i == nameCol {
+			continue // sorted as name above
 		}
 		if appconfig.ObjectsOrderKey(c.Name) == key {
 			return objectSort{key: key, column: i, desc: desc}
@@ -116,6 +117,16 @@ func layoutFor(spansNamespaces, group bool) namespaceLayout {
 // namespace orders the namespaces and keeps names ascending inside in both
 // layouts.
 func orderRowIndices(items []tablecache.Row, cols []metav1.TableColumnDefinition, order string, layout namespaceLayout) ([]int, objectSort) {
+	return orderRowIndicesWithTimes(items, cols, order, layout, nil)
+}
+
+// orderRowIndicesWithTimes is orderRowIndices where a column with times
+// compares them instead of its cells: the cells are relative times as the
+// server printed them when each row arrived, so rows that arrived at
+// different moments cannot be compared by their text. A later time is a
+// smaller age and sorts first; a missing time sorts last in both
+// directions.
+func orderRowIndicesWithTimes(items []tablecache.Row, cols []metav1.TableColumnDefinition, order string, layout namespaceLayout, times columnTimes) ([]int, objectSort) {
 	sortBy := resolveObjectSort(order, cols, layout != oneNamespace)
 	idxs := make([]int, len(items))
 	names := make([]string, len(items))
@@ -140,6 +151,10 @@ func orderRowIndices(items []tablecache.Row, cols []metav1.TableColumnDefinition
 			return direction(tb.Compare(ta), sortBy.desc)
 		}
 	default:
+		if at, ok := times[sortBy.column]; ok && len(at) == len(items) {
+			primary = func(a, b int) int { return compareTimesByAge(at[a], at[b], sortBy.desc) }
+			break
+		}
 		vals := columnSortValues(items, sortBy.column, cols[sortBy.column])
 		primary = func(a, b int) int { return compareSortValues(vals[a], vals[b], sortBy.desc) }
 	}
@@ -158,6 +173,20 @@ func orderRowIndices(items []tablecache.Row, cols []metav1.TableColumnDefinition
 		return byNamespace(a, b)
 	})
 	return idxs, sortBy
+}
+
+// compareTimesByAge orders a later time (a smaller age) first; desc
+// reverses that. Zero times come last either way.
+func compareTimesByAge(a, b time.Time, desc bool) int {
+	switch {
+	case a.IsZero() && b.IsZero():
+		return 0
+	case a.IsZero():
+		return 1
+	case b.IsZero():
+		return -1
+	}
+	return direction(b.Compare(a), desc)
 }
 
 func direction(c int, desc bool) int {
