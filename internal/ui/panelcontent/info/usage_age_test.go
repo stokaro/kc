@@ -58,7 +58,7 @@ func TestWidgetRecordsByMeasurementTime(t *testing.T) {
 		h.last().summary.UsageReadAt = h.now
 		_, _ = h.w.Update(ctx, tickMsg{w: h.w, gen: h.w.gen})
 	}
-	if got := h.w.history[h.w.historyKey()]; got == nil || !got.last.Equal(measured) {
+	if got := h.w.history[h.w.historyKey()]; got == nil || len(got.cpu.samples) != 1 || !got.cpu.last.Equal(measured) || !got.mem.last.Equal(measured) {
 		t.Fatalf("history = %+v, want one sample dated %v", got, measured)
 	}
 }

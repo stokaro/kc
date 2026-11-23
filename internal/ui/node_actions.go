@@ -132,7 +132,7 @@ func (a *App) nodeTargetFor(p *Panel) (target nodeTarget, reason string, ok bool
 	if len(nodes) == 0 {
 		return nodeTarget{}, "Select a node first", true
 	}
-	env := nodeaction.Env{Client: nt.Client, Context: nt.Context, Kubectl: nt.Kubectl, Pods: nt.Pods}
+	env := nodeaction.Env{Client: nt.Client, Context: nt.Context, Kubectl: nt.Kubectl, Pods: nt.Pods, Budgets: nt.Budgets}
 	return nodeTarget{env: env, nodes: nodes, panelIdx: a.panelIndex(p)}, "", true
 }
 

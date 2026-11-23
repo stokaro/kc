@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -24,6 +25,10 @@ type NodeActionTarget struct {
 	// Pods lists the pods on a node from the node-scoped cache that the
 	// node's /pods folder uses.
 	Pods func(ctx context.Context, node string) ([]corev1.Pod, error)
+	// Budgets lists the PodDisruptionBudgets of a namespace with the list
+	// scope a folder would use: the shared cache, a namespace cache, or a
+	// Forbidden error without a request.
+	Budgets func(ctx context.Context, namespace string) ([]policyv1.PodDisruptionBudget, error)
 }
 
 // NodeActionProvider is a folder that may list nodes, such as
@@ -46,6 +51,9 @@ func (o *ObjectsFolder) NodeActions() (NodeActionTarget, bool) {
 		Context: deps.CtxName,
 		Kubectl: func(args ...string) string { return kubectlCommand(deps, args...) },
 		Pods:    func(ctx context.Context, node string) ([]corev1.Pod, error) { return nodePods(ctx, deps, node) },
+		Budgets: func(ctx context.Context, ns string) ([]policyv1.PodDisruptionBudget, error) {
+			return namespaceBudgets(ctx, deps, ns)
+		},
 	}, true
 }
 
@@ -76,4 +84,32 @@ func nodePods(ctx context.Context, deps Deps, node string) ([]corev1.Pod, error)
 		}
 	}
 	return pods, nil
+}
+
+// namespaceBudgets lists the PodDisruptionBudgets of namespace from the
+// cache a folder of them would use. A user who may not list and watch them
+// there gets the Forbidden error and no request is sent. The namespace
+// cache, when one is needed, is released at once; the pool keeps it for
+// kubernetes.clusters.ttl.
+func namespaceBudgets(ctx context.Context, deps Deps, namespace string) ([]policyv1.PodDisruptionBudget, error) {
+	scoped, scope, release := deps.resolveListScope(ovPDBsGVR, namespace)
+	defer release()
+	if scope == scopeDenied || scoped.Cl == nil {
+		return nil, deniedError(ovPDBsGVR, namespace, "")
+	}
+	ctrllog.FromContext(ctx).WithName("nodeaction").V(1).Info("cache list",
+		"gvr", ovPDBsGVR.String(), "namespace", namespace, "scope", scope.String())
+	list, err := scoped.Cl.ListByGVR(ctx, ovPDBsGVR, namespace)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]policyv1.PodDisruptionBudget, 0, len(list.Items))
+	for i := range list.Items {
+		var pdb policyv1.PodDisruptionBudget
+		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(list.Items[i].Object, &pdb); err != nil {
+			return nil, fmt.Errorf("decoding PodDisruptionBudget %s/%s: %w", list.Items[i].GetNamespace(), list.Items[i].GetName(), err)
+		}
+		out = append(out, pdb)
+	}
+	return out, nil
 }

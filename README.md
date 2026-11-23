@@ -359,7 +359,7 @@ commands:
 
 ## Node Actions
 
-In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. See [Node actions](internal/help/topics/node-actions.md).
+In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain, the confirmation lists the affected workloads and the PodDisruptionBudgets that cover the pods, with their allowance as read then. See [Node actions](internal/help/topics/node-actions.md).
 
 ## Configuration
 

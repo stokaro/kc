@@ -16,7 +16,7 @@ func TestWindowCoverage(t *testing.T) {
 	sampled := func(from time.Time) *history {
 		h := &history{}
 		for at := from; !at.After(now); at = at.Add(pollInterval) {
-			h.add(at, usageSample{percent: 10, base: "requests"}, usageSample{percent: 20, base: "requests"})
+			h.add(at, &usageSample{percent: 10, base: "requests"}, &usageSample{percent: 20, base: "requests"})
 		}
 		return h
 	}

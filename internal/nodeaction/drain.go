@@ -1,6 +1,7 @@
 package nodeaction
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -99,8 +100,10 @@ type NodeProgress struct {
 	Evicted int
 	// Remaining counts pods still to evict or still terminating.
 	Remaining int
-	// Blocked are pods whose last eviction was refused with 429, usually by
-	// a PodDisruptionBudget. The drain asks again after the retry delay.
+	// Blocked are pods whose last eviction was refused with 429 or because
+	// their namespace is terminating. The message is the API's answer; for
+	// a budget refusal Evidence is the budget as read when the drain was
+	// prepared. The drain asks again after the retry delay.
 	Blocked []PodNote
 	// Error is why the node failed.
 	Error string
@@ -117,6 +120,8 @@ type DrainAction struct {
 	opts  DrainOptions
 	nodes []string
 	plan  []Selection // per node, what Prepare saw
+	// impact is what the planned evictions touch, read by Prepare.
+	impact Impact
 
 	// RetryDelay and PollInterval default to DefaultRetryDelay and
 	// DefaultPollInterval; tests shorten them.
@@ -153,6 +158,11 @@ func PrepareDrain(ctx context.Context, env Env, nodes []string, opts DrainOption
 	if len(refusals) > 0 {
 		return nil, &RefusedError{Reasons: refusals}
 	}
+	b := newImpactBuilder(env.Budgets)
+	for _, sel := range a.plan {
+		b.add(ctx, sel.Evict)
+	}
+	a.impact = b.result()
 	return a, nil
 }
 
@@ -206,6 +216,10 @@ func (a *DrainAction) Options() DrainOptions { return a.opts }
 // Plan returns what Prepare saw for each node, in node order.
 func (a *DrainAction) Plan() []Selection { return append([]Selection(nil), a.plan...) }
 
+// Impact returns the workloads and budgets the planned evictions touch, as
+// read by Prepare.
+func (a *DrainAction) Impact() Impact { return a.impact }
+
 // Command is the equivalent kubectl command.
 func (a *DrainAction) Command() string {
 	return a.env.kubectl(a.opts.KubectlArgs(a.nodes)...)
@@ -250,6 +264,7 @@ func (a *DrainAction) Confirmation() models.Confirmation {
 		}
 		notes = append(notes, "! "+w.Namespace+"/"+w.Name, "  "+w.Message)
 	}
+	notes = append(notes, a.impact.notes()...)
 	return models.Confirmation{
 		Title: title,
 		Details: [][2]string{
@@ -450,7 +465,7 @@ func (a *DrainAction) evictRound(ctx context.Context, node string, np *NodeProgr
 			// Gone already; the next round counts it.
 			requested[pod.UID] = true
 		case apierrors.IsTooManyRequests(err):
-			np.Blocked = append(np.Blocked, PodNote{Namespace: pod.Namespace, Name: pod.Name, Message: evictionRefusal(err)})
+			np.Blocked = append(np.Blocked, a.refusalNote(pod, err))
 		case apierrors.IsForbidden(err) && apierrors.HasStatusCause(err, corev1.NamespaceTerminatingCause):
 			// The namespace is being deleted; the pod goes with it.
 			// kubectl retries as well.
@@ -479,21 +494,37 @@ func (a *DrainAction) evict(ctx context.Context, pod *corev1.Pod) error {
 	return a.env.Client.SubResource("eviction").Create(ctx, target, eviction)
 }
 
-// evictionRefusal shortens a 429 to the server's reason, which names the
-// disruption budget.
-func evictionRefusal(err error) string {
+// refusalNote describes a 429 for the progress dialog. Only a 429 with a
+// DisruptionBudget cause is a budget refusal; the API server also answers
+// 429 when it sheds load (API Priority and Fairness), and that is said as
+// such. The plan-time budget is attached as evidence, never as the reason.
+func (a *DrainAction) refusalNote(pod *corev1.Pod, err error) PodNote {
+	note := PodNote{Namespace: pod.Namespace, Name: pod.Name}
+	msg, budget := evictionRefusal(err)
+	if !budget {
+		note.Message = "429 without a disruption budget cause: " + msg
+		return note
+	}
+	note.Message = msg
+	if b, ok := a.impact.budgetOf(pod.Namespace, pod.Name); ok {
+		note.Evidence = "when planned: " + b.String()
+	}
+	return note
+}
+
+// evictionRefusal shortens a 429 to the server's reason and reports
+// whether it names a disruption budget.
+func evictionRefusal(err error) (string, bool) {
 	var status apierrors.APIStatus
-	if errors.As(err, &status) {
-		if details := status.Status().Details; details != nil {
-			for _, c := range details.Causes {
-				if c.Type == policyv1.DisruptionBudgetCause && c.Message != "" {
-					return c.Message
-				}
+	if !errors.As(err, &status) {
+		return err.Error(), false
+	}
+	if details := status.Status().Details; details != nil {
+		for _, c := range details.Causes {
+			if c.Type == policyv1.DisruptionBudgetCause {
+				return cmp.Or(c.Message, status.Status().Message, err.Error()), true
 			}
 		}
-		if msg := status.Status().Message; msg != "" {
-			return msg
-		}
 	}
-	return err.Error()
+	return cmp.Or(status.Status().Message, err.Error()), false
 }
