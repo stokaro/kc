@@ -216,14 +216,24 @@ func (c *Cluster) refreshLoop(ctx context.Context) {
 	}
 }
 
-// Start delegates to controller-runtime Cluster.Start; it blocks until context is cancelled.
+// Start runs the controller-runtime cluster and the table cache; it blocks
+// until ctx is canceled or one of them fails. After a cancel it returns only
+// once both have stopped their informers.
 func (c *Cluster) Start(ctx context.Context) error {
 	// Start the table cache in parallel to the embedded cluster.
 	errCh := make(chan error, 2)
 	go func() { errCh <- c.tableCache.Start(ctx) }()
 	go func() { errCh <- c.Cluster.Start(ctx) }()
 	// Return the first error; the other goroutine will exit on ctx cancel or due to the same failure.
-	return <-errCh
+	err := <-errCh
+	if ctx.Err() != nil {
+		// On shutdown, wait for the other half too, so that a return means
+		// every informer has stopped and closed its watch.
+		if err2 := <-errCh; err == nil {
+			err = err2
+		}
+	}
+	return err
 }
 
 // Stop cancels internal loops; users should cancel the Start() context as well.
