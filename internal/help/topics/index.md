@@ -34,6 +34,7 @@ dialog or view opens its page; this index lists them all. See
 - [Needs attention](attention.md)
 - [Quiet checks](quiet-checks.md)
 - [Diagnosis](diagnosis.md)
+- [Deployment rollout](rollout.md)
 - [Object timeline](timeline.md)
 - [Owners, used by and requires](related.md)
 - [Container filesystem](container-fs.md)
