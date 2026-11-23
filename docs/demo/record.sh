@@ -15,6 +15,8 @@
 #   KC_DEMO_LOCAL        local directory kc starts in; the copy scene writes there
 #                        and the GIF shows its path (default /tmp/kc-demo-downloads)
 #   KC_DEMO_OUT          output GIF (default docs/demo.gif)
+#   KC_DEMO_SCENES       scenes to record, in order (default: all, see SCENES);
+#                        each scene starts where the one before it ends
 set -euo pipefail
 
 CLUSTER=kc-demo
@@ -27,6 +29,7 @@ OUT=${KC_DEMO_OUT:-$REPO/docs/demo.gif}
 LOCAL=${KC_DEMO_LOCAL:-/tmp/kc-demo-downloads}
 SSH_DEST=${KC_DEMO_SSH:-}
 REMOTE_DIR=kc-demo-work
+METRICS_SERVER=https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.0/components.yaml
 COLS=120
 ROWS=34
 
@@ -109,9 +112,25 @@ cmd_seed() {
 	start_tunnel
 	# Server-side apply leaves no last-applied annotation in the YAML scene.
 	kk kubectl apply --server-side -f "$REPO/docs/demo/seed.yaml"
+	# metrics-server feeds the Info panel and the overview's capacity rows.
+	# kind's kubelets serve self-signed certificates. It runs on the control
+	# plane, so the drain scene neither stops it nor has to delete its
+	# emptyDir. --force-conflicts takes the args back from an earlier patch,
+	# which the guard below then adds again.
+	kk kubectl apply --server-side --force-conflicts -f "$METRICS_SERVER"
+	local args
+	args=$(kk kubectl -n kube-system get deploy metrics-server -o 'jsonpath={.spec.template.spec.containers[0].args}')
+	case $args in
+	*--kubelet-insecure-tls*) ;;
+	*) kk kubectl -n kube-system patch deploy metrics-server --type=json \
+		-p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]' ;;
+	esac
+	kk kubectl -n kube-system patch deploy metrics-server --type=strategic -p \
+		'{"spec":{"template":{"spec":{"nodeSelector":{"node-role.kubernetes.io/control-plane":""},"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}'
 	kk kubectl -n shop rollout status deploy/web --timeout=180s
 	kk kubectl -n shop rollout status deploy/api --timeout=180s
 	kk kubectl -n batch rollout status deploy/worker --timeout=180s
+	kk kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s
 }
 
 cmd_down() {
@@ -195,6 +214,36 @@ snap() {
 	done
 }
 
+# hotlist prints the saved views of the hotlist scene, in the format kc
+# writes to ~/.kc/hotlist.yaml.
+hotlist() {
+	cat <<EOF
+entries:
+- context: $CONTEXT
+  namespace: shop
+  steps: [shop//v1/pods]
+  path: /pods
+  name: not running
+  view:
+    columns: normal
+    order: name
+    filter: status!=Running
+- context: $CONTEXT
+  namespace: batch
+  steps: [batch//v1/pods]
+  path: /pods
+  name: restarting
+  view:
+    columns: normal
+    order: -restarts
+    filter: restarts>0
+- context: $CONTEXT
+  namespace: kube-system
+  steps: [kube-system/apps/v1/deployments]
+  path: /deployments
+EOF
+}
+
 cmd_record() {
 	start_tunnel
 	rm -rf "$FRAMES"
@@ -212,6 +261,11 @@ cmd_record() {
 	done
 	rm -rf "$LOCAL"
 	mkdir -p "$LOCAL"
+	# kc starts without saved settings, history or bookmarks, apart from the
+	# saved views the hotlist scene opens.
+	rm -rf "$WORK/home/.kc"
+	mkdir -p "$WORK/home/.kc"
+	hotlist >"$WORK/home/.kc/hotlist.yaml"
 	rm -f "$BH_FIFO" "$BH_LOG"
 	mkfifo "$BH_FIFO"
 	# Assert the target once more, then start kc on the demo kubeconfig only.
@@ -220,7 +274,7 @@ cmd_record() {
 	kk true
 	(cd "$LOCAL" && env -i PATH="$PATH" HOME="$WORK/home" KUBECONFIG="$KCFG" TZ=UTC LANG=en_US.UTF-8 \
 		SHELL=/bin/sh PS1='$ ' PWD="$LOCAL" \
-		"$WORK/bin/bubbleheadless" -cols "$COLS" -rows "$ROWS" -- "$WORK/bin/kc" --context "$CONTEXT" <"$BH_FIFO" >"$BH_LOG" 2>&1) &
+		"$WORK/bin/bubbleheadless" -cols "$COLS" -rows "$ROWS" -- "$WORK/bin/kc" --context "$CONTEXT" -n shop <"$BH_FIFO" >"$BH_LOG" 2>&1) &
 	local bh_pid=$!
 	exec 3>"$BH_FIFO"
 	trap 'bh exit 2>/dev/null || true; exec 3>&-; kill '"$bh_pid"' 2>/dev/null || true; '"${ON_EXIT:-:}" EXIT
@@ -251,15 +305,26 @@ cmd_gif() {
 #
 # Each step waits for the screen to show what it needs before it takes a
 # frame, so a slow cluster changes the timing of the recording, not what it
-# shows. The number after snap is how long the frame stays in the GIF.
+# shows. The number after snap is how long the frame stays in the GIF; the
+# names below keep the pacing the same in every scene.
+
+FIRST=3   # the first frame of a scene, with its new caption
+READ=3    # a frame with text to read
+STEP=1.8  # an ordinary step
+TYPE=1    # a frame that shows typed text
+ANIM=0.8  # one step of a live change (scale-up, drain progress)
+
+# caption sets the caption the driver draws over the following frames.
+caption() { bh "caption $*"; }
 
 # search moves the cursor to the first row that starts with the text (C-s).
 search() {
 	key ctrl+s
 	typetext "$1"
 	sleep 0.3
+	# A lone Esc counts once the Esc timeout (1s) passes: Esc+key is Meta.
 	key esc
-	sleep 0.3
+	sleep 1.2
 }
 
 # enter searches a row, enters it and waits for the text to show.
@@ -271,94 +336,271 @@ enter() {
 	wait_for "$2"
 }
 
-# shell_line runs a command on kc's shell line.
+# shell_line types a command on kc's shell line, shows it for the given
+# number of seconds and runs it.
 shell_line() {
 	typetext "$1"
 	sleep 0.3
-	snap 0.8
+	snap "${2:-$TYPE}"
 	key enter
 }
 
-scene_panels() {
+# widen makes the left panel 75% wide (50, 66, 75); narrow gives the right
+# panel its half back (25, 33, 50). M-w only ever widens the active panel.
+widen() {
+	meta w
+	meta w
+	sleep 0.5
+}
+
+narrow() {
+	key tab
+	meta w
+	meta w
+	key tab
+	sleep 0.5
+}
+
+scene_intro() {
+	caption "kc: a two-panel Kubernetes TUI in the style of Midnight Commander"
 	# The root list grows while discovery runs; a search before it settles
-	# can land on a row that moves away.
-	wait_for "/storageclasses" 60
+	# can land on a row that moves away. Info fills once metrics arrive.
+	wait_for "/servicecidrs" 60
+	wait_for "Top pods by memory in namespace shop" 60
+	wait_for "shop/web-" 90
 	sleep 2
-	snap 1.2
+	snap 3.5
+}
+
+scene_search() {
+	caption "Quick search (C-s): type the start of a name, Enter opens the row"
 	key ctrl+s
-	typetext /nam
-	sleep 0.3
-	snap 0.7
+	typetext /dep
+	sleep 0.4
+	snap $FIRST
 	key enter
-	wait_for "/kube-system"
-	snap 0.9
-	enter /sh "/namespaces/shop "
-	enter /dep "/namespaces/shop/deployments "
-	wait_for "/web"
-	snap 1
-	# The right panel lists the pods of the same namespace.
+	wait_for "/checkout"
+	sleep 0.5
+	snap $STEP
+	search /web
+	wait_for "Top pods of deployments.apps shop/web"
+	sleep 1
+	caption "The Info panel follows the cursor: usage, pods, top pods"
+	snap $FIRST
+}
+
+scene_overview() {
+	caption "Cluster overview (M-i): what needs attention in this namespace"
+	meta i
+	wait_for "/attention"
+	wait_for "/pods image pull err"
+	sleep 1.5
+	snap $FIRST
+	enter /att "/overview/attention "
+	search "/pods image"
+	wait_for "Scope: namespace shop"
+	sleep 0.5
+	caption "Info explains the finding under the cursor"
+	snap $FIRST
+	key enter
+	wait_for "/overview/attention/pods image pull errors"
+	wait_for "ImagePullBackOff"
+	sleep 0.5
+	caption "Enter lists the objects behind a finding"
+	snap $READ
+}
+
+scene_diagnosis() {
+	caption "/diagnosis explains why a Deployment is broken"
+	shell_line "cd deploy/checkout" $FIRST
+	wait_for "/deployments/checkout "
+	wait_for "/diagnosis"
+	enter /diag "/deployments/checkout/diagnosis "
+	wait_for " error"
+	widen
+	search " error"
+	wait_for "The rollout does not progress"
+	snap $READ
+	# The second finding: the pod's image cannot be pulled.
+	key ctrl+s
+	typetext " error"
+	key ctrl+s
+	sleep 0.3
+	key esc
+	sleep 1.2
+	wait_for "cannot pull its image"
+	snap $READ
+	caption "... and why a Service has no endpoints"
+	shell_line "cd svc/payments" $FIRST
+	wait_for "/services/payments "
+	enter /diag "/services/payments/diagnosis "
+	search " error"
+	wait_for "No running pod match"
+	snap $READ
+	narrow
+}
+
+scene_menu() {
+	caption "F9 opens the menu bar, as in mc; each entry shows its key"
+	# F9 starts on the Left menu; File is the next one.
+	key f9
+	key right
+	key down
+	wait_for "Quick search"
+	sleep 0.3
+	snap $FIRST
+	key right
+	key right
+	key right
+	wait_for "│*Info"
+	sleep 0.3
+	caption "The Right menu switches the right panel from Info to a list"
+	snap $READ
+	key enter
+	wait_for "Cluster overview: capacity, health, risks, activity"
+	# The right panel lists the pods of the namespace.
 	key tab
-	enter /nam "/kube-system"
-	enter /sh "/namespaces/shop "
-	enter /pod "/namespaces/shop/pods "
+	enter /pods "/pods "
 	wait_for "Running"
-	snap 1.2
 	key tab
+	sleep 0.5
+	snap $STEP
 }
 
 scene_scale() {
-	enter /web "/namespaces/shop/deployments/web "
+	caption "/timeline records every change kc observes on an object"
+	shell_line "cd deploy/web" $FIRST
+	wait_for "/deployments/web "
+	enter /tim "/deployments/web/timeline "
+	wait_for "│initial "
+	sleep 0.5
+	snap $STEP
+	key home
+	key enter
+	wait_for " Scale"
+	caption "Scale... asks first; the pods on the right follow live"
 	enter " Scale" "Scale Deployment"
-	snap 0.8
+	snap $FIRST
 	key backspace
 	typetext 4
 	sleep 0.3
-	snap 0.6
+	snap $TYPE
 	key enter
 	wait_for "Replicas:    2 -> 4"
-	snap 1.4
+	snap $READ
 	key left
 	key enter
-	# The pod list on the right follows the scale-up live.
 	local i
-	for i in 1 2 3 4 5; do
-		sleep 0.3
-		snap 0.4
+	for i in 1 2 3 4; do
+		sleep 0.4
+		snap $ANIM
 	done
 	sleep 1
-	snap 1
+	snap $STEP
+	enter /tim "/deployments/web/timeline "
+	wait_for "│spec "
+	widen
+	key end
+	# The rows end with the revisions, the note and "stop recording"; the
+	# spec change is the oldest entry after the initial one. The line under
+	# the list shows the whole change of the row under the cursor.
+	local n=0
+	until shows "; spec.replicas"; do
+		n=$((n + 1))
+		[ $n -lt 12 ] || die "no timeline row with the spec change"
+		key up
+		sleep 0.3
+	done
+	caption "The timeline shows the scale-up, newest first"
+	snap $FIRST
+	key f3
+	wait_for "+  replicas: 4"
+	sleep 0.3
+	caption "F3 on an entry diffs it against the revision before"
+	snap $FIRST
+	key f3
+	wait_for "/deployments/web/timeline "
+	narrow
 }
 
-scene_yaml_and_logs() {
+scene_yaml() {
+	caption "F3 views any object; this is the YAML of the Deployment"
 	key home
 	key enter
-	wait_for "/namespaces/shop/deployments "
+	wait_for "/deployments/web "
+	key home
+	key enter
+	wait_for "/deployments "
 	search /web
 	key f3
 	wait_for "kind: Deployment"
-	snap 2
+	sleep 0.5
+	snap $FIRST
 	key f3
-	wait_for "/namespaces/shop/deployments "
-	enter /api "/namespaces/shop/deployments/api "
+	wait_for "/deployments "
+}
+
+scene_compare() {
+	caption "C-x C-d compares the objects under the two cursors"
+	# The right panel lists the Deployments too, with api under its cursor;
+	# web is under the left one.
+	key tab
+	typetext "cd deployments"
+	key enter
+	# Both panels list the same rows now, so there is no text to wait for.
+	sleep 2
+	search /api
+	key tab
+	key ctrl+x
+	key ctrl+d
+	# "Reading both manifests..." took 30 to 40 seconds in the recordings.
+	wait_for "+++ right/" 90
+	sleep 0.5
+	snap $FIRST
+	key f3
+	wait_for "/deployments "
+	# Back to the pods on the right for the later scenes.
+	key tab
+	typetext "cd pods"
+	key enter
+	wait_for "/web-"
+	key tab
+	sleep 0.5
+}
+
+scene_logs() {
+	caption "Merged logs of every pod of a Deployment, JSON lines formatted"
+	enter /api "/deployments/api "
 	search " logs"
 	key f3
 	wait_for "payment declined" 30
-	snap 1.5
 	sleep 1
-	snap 1.2
+	snap $FIRST
+	caption "M-g filters by JSON fields: level=error,warn"
+	meta g
+	wait_for "Log filter"
+	typetext "level=error,warn"
+	sleep 0.4
+	snap $READ
+	key enter
+	sleep 1.5
+	snap $READ
 	key f3
-	wait_for "/namespaces/shop/deployments/api "
+	wait_for "/deployments/api "
 }
 
-scene_container_files() {
+scene_files() {
+	caption "Container files: browse /root of a running container"
 	key tab
-	enter /web "/namespaces/shop/pods/web-"
+	wait_for "web-"
+	enter /web "/pods/web-"
 	enter /cont "/containers "
 	wait_for "/nginx"
 	enter /nginx "/containers/nginx "
 	enter /root "/nginx/root "
 	wait_for "docker-entrypoint"
-	snap 1
+	sleep 0.3
+	snap $FIRST
 	enter etc "/root/etc "
 	# Search only once the folder has loaded: Enter on an empty list would
 	# take the cursor's /.. row and go back up.
@@ -366,45 +608,65 @@ scene_container_files() {
 	enter nginx "/root/etc/nginx "
 	wait_for "nginx.conf"
 	search nginx.c
-	snap 1
+	snap $STEP
 	# A local directory in the left panel, then F5 copies the file there.
+	caption "M-l opens a local directory; F5 copies out of the container"
 	key tab
 	meta l
 	wait_for "$(basename "$LOCAL")"
-	snap 0.8
 	key tab
+	sleep 0.3
+	snap $FIRST
 	key f5
 	wait_for "Copy from the container?"
-	snap 1.6
+	snap $READ
 	key enter
 	wait_for "Copy finished"
-	snap 1.6
+	snap $READ
 	key enter
 	wait_for " nginx.conf"
-	snap 1
+	snap $STEP
+}
+
+# node_actions opens the node menu (M-n) on the node under the cursor. For
+# up to a minute after a log stream or a container file session ended, M-n
+# answered "Select a node first" in the recordings, so it tries again; the
+# GIF shows only the menu.
+node_actions() {
+	local i
+	for i in $(seq 30); do
+		meta n
+		sleep 3
+		if shows "Node actions"; then
+			return 0
+		fi
+	done
+	die "M-n did not open the node actions"
 }
 
 scene_drain() {
-	# The right panel goes back to the pods, the left one to the nodes.
-	shell_line "cd -n shop pods"
-	wait_for "kind-kc-demo : shop"
-	key tab
-	meta l
-	sleep 0.5
-	shell_line "cd /nodes"
+	caption "Node actions (M-n): drain a node with progress, then uncordon"
+	# The left panel goes to the nodes; the right one keeps the pods, which
+	# go Pending while the only worker is drained.
+	shell_line "cd /nodes" $FIRST
 	wait_for "kc-demo-worker"
-	search /kc-demo-w
-	meta n
-	wait_for "Node actions"
-	snap 1
+	# The arrow keys, not a quick search: after C-s the first M-n presses
+	# answered "Select a node first" in the recordings. The worker sorts
+	# after the control plane.
+	sleep 2
+	key down
+	key down
+	wait_for "│kc-demo-worker (v1)"
+	node_actions
+	snap $STEP
 	key down
 	key down
 	key enter
 	wait_for "Ignore DaemonSet pods"
-	snap 1.2
+	snap $READ
 	key enter
 	wait_for "Drain node?"
-	snap 2
+	snap $READ
 	key left
 	key enter
 	# One frame per change of the progress row, so a slow eviction does not
@@ -415,49 +677,79 @@ scene_drain() {
 		[ $i -lt 300 ] || die "the drain did not finish"
 		row=$(screen | grep -E 'kc-demo-worker +[a-z]+ +[0-9]' || true)
 		if [ -n "$row" ] && [ "$row" != "$last" ]; then
-			snap 0.6
+			snap $ANIM
 			last=$row
 		fi
 		sleep 0.2
 	done
-	snap 1.5
+	snap $READ
 	key enter
 	wait_for "SchedulingDisabled"
-	snap 1.2
-	meta n
-	wait_for "Node actions"
+	snap $STEP
+	caption "Uncordon makes the node schedulable again; the pods come back"
+	node_actions
 	key down
 	key enter
 	wait_for "Uncordon node?"
-	snap 1
+	snap $FIRST
 	key left
 	key enter
 	sleep 2
-	snap 1.2
+	snap $STEP
+	# The files scene needs a running web pod again.
+	kk kubectl -n shop rollout status deploy/web --timeout=180s >/dev/null
+}
+
+scene_hotlist() {
+	caption "Hotlist (C-\\): saved places and views with their filter and sort"
+	key 0x1c
+	wait_for "not running"
+	sleep 0.3
+	snap $FIRST
+	key enter
+	wait_for "kc also filters: status!=Running"
+	wait_for "/checkout-"
+	sleep 0.5
+	snap $READ
+	key 0x1c
+	wait_for "restarting"
+	key down
+	key enter
+	wait_for "kc also filters: restarts>0"
+	wait_for "/report-"
+	sleep 1
+	caption "Another saved view: pods in batch that restart, most restarts first"
+	snap $READ
 }
 
 scene_terminal() {
+	caption "C-o: the integrated terminal follows the panel's context and namespace"
 	key ctrl+o
 	wait_for "Return to panels"
-	typetext "kubectl -n shop get deploy,pods"
+	typetext "kubectl get deploy,pods"
 	sleep 0.3
-	snap 0.8
+	snap $FIRST
 	key enter
-	wait_for "deployment.apps/web" 20
+	wait_for "deployment.apps/report" 20
 	sleep 1
-	snap 2.5
+	snap $READ
 	key ctrl+o
 	sleep 1
-	snap 1.2
+	caption "C-o again returns to the panels"
+	snap $FIRST
 }
 
+# The scenes in recording order. KC_DEMO_SCENES picks some of them, such as
+# the first few, to check a change quickly; each scene starts where the one
+# before it ends.
+SCENES="intro search overview diagnosis menu drain scale yaml compare logs files hotlist terminal"
+
 scenes() {
-	scene_panels
-	scene_scale
-	scene_yaml_and_logs
-	scene_container_files
-	scene_drain
-	scene_terminal
+	local s
+	for s in ${KC_DEMO_SCENES:-$SCENES}; do
+		log "scene $s"
+		"scene_$s"
+	done
 }
 
 case "${1:-all}" in

@@ -33,3 +33,11 @@ AGENTS.md forbids running kc against any real cluster, including local ones that
 - The GIF goes stale when the UI changes; rerun `docs/demo/record.sh`. A scene whose screen text changes fails with the text it waited for and the screen it saw.
 - `cmd/bubbleheadless` imports `github.com/charmbracelet/ultraviolet` directly now (it was already an indirect dependency through bubbleterm).
 - The help viewer (`F1`) already drops image lines from the README; its explicit check for the old screenshot path now names `docs/demo.gif`.
+
+## Update 2026-11-23: captions and more scenes
+
+The first GIF moved too fast to follow and showed no text that said what each step was. The demo now has captions and covers more of kc:
+
+- `cmd/bubbleheadless` has `caption <text>` and `caption-at <top|bottom>`. Color snapshots draw the caption as a dark box with a yellow frame and Go Bold text, centered over the bottom two rows (the shell line and the function-key bar), where it hides the least. The caption is drawn on the PNG, not sent to kc, so the recorded UI is unchanged.
+- Frames stay at least 0.8 seconds (one step of a live change), most 1.8 to 3 seconds, and the first frame with a new caption 3 seconds. Decision 4's numbers are now about 2 minutes 20 seconds and 1.4 MB.
+- Scenes added to decision 5: the overview and `/attention`, `/diagnosis` of a broken Deployment and a Service without endpoints, the menu bar, `/timeline` with its diff, comparing two objects, the log filter, and the hotlist. `seed.yaml` adds the broken objects they need, and `seed` installs metrics-server for the usage the Info panel shows.

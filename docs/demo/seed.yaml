@@ -115,6 +115,50 @@ spec:
               cpu: 10m
               memory: 8Mi
 ---
+# Broken on purpose: the tag does not exist, so the pod stays in
+# ErrImagePull/ImagePullBackOff for the overview and diagnosis scenes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: shop
+  labels:
+    app: checkout
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 60
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      labels:
+        app: checkout
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: checkout
+          image: nginx:1.27-checkout-missing
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+---
+# Broken on purpose: no pod carries app=payments, so the Service has no
+# endpoints.
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+  namespace: shop
+spec:
+  selector:
+    app: payments
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -140,6 +184,37 @@ spec:
             - sh
             - -c
             - 'trap "exit 0" TERM; while true; do echo "processed job $RANDOM"; sleep 3; done'
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
+---
+# Broken on purpose: the container exits with an error and crash loops.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report
+  namespace: batch
+  labels:
+    app: report
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: report
+  template:
+    metadata:
+      labels:
+        app: report
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: report
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - 'echo "loading config /etc/report/config.yaml"; echo "error: config file not found" >&2; exit 1'
           resources:
             requests:
               cpu: 10m
