@@ -3,7 +3,8 @@ package models
 import (
 	"bytes"
 	"context"
-	"strings"
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -320,32 +322,63 @@ func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 		t.Fatalf("create CRD: %v", err)
 	}
 
-	kctesting.Eventually(t, 10*time.Second, 100*time.Millisecond, func() bool {
-		latest, err := apiext.ApiextensionsV1().CustomResourceDefinitions().Get(ctx, crd.Name, metav1.GetOptions{})
-		if err != nil {
-			return false
-		}
-		for _, cond := range latest.Status.Conditions {
-			if cond.Type == apiextensionsv1.Established && cond.Status == apiextensionsv1.ConditionTrue {
-				return true
-			}
-		}
-		return false
-	})
+	// Established does not mean discovery serves the kind yet: the API
+	// server updates its discovery documents on its own. Refreshing kc's
+	// discovery before that caches a document without widgets, and
+	// refreshing the folder alone never fetches discovery again.
+	disco, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		t.Fatalf("discovery client: %v", err)
+	}
+	waitServed(t, disco, "example.com/v1", "widgets")
 
 	cl.RefreshDiscovery()
 	folder.Refresh()
 
-	kctesting.Eventually(t, 10*time.Second, 100*time.Millisecond, func() bool {
-		count := folder.Len(ctxFolder)
-		rows := folder.Lines(ctxFolder, 0, count)
-		for _, r := range rows {
-			id, _, _, ok := r.Columns()
-			if ok && strings.Contains(id, "widgets") {
-				return true
+	wantID := ns.Name + "/example.com/v1/widgets"
+	var seen []string
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		seen = seen[:0]
+		for _, r := range folder.Lines(ctxFolder, 0, folder.Len(ctxFolder)) {
+			if id, _, _, ok := r.Columns(); ok {
+				seen = append(seen, id)
 			}
 		}
+		if slices.Contains(seen, wantID) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("folder never listed %s after the discovery refresh; rows: %v", wantID, seen)
+		}
 		folder.Refresh()
-		return false
-	})
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// waitServed waits until the API server's discovery lists resource in
+// groupVersion.
+func waitServed(t *testing.T, disco discovery.DiscoveryInterface, groupVersion, resource string) {
+	t.Helper()
+	var last string
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		list, err := disco.ServerResourcesForGroupVersion(groupVersion)
+		if err == nil {
+			names := make([]string, 0, len(list.APIResources))
+			for _, r := range list.APIResources {
+				if r.Name == resource {
+					return
+				}
+				names = append(names, r.Name)
+			}
+			last = fmt.Sprintf("resources %v", names)
+		} else {
+			last = err.Error()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("API server discovery never served %s in %s; last answer: %s", resource, groupVersion, last)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
