@@ -14,7 +14,7 @@ A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, B
 
 - **Kubectl-compatible startup intents:** `kc get ...` and `kc logs ...` parse familiar CLI syntax and launch directly into the matching folders, multi-selecting objects and opening manifest/log viewers when requested (`docs/designs/cli-intents.md`).
 - **Hierarchy-first navigation:** resource groups → object folders → virtual subfolders (pod containers, ConfigMap/Secret keys, etc.). Every row is keyed by full `group/version/resource`.
-- **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices, with a diagnosis of Services, workloads and pods) via per-object child folders so related resources stay discoverable in the tree.
+- **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices, with a diagnosis of Services, workloads, pods, Ingresses and HTTPRoutes) via per-object child folders so related resources stay discoverable in the tree.
 - **Helm releases:** `/helm` lists releases with their stored values, manifest, notes, hooks and revision history, and links each manifest object to the live object (read-only, no `helm` binary needed).
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **CPU and memory usage:** when the cluster serves `metrics.k8s.io` (metrics-server), pod lists show `CPU`, `MEM`, `%CPU/R` (of requests) and `%MEM/L` (of limits), and node lists show `CPU`, `%CPU`, `MEM` and `%MEM` (of allocatable). Wide mode adds `%CPU/L` and `%MEM/R` for pods and `CPU/A` and `MEM/A` for nodes. kc reads the metrics every 15 seconds, only while such a list is on screen and no dialog is open. `n/a` means no metrics for the object yet, no request or limit to compare with, metrics kc may not read, or a sample metrics-server measured more than two minutes before kc read it (the list succeeded, but the value is not current).
@@ -169,7 +169,7 @@ Viewers show the kubectl command that prints the same content on their last line
 
 In every menu and list dialog (the user menu `F2`, node actions, the hotlist and panel history, the context and namespace pickers, the panel and view options, the access view), the mouse wheel moves the selection up or down while the pointer is over the dialog, as in mc. A list longer than its window scrolls to keep the selection in view. The wheel never runs the selected entry or changes an option, and a wheel turned outside the dialog is ignored.
 
-Each panel keeps a history of the last 50 locations ([Panel history](internal/help/topics/history.md)). `/owners`, `/used-by` and `/requires` list related objects ([Owners, used by and requires](internal/help/topics/related.md)). Services, pods and workloads have a `/diagnosis` row ([Diagnosis](internal/help/topics/diagnosis.md)), and objects a `/timeline` row ([Object timeline](internal/help/topics/timeline.md)). The compare viewer is described in [Diff viewer](internal/help/topics/diff-viewer.md).
+Each panel keeps a history of the last 50 locations ([Panel history](internal/help/topics/history.md)). `/owners`, `/used-by` and `/requires` list related objects ([Owners, used by and requires](internal/help/topics/related.md)). Services, pods, workloads, Ingresses and HTTPRoutes have a `/diagnosis` row ([Diagnosis](internal/help/topics/diagnosis.md)), and objects a `/timeline` row ([Object timeline](internal/help/topics/timeline.md)). The compare viewer is described in [Diff viewer](internal/help/topics/diff-viewer.md).
 
 `F4`, `F8` and `F3` on container logs are grayed out when a SelfSubjectAccessReview for the current context, impersonation and namespace says the action is denied (`F4` needs get and patch, as `kubectl edit` sends a patch). Answers are cached for 30 seconds. An unknown or failed review keeps the key enabled; the API server still decides every request.
 
@@ -359,7 +359,7 @@ commands:
 
 ## Node Actions
 
-In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. See [Node actions](internal/help/topics/node-actions.md).
+In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain, the confirmation lists the affected workloads and the PodDisruptionBudgets that cover the pods, with their allowance as read then. See [Node actions](internal/help/topics/node-actions.md).
 
 ## Configuration
 
