@@ -149,8 +149,9 @@ The pages are in [`internal/help/topics`](internal/help/topics/index.md) and shi
 | `M-b`      | Used by: opens `<object>/used-by` with the objects that use the selected one, read from the watch cache: pods using a ConfigMap, Secret, PersistentVolumeClaim or ServiceAccount (volumes, env, envFrom, imagePullSecrets, serviceAccountName) with the controllers that run them (ReplicaSet, Deployment, Job and so on, once each), Services selecting a Pod, Ingresses routing to a Service, the claim bound to a PersistentVolume. `Esc b` does the same. |
 | `M-d`      | Requires: opens `<object>/requires` with the objects the selected one names in its spec: for a Pod its ConfigMaps, Secrets, PersistentVolumeClaims, ServiceAccount and the Node it runs on; for a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob the same from its pod template; for a PersistentVolumeClaim its volume. Targets that do not exist are listed dim with the reason. `Esc d` does the same; the File menu calls it Requires. |
 | `C-x C-d`  | Compare the objects under the cursors of the two panels, as mc's "Compare files". Opens a read-only unified diff of the two YAML manifests. |
-| `C-x d`    | Compare the object lists of the two panels, as mc's "Compare directories": the same resource and API version on both sides, matched by name (by namespace and name when both list all namespaces; two different namespaces pair with each other). Lists each object as changed, only left, only right, unavailable or equal; Enter on a pair opens its diff. Read-only. |
-| `C-x c`    | Compare the active panel's object list with the same resource and namespace in another kubeconfig context, picked from a list. kc connects to that context for the read and does not switch to it. |
+| `C-x d`    | Compare what the two panels show, as mc's "Compare directories": the marked rows, else the rows a filter keeps, else the whole lists (a panel without marks or filter contributes the counterparts of the other side's rows). The same resource and API version on both sides, matched by name (by namespace and name when both list all namespaces; two different namespaces pair with each other). Lists each object as changed, only left, only right, unavailable or equal, and names what each side evaluated; Enter on a pair opens its diff. Read-only. See [Compare lists](internal/help/topics/compare-lists.md). |
+| `C-x a`    | Compare the whole lists of the two panels, ignoring filters and marks. |
+| `C-x c`    | Compare what the active panel shows (marked rows, else filtered rows, else the whole list) with their counterparts in another kubeconfig context, picked from a list. kc connects to that context for the read and does not switch to it; neither panel shows it. The Command menu has the whole-list variant. |
 | `C-x p`    | Pin the Describe, Manifest, Logs or Info panel (the active one, else the other) to what it shows, or unpin it. See [Pin, freeze and the investigation window](#pin-freeze-and-the-investigation-window). |
 | `C-x f`    | Freeze the display of that panel at the current time, or return it to live data. |
 | `C-x w`    | Set the investigation window the Logs and Info panels use. |
@@ -191,7 +192,7 @@ The logs viewer detects JSON lines and shows them formatted. `M-g` filters by te
 
 ## Context and Namespace
 
-Each panel has its own context and namespace scope; kc never changes the kubeconfig. See [Context and namespace](internal/help/topics/context-namespace.md).
+kc works in one context at a time, shown in both panels; each panel has its own namespace scope. kc never changes the kubeconfig. See [Context and namespace](internal/help/topics/context-namespace.md).
 
 ## Filtering Rows
 
