@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/stokaro/kc/internal/pagedfile"
 	table "github.com/stokaro/kc/internal/table"
 )
 
@@ -192,6 +193,56 @@ func (f *LocalFileItem) ViewContent() (title, body, lang, mime, filename string,
 	return f.path, string(data), "", "", filepath.Base(f.path), nil
 }
 
+// OpenFileView opens the file for F3: whole when it holds at most
+// LocalViewWholeBytes, else as a source the viewer reads in pages. It
+// refuses a directory, a special file and a binary file like ViewContent.
+func (f *LocalFileItem) OpenFileView(context.Context) (FileView, error) {
+	if err := localRegularFile(f.path); err != nil {
+		return FileView{}, err
+	}
+	file, err := os.Open(f.path) // #nosec G304 -- the user picked this file in the local panel
+	if err != nil {
+		return FileView{}, fmt.Errorf("cannot read %s: %w", filepath.Base(f.path), pathErrReason(err))
+	}
+	view, err := openLocalFileView(file, f.path)
+	if err != nil || view.Source == nil {
+		_ = file.Close()
+	}
+	return view, err
+}
+
+func openLocalFileView(file *os.File, p string) (FileView, error) {
+	view := FileView{Title: p, Filename: filepath.Base(p)}
+	head := make([]byte, localBinarySniffBytes)
+	n, err := io.ReadFull(file, head)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return FileView{}, fmt.Errorf("cannot read %s: %w", filepath.Base(p), pathErrReason(err))
+	}
+	if bytes.IndexByte(head[:n], 0) >= 0 {
+		return FileView{}, localBinaryError(p)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return FileView{}, fmt.Errorf("cannot read %s: %w", filepath.Base(p), pathErrReason(err))
+	}
+	view.Size = info.Size()
+	if view.Size <= LocalViewWholeBytes {
+		// Read one byte more than the limit: a file that grew since the
+		// stat opens in pages rather than cut short.
+		rest, err := io.ReadAll(io.LimitReader(file, LocalViewWholeBytes+1-int64(n)))
+		if err != nil {
+			return FileView{}, fmt.Errorf("cannot read %s: %w", filepath.Base(p), pathErrReason(err))
+		}
+		if data := slices.Concat(head[:n], rest); len(data) <= LocalViewWholeBytes {
+			view.Body = string(data)
+			view.Size = int64(len(data))
+			return view, nil
+		}
+	}
+	view.Source = pagedfile.NewFileSource(file)
+	return view, nil
+}
+
 // ViewContent refuses: a directory is opened with Enter, not viewed.
 //
 //revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
@@ -199,8 +250,9 @@ func (d *LocalDirItem) ViewContent() (title, body, lang, mime, filename string, 
 	return "", "", "", "", "", localDirError(d.dir)
 }
 
-// localViewMaxBytes is how much of a local file the viewer shows, the same
-// limit as for a container file.
+// localViewMaxBytes is how much of a local file ViewContent returns, the
+// same limit as for a container file. F3 uses OpenFileView, which pages a
+// larger file instead.
 const localViewMaxBytes = fsFileViewMaxBytes
 
 // localBinarySniffBytes is how much of a file is checked for a NUL byte,
@@ -279,6 +331,7 @@ func CheckLocalEditable(p string) error {
 
 var (
 	_ Enterable      = (*LocalDirItem)(nil)
+	_ PagedViewable  = (*LocalFileItem)(nil)
 	_ LocalEntryItem = (*LocalDirItem)(nil)
 	_ LocalEntryItem = (*LocalFileItem)(nil)
 	_ Viewable       = (*LocalDirItem)(nil)

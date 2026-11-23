@@ -80,6 +80,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	case panelcontent.RereadDoneMsg:
 		// Before the modal routing below: a dialog may cover the panel.
 		return a, tea.Batch(append(cmds, a.handleRereadDone(msg))...)
+	case pagedRereadMsg:
+		cmd, err := msg.v.applyReread(msg)
+		a.invalidateView("paged reread")
+		return a, tea.Batch(append(cmds, cmd, a.handleRereadDone(panelcontent.RereadDoneMsg{Err: err}))...)
 	case textViewerRereadMsg:
 		return a, tea.Batch(append(cmds, a.handleRereadDone(panelcontent.RereadDoneMsg{Err: msg.v.applyReread(msg)}))...)
 	case startupLogsTargetMsg:
@@ -128,6 +132,15 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return model, cmd
 	case workloadLogsReadyMsg:
 		return a, tea.Batch(append(cmds, a.showWorkloadLogs(msg))...)
+	case viewer.PagedMsg:
+		// Block reads and search results go to their viewer even when a
+		// dialog (F2) covers it.
+		if target := msg.PagedTarget(); target != nil {
+			cmd, _ := target.Update(msg)
+			cmds = append(cmds, cmd)
+			a.invalidateView("paged viewer")
+		}
+		return a, tea.Batch(cmds...)
 	case logStreamOpenedMsg, logStreamMsg:
 		// Stream results go to their viewer even when a dialog (F2) covers
 		// it; routed through the top modal they would be dropped and the

@@ -44,7 +44,13 @@ cache and its informers. Some keep state that events do not update:
 - A Command panel does not run its command again, because a command can
   change the cluster. A frozen panel stays frozen.
 - The F3 viewer reads its content again off the UI goroutine and keeps the
-  scroll position.
+  scroll position. A file shown whole is read with the same size limit as
+  the first time; one that grew past it is not read whole, and F3 opens it
+  again in pages. A paged file is opened again, because an editor may have
+  replaced it and the open handle would still read the old file. The
+  cached blocks, the size and the line count are dropped, reads of the old
+  file are ignored, and the position stays, moved up to the last page when
+  the file got shorter. A paged file that is now small stays paged.
 - Widgets that reread report the end with `panelcontent.RereadDoneMsg`; the
   App shows a short confirmation or the error.
 - In the full-screen terminal C-r goes to the shell (history search). With
