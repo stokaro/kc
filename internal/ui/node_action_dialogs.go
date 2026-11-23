@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +28,15 @@ func greyLine(text string, width int, focused bool) string {
 		style = style.Background(lipgloss.Color(uistyles.ColorModalSelBg)).Bold(true)
 	}
 	return style.Render(truncateStringToWidth(text, width))
+}
+
+// warnLine renders a problem line of a grey dialog in red.
+func warnLine(text string, width int) string {
+	return lipgloss.NewStyle().
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Red).
+		Width(width).
+		Render(truncateStringToWidth(text, width))
 }
 
 func linesWidth(lines []string) int {
@@ -141,13 +152,22 @@ const (
 // drainOptionsModel asks for the kubectl drain options before kc reads the
 // pods. Up/Down/Tab move, Space toggles a check box, Enter accepts (or
 // cancels on Cancel).
+//
+// The form stays open while kc reads the pods. When kubectl's rules refuse
+// some of them, the form lists each pod under the option that lets the
+// drain go past it, so the choices are kept and can be changed.
 type drainOptionsModel struct {
-	target        nodeTarget
-	grace         string
-	timeout       string
-	opts          nodeaction.DrainOptions
-	focus         int
-	err           string
+	target  nodeTarget
+	grace   string
+	timeout string
+	opts    nodeaction.DrainOptions
+	focus   int
+	err     string
+	// checking is true while kc reads the pods; the form takes no input
+	// then.
+	checking bool
+	// refused are the pods that stopped the last check.
+	refused       []nodeaction.RefusedPod
 	width, height int
 }
 
@@ -191,7 +211,7 @@ func (m *drainOptionsModel) parse() (nodeaction.DrainOptions, error) {
 
 func (m *drainOptionsModel) submit(ok bool) tea.Cmd {
 	if !ok {
-		msg := nodeDrainOptionsMsg{target: m.target}
+		msg := nodeDrainOptionsMsg{target: m.target, form: m}
 		return func() tea.Msg { return msg }
 	}
 	opts, err := m.parse()
@@ -199,8 +219,39 @@ func (m *drainOptionsModel) submit(ok bool) tea.Cmd {
 		m.err = err.Error()
 		return nil
 	}
-	msg := nodeDrainOptionsMsg{target: m.target, opts: opts, ok: true}
+	m.err = ""
+	m.refused = nil
+	m.checking = true
+	msg := nodeDrainOptionsMsg{target: m.target, opts: opts, ok: true, form: m}
 	return func() tea.Msg { return msg }
+}
+
+// checked ends a check of the pods. A RefusedError lists the pods next to
+// their options and moves the focus to the first such option; any other
+// error is shown above the buttons.
+func (m *drainOptionsModel) checked(err error) {
+	m.checking = false
+	if refused, ok := errors.AsType[*nodeaction.RefusedError](err); ok {
+		m.refused = refused.Pods
+		for _, p := range m.refused {
+			if f, ok := drainOverrideField[p.Override]; ok {
+				m.focus = f
+				return
+			}
+		}
+		m.focus = drainFieldCancel
+		return
+	}
+	if err != nil {
+		m.err = err.Error()
+	}
+}
+
+// drainOverrideField maps the flag a refused pod names to its check box.
+var drainOverrideField = map[string]int{
+	nodeaction.OverrideIgnoreDaemonSets:   drainFieldIgnoreDaemonSets,
+	nodeaction.OverrideDeleteEmptyDirData: drainFieldDeleteEmptyDir,
+	nodeaction.OverrideForce:              drainFieldForce,
 }
 
 func (m *drainOptionsModel) toggle() {
@@ -211,7 +262,15 @@ func (m *drainOptionsModel) toggle() {
 		m.opts.DeleteEmptyDirData = !m.opts.DeleteEmptyDirData
 	case drainFieldForce:
 		m.opts.Force = !m.opts.Force
+	default:
+		return
 	}
+	// The pods listed under the box were refused with the old choice; the
+	// next Enter checks them again.
+	m.refused = slices.DeleteFunc(m.refused, func(p nodeaction.RefusedPod) bool {
+		f, ok := drainOverrideField[p.Override]
+		return ok && f == m.focus
+	})
 }
 
 func (m *drainOptionsModel) field() *string {
@@ -226,7 +285,7 @@ func (m *drainOptionsModel) field() *string {
 
 func (m *drainOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyPressMsg)
-	if !ok {
+	if !ok || m.checking {
 		return m, nil
 	}
 	switch s := key.String(); s {
@@ -281,20 +340,73 @@ func (m *drainOptionsModel) lines() (out []string, focusLine int) {
 		" " + checkbox(m.opts.DeleteEmptyDirData) + " Delete emptyDir data",
 		" " + checkbox(m.opts.Force) + " Force: evict pods without a controller",
 	}
+	notes, other := m.refusalNotes()
 	focusLine = -1
 	for i, f := range fields {
 		if i == m.focus {
 			focusLine = len(out)
 		}
 		out = append(out, f)
+		out = append(out, notes[i]...)
 	}
 	out = append(out, "")
-	if m.err != "" {
+	out = append(out, other...)
+	switch {
+	case m.err != "":
 		out = append(out, " ! "+m.err)
-	} else {
+	case m.checking:
+		out = append(out, " Reading the pods on the node...")
+	case len(m.refused) > 0 && len(other) == 0:
+		out = append(out, " ! kubectl drain refuses these pods. Nothing changed.", "   Tick the option above them, or Cancel.")
+	case len(m.refused) > 0:
+		out = append(out, " ! kubectl drain refuses these pods. Nothing changed.")
+	default:
 		out = append(out, " Space toggles, Enter drains.")
 	}
 	return out, focusLine
+}
+
+// maxRefusedPerOption bounds the pods listed under one option.
+const maxRefusedPerOption = 3
+
+// refusalNotes returns the lines of the refused pods: per form field the
+// lines under it, and the pods no option helps.
+func (m *drainOptionsModel) refusalNotes() (byField map[int][]string, other []string) {
+	byField = make(map[int][]string)
+	type group struct {
+		field  int
+		reason string
+		pods   []string
+	}
+	var groups []*group
+	for _, p := range m.refused {
+		f, ok := drainOverrideField[p.Override]
+		if !ok {
+			other = append(other, " ! "+p.Namespace+"/"+p.Name+": "+p.Message)
+			continue
+		}
+		// kubectl's message ends with the flag to use; the box is right
+		// above it.
+		reason, _, _ := strings.Cut(p.Message, " (use ")
+		i := slices.IndexFunc(groups, func(g *group) bool { return g.field == f && g.reason == reason })
+		if i < 0 {
+			groups = append(groups, &group{field: f, reason: reason})
+			i = len(groups) - 1
+		}
+		groups[i].pods = append(groups[i].pods, p.Namespace+"/"+p.Name)
+	}
+	for _, g := range groups {
+		lines := []string{"     ! " + g.reason + ":"}
+		for i, pod := range g.pods {
+			if i == maxRefusedPerOption {
+				lines = append(lines, fmt.Sprintf("       and %d more", len(g.pods)-maxRefusedPerOption))
+				break
+			}
+			lines = append(lines, "       "+pod)
+		}
+		byField[g.field] = append(byField[g.field], lines...)
+	}
+	return byField, other
 }
 
 func (m *drainOptionsModel) PreferredSize(maxW, maxH int) (width, height int) {
@@ -307,6 +419,10 @@ func (m *drainOptionsModel) View() tea.View {
 	lines, focusLine := m.lines()
 	var out []string
 	for i, l := range lines {
+		if i != focusLine && strings.HasPrefix(strings.TrimLeft(l, " "), "! ") {
+			out = append(out, warnLine(l, w))
+			continue
+		}
 		out = append(out, greyLine(l, w, i == focusLine))
 	}
 	out = append(out, greyLine("", w, false), m.buttons(w))

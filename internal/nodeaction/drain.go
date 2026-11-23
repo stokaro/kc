@@ -141,7 +141,7 @@ func PrepareDrain(ctx context.Context, env Env, nodes []string, opts DrainOption
 		return nil, fmt.Errorf("drain needs a pod lister")
 	}
 	a := &DrainAction{env: env, opts: opts, nodes: nodes}
-	var refusals []error
+	var refused []RefusedPod
 	for _, n := range nodes {
 		if _, err := nodeUnschedulable(ctx, env, n); err != nil {
 			return nil, err
@@ -151,12 +151,12 @@ func PrepareDrain(ctx context.Context, env Env, nodes []string, opts DrainOption
 			return nil, err
 		}
 		for _, b := range sel.Blocked {
-			refusals = append(refusals, fmt.Errorf("node %s: %s", n, b))
+			refused = append(refused, RefusedPod{Node: n, PodNote: b})
 		}
 		a.plan = append(a.plan, sel)
 	}
-	if len(refusals) > 0 {
-		return nil, &RefusedError{Reasons: refusals}
+	if len(refused) > 0 {
+		return nil, &RefusedError{Pods: refused}
 	}
 	b := newImpactBuilder(env.Budgets)
 	for _, sel := range a.plan {
@@ -166,15 +166,23 @@ func PrepareDrain(ctx context.Context, env Env, nodes []string, opts DrainOption
 	return a, nil
 }
 
-// RefusedError lists the pods that stop a drain before anything changed.
+// RefusedPod is a pod that stops the drain of its node.
+type RefusedPod struct {
+	Node string
+	PodNote
+}
+
+// RefusedError lists the pods that stop a drain before anything changed,
+// in node order. The drain options dialog shows each pod next to the
+// option its Override names.
 type RefusedError struct {
-	Reasons []error
+	Pods []RefusedPod
 }
 
 func (e *RefusedError) Error() string {
-	msg := "cannot drain: " + e.Reasons[0].Error()
-	if len(e.Reasons) > 1 {
-		msg += fmt.Sprintf(" (and %d more)", len(e.Reasons)-1)
+	msg := fmt.Sprintf("cannot drain: node %s: %s", e.Pods[0].Node, e.Pods[0].PodNote)
+	if len(e.Pods) > 1 {
+		msg += fmt.Sprintf(" (and %d more)", len(e.Pods)-1)
 	}
 	return msg
 }

@@ -213,25 +213,27 @@ func TestSelectPods(t *testing.T) {
 		want        string // evict, skip, block
 		wantWarning bool
 		wantMessage string
+		// wantOverride is the flag a refused pod names; "" for none.
+		wantOverride string
 	}{
 		{name: "replicaset pod is evicted", pod: pod("p", "n", rs), opts: defaults, want: "evict"},
-		{name: "daemonset pod refused by default", pod: pod("p", "n", ds), opts: defaults, want: "block", wantMessage: "--ignore-daemonsets"},
+		{name: "daemonset pod refused by default", pod: pod("p", "n", ds), opts: defaults, want: "block", wantMessage: "--ignore-daemonsets", wantOverride: nodeaction.OverrideIgnoreDaemonSets},
 		{name: "daemonset pod skipped with ignore", pod: pod("p", "n", ds), opts: nodeaction.DrainOptions{IgnoreDaemonSets: true}, want: "skip"},
 		{name: "finished daemonset pod is evicted", pod: pod("p", "n", ds, phase(corev1.PodSucceeded)), opts: defaults, want: "evict"},
-		{name: "orphaned daemonset pod refused", pod: pod("p", "n", ownedBy("DaemonSet", "apps/v1", "gone")), opts: nodeaction.DrainOptions{IgnoreDaemonSets: true}, want: "block", wantMessage: "not found"},
+		{name: "orphaned daemonset pod refused", pod: pod("p", "n", ownedBy("DaemonSet", "apps/v1", "gone")), opts: nodeaction.DrainOptions{IgnoreDaemonSets: true}, want: "block", wantMessage: "not found", wantOverride: nodeaction.OverrideForce},
 		{name: "orphaned daemonset pod evicted with force", pod: pod("p", "n", ownedBy("DaemonSet", "apps/v1", "gone")), opts: nodeaction.DrainOptions{Force: true}, want: "evict", wantWarning: true},
 		{name: "daemonset lookup error refuses", pod: pod("p", "n", ds), opts: nodeaction.DrainOptions{IgnoreDaemonSets: true},
 			dsExists: func(string, string) (bool, error) { return false, errors.New("forbidden") }, want: "block", wantMessage: "forbidden"},
 		{name: "other group DaemonSet kind is a controller", pod: pod("p", "n", ownedBy("DaemonSet", "example.com/v1", "x")), opts: defaults, want: "evict"},
 		{name: "mirror pod skipped", pod: pod("p", "n", mirror), opts: nodeaction.DrainOptions{Force: true}, want: "skip"},
 		{name: "mirror pod skipped without force", pod: pod("p", "n", mirror), opts: defaults, want: "skip"},
-		{name: "emptyDir refused by default", pod: pod("p", "n", rs, withEmptyDir), opts: defaults, want: "block", wantMessage: "--delete-emptydir-data"},
+		{name: "emptyDir refused by default", pod: pod("p", "n", rs, withEmptyDir), opts: defaults, want: "block", wantMessage: "--delete-emptydir-data", wantOverride: nodeaction.OverrideDeleteEmptyDirData},
 		{name: "emptyDir evicted with delete-emptydir-data", pod: pod("p", "n", rs, withEmptyDir), opts: nodeaction.DrainOptions{DeleteEmptyDirData: true}, want: "evict", wantWarning: true},
 		{name: "finished emptyDir pod is evicted", pod: pod("p", "n", rs, withEmptyDir, phase(corev1.PodFailed)), opts: defaults, want: "evict"},
-		{name: "unmanaged refused by default", pod: pod("p", "n"), opts: defaults, want: "block", wantMessage: "--force"},
+		{name: "unmanaged refused by default", pod: pod("p", "n"), opts: defaults, want: "block", wantMessage: "--force", wantOverride: nodeaction.OverrideForce},
 		{name: "unmanaged evicted with force", pod: pod("p", "n"), opts: nodeaction.DrainOptions{Force: true}, want: "evict", wantWarning: true},
 		{name: "finished unmanaged pod is evicted", pod: pod("p", "n", phase(corev1.PodSucceeded)), opts: defaults, want: "evict"},
-		{name: "unmanaged emptyDir needs both flags", pod: pod("p", "n", withEmptyDir), opts: nodeaction.DrainOptions{DeleteEmptyDirData: true}, want: "block", wantMessage: "--force"},
+		{name: "unmanaged emptyDir needs both flags", pod: pod("p", "n", withEmptyDir), opts: nodeaction.DrainOptions{DeleteEmptyDirData: true}, want: "block", wantMessage: "--force", wantOverride: nodeaction.OverrideForce},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -256,6 +258,9 @@ func TestSelectPods(t *testing.T) {
 			}
 			if tt.wantMessage != "" && !strings.Contains(s.Blocked[0].Message, tt.wantMessage) {
 				t.Errorf("message = %q, want it to mention %q", s.Blocked[0].Message, tt.wantMessage)
+			}
+			if tt.want == "block" && s.Blocked[0].Override != tt.wantOverride {
+				t.Errorf("override = %q, want %q", s.Blocked[0].Override, tt.wantOverride)
 			}
 		})
 	}
@@ -287,8 +292,12 @@ func TestPrepareDrainRefusesBeforeCordoning(t *testing.T) {
 	t.Parallel()
 	env := newEnv(t, interceptor.Funcs{}, node("a", false), pod("loose", "a"), pod("web", "a", rs))
 	_, err := nodeaction.PrepareDrain(t.Context(), env, []string{"a"}, nodeaction.DefaultDrainOptions())
-	if _, ok := errors.AsType[*nodeaction.RefusedError](err); !ok {
+	refused, ok := errors.AsType[*nodeaction.RefusedError](err)
+	if !ok {
 		t.Fatalf("error = %v, want RefusedError", err)
+	}
+	if len(refused.Pods) != 1 || refused.Pods[0].Node != "a" || refused.Pods[0].Name != "loose" || refused.Pods[0].Override != nodeaction.OverrideForce {
+		t.Errorf("refused pods = %+v, want app/loose on a, fixed by --force", refused.Pods)
 	}
 	if !strings.Contains(err.Error(), "app/loose") || !strings.Contains(err.Error(), "--force") {
 		t.Errorf("error %q does not name the pod and the flag", err)
