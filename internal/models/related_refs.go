@@ -381,7 +381,11 @@ func builtinUsedBy() map[schema.GroupVersionResource]UsedByFinder {
 					}
 					pods = []RelatedRef{partial}
 				}
-				return append(pods, templateUsers(ctx, r, target, namespace, name)...), nil
+				templates, err := templateUsers(ctx, r, target, namespace, name)
+				if err != nil {
+					return nil, err
+				}
+				return append(pods, templates...), nil
 			},
 		}
 	}

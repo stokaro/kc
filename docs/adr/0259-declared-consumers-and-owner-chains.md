@@ -34,9 +34,11 @@ with three running pods.
    UID: a Deployment recreated under the same name is a second row, not
    a merge with the old instance's pods.
 
-2. **Partial access.** Each source type is read on its own. A type the
-   user may not list gives a `(not listed)` row that says the result is
-   incomplete, and the other types still answer. When pods are denied
+2. **Partial access.** Each source type is read on its own. The workload
+   types the user may not list give one `(not listed)` row that names
+   them and says the result is incomplete (a user who may read only
+   pods would otherwise see five such rows), and the other types still
+   answer. Any other read error fails the folder as before. When pods are denied
    the templates still answer, which is better than the empty result
    before.
 

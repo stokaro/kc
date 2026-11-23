@@ -65,7 +65,11 @@ func TestUsedByPodTemplates(t *testing.T) {
 	// Pods denied: the templates still answer, and the missing source is
 	// said.
 	denied := usersOf(t, &denyingReader{fakeReader: newFakeReader(t, objs), denied: map[schema.GroupVersionResource]bool{podGVR: true, relCronJobsGVR: true}})
-	for _, w := range []string{"apps/v1/deployments/shop/idle | pod template", "(not listed) | source | forbidden"} {
+	for _, w := range []string{
+		"apps/v1/deployments/shop/idle | pod template",
+		"pods/shop/(not listed) | source | forbidden",
+		"workloads/shop/(not listed) | pod templates of cronjobs.batch | forbidden; the result is incomplete",
+	} {
 		if !slices.ContainsFunc(denied, func(s string) bool { return strings.Contains(s, w) }) {
 			t.Errorf("denied users miss %q: %q", w, denied)
 		}

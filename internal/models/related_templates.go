@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -19,10 +20,14 @@ const templateRelationPrefix = "pod template: "
 
 // templateUsers finds the workloads whose pod template names target
 // namespace/name, also when they run no pod (scaled to zero, a CronJob
-// between runs). A type the user may not list gives a partial row, and the
-// other types are still read.
-func templateUsers(ctx context.Context, r RelatedReader, target schema.GroupVersionResource, namespace, name string) []RelatedRef {
-	var out []RelatedRef
+// between runs). The types the user may not list give one partial row that
+// names them, and the other types are still read; any other read error is
+// returned.
+func templateUsers(ctx context.Context, r RelatedReader, target schema.GroupVersionResource, namespace, name string) ([]RelatedRef, error) {
+	var (
+		out    []RelatedRef
+		denied []string
+	)
 	for _, gvr := range templateSources {
 		finder, ok := DependsOnFor(gvr)
 		if !ok {
@@ -30,9 +35,10 @@ func templateUsers(ctx context.Context, r RelatedReader, target schema.GroupVers
 		}
 		list, err := r.ListByGVR(ctx, gvr, namespace)
 		if err != nil {
-			if partial, ok := partialRef(namespace, err); ok {
-				out = append(out, partial)
+			if !apierrors.IsForbidden(err) {
+				return nil, err
 			}
+			denied = append(denied, kubectlResource(gvr))
 			continue
 		}
 		for i := range list.Items {
@@ -53,7 +59,14 @@ func templateUsers(ctx context.Context, r RelatedReader, target schema.GroupVers
 			}
 		}
 	}
-	return out
+	if len(denied) > 0 {
+		out = append(out, RelatedRef{
+			Name: "(not listed)", Namespace: namespace, Kind: "workloads",
+			Relation: "pod templates of " + strings.Join(denied, ", "),
+			Problem:  problemForbidden + "; the result is incomplete",
+		})
+	}
+	return out, nil
 }
 
 // mergeRelations joins refs to the same object: a Deployment that both
