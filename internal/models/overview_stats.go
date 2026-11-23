@@ -352,7 +352,9 @@ as the volume's capacity, so their percentages say little.`, rc.cfg.VolumeWarnPe
 	if statsUnavailable(rc, &f) {
 		return f
 	}
-	return countFinding(rc, f, []schema.GroupVersionResource{ovNodesGVR}, func() []overviewTarget {
+	// The claims in scope are what the row checks: without one it has
+	// nothing to check (ADR 0172).
+	return countFinding(rc, f, []schema.GroupVersionResource{ovNodesGVR, ovPVCsGVR}, func() []overviewTarget {
 		seen := make(map[string]bool)
 		var out []overviewTarget
 		nodes := make([]string, 0, len(rc.m.stats))

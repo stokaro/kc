@@ -137,8 +137,21 @@ func TestOverviewCertificatesNotServed(t *testing.T) {
 	})
 	r := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, nil)
 	f := mustFinding(t, r, "risks/certificates")
-	if f.severity != severityUnknown || f.value != "n/a" || f.unavailable != "certificates.cert-manager.io: not served by this cluster" {
-		t.Fatalf("row = %q %v %q, want n/a with the reason", f.value, f.severity, f.unavailable)
+	// An add-on that is not installed is not a failed source (ADR 0172).
+	if f.severity != severityOK || f.value != "none" || f.unavailable != "" ||
+		f.notApplicable != "cert-manager is not installed (certificates.cert-manager.io is not served by this cluster)" {
+		t.Fatalf("row = %q %v %q %q, want not applicable with the reason", f.value, f.severity, f.unavailable, f.notApplicable)
+	}
+	// Any other reason the kind cannot be read stays unavailable.
+	in = loadOverviewInput(t.Context(), newOverviewFakeClient(), AllNamespaces, func(gvr schema.GroupVersionResource) string {
+		if gvr == ovCertificatesGVR {
+			return "forbidden"
+		}
+		return ""
+	})
+	r2 := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, nil)
+	if f := mustFinding(t, r2, "risks/certificates"); f.severity != severityUnknown || f.unavailable != "certificates.cert-manager.io: forbidden" {
+		t.Fatalf("forbidden row = %v %q, want unavailable", f.severity, f.unavailable)
 	}
 	if f := mustFinding(t, r, "risks/quotas"); f.severity != severityOK {
 		t.Fatalf("a row that does not need certificates is %v, want ok", f.severity)
