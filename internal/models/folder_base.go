@@ -46,6 +46,22 @@ func (b *BaseFolder) SetColumns(cols []table.Column) {
 // Refresh marks the folder dirty so the next access repaints rows.
 func (b *BaseFolder) Refresh() { b.markDirty() }
 
+// rereadSource is a row source that keeps state between loads which an
+// explicit reread drops.
+type rereadSource interface {
+	reread()
+}
+
+// Reread reads the folder again: a folder that lists once (the local
+// filesystem, a container directory) lists again, and a live list loads
+// from the shared cache at once. See Rereader.
+func (b *BaseFolder) Reread(context.Context) {
+	if rs, ok := b.rowSource().(rereadSource); ok {
+		rs.reread()
+	}
+	b.markDirty()
+}
+
 // IsDirty reports whether the folder requested a repaint.
 func (b *BaseFolder) IsDirty() bool {
 	b.mu.Lock()

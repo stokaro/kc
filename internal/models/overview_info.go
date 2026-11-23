@@ -214,6 +214,10 @@ func NewOverviewInfo(deps Deps, namespace string) *OverviewInfo {
 // Close stops the engine.
 func (o *OverviewInfo) Close() { o.engine.close() }
 
+// Reread recomputes the summary on the engine's next tick instead of after
+// the next event; it reads the shared cache.
+func (o *OverviewInfo) Reread() { o.engine.reread() }
+
 // InfoFocus narrows the Info summary: to one workload, else to one node,
 // else the whole scope.
 type InfoFocus struct {

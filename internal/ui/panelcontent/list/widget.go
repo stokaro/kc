@@ -750,8 +750,6 @@ func (w *Widget) handleKey(ctx context.Context, m tea.KeyMsg) (tea.Cmd, bool) {
 		w.toggleSelection()
 	case "ctrl+a":
 		w.selectAll(ctx)
-	case "ctrl+r":
-		w.refresh()
 	case "ctrl+v":
 		w.tableViewEnabled = !w.tableViewEnabled
 		w.refresh()

@@ -59,6 +59,12 @@ func (f *OverviewFolder) Close() {
 // NamespaceScope returns the namespace the overview covers, or AllNamespaces.
 func (f *OverviewFolder) NamespaceScope() string { return f.namespace }
 
+// Reread recomputes the overview at once; the rows follow when it is done.
+func (f *OverviewFolder) Reread(ctx context.Context) {
+	f.engine.reread()
+	f.BaseFolder.Reread(ctx)
+}
+
 // KubectlCommand shows the closest single command: the nodes and the
 // workloads in scope.
 func (f *OverviewFolder) KubectlCommand() string {
@@ -236,6 +242,12 @@ func newOverviewTargetsFolder(deps Deps, engine *overviewEngine, findingID, titl
 	base.SetRowSource(newReadingRowSource(newSliceRowSource(f.populate), func() { _, _ = engine.snapshot() }))
 	f.unsub = engine.subscribe(f.Refresh)
 	return f
+}
+
+// Reread recomputes the overview at once; the rows follow when it is done.
+func (f *OverviewTargetsFolder) Reread(ctx context.Context) {
+	f.engine.reread()
+	f.BaseFolder.Reread(ctx)
 }
 
 // Close stops following the report; the overview folder below keeps the

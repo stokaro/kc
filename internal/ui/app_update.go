@@ -77,6 +77,15 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		return a, tea.Batch(cmds...)
+	case panelcontent.RereadDoneMsg:
+		// Before the modal routing below: a dialog may cover the panel.
+		return a, tea.Batch(append(cmds, a.handleRereadDone(msg))...)
+	case pagedRereadMsg:
+		cmd, err := msg.v.applyReread(msg)
+		a.invalidateView("paged reread")
+		return a, tea.Batch(append(cmds, cmd, a.handleRereadDone(panelcontent.RereadDoneMsg{Err: err}))...)
+	case textViewerRereadMsg:
+		return a, tea.Batch(append(cmds, a.handleRereadDone(panelcontent.RereadDoneMsg{Err: msg.v.applyReread(msg)}))...)
 	case startupLogsTargetMsg:
 		if cmd := a.startStartupLogs(msg); cmd != nil {
 			cmds = append(cmds, cmd)

@@ -25,6 +25,8 @@ type Result struct {
 	// nothing; the shown content stays.
 	Unchanged bool
 	Err       error
+	// Reread reports a result that answers Reread.
+	Reread bool
 }
 
 // Fetch loads the target. It runs in a tea.Cmd, off the UI goroutine. known
@@ -54,12 +56,17 @@ type Loader struct {
 	dirty    bool   // a refresh was asked while busy or inactive
 	ticking  bool   // a refresh tick is scheduled
 	started  time.Time
+	// reread is set by Reread until the load it asked for starts;
+	// rereading while that load runs.
+	reread    bool
+	rereading bool
 }
 
 type loadedMsg struct {
-	l   *Loader
-	gen uint64
-	res Result
+	l      *Loader
+	gen    uint64
+	res    Result
+	reread bool
 }
 
 type tickMsg struct {
@@ -81,6 +88,9 @@ func (l *Loader) Key() string { return l.key }
 // Loading reports whether the content for the current target has not
 // arrived yet. A refresh of shown content does not count.
 func (l *Loader) Loading() bool { return l.key != "" && !l.loaded }
+
+// Rereading reports whether a load that Reread asked for has not finished.
+func (l *Loader) Rereading() bool { return l.key != "" && (l.reread || l.rereading) }
 
 // Show switches to the target identified by key. A new key starts a load at
 // once; the same key asks for a refresh. An empty key clears the target and
@@ -108,6 +118,7 @@ func (l *Loader) reset(key string) {
 	l.queued = false
 	l.dirty = false
 	l.ticking = false // a tick of the old gen is ignored when it fires
+	l.reread = false
 }
 
 // Refresh asks to reload the current target. The load starts no earlier
@@ -125,6 +136,19 @@ func (l *Loader) Refresh() tea.Cmd {
 	}
 	wait := max(Interval-l.now().Sub(l.started), 0)
 	return l.tick(wait)
+}
+
+// Reread loads the current target again at once, the way the user asks
+// for it (C-r): it neither waits for Interval nor lets Fetch skip the load
+// because the version is known, since what Fetch reads beside the versioned
+// object (events, for example) may have changed. A Reread while a load runs
+// starts right after it. The Result it causes has Reread set.
+func (l *Loader) Reread() tea.Cmd {
+	if l.key == "" || l.fetch == nil {
+		return nil
+	}
+	l.reread = true
+	return l.start()
 }
 
 func (l *Loader) tick(wait time.Duration) tea.Cmd {
@@ -146,8 +170,12 @@ func (l *Loader) start() tea.Cmd {
 	l.dirty = false
 	l.inflight = true
 	l.started = l.now()
-	msg := loadedMsg{l: l, gen: l.gen}
+	msg := loadedMsg{l: l, gen: l.gen, reread: l.reread}
+	l.rereading, l.reread = l.reread, false
 	fetch, known := l.fetch, l.version
+	if msg.reread {
+		known = ""
+	}
 	return func() tea.Msg {
 		msg.res = fetch(known)
 		return msg
@@ -167,10 +195,12 @@ func (l *Loader) Update(msg tea.Msg) (res Result, apply bool, cmd tea.Cmd, handl
 		}
 		// Only one Fetch runs at a time, so this is the one in flight.
 		l.inflight = false
+		l.rereading = false
 		if m.gen == l.gen {
 			l.loaded = true
 			l.version = m.res.Version
 			res, apply = m.res, !m.res.Unchanged
+			res.Reread = m.reread
 		}
 		switch {
 		case l.queued:

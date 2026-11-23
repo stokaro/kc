@@ -55,6 +55,9 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		if apply {
 			w.show(res)
 		}
+		if res.Reread {
+			cmd = tea.Batch(cmd, panelcontent.RereadDone(res.Err, ""))
+		}
 		return cmd, true
 	}
 	return w.viewersUpdate(msg)
@@ -103,7 +106,7 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	if breadcrumb != "" {
 		info.Breadcrumb = breadcrumb
 	}
-	if w.loader.Loading() {
+	if w.loader.Loading() || w.loader.Rereading() {
 		info.HeaderStatus = panelcontent.LoadingStatus
 	}
 	above, below := w.viewer.ScrollIndicators()
@@ -143,6 +146,15 @@ func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Select
 // Refresh rereads the manifest; the viewer changes only when the text did.
 func (w *Widget) Refresh(context.Context) tea.Cmd {
 	return w.loader.Refresh()
+}
+
+// Reread reads the manifest again at once (C-r), keeping the scroll
+// position when the item is the same.
+func (w *Widget) Reread(context.Context) tea.Cmd {
+	if w.loader.Key() == "" {
+		return panelcontent.RereadDone(nil, panelcontent.NothingToReread)
+	}
+	return w.loader.Reread()
 }
 
 type content struct {

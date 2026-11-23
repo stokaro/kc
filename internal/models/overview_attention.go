@@ -219,6 +219,12 @@ func newOverviewFindingsFolder(overview *OverviewFolder, path []string, what str
 	return f
 }
 
+// Reread recomputes the overview at once; the rows follow when it is done.
+func (f *overviewFindingsFolder) Reread(ctx context.Context) {
+	f.overview.engine.reread()
+	f.BaseFolder.Reread(ctx)
+}
+
 // Close stops following the report; the overview below keeps the engine.
 func (f *overviewFindingsFolder) Close() {
 	if f.unsub != nil {

@@ -74,6 +74,28 @@ type Refresher interface {
 	Refresh(context.Context) tea.Cmd
 }
 
+// Rereader widgets read what they show again when the user asks (C-r). A
+// reread starts at once and skips the checks that let Refresh keep the
+// shown content. The returned command ends with a RereadDoneMsg.
+type Rereader interface {
+	Reread(context.Context) tea.Cmd
+}
+
+// RereadDoneMsg reports that a reread finished. Err is the read failure;
+// Note, when set, replaces the default confirmation.
+type RereadDoneMsg struct {
+	Err  error
+	Note string
+}
+
+// NothingToReread is the note of a reread with nothing selected to read.
+const NothingToReread = "Nothing to reread"
+
+// RereadDone returns a command that reports a finished reread.
+func RereadDone(err error, note string) tea.Cmd {
+	return func() tea.Msg { return RereadDoneMsg{Err: err, Note: note} }
+}
+
 // Selection represents the widget's current selection identity.
 type Selection struct {
 	ID   string

@@ -441,6 +441,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		if msg.String() == portForwardKey {
 			return a, a.portForwardForPanel(a.activePanelRef())
 		}
+		// C-r rereads the panel even while the shell line has typed text,
+		// as in mc; the shell gets it in the full-screen terminal.
+		if msg.String() == rereadKey {
+			return a, a.rereadPanel(a.activePanel)
+		}
 		switch msg.String() {
 		case ownersKey:
 			return a, a.openRelated(models.RelatedOwners)
@@ -529,7 +534,6 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		// Function keys (F10 handled separately for fullscreen vs panel mode)
 		"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f11", "f12",
 		// Other panel actions
-		"ctrl+r", // Refresh
 		"ctrl+s", // Search
 		"esc",    // Cancel
 	}
