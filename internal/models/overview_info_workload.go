@@ -25,6 +25,7 @@ func workloadInfoSummary(report *overviewReport, err error, cfgIn appconfig.Over
 		return out
 	}
 	out.UsageAt = report.usageAt
+	out.BarsTitle, out.TopTitle = "Pods of "+w.String(), "Top pods of "+w.String()+" by memory"
 	note := ""
 	switch {
 	case report.workloadsReason != "":

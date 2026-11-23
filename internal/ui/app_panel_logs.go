@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/logmux"
@@ -96,13 +95,8 @@ func (a *App) panelLogsSource() logswidget.Source {
 			if err != nil {
 				return logswidget.Stream{}, err
 			}
-			opts := spec.PodLogOptions()
 			ctx, cancel := context.WithCancel(root)
-			log := ctrllog.FromContext(root).WithName("panelLogs")
-			log.Info("client stream logs", "gvr", logsPodsGVR.String(), "namespace", spec.Namespace, "pod", spec.Pod,
-				"container", spec.Container, "tailLines", spec.EffectiveTailLines(), "sinceSeconds", spec.SinceSeconds,
-				"timestamps", spec.Timestamps, "previous", spec.Previous, "follow", spec.Follow)
-			body, err := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts).Stream(ctx)
+			body, err := openResumingLogs(ctx, cl, clientset, spec, "panelLogs")
 			if err != nil {
 				cancel()
 				return logswidget.Stream{}, err

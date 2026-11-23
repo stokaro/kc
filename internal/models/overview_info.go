@@ -170,6 +170,20 @@ type InfoSummary struct {
 	Top []InfoConsumer
 	// TopNote says why Top is empty.
 	TopNote string
+	// BarsTitle and TopTitle name what the bars and the top pods cover. They
+	// differ in a namespace scope: the bars sum every node of the cluster,
+	// the top pods are those of the namespace.
+	BarsTitle, TopTitle string
+}
+
+// infoTitles names the scope of the bars and of the top pods: the cluster
+// or one node, and the namespace scope (on that node).
+func infoTitles(namespace, node string) (bars, top string) {
+	where := "in " + namespaceScopeText(namespace)
+	if node == "" {
+		return "Cluster capacity (all nodes, all namespaces)", "Top pods by memory " + where
+	}
+	return "Node " + node + " (all its pods, all namespaces)", "Top pods by memory " + where + " on node " + node
 }
 
 // InfoTopN is how many consumers the Info mode lists.
@@ -219,6 +233,7 @@ func infoSummary(report *overviewReport, err error, cfgIn appconfig.OverviewConf
 		return out
 	}
 	out.UsageAt = report.usageAt
+	out.BarsTitle, out.TopTitle = infoTitles(report.info.namespace, node)
 	var sum overviewNodeSummary
 	var cpus, mems []capacityAmounts
 	anyDisk := false

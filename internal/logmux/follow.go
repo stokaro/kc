@@ -13,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	toolscache "k8s.io/client-go/tools/cache"
+
+	"github.com/stokaro/kc/internal/logresume"
 )
 
 // TargetSetter receives the current target set. *Mux implements it.
@@ -49,6 +51,26 @@ type Follower struct {
 
 	mu   sync.Mutex
 	pods map[types.NamespacedName][]Target
+	// instances holds the container states of the matching pods, by pod
+	// and container name, for Instance.
+	instances map[types.NamespacedName]map[string]logresume.Instance
+	// seen marks the pods that matched once, so that a pod that left is
+	// known to be gone.
+	seen map[types.NamespacedName]bool
+}
+
+// Instance returns the current state of t's container, for
+// Options.Check: a pod that left the set is known to be gone (a zero
+// Instance with ok), a pod the follower never saw is unknown.
+func (f *Follower) Instance(t Target) (logresume.Instance, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := types.NamespacedName{Namespace: t.Namespace, Name: t.Pod}
+	containers, ok := f.instances[key]
+	if !ok {
+		return logresume.Instance{}, f.seen[key]
+	}
+	return containers[t.Container], true
 }
 
 var _ toolscache.ResourceEventHandler = (*Follower)(nil)
@@ -56,7 +78,13 @@ var _ toolscache.ResourceEventHandler = (*Follower)(nil)
 // NewFollower returns a follower that sends the targets of the pods match
 // accepts to set.
 func NewFollower(set TargetSetter, match PodMatcher) *Follower {
-	return &Follower{set: set, match: match, pods: make(map[types.NamespacedName][]Target)}
+	return &Follower{
+		set:       set,
+		match:     match,
+		pods:      make(map[types.NamespacedName][]Target),
+		instances: make(map[types.NamespacedName]map[string]logresume.Instance),
+		seen:      make(map[types.NamespacedName]bool),
+	}
 }
 
 // Pods returns the number of matching pods seen so far.
@@ -88,6 +116,7 @@ func (f *Follower) OnDelete(obj any) {
 		return
 	}
 	delete(f.pods, key)
+	delete(f.instances, key)
 	f.publishLocked()
 }
 
@@ -103,6 +132,7 @@ func (f *Follower) upsert(obj any) {
 	if !f.match(meta) {
 		if known {
 			delete(f.pods, key)
+			delete(f.instances, key)
 			f.publishLocked()
 		}
 		return
@@ -112,6 +142,8 @@ func (f *Follower) upsert(obj any) {
 		return
 	}
 	f.pods[key] = PodTargets(pod)
+	f.instances[key] = logresume.PodInstances(pod)
+	f.seen[key] = true
 	f.publishLocked()
 }
 
