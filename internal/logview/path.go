@@ -13,7 +13,8 @@ import (
 // selects the whole record.
 //
 // A dotted name also matches a literal key with dots, so http.status finds
-// both {"http":{"status":200}} and {"http.status":200}.
+// both {"http":{"status":200}} and {"http.status":200}. A quoted key
+// (["a.b"]) is always one key and never joins its neighbors.
 type Path struct {
 	steps []step
 	text  string
@@ -23,6 +24,8 @@ type step struct {
 	key   string
 	index int
 	isKey bool
+	// quoted marks a ["key"] step, which matches that key only.
+	quoted bool
 }
 
 // String returns the path as written.
@@ -86,7 +89,7 @@ func bracketStep(inner, text string) (step, error) {
 		if err != nil {
 			return step{}, fmt.Errorf("path %q: bad quoted key %s", text, inner)
 		}
-		return step{key: key, isKey: true}, nil
+		return step{key: key, isKey: true, quoted: true}, nil
 	}
 	n, err := strconv.Atoi(inner)
 	if err != nil || n < 0 {
@@ -112,6 +115,49 @@ func closingBracket(s string) int {
 	return -1
 }
 
+// KeyPath returns the path of the value under keys, nested from the
+// record's top level, written so that it selects exactly that value:
+// simple names as .a.b, any other key (dots, spaces, quotes, brackets) as
+// a quoted ["key"] step.
+func KeyPath(keys ...string) Path {
+	var b strings.Builder
+	steps := make([]step, 0, len(keys))
+	plain := true
+	for _, k := range keys {
+		plain = plain && simpleKey(k)
+	}
+	if !plain {
+		b.WriteByte('.')
+	}
+	for _, k := range keys {
+		if plain {
+			b.WriteString("." + k)
+			steps = append(steps, step{key: k, isKey: true})
+			continue
+		}
+		b.WriteString("[" + strconv.Quote(k) + "]")
+		steps = append(steps, step{key: k, isKey: true, quoted: true})
+	}
+	return Path{steps: steps, text: b.String()}
+}
+
+// simpleKey reports a key that a dotted path writes unquoted: letters,
+// digits, _ and -, not starting with a digit or -.
+func simpleKey(k string) bool {
+	if k == "" {
+		return false
+	}
+	for i, c := range k {
+		switch {
+		case c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'):
+		case i > 0 && (c == '-' || ('0' <= c && c <= '9')):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // lookup resolves steps against v. Consecutive names are first tried as one
 // literal dotted key (longest first), then one by one.
 func lookup(v any, p Path) (any, bool) {
@@ -127,9 +173,11 @@ func resolve(v any, steps []step) (any, bool) {
 		if !steps[0].isKey {
 			return nil, false
 		}
-		names := 0
-		for names < len(steps) && steps[names].isKey {
-			names++
+		names := 1
+		if !steps[0].quoted {
+			for names < len(steps) && steps[names].isKey && !steps[names].quoted {
+				names++
+			}
 		}
 		for n := names; n >= 1; n-- {
 			var key strings.Builder

@@ -83,7 +83,9 @@ func TestOverviewFolderScopeLabels(t *testing.T) {
 				ctx := t.Context()
 				_ = folder.Lines(ctx, 0, 100)
 				synctest.Wait()
-				rows := folder.Lines(ctx, 0, 100)
+				// Quiet findings are listed under their section's
+				// quiet row with the same titles and F3.
+				rows := withQuietRows(t, folder.Lines(ctx, 0, 100))
 				for id, want := range tc.headers {
 					if got := rowCells(t, rows, id)[0]; got != want {
 						t.Errorf("%s = %q, want %q", id, got, want)
@@ -99,11 +101,7 @@ func TestOverviewFolderScopeLabels(t *testing.T) {
 					t.Errorf("capacity/pods = %q, want the cluster's pod", got)
 				}
 				for id, want := range tc.f3 {
-					item, ok := folder.ItemByID(ctx, id)
-					if !ok {
-						t.Fatalf("no row %s", id)
-					}
-					_, body, _, _, _, err := item.(Viewable).ViewContent()
+					_, body, _, _, _, err := rowByID(t, rows, id).(Viewable).ViewContent()
 					if err != nil {
 						t.Fatal(err)
 					}

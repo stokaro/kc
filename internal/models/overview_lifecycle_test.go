@@ -245,8 +245,15 @@ func TestOverviewLifecycleSession(t *testing.T) {
 			if got := value(t, r); !slices.Equal(got, s.want) {
 				t.Fatalf("step %d: targets = %q, want %q", i, got, s.want)
 			}
-			if f := mustFinding(t, r, id); s.in == fixed && (f.value != "0" || f.severity != severityOK) {
-				t.Fatalf("step %d: a recovered target changed the row: %q %v", i, f.value, f.severity)
+			f := mustFinding(t, r, id)
+			switch {
+			case s.in != fixed:
+			case len(s.want) > 0 && (f.value != "0" || f.severity != severityOK || f.notApplicable != ""):
+				t.Fatalf("step %d: a recovered target changed the row: %q %v %q", i, f.value, f.severity, f.notApplicable)
+			case len(s.want) == 0 && f.notApplicable == "":
+				// With no pod and no recovered target left there is
+				// nothing to check (ADR 0172).
+				t.Fatalf("step %d: row = %q %v, want not applicable", i, f.value, f.severity)
 			}
 		}
 	})

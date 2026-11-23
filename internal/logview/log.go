@@ -35,6 +35,8 @@ type Log struct {
 	nShown  int
 	// truncated counts the kept records whose line was cut.
 	truncated int
+	// first is the Seq of records[0].
+	first Seq
 }
 
 // NewLog returns an empty log in the formatted view with DefaultLimits.
@@ -97,6 +99,7 @@ func (l *Log) trim() int {
 	// Clear the dropped slots so their lines and parsed objects can be
 	// collected; the slices lose their front and reallocate as they grow.
 	clear(l.records[:n])
+	l.first += Seq(n)
 	l.records = l.records[n:]
 	l.shown = l.shown[n:]
 	l.nShown -= dropped
@@ -176,6 +179,7 @@ func (l *Log) SetFormat(f Format) { l.format = f }
 
 // Reset drops all records and keeps the settings, for a restarted stream.
 func (l *Log) Reset() {
+	l.first += Seq(len(l.records))
 	l.records = nil
 	l.shown = nil
 	l.nShown = 0

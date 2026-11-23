@@ -69,8 +69,9 @@ this close to its expiry usually means that renewal fails. Enter lists the
 certificates, the soonest expiry first; kubectl describe on one shows the
 CertificateRequest and the issuer's error.
 
-The row is n/a when the cluster does not serve the kind, which means
-cert-manager is not installed.`, days),
+The row is not applicable (n/a, not a failure) when the cluster does not
+serve the kind, which means cert-manager is not installed. Any other reason
+the kind cannot be read, such as forbidden, makes it unavailable.`, days),
 		kubectl: [][]string{
 			kubectlGet("certificates.cert-manager.io", append(rc.nsArgs(), "-o",
 				`custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason,NOT_AFTER:.status.notAfter`)...),

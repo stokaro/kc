@@ -56,6 +56,14 @@ func (v *LogsViewer) handleLogViewKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 			return v.onSources(), true
 		}
 		return nil, false
+	case logsFieldsKey:
+		if v.onFields != nil {
+			return v.onFields(), true
+		}
+		return nil, false
+	case logsBackKey:
+		v.back()
+		return nil, true
 	case copyAllKey:
 		return viewerCopyRequest(v.inner.PlainText(), v.copyWhatNote("shown lines")), true
 	}
@@ -67,6 +75,11 @@ func (v *LogsViewer) handleLogViewKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 // The log keeps only its recent records (docs/adr/0179-bounded-log-retention.md):
 // the display lines of dropped records leave the widget too.
 func (v *LogsViewer) appendRecords(lines []string) bool {
+	if v.context != nil {
+		// The context view stays as it is; the records are kept for M-z.
+		v.appendToLog(lines)
+		return false
+	}
 	var shown []string
 	dropped := 0
 	if v.merged {
@@ -84,6 +97,17 @@ func (v *LogsViewer) appendRecords(lines []string) bool {
 	}
 	v.dropLines(dropped)
 	return len(shown) > 0
+}
+
+// appendToLog keeps lines as records without showing them.
+func (v *LogsViewer) appendToLog(lines []string) {
+	for _, line := range lines {
+		src, text := logview.Source{}, line
+		if v.merged {
+			src, text = mergedLineSource(line)
+		}
+		v.log.Append(src, text)
+	}
 }
 
 // dropLines removes the n oldest display lines. When the user reads older
@@ -124,6 +148,10 @@ func (v *LogsViewer) copyWhatNote(what string) string {
 // refreshDisplay rebuilds the shown lines from the kept records. The stream
 // is not touched.
 func (v *LogsViewer) refreshDisplay() {
+	if v.context != nil {
+		v.inner.SetLines(v.contextDisplay())
+		return
+	}
 	v.inner.SetLines(v.log.Lines())
 	if v.autoFollow {
 		v.inner.ScrollToEnd()
@@ -132,6 +160,7 @@ func (v *LogsViewer) refreshDisplay() {
 
 // SetQuery filters the shown records with q; nil clears the filter.
 func (v *LogsViewer) SetQuery(q *logview.Query) {
+	v.context, v.correlated = nil, ""
 	v.log.SetQuery(q)
 	v.refreshDisplay()
 }
@@ -197,6 +226,11 @@ func (v *LogsViewer) logViewHints() []FooterHint {
 	if v.onSources != nil {
 		hints = append(hints, FooterHint{Key: "M-s", Label: "Sources", Enabled: true})
 	}
+	if v.onFields != nil {
+		hints = append(hints,
+			FooterHint{Key: "M-d", Label: "Fields", Enabled: true},
+			FooterHint{Key: "M-z", Label: "Back", Enabled: len(v.history) > 0})
+	}
 	return hints
 }
 
@@ -204,7 +238,7 @@ func (v *LogsViewer) logViewHints() []FooterHint {
 const logsFilterModalName = "logs_filter"
 
 // logsFilterHint is the syntax summary under the filter field.
-const logsFilterHint = `text "a b" /re/ key=v1,v2 key~re !exclude .field`
+const logsFilterHint = `text "a b" /re/ key=v1,v2 key=="exact" key~re !exclude .field`
 
 // logsFilterResultMsg is the filter dialog's answer.
 type logsFilterResultMsg struct {

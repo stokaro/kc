@@ -37,7 +37,19 @@ type LogsViewerConfig struct {
 	// or Logs panel keeps, in MiB; older lines are dropped. Zero or less
 	// means DefaultLogsMaxMemoryMiB.
 	MaxMemoryMiB int `json:"maxMemoryMiB"`
+	// CorrelationFields are the JSON fields, in order, that "follow the
+	// request" in the logs viewer looks for in the selected line: the
+	// first one the line has is filtered by its exact value. Names are
+	// top-level keys or dotted paths.
+	CorrelationFields []string `json:"correlationFields"`
+	// TraceURL is a URL template for the trace of the selected line; kc
+	// replaces {trace} with the value of the first correlation field,
+	// escaped as a URL component, and copies the URL. Empty disables it.
+	TraceURL string `json:"traceURL"`
 }
+
+// DefaultLogsCorrelationFields are the default correlation fields.
+var DefaultLogsCorrelationFields = []string{"trace_id", "traceId", "traceID", "request_id", "requestId", "requestID"}
 
 // Defaults of viewer.logs.maxLines and viewer.logs.maxMemoryMiB.
 const (
@@ -240,6 +252,8 @@ type Config struct {
 	// by group/version/resource (see ColumnsKey). Empty by default.
 	Columns  map[string][]CustomColumn `json:"columns,omitempty"`
 	Overview OverviewConfig            `json:"overview"`
+	// Timeline bounds the object timelines (/timeline inside an object).
+	Timeline TimelineConfig `json:"timeline"`
 	// ReadOnly opens contexts in read-only mode; see ReadOnlyConfig.
 	ReadOnly ReadOnlyConfig `json:"readOnly"`
 }
@@ -303,6 +317,40 @@ type OverviewConfig struct {
 	// CPU limit until its usage drops this many points below the warning
 	// percent, so a value around the threshold does not flap.
 	UsageHysteresisPercent int `json:"usageHysteresisPercent"`
+}
+
+// TimelineConfig bounds the revisions kc keeps while it records objects. A
+// zero or negative value means the default; Normalized fills it in.
+type TimelineConfig struct {
+	// MaxEntries is how many revisions one object's timeline keeps; the
+	// oldest are evicted first.
+	MaxEntries int `json:"maxEntries"`
+	// MaxBytes bounds the revisions of one object by their JSON size.
+	MaxBytes int `json:"maxBytes"`
+	// MaxObjects is how many objects kc records at once; starting one more
+	// stops the oldest recording.
+	MaxObjects int `json:"maxObjects"`
+}
+
+// DefaultTimeline returns the default timeline bounds.
+func DefaultTimeline() TimelineConfig {
+	return TimelineConfig{MaxEntries: 100, MaxBytes: 4 << 20, MaxObjects: 10}
+}
+
+// Normalized returns t with every unset or invalid value replaced by its
+// default.
+func (t TimelineConfig) Normalized() TimelineConfig {
+	d := DefaultTimeline()
+	if t.MaxEntries <= 0 {
+		t.MaxEntries = d.MaxEntries
+	}
+	if t.MaxBytes <= 0 {
+		t.MaxBytes = d.MaxBytes
+	}
+	if t.MaxObjects <= 0 {
+		t.MaxObjects = d.MaxObjects
+	}
+	return t
 }
 
 // DefaultOverview returns the default overview thresholds.
@@ -590,6 +638,8 @@ func Default() *Config {
 				MaxRequests:  DefaultLogsMaxRequests,
 				MaxLines:     DefaultLogsMaxLines,
 				MaxMemoryMiB: DefaultLogsMaxMemoryMiB,
+				// A copy, so a loaded file cannot change the defaults.
+				CorrelationFields: append([]string(nil), DefaultLogsCorrelationFields...),
 			},
 		},
 		Panel: PanelConfig{
@@ -624,6 +674,7 @@ func Default() *Config {
 		},
 		PortForward: PortForwardConfig{Address: DefaultPortForwardAddress},
 		Overview:    DefaultOverview(),
+		Timeline:    DefaultTimeline(),
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
