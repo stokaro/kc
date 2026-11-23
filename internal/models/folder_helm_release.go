@@ -217,7 +217,7 @@ func helmHistoryRows(deps Deps, reader *helmReader, h helm.History, path []strin
 func newHelmResourcesEntry(deps Deps, rel *helm.Release, revision int, parent []string) *ChildResourceItem {
 	path := append(slices.Clone(parent), "resources")
 	objs, _ := helm.SplitManifest(rel.Manifest)
-	desc := fmt.Sprintf("%d objects of the manifest, linked to the live objects", len(objs))
+	desc := fmt.Sprintf("%d %s of the manifest, linked to the live objects", len(objs), plural(len(objs), "object", "objects"))
 	item := NewChildResourceItem("resources", []string{"/resources", desc}, path, func() (Folder, error) {
 		return newHelmResourcesFolder(deps, rel, revision, path), nil
 	})
