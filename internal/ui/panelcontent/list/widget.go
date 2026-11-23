@@ -403,16 +403,14 @@ func (w *Widget) RefreshFolder(ctx context.Context) {
 	newCols := headerColumns(w.folder, rawCols)
 	header := columnsToTitles(newCols)
 	if !slices.Equal(header, w.lastHeader) {
-		bt := table.NewBigTable(newCols, newDisplayList(w.folder), max(1, w.width), max(1, w.height))
-		bt.SetMode(ctx, w.tableMode)
+		// New columns (usage columns arriving, a sort mark moving) keep the
+		// cursor and the marks.
+		w.bt.SetColumns(ctx, newCols)
 		w.lastColTitles = columnsToTitles(rawCols)
 		w.lastHeader = header
-		w.decorateBigTable(ctx, &bt)
-		w.bt = &bt
-	} else {
-		w.bt.SetList(ctx, newDisplayList(w.folder))
-		w.bt.Refresh(ctx)
 	}
+	w.bt.SetList(ctx, newDisplayList(w.folder))
+	w.bt.Refresh(ctx)
 	w.syncFromFolder(ctx)
 }
 
