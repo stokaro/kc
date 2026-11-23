@@ -169,3 +169,32 @@ func TestEventsUnavailableAndTooOld(t *testing.T) {
 }
 
 var _ = dashboard.IsRollout
+
+// TestEventsCountOnlyWhenRepeated: a list of Events that each happened
+// once has no Count column; a repeated one brings it back, with 1 for the
+// others.
+func TestEventsCountOnlyWhenRepeated(t *testing.T) {
+	t.Parallel()
+	a := withEvents()
+	a.Events.Items = a.Events.Items[:2]
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, true, web, 150, 42)
+	if contains(screen(t, m, 150, 42), "Count") {
+		t.Error("a Count column with every Event once")
+	}
+	f = &fakes{now: t0, amounts: withEvents()}
+	m = open(t, f, true, web, 150, 42)
+	requireText(t, screen(t, m, 150, 42), "Count", "   12  BackOff message", "    1  SuccessfulCreate message")
+}
+
+// TestEarlierEventsAreListed: when the chart covers less than the range,
+// the lane says how many Events are earlier and that they are listed.
+func TestEarlierEventsAreListed(t *testing.T) {
+	t.Parallel()
+	a := withEvents()
+	f := &fakes{now: t0, amounts: a}
+	// The Metrics API only: the chart fits the samples of this session.
+	m := open(t, f, false, web, 150, 42)
+	ticks(t, f, m, 2, 15*time.Second)
+	requireText(t, screen(t, m, 150, 42), "← 1 earlier Event, listed below")
+}

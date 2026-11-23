@@ -34,17 +34,19 @@ func imageKey(wd widget) (int, bool) {
 func (m *Model) images() bool { return m.src.Images != nil && m.pixels }
 
 // nextDraw is the draw mode b and F6 switch to: images, when the
-// terminal shows them, then braille, then blocks, then images again.
+// terminal shows them, then blocks, then braille, then images again.
+// Text starts in blocks: a solid area with an edge in eighths reads the
+// same in every font; braille draws two samples per cell at the edge.
 func (m *Model) nextDraw() (chart.Mode, bool) {
 	switch {
 	case m.images():
-		return chart.Braille, false
-	case m.mode == chart.Braille:
 		return chart.Blocks, false
+	case m.mode == chart.Blocks:
+		return chart.Braille, false
 	case m.src.Images != nil:
-		return chart.Braille, true
+		return chart.Blocks, true
 	}
-	return chart.Braille, false
+	return chart.Blocks, false
 }
 
 // nextDrawName names nextDraw for the key line.
@@ -84,7 +86,7 @@ func (m *Model) drawName() string {
 func (m *Model) drawNamed(name string) (mode chart.Mode, pixels, ok bool) {
 	switch name {
 	case drawImages:
-		return chart.Braille, true, m.src.Images != nil
+		return chart.Blocks, true, m.src.Images != nil
 	case drawBraille:
 		return chart.Braille, false, true
 	case drawBlocks:
@@ -177,10 +179,18 @@ func (m *Model) syncKey(only int) tea.Cmd {
 		if cols == 0 {
 			continue
 		}
+		cw, ch := m.src.Images.CellSize(cols, rows)
+		// The cursor is text over the image: when only it moved, the
+		// terminal has the picture already and nothing is drawn.
+		rk := c.RasterKey(cw, ch)
+		if _, shown := m.src.Images.Shown(key, cols, rows); shown && m.rasterKeys[key] == rk {
+			continue
+		}
 		job, ok := m.src.Images.Begin(key, cols, rows)
 		if !ok {
 			continue
 		}
+		m.rasterKeys[key] = rk
 		c, id := detached(c), m.id
 		cmds = append(cmds, func() tea.Msg {
 			return encodedMsg{id: id, pic: job.Encode(c.Raster(job.CellSize()))}
@@ -201,6 +211,9 @@ func (m *Model) showEncoded(msg encodedMsg) tea.Cmd {
 	job := msg.pic.Job()
 	cols, rows, ok := m.plotSize(job.Key())
 	if msg.id != m.id || !m.images() || m.settling || !ok || cols != job.Cols() || rows != job.Rows() {
+		// The dropped picture never reached the terminal: its raster key
+		// must not stop the next one.
+		m.forgetRaster(job.Key())
 		if im.Drop(msg.pic) {
 			return m.syncKey(job.Key())
 		}
@@ -208,9 +221,18 @@ func (m *Model) showEncoded(msg encodedMsg) tea.Cmd {
 	}
 	cmd, again := im.Finish(msg.pic)
 	if again {
+		m.forgetRaster(job.Key())
 		return tea.Batch(cmd, m.syncKey(job.Key()))
 	}
 	return cmd
+}
+
+// forgetRaster clears the raster key of image key, so the next sync
+// rasters that chart even when its samples did not change.
+func (m *Model) forgetRaster(key int) {
+	if key >= 0 && key < len(m.rasterKeys) {
+		m.rasterKeys[key] = 0
+	}
 }
 
 // plotSize is the plot size of the chart of image key in the frame the

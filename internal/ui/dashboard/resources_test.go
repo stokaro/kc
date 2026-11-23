@@ -3,9 +3,11 @@ package dashboard_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/promhistory"
+	"github.com/stokaro/kc/internal/ui/dashboard"
 )
 
 // raisedRequest is a Prometheus usage whose CPU request was 0.5 until
@@ -134,4 +136,36 @@ func TestSessionRequestsAsSampled(t *testing.T) {
 	if !seen {
 		t.Error("no past cell showed the request sampled then")
 	}
+}
+
+// TestNarrowLegendWraps: at 100 columns the charts are side by side;
+// a legend with an off-scale request and a partial limit wraps instead
+// of ending in "…", and so does no source note.
+func TestNarrowLegendWraps(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	a.CPU.Requests = 40
+	a.Memory.LimitsPartial = true
+	a.CPU.LimitsPartial = true
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, web, 100, 30)
+	ticks(t, f, m, 4, 15*time.Second)
+	lines := screen(t, m, 100, 30)
+	requireText(t, lines, "↑ above", "limit missing on some pods", "Metrics API, 5 samples")
+	for _, l := range lines {
+		if strings.Contains(l, "…") {
+			t.Errorf("a cut line: %q", l)
+		}
+	}
+}
+
+// TestPodLimitMissingOnContainers: a pod's partial limit is about its
+// containers, not pods.
+func TestPodLimitMissingOnContainers(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	a.Memory.LimitsPartial = true
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, dashboard.Target{Kind: dashboard.KindPod, Namespace: "shop", Name: "web-1"}, 150, 42)
+	requireText(t, screen(t, m, 150, 42), "limit missing on some containers")
 }

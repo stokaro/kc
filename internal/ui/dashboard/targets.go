@@ -169,13 +169,8 @@ const (
 func (m *Model) targetLines(v *view, w, h int) ([]string, []int) {
 	items := m.targetItems(v)
 	v.sel = min(v.sel, max(0, len(items)-1))
-	wide := w >= minNameCol+colReady+colCPU+colMem+2*colPct+colRst
-	nameW := w - colReady - colCPU - colMem - 2*colPct - colRst
-	if !wide {
-		nameW = w - colReady - colMem - colPct
-	}
-	nameW = max(minNameCol, nameW)
-	lines, at := []string{headStyle().Render(fit(listHeader(wide, nameW), w))}, []int{-1}
+	cols := chooseCols(w, naturalName(v))
+	lines, at := []string{headStyle().Render(fit(listHeader(cols), w))}, []int{-1}
 	if len(items) == 0 {
 		note := v.now.Note
 		switch {
@@ -195,7 +190,7 @@ func (m *Model) targetLines(v *view, w, h int) ([]string, []int) {
 	focused := v.focus == widgetTargets
 	for i, it := range items {
 		sel := focused && i == v.sel
-		blocks = append(blocks, block{lines: itemLines(it, sel, wide, m.scopeTarget().Namespace == models.AllNamespaces, mixedKinds(v.now.Rows), nameW, w), item: i})
+		blocks = append(blocks, block{lines: itemLines(it, sel, cols, w, nameShown(v)), item: i})
 	}
 	first, rows := 0, h-1
 	for {
@@ -218,27 +213,131 @@ func (m *Model) targetLines(v *view, w, h int) ([]string, []int) {
 			lines, at = append(lines, l), append(at, b.item)
 		}
 	}
-	// A short list of workloads leaves room: show the pods of the
-	// selected one under it.
-	if v.sel < len(items) && items[v.sel].row.Workload != nil && h-len(lines) >= 3 {
-		pods := podsOf(v, items[v.sel].row.Workload, wide, nameW, w)
-		pods = pods[:min(len(pods), h-len(lines))]
-		lines = append(lines, pods...)
-		for range pods {
-			at = append(at, -1)
+	if v.sel < len(items) {
+		for _, l := range m.underList(v, items[v.sel], cols, w, h-len(lines)) {
+			lines, at = append(lines, l), append(at, -1)
 		}
 	}
 	return lines, at
 }
 
+// underList fills the room of a short list, rows lines at most: the pods
+// of the selected workload, then the containers of the selection.
+func (m *Model) underList(v *view, it targetItem, cols listCols, w, rows int) []string {
+	var out []string
+	if it.row.Workload != nil && rows >= 3 {
+		out = podsOf(v, it.row.Workload, cols, w)
+		out = out[:min(len(out), rows)]
+	}
+	if rows-len(out) >= 3 {
+		cl := m.containerLines(selectedPods(v, it), w)
+		out = append(out, cl[:min(len(cl), rows-len(out))]...)
+	}
+	return out
+}
+
+// listCols are the columns the list shows at its width.
+type listCols struct {
+	nameW    int
+	cpu, rst bool
+}
+
+// width is the cells of the columns after the name.
+func (c listCols) width() int {
+	n := colReady + colMem + colPct
+	if c.cpu {
+		n += colCPU + colPct
+	}
+	if c.rst {
+		n += colRst
+	}
+	return n
+}
+
+// longName is the name width below which the list drops a column rather
+// than shorten the names further.
+const longName = 20
+
+// chooseCols gives the names their natural width first: it drops the
+// restarts (also written under a row that is not well), then the CPU,
+// before it shortens a name. A name longer than longName is shortened
+// rather than cost a column.
+func chooseCols(w, natural int) listCols {
+	tiers := []listCols{{cpu: true, rst: true}, {cpu: true}, {}}
+	for _, c := range tiers {
+		if c.nameW = w - c.width(); c.nameW >= natural {
+			return c
+		}
+	}
+	for _, c := range tiers {
+		if c.nameW = w - c.width(); c.nameW >= min(natural, longName) {
+			return c
+		}
+	}
+	c := tiers[len(tiers)-1]
+	c.nameW = max(minNameCol, w-c.width())
+	return c
+}
+
+// nameFlags say what a row's name carries: the namespace when the list
+// spans several, the kind when the workloads are of several kinds.
+type nameFlags struct{ ns, kind bool }
+
+func nameShown(v *view) nameFlags {
+	ns := ""
+	many := false
+	for _, r := range v.now.Rows {
+		if ns != "" && r.Namespace != ns {
+			many = true
+		}
+		ns = r.Namespace
+	}
+	return nameFlags{ns: many, kind: mixedKinds(v.now.Rows)}
+}
+
+// rowName is the name of a row as the list writes it.
+func rowName(r models.UsageRow, f nameFlags) string {
+	name := r.Name
+	if r.Workload != nil && f.kind {
+		name = workloadKind(r.Workload.GVR) + " " + name
+	}
+	if f.ns && r.Namespace != "" {
+		name = r.Namespace + "/" + name
+	}
+	return name
+}
+
+// naturalName is the width the names of v's list need, with a blank
+// after the longest.
+func naturalName(v *view) int {
+	f := nameShown(v)
+	n := len("Name")
+	for _, r := range v.now.Rows {
+		n = max(n, ansi.StringWidth(rowName(r, f)))
+	}
+	for _, r := range v.now.PodRows {
+		n = max(n, ansi.StringWidth(r.Name))
+	}
+	return n + 1
+}
+
+// listWidth is the frame width the list asks for: its natural names and
+// every column, between minList and half the screen.
+func listWidth(v *view, w int) int {
+	return min(max(minList, naturalName(v)+listCols{cpu: true, rst: true}.width()+2), max(minList, w/2))
+}
+
+// minList is the least width of the list beside the charts.
+const minList = 48
+
 // listHeader names the columns of the list.
-func listHeader(wide bool, nameW int) string {
-	head := pad("Name", nameW) + lpad("Ready", colReady)
-	if wide {
+func listHeader(c listCols) string {
+	head := pad("Name", c.nameW) + lpad("Ready", colReady)
+	if c.cpu {
 		head += lpad("CPU", colCPU) + lpad("of req", colPct)
 	}
 	head += lpad("Memory", colMem) + lpad("of req", colPct)
-	if wide {
+	if c.rst {
 		head += lpad("Restarts", colRst)
 	}
 	return head
@@ -246,18 +345,18 @@ func listHeader(wide bool, nameW int) string {
 
 // podsOf are the lines of the pods of workload wl under the list: a
 // blank line, a heading and the pods, which are shown, not selected.
-func podsOf(v *view, wl *models.InfoWorkload, wide bool, nameW, w int) []string {
+func podsOf(v *view, wl *models.InfoWorkload, cols listCols, w int) []string {
 	lines := []string{"", headStyle().Render(fit("Pods of "+workloadKind(wl.GVR)+" "+wl.Name+" (Enter to open)", w))}
 	for _, p := range v.now.PodRows {
 		if p.Owner != nil && *p.Owner == *wl {
-			lines = append(lines, itemLines(targetItem{row: p}, false, wide, false, false, nameW, w)...)
+			lines = append(lines, itemLines(targetItem{row: p}, false, cols, w, nameFlags{})...)
 		}
 	}
 	return lines
 }
 
 // itemLines draws one item: its numbers, and under them what is not well.
-func itemLines(it targetItem, sel, wide, showNS, showKind bool, nameW, w int) []string {
+func itemLines(it targetItem, sel bool, cols listCols, w int, f nameFlags) []string {
 	if it.up {
 		text := ".. up to " + it.target.Title()
 		if sel {
@@ -266,13 +365,7 @@ func itemLines(it targetItem, sel, wide, showNS, showKind bool, nameW, w int) []
 		return []string{noteStyle().Render(fit(text, w))}
 	}
 	r := it.row
-	name := r.Name
-	if r.Workload != nil && showKind {
-		name = workloadKind(r.Workload.GVR) + " " + name
-	}
-	if showNS && r.Namespace != "" {
-		name = r.Namespace + "/" + name
-	}
+	name := rowName(r, f)
 	ready := fmt.Sprintf("%d/%d", r.Ready, r.Pods)
 	cpu, cpuPct, cpuSt := usageCells(r.CPU, formatCores)
 	mem, memPct, memSt := usageCells(r.Memory, formatBytes)
@@ -284,12 +377,12 @@ func itemLines(it targetItem, sel, wide, showNS, showKind bool, nameW, w int) []
 	if sel {
 		base, readySt, cpuSt, memSt = curStyle(), curStyle(), curStyle(), curStyle()
 	}
-	line := base.Render(pad(truncateMiddle(name, nameW-1), nameW)) + readySt.Render(lpad(ready, colReady))
-	if wide {
+	line := base.Render(pad(truncateMiddle(name, cols.nameW-1), cols.nameW)) + readySt.Render(lpad(ready, colReady))
+	if cols.cpu {
 		line += base.Render(lpad(cpu, colCPU)) + cpuSt.Render(lpad(cpuPct, colPct))
 	}
 	line += base.Render(lpad(mem, colMem)) + memSt.Render(lpad(memPct, colPct))
-	if wide {
+	if cols.rst {
 		line += base.Render(lpad(strconv.Itoa(int(r.Restarts)), colRst))
 	}
 	if sel {

@@ -150,6 +150,15 @@ func TestDashboardOpensOverUnchangedPanelsEnvtest(t *testing.T) {
 	if lines := strings.Split(s, "\n"); len(lines) != 24 {
 		t.Fatalf("%d lines at 80x24", len(lines))
 	}
+	// After a resize the frame is the window's height to the row, with
+	// the F-key bar last, at every size.
+	for _, size := range [][2]int{{150, 42}, {100, 30}, {80, 24}} {
+		_, _ = app.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		lines := strings.Split(dashboardScreen(app), "\n")
+		if len(lines) != size[1] || !strings.Contains(lines[len(lines)-1], "10Close") {
+			t.Fatalf("%d lines at %dx%d, last %q", len(lines), size[0], size[1], lines[len(lines)-1])
+		}
+	}
 
 	// F1 shows the dashboard's help over it; Esc closes the help only.
 	_, _ = app.Update(tea.KeyPressMsg{Code: tea.KeyF1})

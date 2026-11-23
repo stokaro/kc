@@ -1,6 +1,8 @@
 package chart
 
 import (
+	"encoding/binary"
+	"hash/fnv"
 	"image"
 	"image/color"
 	"math"
@@ -32,8 +34,9 @@ func (c Chart) PlotSize() (cols, rows int) {
 // each, from the same model as Render: the same pooling and hold, the same
 // scale and the same reference line values, at one sample column per
 // pixel. Usage is a filled area under a solid edge, a reference line is
-// dashed, a gap is left empty, and the cursor cell is lighter. It is nil
-// when the chart has no plot.
+// dashed, and a gap is left empty. The cursor is not drawn: it is a text
+// cell over the image (TextCells), so moving it changes no picture. It is
+// nil when the chart has no plot.
 func (c Chart) Raster(cellW, cellH int) *image.RGBA {
 	cols, rows := c.PlotSize()
 	if cols == 0 || cellW < 1 || cellH < 1 {
@@ -80,21 +83,58 @@ func (c Chart) Raster(cellW, cellH int) *image.RGBA {
 			fill(img, image.Rect(x, y, x+1, y+thick), col)
 		}
 	}
-	if c.Cursor >= 0 && c.Cursor < cols {
-		r := image.Rect(c.Cursor*cellW, 0, (c.Cursor+1)*cellW, h)
-		for y := r.Min.Y; y < r.Max.Y; y++ {
-			for x := r.Min.X; x < r.Max.X; x++ {
-				img.SetRGBA(x, y, blend(img.RGBAAt(x, y), color.RGBA{0xff, 0xff, 0xff, 0xff}, 0.3))
-			}
+	return img
+}
+
+// RasterKey identifies the picture Raster draws at cellW by cellH: two
+// charts with the same key draw the same pixels. It reads the inputs,
+// which costs far less than drawing them, so a caller can skip Raster
+// when only the cursor moved.
+func (c Chart) RasterKey(cellW, cellH int) uint64 {
+	cols, rows := c.PlotSize()
+	h := fnv.New64a()
+	var buf [8]byte
+	put := func(v uint64) {
+		binary.LittleEndian.PutUint64(buf[:], v)
+		_, _ = h.Write(buf[:])
+	}
+	putF := func(f float64) { put(math.Float64bits(f)) }
+	putPoints := func(ps []Point) {
+		putF(float64(len(ps)))
+		for _, p := range ps {
+			putF(float64(p.At.UnixNano()))
+			putF(p.V)
 		}
 	}
-	return img
+	putColor := func(st lipgloss.Style) {
+		col := rasterColor(st)
+		put(uint64(col.R)<<16 | uint64(col.G)<<8 | uint64(col.B))
+	}
+	putI := func(v int64) { putF(float64(v)) }
+	for _, v := range []int{cols, rows, cellW, cellH, int(c.Mode)} {
+		putI(int64(v))
+	}
+	putI(c.Start.UnixNano())
+	putI(c.End.UnixNano())
+	putI(int64(c.Hold))
+	if cols > 0 {
+		putF(c.layout().top)
+	}
+	putColor(c.Style)
+	putPoints(c.Points)
+	for _, r := range c.Refs {
+		putI(int64(r.Hold))
+		putF(r.V)
+		putColor(r.Style)
+		putPoints(r.Points)
+	}
+	return h.Sum64()
 }
 
 // TextCells marks the plot cells, by row and column, that an image of
 // the plot leaves to the text chart: the columns without a sample, which
-// draw the "no data" band, and the arrows of reference lines above the
-// scale.
+// draw the "no data" band, the arrows of reference lines above the scale,
+// and the cursor column.
 func (c Chart) TextCells() [][]bool {
 	cols, rows := c.PlotSize()
 	if cols == 0 {
@@ -106,7 +146,7 @@ func (c Chart) TextCells() [][]bool {
 	for row := range out {
 		out[row] = make([]bool, cols)
 		for x := range cols {
-			out[row][x] = gaps[x] != 0 || c.arrowAt(l, row, x)
+			out[row][x] = gaps[x] != 0 || c.arrowAt(l, row, x) || x == c.Cursor
 		}
 	}
 	return out

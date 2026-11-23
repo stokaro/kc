@@ -391,6 +391,9 @@ func TestLiveRefreshAndPausedReads(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
 	m := open(t, f, true, web, 80, 24)
+	// Braille reads a step of half a cell, under a minute at this width:
+	// a reread waits for minRefresh or a step, the longer.
+	key(t, m, "b")
 	ticks(t, f, m, 5, time.Second)
 	if len(f.reads) != 1 {
 		t.Fatalf("%d reads in 5s, want 1", len(f.reads))
@@ -633,14 +636,24 @@ func TestBlocksToggle(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
 	m := open(t, f, true, web, 120, 30)
-	if !strings.ContainsAny(strings.Join(screen(t, m, 120, 30), ""), "⣀⣤⣶⣿") {
-		t.Fatal("braille mode draws no braille")
+	// Text starts in blocks: a solid area that reads the same in every
+	// font.
+	if s := strings.Join(screen(t, m, 120, 30), ""); !strings.Contains(s, "█") || containsBraille(s) || m.FunctionKeys()[5].Label != "Braille" {
+		t.Fatal("blocks mode draws braille, or no solid area")
 	}
 	key(t, m, "b")
-	lines := screen(t, m, 120, 30)
-	if strings.ContainsAny(strings.Join(lines, ""), "⣀⣤⣶⣿") || m.FunctionKeys()[5].Label != "Braille" {
-		t.Error("block mode still draws braille")
+	if s := strings.Join(screen(t, m, 120, 30), ""); !containsBraille(s) || m.FunctionKeys()[5].Label != "Blocks" {
+		t.Error("braille mode draws no braille edge")
 	}
+}
+
+func containsBraille(s string) bool {
+	for _, r := range s {
+		if r > 0x2800 && r <= 0x28ff {
+			return true
+		}
+	}
+	return false
 }
 
 // TestChartsShareTheCellGrid: the CPU and memory charts have labels of
@@ -705,13 +718,103 @@ func TestShortListShowsThePodsOfTheSelection(t *testing.T) {
 	requireText(t, screen(t, m, 150, 42), "Pods of Deployment web", "› Deployment web")
 }
 
-// TestLongPodNamesKeepTheirEnd: a pod name too long for the list keeps
-// its random suffix, which tells the pods of a workload apart.
-func TestLongPodNamesKeepTheirEnd(t *testing.T) {
+// TestNamesTakeTheirWidthFirst: the list widens and drops columns
+// before it cuts a name; a name too long for any width keeps its end,
+// which tells the pods of a workload apart.
+func TestNamesTakeTheirWidthFirst(t *testing.T) {
 	t.Parallel()
 	a := measured()
-	a.Rows = []models.UsageRow{podRow("web-6989b69646-dgqgj", 0.3, 200<<20, "")}
+	a.Rows = []models.UsageRow{podRow("loadgen-6989b69646-8hg2m", 0.3, 200<<20, "")}
 	f := &fakes{now: t0, amounts: a}
 	m := open(t, f, false, web, 150, 42)
-	requireText(t, screen(t, m, 150, 42), "web-698…-dgqgj")
+	requireText(t, screen(t, m, 150, 42), "loadgen-6989b69646-8hg2m", "Restarts")
+	m = open(t, f, false, web, 100, 30)
+	requireText(t, screen(t, m, 100, 30), "loadgen-6989b69646-8hg2m")
+
+	a.Rows = []models.UsageRow{podRow("a-pod-with-a-name-far-longer-than-any-list-could-show-8hg2m", 0.3, 200<<20, "")}
+	f = &fakes{now: t0, amounts: a}
+	m = open(t, f, false, web, 150, 42)
+	requireText(t, screen(t, m, 150, 42), "…", "-8hg2m ")
+}
+
+// TestCursorSaysNoneForNothing: a cursor cell where nothing ran says so,
+// and one without a sample says that; neither is "the highest" of
+// anything.
+func TestCursorSaysNoneForNothing(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	a.CPU.Used = 0
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, web, 150, 42)
+	ticks(t, f, m, 4, 15*time.Second)
+	screen(t, m, 150, 42)
+	key(t, m, "left")
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "█ usage none  ")
+	if contains(lines, "usage 0 (highest)") {
+		t.Error("a cell where nothing ran is called the highest")
+	}
+	// Move left past the samples into cells without one.
+	for range 200 {
+		key(t, m, "left")
+		if contains(screen(t, m, 150, 42), "usage no sample") {
+			return
+		}
+	}
+	t.Errorf("no cell without a sample says so:\n%s", strings.Join(screen(t, m, 150, 42), "\n"))
+}
+
+// TestDrilldownKeepsTheHistory: the reads of a namespace also record its
+// workloads and pods, so their dashboards start with the minutes already
+// collected instead of an empty session.
+func TestDrilldownKeepsTheHistory(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	wl := &models.InfoWorkload{GVR: deployGVR, Namespace: "shop", Name: "web"}
+	a.Rows = []models.UsageRow{{
+		Workload: wl, Namespace: "shop", Name: "web", Pods: 2, Ready: 2, Measured: 2,
+		CPU:    models.ResourceAmount{Used: 0.4, UsedKnown: true, Requests: 1},
+		Memory: models.ResourceAmount{Used: 300 << 20, UsedKnown: true, Requests: 512 << 20},
+	}}
+	a.PodRows = []models.UsageRow{podRow("web-1", 0.3, 200<<20, ""), podRow("web-2", 0.1, 100<<20, "")}
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, dashboard.Target{Kind: dashboard.KindScope, Namespace: "shop"}, 150, 42)
+	ticks(t, f, m, 8, 15*time.Second)
+	requireText(t, screen(t, m, 150, 42), "Metrics API, 9 samples")
+	key(t, m, "enter") // the Deployment
+	requireText(t, screen(t, m, 150, 42), "› Deployment web", "Metrics API, 9 samples", "2m of 15m collected so far")
+	// The fake reads the same amounts for every target: list the pods.
+	f.mu.Lock()
+	f.amounts.Rows = f.amounts.PodRows
+	f.mu.Unlock()
+	ticks(t, f, m, 1, 15*time.Second)
+	key(t, m, "enter") // its first pod, selected on entry
+	requireText(t, screen(t, m, 150, 42), "› pod web-1", "Metrics API, 10 samples")
+}
+
+// TestShortListShowsTheContainers: the room under a short list shows the
+// containers of the selected workload's pods, with why one last stopped.
+func TestShortListShowsTheContainers(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	wl := &models.InfoWorkload{GVR: deployGVR, Namespace: "shop", Name: "web"}
+	a.Rows = []models.UsageRow{{
+		Workload: wl, Namespace: "shop", Name: "web", Pods: 1, Ready: 1, Measured: 1,
+		CPU:    models.ResourceAmount{Used: 0.4, UsedKnown: true, Requests: 1},
+		Memory: models.ResourceAmount{Used: 300 << 20, UsedKnown: true, Requests: 512 << 20},
+	}}
+	p := podRow("web-1", 0.3, 200<<20, "")
+	p.Owner = wl
+	p.Containers = []models.UsageContainer{
+		{Name: "app", Ready: true, Restarts: 2, State: "running", Since: t0.Add(-time.Hour),
+			LastReason: "OOMKilled", LastExit: 137, LastAt: t0.Add(-time.Hour)},
+		{Name: "sidecar", State: "waiting", Reason: "CrashLoopBackOff", Restarts: 5},
+	}
+	a.PodRows = []models.UsageRow{p}
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, dashboard.Target{Kind: dashboard.KindScope, Namespace: "shop"}, 150, 42)
+	requireText(t, screen(t, m, 150, 42), "Containers of pod web-1",
+		"  app  ready  2 restarts  running since 09:00:00",
+		"    last stopped 09:00:00: OOMKilled, exit 137",
+		"  sidecar  not ready  5 restarts  ", "    waiting: CrashLoopBackOff")
 }

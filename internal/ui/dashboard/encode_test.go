@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/dashboard"
 	"github.com/stokaro/kc/internal/ui/kittygfx"
 )
@@ -47,14 +48,45 @@ func encodes(msgs []tea.Msg) []tea.Msg {
 	return out
 }
 
+// openSloped opens a dashboard with images over a history that rises
+// and falls, so another range draws other pixels (a steady line looks the
+// same at any range).
+func openSloped(t *testing.T, w, h int) (*dashboard.Model, string) {
+	t.Helper()
+	f := &fakes{now: t0, amounts: measured()}
+	f.usage = func(s promhistory.Scope, r promhistory.Range) (promhistory.Usage, error) {
+		u := steadyUsage(s, r, 1)
+		for i := range u.CPU {
+			v := 0.2 + float64(i%7)/7
+			u.CPU[i].Value = v
+			u.Memory[i].Value = v * (1 << 30)
+			u.MemoryPeak[i].Value = v * (1 << 30)
+		}
+		return u, nil
+	}
+	src := f.sources(true)
+	src.Images = kittygfx.NewImages(kittygfx.Encoder{}, 240, dashboard.ImageKeys)
+	m := dashboard.New(src, web)
+	out := gfxRun(t, m, func() tea.Msg { return tea.WindowSizeMsg{Width: w, Height: h} })
+	out += gfxRun(t, m, m.Start())
+	return m, out
+}
+
+// zoom narrows the range ("+") or widens it ("-"): both charts get new
+// pixels.
+func zoom(m *dashboard.Model, key rune) tea.Cmd {
+	cmd, _ := m.Update(tea.KeyPressMsg{Code: key, Text: string(key)})
+	return cmd
+}
+
 var transmitCols = regexp.MustCompile(`a=T,U=1,C=1,f=100,q=2,i=\d+,c=(\d+),`)
 
 // TestPicturesAreMadeInACommand: Update returns no transmit itself; the
 // raster and the PNG come back from a command, and only then go out.
 func TestPicturesAreMadeInACommand(t *testing.T) {
 	t.Parallel()
-	m, _, _ := openWithImages(t, 140, 40)
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft}) // the cursor cell is lighter: new pixels
+	m, _ := openSloped(t, 140, 40)
+	cmd := zoom(m, '+')
 	msgs := leaves(cmd)
 	for _, msg := range msgs {
 		if raw, ok := msg.(tea.RawMsg); ok && strings.Contains(fmt.Sprint(raw.Msg), "a=T") {
@@ -78,13 +110,13 @@ func TestPicturesAreMadeInACommand(t *testing.T) {
 // another change starts none; its return starts the next.
 func TestOnePictureInFlightPerChart(t *testing.T) {
 	t.Parallel()
-	m, _, _ := openWithImages(t, 140, 40)
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m, _ := openSloped(t, 140, 40)
+	cmd := zoom(m, '+')
 	first := encodes(leaves(cmd))
 	if len(first) != 2 {
 		t.Fatalf("%d pictures made, want 2", len(first))
 	}
-	cmd, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	cmd = zoom(m, '-')
 	if n := len(encodes(leaves(cmd))); n != 0 {
 		t.Fatalf("%d more pictures started while two are in flight", n)
 	}
@@ -103,14 +135,14 @@ func TestOnePictureInFlightPerChart(t *testing.T) {
 // longer has is not sent; the chart gets one of its new size.
 func TestStalePictureIsDropped(t *testing.T) {
 	t.Parallel()
-	m, _, opened := openWithImages(t, 140, 40)
+	m, opened := openSloped(t, 140, 40)
 	before := make(map[string]bool)
 	for _, s := range transmitCols.FindAllStringSubmatch(opened, -1) {
 		before[s[1]] = true
 	}
 	// Focus the CPU chart, which F4 then expands.
 	gfxRun(t, m, func() tea.Msg { return tea.KeyPressMsg{Code: tea.KeyTab} })
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	cmd := zoom(m, '+')
 	old := encodes(leaves(cmd))
 	if len(old) != 2 {
 		t.Fatalf("%d pictures made, want 2", len(old))
@@ -140,8 +172,8 @@ func TestStalePictureIsDropped(t *testing.T) {
 // size changes never goes out.
 func TestPictureAfterAResizeIsDropped(t *testing.T) {
 	t.Parallel()
-	m, _, _ := openWithImages(t, 140, 40)
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m, _ := openSloped(t, 140, 40)
+	cmd := zoom(m, '+')
 	old := encodes(leaves(cmd))
 	gfxRun(t, m, func() tea.Msg { return tea.WindowSizeMsg{Width: 110, Height: 34} })
 	var out strings.Builder

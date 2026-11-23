@@ -3,6 +3,7 @@ package models
 import (
 	"cmp"
 	"slices"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -33,14 +34,54 @@ type UsageRow struct {
 	// reason such as CrashLoopBackOff, "Pending" or "not ready". Empty when
 	// every pod is running and ready.
 	Problem string
+	// Containers are the containers of a pod row, init containers first;
+	// a workload row has none.
+	Containers []UsageContainer
+}
+
+// UsageContainer is one container of a pod: whether it is ready, how
+// often it restarted, what it does now and why it last stopped.
+type UsageContainer struct {
+	Name     string
+	Init     bool
+	Ready    bool
+	Restarts int32
+	// State is "running", "waiting" or "terminated", with the Reason of a
+	// waiting or terminated one (CrashLoopBackOff, Completed). Since is
+	// when a running or terminated state began, zero when unknown.
+	State, Reason string
+	Since         time.Time
+	// LastReason, LastExit and LastAt are of the last termination before
+	// the current state; LastReason is empty when there was none.
+	LastReason string
+	LastExit   int32
+	LastAt     time.Time
+}
+
+// containerOf reads one container status.
+func containerOf(s corev1.ContainerStatus, init bool) UsageContainer {
+	c := UsageContainer{Name: s.Name, Init: init, Ready: s.Ready, Restarts: s.RestartCount}
+	switch st := s.State; {
+	case st.Running != nil:
+		c.State, c.Since = "running", st.Running.StartedAt.Time
+	case st.Waiting != nil:
+		c.State, c.Reason = "waiting", st.Waiting.Reason
+	case st.Terminated != nil:
+		c.State, c.Reason, c.Since = "terminated", st.Terminated.Reason, st.Terminated.FinishedAt.Time
+	}
+	if t := s.LastTerminationState.Terminated; t != nil {
+		c.LastReason, c.LastExit, c.LastAt = cmp.Or(t.Reason, "exited"), t.ExitCode, t.FinishedAt.Time
+	}
+	return c
 }
 
 // usagePodHealth is the health of one pod that UsageRow shows.
 type usagePodHealth struct {
-	ready     bool
-	restarts  int32
-	oomKilled int
-	problem   string
+	ready      bool
+	restarts   int32
+	oomKilled  int
+	problem    string
+	containers []UsageContainer
 }
 
 // healthOf reads the health of p from its status.
@@ -48,6 +89,12 @@ func healthOf(p *corev1.Pod) usagePodHealth {
 	var h usagePodHealth
 	if c := podCondition(p, corev1.PodReady); c != nil && c.Status == corev1.ConditionTrue {
 		h.ready = true
+	}
+	for _, s := range p.Status.InitContainerStatuses {
+		h.containers = append(h.containers, containerOf(s, true))
+	}
+	for _, s := range p.Status.ContainerStatuses {
+		h.containers = append(h.containers, containerOf(s, false))
 	}
 	for _, s := range podStatuses(p) {
 		h.restarts += s.RestartCount
@@ -115,6 +162,9 @@ func usageRows(pods []overviewPodAmount, in func(*overviewPodAmount) bool, byWor
 
 // add counts pod p into r.
 func (r *UsageRow) add(p *overviewPodAmount) {
+	if r.Workload == nil {
+		r.Containers = p.health.containers
+	}
 	r.Pods++
 	if p.health.ready {
 		r.Ready++

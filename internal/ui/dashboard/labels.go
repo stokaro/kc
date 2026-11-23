@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/chart"
@@ -18,18 +19,18 @@ import (
 // request in use and how close the usage is to the limit.
 //
 //nolint:gocyclo // one short case per state of the legend
-func (m *Model) legend(v *view, wd widget, c chart.Chart) string {
+func (m *Model) legend(v *view, wd widget, c chart.Chart) []string {
 	a := v.now.CPU
 	if wd == widgetMemory {
 		a = v.now.Memory
 	}
 	switch {
 	case v.now.Loading:
-		return noteStyle().Render("Loading the cluster's objects…")
+		return []string{noteStyle().Render("Loading the cluster's objects…")}
 	case v.now.Err != "":
-		return badStyle().Render("Metrics API: " + v.now.Err)
+		return []string{badStyle().Render("Metrics API: " + v.now.Err)}
 	case !v.now.Found && v.now.Note == "":
-		return badStyle().Render(v.target.Title() + " is not in the lists kc reads; it may be gone")
+		return []string{badStyle().Render(v.target.Title() + " is not in the lists kc reads; it may be gone")}
 	}
 	use, useKnown := a.Used, a.UsedKnown
 	req, lim := a.Requests, a.Limits
@@ -55,13 +56,18 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) string {
 		return on(lipgloss.NewStyle().Foreground(st.GetForeground()).Bold(true)).Render(r)
 	}
 	useText := "no data"
-	if useKnown {
+	switch {
+	case v.cursor >= 0 && !useKnown:
+		useText = "no sample"
+	case v.cursor >= 0 && use <= 0:
+		useText = "none"
+	case v.cursor >= 0:
+		// A cell pools several samples; the chart draws their peak.
+		useText = c.Format(use) + " (highest)"
+	case useKnown:
 		useText = c.Format(use)
-	} else if v.now.Note != "" && v.cursor < 0 {
+	case v.now.Note != "":
 		useText = v.now.Note
-	}
-	if v.cursor >= 0 && useKnown {
-		useText += " (highest)"
 	}
 	parts = append(parts, swatch(useStyle, "█")+" usage "+valStyle().Render(useText))
 	if u := v.prom.usage; m.usesProm(v) && !u.Resources.Known() {
@@ -69,7 +75,7 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) string {
 		if u.ResourcesErr != "" {
 			why = u.ResourcesErr
 		}
-		return strings.Join(append(parts, noteStyle().Render("no request or limit history: "+why)), "  ")
+		return append(parts, noteStyle().Render("no request or limit history: "+why))
 	}
 	share := func(ref float64, of string) string {
 		if !useKnown || ref <= 0 {
@@ -98,6 +104,8 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) string {
 	parts = append(parts, reqPart)
 	limPart := swatch(limStyle, "┄") + " limit "
 	switch {
+	case !limKnown && v.target.Kind == KindPod:
+		limPart += "missing on some containers"
 	case !limKnown:
 		limPart += "missing on some pods"
 	case lim <= 0:
@@ -111,7 +119,30 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) string {
 	if a.Capacity > 0 {
 		parts = append(parts, swatch(allocStyle, "┄")+" allocatable "+c.Format(a.Capacity)+above(refCapacity))
 	}
-	return strings.Join(parts, "  ")
+	return parts
+}
+
+// legendLines packs the parts of a legend into lines of width w, three
+// at most: a narrow chart gives up plot rows rather than cut the legend.
+func legendLines(parts []string, w int) []string {
+	var lines []string
+	cur := ""
+	for _, p := range parts {
+		switch {
+		case cur == "":
+			cur = p
+		case ansi.StringWidth(cur)+2+ansi.StringWidth(p) <= w:
+			cur += "  " + p
+		default:
+			lines = append(lines, cur)
+			cur = "      " + p
+		}
+	}
+	lines = append(lines, cur)
+	if len(lines) > 3 {
+		lines = append(lines[:2], strings.Join(lines[2:], "  "))
+	}
+	return lines
 }
 
 // minFit is the least range a live session chart narrows to.

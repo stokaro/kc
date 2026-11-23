@@ -335,3 +335,23 @@ func TestGapRunSaysNoData(t *testing.T) {
 		t.Errorf("the label sits on samples: %q", lines[2])
 	}
 }
+
+// TestBrailleAreaIsSolid: under the edge, the area is full blocks, not
+// full braille cells, which most fonts draw as a grid of dots.
+func TestBrailleAreaIsSolid(t *testing.T) {
+	t.Parallel()
+	t0 := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+	var pts []chart.Point
+	for i := range 21 {
+		pts = append(pts, chart.Point{At: t0.Add(time.Duration(i) * 30 * time.Second), V: 7})
+	}
+	pts = append(pts, chart.Point{At: t0.Add(10 * time.Minute), V: 10})
+	c := chart.Chart{Start: t0, End: t0.Add(10 * time.Minute), Points: pts, Mode: chart.Braille, Width: 11, Height: 5, Cursor: -1, Format: func(float64) string { return "" }}
+	out := strings.Join(c.Render(), "\n")
+	if strings.ContainsRune(out, '⣿') {
+		t.Errorf("full braille cells in the area:\n%s", out)
+	}
+	if !strings.ContainsRune(out, '█') {
+		t.Errorf("no solid area:\n%s", out)
+	}
+}

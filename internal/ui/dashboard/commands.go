@@ -95,8 +95,8 @@ func (m *Model) Menus(run func(key string) tea.Cmd) []menubar.Menu {
 	}}
 	draws := []struct{ label, name string }{
 		{"Charts as &images", drawImages},
-		{"Charts in b&raille", drawBraille},
-		{"Charts in &blocks, for fonts without braille", drawBlocks},
+		{"Charts in &blocks", drawBlocks},
+		{"Charts in b&raille, two samples per cell", drawBraille},
 	}
 	for _, d := range draws {
 		if d.name == drawImages && m.src.Images == nil {

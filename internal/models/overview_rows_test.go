@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -115,9 +116,39 @@ func TestHealthOf(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := healthOf(tc.pod); got != tc.want {
+			got := healthOf(tc.pod)
+			got.containers = nil // TestContainersOfAPodRow
+			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("health = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestContainersOfAPodRow: a pod row lists its containers with what
+// they do now and why they last stopped; a workload row lists none.
+func TestContainersOfAPodRow(t *testing.T) {
+	t.Parallel()
+	p := restarted(overviewRunningPod("a", "p"), 3, "OOMKilled", time.Minute)
+	cs := healthOf(p).containers
+	if len(cs) == 0 {
+		t.Fatal("no containers")
+	}
+	c := cs[len(cs)-1]
+	if c.Init || c.Restarts != 3 || c.LastReason != "OOMKilled" || c.LastAt.IsZero() {
+		t.Errorf("container = %+v", c)
+	}
+	w := healthOf(waiting(overviewRunningPod("a", "p"), "CrashLoopBackOff")).containers
+	if c := w[len(w)-1]; c.State != "waiting" || c.Reason != "CrashLoopBackOff" {
+		t.Errorf("waiting container = %+v", c)
+	}
+	rows := usageRows([]overviewPodAmount{{name: "p", namespace: "a", health: healthOf(p)}}, func(*overviewPodAmount) bool { return true }, false)
+	if len(rows) != 1 || len(rows[0].Containers) != len(cs) {
+		t.Errorf("pod rows = %+v", rows)
+	}
+	wl := InfoWorkload{Namespace: "a", Name: "web"}
+	rows = usageRows([]overviewPodAmount{{name: "p", namespace: "a", owners: []InfoWorkload{wl}, health: healthOf(p)}}, func(*overviewPodAmount) bool { return true }, true)
+	if len(rows) != 1 || rows[0].Workload == nil || rows[0].Containers != nil {
+		t.Errorf("workload rows = %+v", rows)
 	}
 }

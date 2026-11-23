@@ -139,7 +139,10 @@ type Model struct {
 	// until resizeSettle passes without another one (see resized).
 	resizes  int
 	settling bool
-	seq      int
+	// rasterKeys are the RasterKey of the picture last sent per image key,
+	// so a cursor move rasterizes nothing.
+	rasterKeys [ImageKeys]uint64
+	seq        int
 	// rects is where the last frame put each widget, for the mouse.
 	rects map[widget]rect
 	// cells is the plot width of the charts in the last frame.
@@ -190,7 +193,7 @@ func IsMsg(msg tea.Msg) bool {
 
 // New opens a dashboard of t.
 func New(src Sources, t Target) *Model {
-	m := &Model{src: src, sess: newSession(), mode: chart.Braille, pixels: true}
+	m := &Model{src: src, sess: newSession(), mode: chart.Blocks, pixels: true}
 	m.stack = []*view{m.newView(t, nil)}
 	m.firstRow(m.stack[0])
 	return m
@@ -333,7 +336,7 @@ func (m *Model) shownEnd(v *view) time.Time {
 func (m *Model) refresh() {
 	v := m.top()
 	a := m.src.Amounts(v.target.Focus(), topN)
-	m.sess.add(v.target.Key(), a)
+	m.sess.add(v.target.Key(), a, func(r models.UsageRow) string { return rowTarget(r).Key() })
 	if !v.paused || !v.seen || v.now.Loading {
 		v.now = a
 	}

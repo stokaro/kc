@@ -11,8 +11,12 @@ const (
 	// SessionRetention is how long the session history keeps samples.
 	SessionRetention = time.Hour
 	// sessionTargets bounds the targets with a session history; the one
-	// sampled longest ago is dropped first.
-	sessionTargets = 32
+	// sampled longest ago is dropped first. Each read also records the
+	// rows of its list (sessionRows), so the bound leaves room for them.
+	sessionTargets = 160
+	// sessionRows is how many rows of a read, most memory first, get a
+	// history of their own.
+	sessionRows = 64
 	// maxSessionSamples bounds one target's samples should usage be read
 	// faster than polled.
 	maxSessionSamples = 4 * int(SessionRetention/models.UsagePollInterval)
@@ -57,28 +61,45 @@ type session struct {
 
 func newSession() *session { return &session{byKey: make(map[string]*series)} }
 
-// add records a reading of key if it is new and measured. It returns
-// whether it was added.
-func (s *session) add(key string, a models.UsageAmounts) bool {
+// add records a reading of key if it is new and measured, and the rows
+// of its list under their own keys (keyOf), so a drilldown into a row
+// starts with the history its parent already read. It returns whether
+// the reading of key was added.
+func (s *session) add(key string, a models.UsageAmounts, keyOf func(models.UsageRow) string) bool {
 	if a.ReadAt.IsZero() || !a.CPU.UsedKnown {
 		return false
 	}
+	for _, rows := range [][]models.UsageRow{a.Rows, a.PodRows} {
+		for _, r := range rows[:min(len(rows), sessionRows)] {
+			if k := keyOf(r); k != key && r.CPU.UsedKnown {
+				s.addSample(k, sample{
+					at: a.At, readAt: a.ReadAt, cpu: r.CPU.Used, mem: r.Memory.Used, measured: r.Measured, expected: r.Pods,
+					cpuRes: refsOf(r.CPU), memRes: refsOf(r.Memory),
+				})
+			}
+		}
+	}
+	return s.addSample(key, sample{
+		at: a.At, readAt: a.ReadAt, cpu: a.CPU.Used, mem: a.Memory.Used, measured: a.Measured, expected: a.Running,
+		cpuRes: refsOf(a.CPU), memRes: refsOf(a.Memory),
+	})
+}
+
+// addSample appends x to key's history unless key has a reading as new.
+func (s *session) addSample(key string, x sample) bool {
 	h := s.byKey[key]
 	if h == nil {
 		s.evict()
 		h = &series{}
 		s.byKey[key] = h
 	}
-	h.touched = a.ReadAt
-	if n := len(h.samples); n > 0 && !a.ReadAt.After(h.samples[n-1].readAt) {
+	h.touched = x.readAt
+	if n := len(h.samples); n > 0 && !x.readAt.After(h.samples[n-1].readAt) {
 		return false
 	}
-	h.samples = append(h.samples, sample{
-		at: a.At, readAt: a.ReadAt, cpu: a.CPU.Used, mem: a.Memory.Used, measured: a.Measured, expected: a.Running,
-		cpuRes: refsOf(a.CPU), memRes: refsOf(a.Memory),
-	})
+	h.samples = append(h.samples, x)
 	cut := 0
-	for cut < len(h.samples)-1 && a.At.Sub(h.samples[cut].at) > SessionRetention {
+	for cut < len(h.samples)-1 && x.at.Sub(h.samples[cut].at) > SessionRetention {
 		cut++
 	}
 	cut = max(cut, len(h.samples)-maxSessionSamples)
