@@ -23,7 +23,9 @@ func (p plainLeaf) Path() []string  { return []string{p.id} }
 func TestEnterOnLeafRowViews(t *testing.T) {
 	logs := models.NewContainerLogItem(models.Deps{}, "logs", []string{"logs"}, nil, models.LogsSpec{Namespace: "ns", Pod: "p", Container: "c"})
 	key := models.NewSimpleItem("key", []string{"ca.crt"}, nil, models.WhiteStyle()).
-		WithViewContent(func() (string, string, string, string, string, error) { return "ca.crt", "pem", "", "text/plain", "ca.crt", nil })
+		WithViewContent(func() (string, string, string, string, string, error) {
+			return "ca.crt", "pem", "", "text/plain", "ca.crt", nil
+		})
 	dir := models.NewChildResourceItem("dir", []string{"/configmaps"}, nil, func() (models.Folder, error) {
 		return newStubFolder(nil), nil
 	})

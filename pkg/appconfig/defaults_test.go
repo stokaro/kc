@@ -95,8 +95,8 @@ func diffConfig(path string, got, want reflect.Value, out *[]string) {
 }
 
 func hasExportedFields(t reflect.Type) bool {
-	for i := range t.NumField() {
-		if t.Field(i).IsExported() {
+	for f := range t.Fields() {
+		if f.IsExported() {
 			return true
 		}
 	}

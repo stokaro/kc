@@ -23,8 +23,8 @@ func markTestApp(t *testing.T) *App {
 	return app
 }
 
-// markedNames lists the marked rows of the left panel in panel order.
-func markedNames(app *App) []string {
+// markedRowIDs lists the marked rows of the left panel in panel order.
+func markedRowIDs(app *App) []string {
 	var out []string
 	for _, it := range app.leftPanel.GetSelectedItems() {
 		id, _, _, _ := it.Item.Columns()
@@ -44,7 +44,7 @@ func sendApp(app *App, msg tea.Msg) []tea.Msg {
 // and delivers the answer.
 func answerMarkGroup(t *testing.T, app *App, pattern string) {
 	t.Helper()
-	if !(app.modalManager.TopName() == markGroupModal) {
+	if app.modalManager.TopName() != markGroupModal {
 		t.Fatal("the pattern dialog is not open")
 	}
 	keys := []tea.KeyPressMsg{{Code: tea.KeyBackspace}}
@@ -83,25 +83,25 @@ func TestGroupMarkKeys(t *testing.T) {
 	press := func(r rune) []tea.Msg { return sendApp(app, tea.KeyPressMsg{Code: r, Text: string(r)}) }
 
 	press('*')
-	if got, want := markedNames(app), []string{"web-0", "web-1", "api-0", "db-0"}; !slices.Equal(got, want) {
+	if got, want := markedRowIDs(app), []string{"web-0", "web-1", "api-0", "db-0"}; !slices.Equal(got, want) {
 		t.Fatalf("after *: marked %v, want %v (never ..)", got, want)
 	}
 	openMarkGroup(t, app, press('-'), false)
 	answerMarkGroup(t, app, "WEB-*")
-	if got, want := markedNames(app), []string{"api-0", "db-0"}; !slices.Equal(got, want) {
+	if got, want := markedRowIDs(app), []string{"api-0", "db-0"}; !slices.Equal(got, want) {
 		t.Fatalf("after - WEB-*: marked %v, want %v", got, want)
 	}
 	press('*')
-	if got, want := markedNames(app), []string{"web-0", "web-1"}; !slices.Equal(got, want) {
+	if got, want := markedRowIDs(app), []string{"web-0", "web-1"}; !slices.Equal(got, want) {
 		t.Fatalf("after the second *: marked %v, want %v", got, want)
 	}
 	openMarkGroup(t, app, press('+'), true)
 	answerMarkGroup(t, app, "?b-[0-9]")
-	if got, want := markedNames(app), []string{"web-0", "web-1", "db-0"}; !slices.Equal(got, want) {
+	if got, want := markedRowIDs(app), []string{"web-0", "web-1", "db-0"}; !slices.Equal(got, want) {
 		t.Fatalf("after + ?b-[0-9]: marked %v, want %v", got, want)
 	}
 	sendApp(app, tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl})
-	if got := markedNames(app); len(got) != 4 {
+	if got := markedRowIDs(app); len(got) != 4 {
 		t.Fatalf("after C-a: marked %v, want all four", got)
 	}
 }
@@ -123,16 +123,16 @@ func TestGroupMarkMenu(t *testing.T) {
 	}
 	openMarkGroup(t, app, run("&Select group"), true)
 	answerMarkGroup(t, app, "web-*")
-	if got, want := markedNames(app), []string{"web-0", "web-1"}; !slices.Equal(got, want) {
+	if got, want := markedRowIDs(app), []string{"web-0", "web-1"}; !slices.Equal(got, want) {
 		t.Fatalf("Select group web-*: marked %v, want %v", got, want)
 	}
 	run("&Invert selection")
-	if got, want := markedNames(app), []string{"api-0", "db-0"}; !slices.Equal(got, want) {
+	if got, want := markedRowIDs(app), []string{"api-0", "db-0"}; !slices.Equal(got, want) {
 		t.Fatalf("Invert selection: marked %v, want %v", got, want)
 	}
 	openMarkGroup(t, app, run("&Unselect group"), false)
 	answerMarkGroup(t, app, "*")
-	if got := markedNames(app); len(got) != 0 {
+	if got := markedRowIDs(app); len(got) != 0 {
 		t.Fatalf("Unselect group *: marked %v, want none", got)
 	}
 }
@@ -147,7 +147,7 @@ func TestGroupMarkDialog(t *testing.T) {
 		if app.modalManager.TopName() == markGroupModal {
 			t.Fatal("Esc left the dialog open")
 		}
-		if got := markedNames(app); len(got) != 0 {
+		if got := markedRowIDs(app); len(got) != 0 {
 			t.Fatalf("Esc marked %v", got)
 		}
 	})

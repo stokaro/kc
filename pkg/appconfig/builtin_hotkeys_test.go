@@ -38,7 +38,7 @@ var chordFuncs = []string{"handleCtrlXKey", "handlePinChord"}
 // handles from its sources, in ParseHotkey notation.
 func handledHotkeys(t *testing.T) map[string]string {
 	t.Helper()
-	keys := map[string]string{}
+	keys := make(map[string]string)
 	fset := token.NewFileSet()
 	var files []*ast.File
 	err := filepath.WalkDir(uiSources, func(path string, d fs.DirEntry, err error) error {
@@ -58,7 +58,7 @@ func handledHotkeys(t *testing.T) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	consts := map[string]string{}
+	consts := make(map[string]string)
 	for _, f := range files {
 		for _, decl := range f.Decls {
 			gen, ok := decl.(*ast.GenDecl)
