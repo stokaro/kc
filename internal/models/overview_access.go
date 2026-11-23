@@ -65,15 +65,24 @@ func overviewScopes(ctx context.Context, a overviewAccess, namespace string) map
 	return out
 }
 
+// The reasons a kind is not read, or not read everywhere. The Info preview
+// of a finding matches them to suggest a permission check.
+const (
+	overviewDenied            = "not permitted to list and watch"
+	overviewDeniedAll         = overviewDenied + " in all namespaces"
+	overviewDeniedInNamespace = overviewDeniedAll + " or in namespace "
+	overviewOnlyIn            = "readable only in namespace "
+)
+
 // overviewDeniedReason says why a kind is not read at all.
 func overviewDeniedReason(k overviewKind, namespace string) string {
 	switch {
 	case !k.namespaced:
-		return "not permitted to list and watch"
+		return overviewDenied
 	case namespace == AllNamespaces:
-		return "not permitted to list and watch in all namespaces"
+		return overviewDeniedAll
 	default:
-		return "not permitted to list and watch in all namespaces or in namespace " + namespace
+		return overviewDeniedInNamespace + namespace
 	}
 }
 

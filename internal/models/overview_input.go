@@ -158,7 +158,7 @@ func (in *overviewInput) clusterWideReason(gvrs ...schema.GroupVersionResource) 
 	}
 	for _, gvr := range gvrs {
 		if ns, ok := in.onlyIn[gvr]; ok {
-			return fmt.Sprintf("%s: readable only in namespace %s; this needs every one in all namespaces", kubectlResource(gvr), ns)
+			return fmt.Sprintf("%s: %s%s; this needs every one in all namespaces", kubectlResource(gvr), overviewOnlyIn, ns)
 		}
 	}
 	return ""

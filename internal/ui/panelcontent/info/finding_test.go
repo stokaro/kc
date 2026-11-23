@@ -51,6 +51,13 @@ func TestWidgetFollowsTheSelectedFinding(t *testing.T) {
 			not:  []string{"Nothing matched"},
 		},
 		{
+			name: "partial",
+			finding: &models.FindingPreview{Title: "/workloads unavailable", Scope: "namespace shop", Value: "0 (partial)", State: "ok",
+				Why: "Deployments with fewer available replicas.", Partial: "statefulsets.apps: not permitted to list and watch in all namespaces or in namespace shop"},
+			want: []string{" Value: 0 (partial)  State: ok\n", " Nothing matched. Checked:\n", " Partial, not counted\n   statefulsets.apps: not permitted to list and watch in all"},
+			not:  []string{"Not available"},
+		},
+		{
 			name: "not applicable",
 			finding: &models.FindingPreview{Title: "/certificates expiring", Scope: "cluster", Value: "none", State: "n/a",
 				Why: "Certificates that expire soon.", NotApplicable: "cert-manager is not installed"},

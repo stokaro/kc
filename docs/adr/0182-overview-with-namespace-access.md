@@ -89,6 +89,17 @@ ends in `(partial)`, and F3 names the kinds it left out ("Partial, not
 counted: ..."). It is `n/a` only when none of the kinds can be read, or a
 required one (PDBs) cannot. A target of a kind that becomes unreadable is
 listed as unknown, not recovered, as #219 does for a whole row.
+Such a row is never "not applicable" (ADR 0172) because the readable
+kinds hold no object: the kinds that cannot be read may hold some.
+
+### 5. The Info preview of a finding (ADR 0173)
+
+The preview shows the reasons above under "Not available" and suggests
+the matching check: `kubectl auth can-i list <resource>` for a
+cluster-scoped kind, with `-A` when the kind is needed in all namespaces
+(also for capacity with pods readable in one namespace), and with
+`-n <namespace>` when it is not readable in the namespace either. A
+partial row lists what it leaves out under "Partial, not counted".
 
 ## Deviations from the issue
 

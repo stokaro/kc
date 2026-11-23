@@ -299,3 +299,46 @@ func TestPartialKindStaysUnknown(t *testing.T) {
 		t.Fatalf("target = %v %q, want it unknown, not recovered", tg.severity, tg.value)
 	}
 }
+
+// TestFindingPreviewNamespaceOnlyReasons: the Info preview of a finding
+// that a namespace-only user cannot compute suggests the permission check
+// that matches the missing scope (ADR 0173, ADR 0182).
+func TestFindingPreviewNamespaceOnlyReasons(t *testing.T) {
+	t.Parallel()
+	in := emptyOverviewInput("shop")
+	in.missing[ovNodesGVR] = overviewDenied
+	in.missing[ovPVsGVR] = overviewDenied
+	in.missing[ovJobsGVR] = overviewDeniedInNamespace + "shop"
+	in.missing[ovStatefulSetsGVR] = overviewDeniedInNamespace + "shop"
+	in.pods = []corev1.Pod{{Namespace: "shop", Name: "p", Status: corev1.PodStatus{Phase: corev1.PodPending}}}
+	r := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, nil)
+	f := previewFolder(t, "shop", r)
+	tests := []struct {
+		id, unavailable, check string
+	}{
+		{"health/nodes-not-ready", "nodes: not permitted to list and watch", "kubectl auth can-i list nodes"},
+		{"health/jobs-failed", "jobs.batch: not permitted to list and watch in all namespaces or in namespace shop", "kubectl auth can-i list jobs.batch -n shop"},
+	}
+	for _, tc := range tests {
+		p := previewOf(t, f, tc.id)
+		if p.Unavailable != tc.unavailable || len(p.Verify) == 0 || p.Verify[0] != tc.check {
+			t.Errorf("%s: unavailable %q, verify %q; want %q, first %q", tc.id, p.Unavailable, p.Verify, tc.unavailable, tc.check)
+		}
+	}
+
+	// Nodes readable, pods only in the namespace: the check is for all
+	// namespaces, where capacity needs them.
+	in = emptyOverviewInput("shop")
+	in.nodes = []corev1.Node{*readyNode("n1", "4", "8Gi", 110)}
+	in.onlyIn[ovPodsGVR] = "shop"
+	f = previewFolder(t, "shop", computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, nil))
+	if p := previewOf(t, f, "capacity/cpu"); len(p.Verify) == 0 || p.Verify[0] != "kubectl auth can-i list pods -A" {
+		t.Errorf("capacity/cpu verify = %q, want a check of pods in all namespaces first", p.Verify)
+	}
+
+	// A partial row carries what it leaves out, and is not "nothing to check".
+	wl := previewOf(t, previewFolder(t, "shop", r), "health/workloads-unavailable")
+	if wl.Value != "0 (partial)" || wl.NotApplicable != "" || !strings.HasPrefix(wl.Partial, "statefulsets.apps: not permitted") {
+		t.Errorf("workloads preview value %q, not applicable %q, partial %q", wl.Value, wl.NotApplicable, wl.Partial)
+	}
+}
