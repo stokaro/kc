@@ -521,7 +521,9 @@ func (d *PodFSDirItem) FSEntry() podfs.FileEntry { return d.entry }
 // PodFSFileItem is a file, symbolic link or special file of a container.
 type PodFSFileItem struct {
 	*SimpleItem
-	entry podfs.FileEntry
+	entry  podfs.FileEntry
+	folder *PodContainerFSFolder
+	fsPath string
 }
 
 // FSEntry returns the listing entry the row shows.
@@ -552,7 +554,7 @@ func newPodFSFileItem(fsPath string, cells, rowPath []string, entry podfs.FileEn
 		container, p := folder.session.execTarget(fsPath)
 		item.SetViewCommand(kubectlCommand(folder.Deps, "exec", spec.Pod, "-n", spec.Namespace, "-c", container, "--", "cat", p))
 	}
-	return &PodFSFileItem{SimpleItem: item, entry: entry}
+	return &PodFSFileItem{SimpleItem: item, entry: entry, folder: folder, fsPath: fsPath}
 }
 
 func podFSFileViewContent(folder *PodContainerFSFolder, fsPath string, size int64) ViewContentFunc {

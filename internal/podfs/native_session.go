@@ -241,6 +241,69 @@ func (s *nativeSession) ReadFile(ctx context.Context, path string, limit int64) 
 	}
 }
 
+// ReadFileRange reads up to length bytes of path from offset with dd, on
+// the session's shell: one command, no new exec request.
+func (s *nativeSession) ReadFileRange(ctx context.Context, path string, offset, length int64) (io.ReadCloser, int64, error) {
+	if offset < 0 || offset%RangeAlign != 0 || length <= 0 {
+		return nil, 0, fmt.Errorf("podfs: bad range %d+%d", offset, length)
+	}
+	s.mu.Lock()
+	if err := s.writeCommand(fmt.Sprintf("__kc_cat_range %s %d %d", quoteArg(path), offset, length)); err != nil {
+		s.mu.Unlock()
+		return nil, 0, err
+	}
+	for {
+		line, err := s.nextLine(ctx)
+		if err != nil {
+			s.mu.Unlock()
+			return nil, 0, err
+		}
+		switch {
+		case strings.HasPrefix(line, cmdPrefixError):
+			err := classifyError(parseScriptError(strings.TrimPrefix(line, cmdPrefixError+"|")))
+			s.mu.Unlock()
+			return nil, 0, err
+		case strings.HasPrefix(line, cmdPrefixCatMeta):
+			expected, total, err := parseRangeMeta(strings.TrimPrefix(line, cmdPrefixCatMeta+"|"))
+			if err != nil {
+				s.mu.Unlock()
+				return nil, 0, err
+			}
+			if expected == 0 {
+				err := s.consumeCatDone(ctx)
+				s.mu.Unlock()
+				if err != nil {
+					return nil, 0, err
+				}
+				return io.NopCloser(strings.NewReader("")), total, nil
+			}
+			reader := newChunkReader(s, ctx, expected, func() { s.mu.Unlock() })
+			// dd may emit more than expected when the file grew meanwhile.
+			return readCloser{Reader: io.LimitReader(reader, expected), Closer: reader}, total, nil
+		}
+	}
+}
+
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// parseRangeMeta parses "<bytes>|<file size>".
+func parseRangeMeta(val string) (n, total int64, err error) {
+	a, b, ok := strings.Cut(val, "|")
+	if !ok {
+		return 0, 0, fmt.Errorf("podfs: parse range meta %q", val)
+	}
+	if n, err = strconv.ParseInt(a, 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("podfs: parse range meta: %w", err)
+	}
+	if total, err = strconv.ParseInt(b, 10, 64); err != nil {
+		return 0, 0, fmt.Errorf("podfs: parse range meta: %w", err)
+	}
+	return n, total, nil
+}
+
 func (s *nativeSession) consumeCatDone(ctx context.Context) error {
 	for {
 		line, err := s.nextLine(ctx)
@@ -515,6 +578,31 @@ __kc_cat() {
     dd if="$path" bs=4096 count=$(( (limit + 4095) / 4096 )) 2>/dev/null | base64 | __kc_emit_cat_chunks
   else
     base64 <"$path" | __kc_emit_cat_chunks
+  fi
+  printf '__kc_cat_done__\n'
+}
+
+# __kc_cat_range path offset length: offset is a multiple of 4096.
+__kc_cat_range() {
+  path="$1"
+  off="$2"
+  len="$3"
+  if [ ! -r "$path" ]; then
+    printf '__kc_err__|cat|EACCES %s\n' "$path"
+    printf '__kc_cat_done__\n'
+    return
+  fi
+  total=$(stat -L -c '%s' -- "$path" 2>/dev/null || printf '0')
+  n=$(( total - off ))
+  if [ "$n" -lt 0 ]; then
+    n=0
+  fi
+  if [ "$n" -gt "$len" ]; then
+    n="$len"
+  fi
+  printf '__kc_cat_meta__|%s|%s\n' "$n" "$total"
+  if [ "$n" -gt 0 ]; then
+    dd if="$path" bs=4096 skip=$(( off / 4096 )) count=$(( (n + 4095) / 4096 )) 2>/dev/null | base64 | __kc_emit_cat_chunks
   fi
   printf '__kc_cat_done__\n'
 }

@@ -260,6 +260,7 @@ type App struct {
 	deleteConfirm          *DeleteConfirmModel
 	copyInput              *CopyToLocalModel
 	pendingCopy            *copyRequest
+	closeViewer            func() // releases the open F3 viewer's file; see showViewerModal
 	pendingDelete          *deleteTarget
 	lastCopyDir            string
 	transfer               *transferJob // the open copy dialog, if any
@@ -1976,6 +1977,9 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	if logs, ok := item.(models.LogsProvider); ok {
 		return a.openLogsViewer(item, logs.LogsSpec())
 	}
+	if paged, ok := item.(models.PagedViewable); ok {
+		return a.openFileView(panel, item, paged)
+	}
 	viewable, ok := item.(models.Viewable)
 	if !ok {
 		type vc interface {
@@ -1997,32 +2001,83 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 		}
 		return nil
 	}
-	if filename == "" {
-		filename = title
-	}
-	theme := a.viewerTheme()
-	var onEdit func() tea.Cmd
+	a.showTextViewer(panel, item, title, body, lang, mime, filename)
+	return nil
+}
+
+// viewerEditCallback returns the F4 handler of a viewer of item, or nil
+// when F4 does not edit it.
+func (a *App) viewerEditCallback(panel *Panel, item models.Item) func() tea.Cmd {
 	_, isObject := item.(models.ObjectItem)
 	_, isLocalFile := item.(*models.LocalFileItem)
 	if isObject || isLocalFile {
-		onEdit = func() tea.Cmd { return a.editSelectionForPanel(panel) }
+		return func() tea.Cmd { return a.editSelectionForPanel(panel) }
 	}
-	view := NewTextViewer(title, body, lang, mime, filename, theme, onEdit, nil, func() tea.Cmd {
+	return nil
+}
+
+func (a *App) showTextViewer(panel *Panel, item models.Item, title, body, lang, mime, filename string) {
+	if filename == "" {
+		filename = title
+	}
+	view := NewTextViewer(title, body, lang, mime, filename, a.viewerTheme(), a.viewerEditCallback(panel, item), nil, func() tea.Cmd {
 		a.hideModal()
 		return nil
 	})
 	view.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	view.SetCommand(itemViewCommand(item))
 	view.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(view) })
-	modalTitle := a.modalTitleFromItem(item, title)
-	modal := NewModal(modalTitle, view)
+	a.showViewerModal(a.modalTitleFromItem(item, title), view, nil)
+}
+
+// openFileView opens a file for F3: whole and highlighted when it is
+// small, in pages when it is large.
+func (a *App) openFileView(panel *Panel, item models.Item, paged models.PagedViewable) tea.Cmd {
+	view, err := paged.OpenFileView(a.ctx)
+	if err != nil {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("View failed: %v", err))
+		}
+		return nil
+	}
+	if view.Source == nil {
+		a.showTextViewer(panel, item, view.Title, view.Body, "", "", view.Filename)
+		return nil
+	}
+	var pv *PagedViewer
+	pv = NewPagedViewer(a.ctx, view, a.viewerTheme(), a.viewerEditCallback(panel, item), func() tea.Cmd {
+		pv.Close()
+		a.hideModal()
+		return nil
+	})
+	pv.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
+	pv.SetCommand(itemViewCommand(item))
+	pv.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(pv) })
+	a.showViewerModal(a.modalTitleFromItem(item, view.Title), pv, pv.Close)
+	pv.SetDimensions(a.width, max(1, a.height-1))
+	return pv.Init()
+}
+
+// showViewerModal shows content in the fullscreen viewer modal. onClose,
+// when set, runs when the modal closes or another viewer replaces it.
+func (a *App) showViewerModal(title string, content tea.Model, onClose func()) {
+	if a.closeViewer != nil {
+		a.closeViewer()
+	}
+	a.closeViewer = onClose
+	modal := NewModal(title, content)
 	modal.SetMode(ModalModeFullscreen)
 	modal.SetDimensions(a.width, a.height)
 	modal.SetCloseOnSingleEsc(false)
 	modal.SetCloseOnEscTimeout(true)
+	if onClose != nil {
+		modal.SetOnClose(func() tea.Cmd {
+			onClose()
+			return nil
+		})
+	}
 	a.modalManager.Register("yaml_viewer", modal)
 	a.showModal("yaml_viewer")
-	return nil
 }
 
 func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
@@ -2736,6 +2791,10 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 		return a.showCopyDialog(req)
 	}
 
+	if opener, ok := item.(models.ContentOpener); ok {
+		return a.showCopyDialog(a.streamCopyRequest(item, opener))
+	}
+
 	viewable, ok := item.(models.Viewable)
 	if !ok {
 		type viewContentProvider interface {
@@ -2765,6 +2824,22 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 		filename = "resource.txt"
 	}
 	return a.showCopyDialog(viewContentCopyRequest(a.modalTitleFromItem(item, title), filename, body))
+}
+
+// streamCopyRequest exports a container file as it streams from the
+// filesystem session, whatever its size; the viewer's limits do not apply.
+func (a *App) streamCopyRequest(item models.Item, opener models.ContentOpener) *copyRequest {
+	p := opener.ContentPath()
+	filename := sanitizeFilename(p[strings.LastIndexByte(p, '/')+1:])
+	if filename == "" {
+		filename = "file.txt"
+	}
+	return &copyRequest{
+		subject:  a.modalTitleFromItem(item, p),
+		filename: filename,
+		fetch:    opener.OpenContent,
+		stream:   true,
+	}
 }
 
 // viewContentCopyRequest copies a viewer body as is. The body may be raw
@@ -2845,11 +2920,27 @@ func (a *App) copyToPath(req *copyRequest, dest string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("destination %q is not a directory", dir)
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, copyRequestTimeout)
-	defer cancel()
-	reader, err := req.fetch(ctx)
-	if err != nil {
-		return err
+	var reader io.ReadCloser
+	var ctx context.Context
+	if req.stream {
+		// A stream of any length: the timeout bounds a pause, not the copy.
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(a.ctx)
+		defer cancel()
+		rc, err := req.fetch(ctx)
+		if err != nil {
+			return err
+		}
+		reader = newIdleTimeoutReader(rc, copyRequestTimeout, cancel)
+	} else {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(a.ctx, copyRequestTimeout)
+		defer cancel()
+		rc, err := req.fetch(ctx)
+		if err != nil {
+			return err
+		}
+		reader = rc
 	}
 	defer reader.Close()
 	// The destination changes only after the whole stream was written, and a
@@ -2861,6 +2952,34 @@ type copyRequest struct {
 	subject  string
 	filename string
 	fetch    func(ctx context.Context) (io.ReadCloser, error)
+	// stream marks content of any length: copyRequestTimeout then bounds
+	// a pause in the stream instead of the whole copy.
+	stream bool
+}
+
+// idleTimeoutReader cancels its stream when no Read returns data for
+// idle, so a stalled stream ends instead of hanging.
+type idleTimeoutReader struct {
+	io.ReadCloser
+	timer *time.Timer
+	idle  time.Duration
+}
+
+func newIdleTimeoutReader(rc io.ReadCloser, idle time.Duration, cancel context.CancelFunc) *idleTimeoutReader {
+	return &idleTimeoutReader{ReadCloser: rc, timer: time.AfterFunc(idle, cancel), idle: idle}
+}
+
+func (r *idleTimeoutReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if n > 0 {
+		r.timer.Reset(r.idle)
+	}
+	return n, err
+}
+
+func (r *idleTimeoutReader) Close() error {
+	r.timer.Stop()
+	return r.ReadCloser.Close()
 }
 
 type copyFinishedMsg struct {
