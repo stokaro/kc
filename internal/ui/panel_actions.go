@@ -131,6 +131,9 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 				// A local row copies into a container folder in the other
 				// panel; the handler explains when there is none.
 				caps.CanCopy = true
+				// F4 opens the editor on a local file; on a directory or
+				// a binary file it says why it does not.
+				caps.CanEdit = true
 			}
 			if obj, ok := item.(models.ObjectItem); ok {
 				target := objectAccessTarget(obj)

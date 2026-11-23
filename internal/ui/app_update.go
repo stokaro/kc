@@ -542,6 +542,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			}
 		}
 		return a, nil
+	case localEditFinishedMsg:
+		return a, a.handleLocalEditFinished(msg)
 	case kubectlEditFinishedMsg:
 		if msg.err != nil {
 			if a.toastLogger != nil {
