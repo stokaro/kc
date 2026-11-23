@@ -605,17 +605,11 @@ func (m *Modal) View() tea.View {
 	topLeft := topBorderStyler(tl)
 	topRight := topBorderStyler(tr)
 	available := m.width - lipgloss.Width(topLeft+topRight)
-	lw := lipgloss.Width(label)
-	var top string
-	if lw >= available {
-		gap := strings.Repeat(string(topRune), max(0, available-lw))
-		top = topLeft + label + topBorderStyler(gap) + topRight
-	} else {
-		total := available - lw
-		left := total / 2
-		right := total - left
-		top = topLeft + topBorderStyler(strings.Repeat(string(topRune), left)) + label + topBorderStyler(strings.Repeat(string(topRune), right)) + topRight
+	title := centeredOnRule(label, available, topBorderStyler, string(topRune))
+	if fullscreen {
+		title = m.fullscreenTitle(labelStyle, available, topBorderStyler, string(topRune))
 	}
+	top := topLeft + title + topRight
 
 	// Box content under header (no footer inside the frame)
 	bottomSty := boxStyle.
@@ -812,36 +806,53 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 
 // footerStatus returns the content's footer status and the width it
 // takes, or "" and 0 when the content has none. naturalTotal is the width
-// the keys need.
+// the keys need. A fullscreen modal shows the status on its title line
+// instead (see titleStatus), so its key bar keeps the whole width.
 func (m *Modal) footerStatus(naturalTotal int, numbered bool) (status string, width int) {
-	statusProvider, ok := m.content.(ModalFooterStatus)
-	if !ok {
+	if m.mode == ModalModeFullscreen {
 		return "", 0
 	}
 	if numbered {
 		// Give the status only the room its text needs (up to a third of
 		// the line) so the numbered slots stay readable.
-		width = m.width / 3
+		return m.contentStatus(m.width/3, true)
+	}
+	return m.contentStatus(m.width-naturalTotal-1, false)
+}
+
+// contentStatus asks the content for its status in at most width cells,
+// and returns it with the width it takes. With fit, the status gets only
+// the room its text needs.
+func (m *Modal) contentStatus(width int, fit bool) (status string, w int) {
+	statusProvider, ok := m.content.(ModalFooterStatus)
+	if !ok || width <= 0 {
+		return "", 0
+	}
+	if fit {
 		if probe := statusProvider.FooterStatus(width); probe != "" {
 			width = min(width, lipgloss.Width(strings.TrimRight(ansi.Strip(probe), " "))+1)
 		}
-	} else {
-		width = m.width - naturalTotal - 1
 	}
-	if width > 0 {
-		status = statusProvider.FooterStatus(width)
-	}
+	status = statusProvider.FooterStatus(width)
 	if strings.TrimSpace(ansi.Strip(status)) == "" {
 		return "", 0
 	}
 	return status, width
 }
 
+// titleStatus is the content's status as plain text of at most width
+// cells, for the title line of a fullscreen modal. mc's viewer shows the
+// position on its top line too; the key bar has no room left for it.
+func (m *Modal) titleStatus(width int) string {
+	status, _ := m.contentStatus(width, true)
+	return strings.TrimRight(ansi.Strip(status), " ")
+}
+
 func (m *Modal) renderFooterSlots(keys []functionKey, hotkeys []string, numbered bool) string {
 	natural := make([]int, len(keys))
 	naturalTotal := 0
 	for i, k := range keys {
-		natural[i] = lipgloss.Width(k.Key) + lipgloss.Width(k.Label) + 1
+		natural[i] = footerSlotNatural(k)
 		naturalTotal += natural[i]
 	}
 
@@ -850,11 +861,17 @@ func (m *Modal) renderFooterSlots(keys []functionKey, hotkeys []string, numbered
 	barWidth := m.width
 	var starts []int
 	switch {
-	case statusWidth == 0:
-		starts = functionKeySlotStarts(len(keys), barWidth)
-	case numbered:
-		barWidth = max(0, m.width-statusWidth-1)
-		starts = functionKeySlotStarts(len(keys), barWidth)
+	case statusWidth == 0 || numbered:
+		if statusWidth > 0 {
+			barWidth = max(0, m.width-statusWidth-1)
+		}
+		keep := len(keys)
+		if numbered {
+			keep = 10
+		}
+		var n int
+		n, starts = layoutFooterSlots(natural, keep, barWidth)
+		keys, hotkeys = keys[:n], hotkeys[:n]
 	default:
 		barWidth = min(naturalTotal, m.width)
 		starts = make([]int, len(keys)+1)
@@ -890,6 +907,109 @@ func (m *Modal) renderFooterSlots(keys []functionKey, hotkeys []string, numbered
 		}
 	}
 	return footer + " " + status
+}
+
+// centeredOnRule centers label on a rule of r that is width cells wide. A
+// label as wide as that or wider is returned alone.
+func centeredOnRule(label string, width int, rule func(...string) string, r string) string {
+	lw := lipgloss.Width(label)
+	if lw >= width {
+		return label
+	}
+	left := (width - lw) / 2
+	return rule(strings.Repeat(r, left)) + label + rule(strings.Repeat(r, width-lw-left))
+}
+
+// fullscreenTitle is the title line of a fullscreen modal between its ends,
+// width cells: the title in style centered on a rule of r, and the
+// content's status at the right end, as mc's viewer shows the position
+// there. The title moves left of the center when the status needs the
+// room. A long title gives the status at least half the line and loses
+// its start ("…/path/file"): the end names the file.
+func (m *Modal) fullscreenTitle(style lipgloss.Style, width int, rule func(...string) string, r string) string {
+	pad := style.GetHorizontalPadding()
+	title := m.title
+	tw := lipgloss.Width(title) + pad
+	status := ""
+	// The status keeps a rule cell on each side and one after the title.
+	if text := m.titleStatus(width - min(tw, width/2) - 3 - pad); text != "" {
+		status = style.Render(text)
+	}
+	sw := lipgloss.Width(status)
+	room := width
+	if sw > 0 {
+		room = width - sw - 3
+	}
+	if tw > room && room > pad+1 {
+		title = ansi.TruncateLeft(title, tw-room+1, "…")
+	}
+	label := style.Render(title)
+	lw := lipgloss.Width(label)
+	if lw >= width {
+		return ansi.Truncate(label, width, "")
+	}
+	if status == "" {
+		return centeredOnRule(label, width, rule, r)
+	}
+	// One rule cell after the status, at least one between the label and
+	// the status.
+	left := (width - lw) / 2
+	mid := width - left - lw - sw - 1
+	if mid < 1 {
+		left = max(0, left-(1-mid))
+		mid = width - left - lw - sw - 1
+	}
+	return rule(strings.Repeat(r, left)) + label + rule(strings.Repeat(r, max(0, mid))) + status + rule(r)
+}
+
+// footerSlotNatural is the width a key needs: its key, its label and one
+// cell of space after them.
+func footerSlotNatural(k functionKey) int {
+	return lipgloss.Width(k.Key) + lipgloss.Width(k.Label) + 1
+}
+
+// layoutFooterSlots spreads keys of the given natural widths over width.
+// It returns how many keys show and the n+1 offsets of their slots. When
+// every key fits in an equal slot, the slots are equal, as mc draws its
+// button bar. Otherwise each slot gets its natural width and an equal
+// share of the rest, so no label is cut; when even that does not fit, the
+// keys after the first keep are left out from the end, so a key shows
+// whole or not at all (the help page lists every key). Only a bar too
+// narrow for the first keep keys cuts their labels.
+func layoutFooterSlots(natural []int, keep, width int) (int, []int) {
+	n := len(natural)
+	equal := functionKeySlotStarts(n, width)
+	fits := true
+	for i, w := range natural {
+		if w > equal[i+1]-equal[i] {
+			fits = false
+			break
+		}
+	}
+	if fits {
+		return n, equal
+	}
+	total := 0
+	for _, w := range natural {
+		total += w
+	}
+	for n > keep && total > width {
+		n--
+		total -= natural[n]
+	}
+	if total > width || n == 0 {
+		return n, functionKeySlotStarts(n, width)
+	}
+	spare := width - total
+	starts := make([]int, n+1)
+	for i := range n {
+		extra := spare / n
+		if i < spare%n {
+			extra++
+		}
+		starts[i+1] = starts[i] + natural[i] + extra
+	}
+	return n, starts
 }
 
 // functionKeyNumber returns n for "F<n>" with n in 1..10, or 0.

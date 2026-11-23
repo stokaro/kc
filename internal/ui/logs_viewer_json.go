@@ -218,18 +218,20 @@ func (v *LogsViewer) logViewStatus() string {
 	return text
 }
 
-// logViewHints are the footer hints of the JSON log keys.
+// logViewHints are the footer hints of the JSON log keys, the most used
+// first: a key bar too narrow for all of them leaves out the last ones,
+// which the help page lists. M-c also shows on the Command line.
 func (v *LogsViewer) logViewHints() []FooterHint {
 	toggle := "Raw"
 	if v.log.Mode() == logview.ModeRaw {
 		toggle = "Format"
 	}
 	hints := []FooterHint{
-		{Key: "M-v", Label: toggle, Enabled: true},
 		{Key: "M-g", Label: "Filter", Enabled: v.onFilter != nil},
-		{Key: "M-a", Label: "Copy shown", Enabled: true},
-		{Key: "M-A", Label: "Copy orig", Enabled: true},
-		{Key: "M-c", Label: "Copy cmd", Enabled: v.bar.command != ""},
+		{Key: "M-v", Label: toggle, Enabled: true},
+	}
+	if v.onFields != nil {
+		hints = append(hints, FooterHint{Key: "M-d", Label: "Fields", Enabled: true})
 	}
 	if v.onSources != nil {
 		hints = append(hints, FooterHint{Key: "M-s", Label: "Sources", Enabled: true})
@@ -243,15 +245,15 @@ func (v *LogsViewer) logViewHints() []FooterHint {
 		hints = append(hints, FooterHint{Key: "M-m", Label: label, Enabled: true})
 	}
 	hints = append(hints,
+		FooterHint{Key: "e", Label: "Next issue", Enabled: v.context == nil},
 		FooterHint{Key: "m", Label: "Mark", Enabled: v.context == nil},
 		FooterHint{Key: "u", Label: "Next mark", Enabled: len(v.marks.set) > 0},
-		FooterHint{Key: "e", Label: "Next issue", Enabled: v.context == nil})
+		FooterHint{Key: "M-a", Label: "Copy shown", Enabled: true},
+		FooterHint{Key: "M-A", Label: "Copy orig", Enabled: true})
 	if v.onFields != nil {
-		hints = append(hints,
-			FooterHint{Key: "M-d", Label: "Fields", Enabled: true},
-			FooterHint{Key: "M-z", Label: "Back", Enabled: len(v.history) > 0})
+		hints = append(hints, FooterHint{Key: "M-z", Label: "Back", Enabled: len(v.history) > 0})
 	}
-	return hints
+	return append(hints, FooterHint{Key: "M-c", Label: "Copy cmd", Enabled: v.bar.command != ""})
 }
 
 // logsFilterModalName registers the filter dialog with the modal manager.
