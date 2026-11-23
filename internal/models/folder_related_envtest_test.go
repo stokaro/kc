@@ -13,6 +13,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -31,7 +32,7 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 	ctx := t.Context()
-	const ns = "related"
+	ns := kctesting.UniqueName("related")
 	mustCreate(t, cli, &corev1.Namespace{Name: ns})
 	mustCreate(t, cli, &corev1.ConfigMap{Namespace: ns, Name: "cfg"})
 	rs := &appsv1.ReplicaSet{
@@ -67,7 +68,7 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	deps := Deps{Cl: cl, Ctx: ctx, AppConfig: appconfig.Default()}
 	objPath := []string{"pods", "web-1-abc"}
 
@@ -84,11 +85,11 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 	}
 	waitRows(t, owners, 2)
 	assertRows(t, "owners", owners, map[string][]string{
-		"apps/v1/replicasets/related/web-1": {"/web-1", "replicasets.apps", ns, "controller"},
-		"apps/v1/deployments/related/gone":  {"gone", "deployments.apps", ns, "owner: not found"},
+		"apps/v1/replicasets/" + ns + "/web-1": {"/web-1", "replicasets.apps", ns, "controller"},
+		"apps/v1/deployments/" + ns + "/gone":  {"gone", "deployments.apps", ns, "owner: not found"},
 	})
 	// The controller is the first row after "..".
-	if id, _, _, _ := owners.Lines(ctx, 0, 2)[1].Columns(); id != "apps/v1/replicasets/related/web-1" {
+	if id, _, _, _ := owners.Lines(ctx, 0, 2)[1].Columns(); id != "apps/v1/replicasets/"+ns+"/web-1" {
 		t.Fatalf("first owner = %q, want the controller", id)
 	}
 
@@ -108,10 +109,10 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 	// is not followed.
 	waitRows(t, usedBy, 2)
 	assertRows(t, "used-by", usedBy, map[string][]string{
-		"v1/pods/related/web-1-abc":         {"/web-1-abc", "pods", ns, "volumes[v]"},
-		"apps/v1/replicasets/related/web-1": {"/web-1", "replicasets.apps", ns, "controller of pods/web-1-abc"},
+		"v1/pods/" + ns + "/web-1-abc":         {"/web-1-abc", "pods", ns, "volumes[v]"},
+		"apps/v1/replicasets/" + ns + "/web-1": {"/web-1", "replicasets.apps", ns, "controller of pods/web-1-abc"},
 	})
-	if _, _, ok := usedBy.Find(ctx, "v1/pods/related/unrelated"); ok {
+	if _, _, ok := usedBy.Find(ctx, "v1/pods/"+ns+"/unrelated"); ok {
 		t.Fatalf("used-by lists a pod that does not use the configmap")
 	}
 
@@ -119,7 +120,7 @@ func TestRelatedFoldersEnvtest(t *testing.T) {
 	mustCreate(t, cli, usingPod("late"))
 	waitRows(t, usedBy, 3)
 	assertRows(t, "used-by after create", usedBy, map[string][]string{
-		"v1/pods/related/late": {"/late", "pods", ns, "volumes[v]"},
+		"v1/pods/" + ns + "/late": {"/late", "pods", ns, "volumes[v]"},
 	})
 }
 

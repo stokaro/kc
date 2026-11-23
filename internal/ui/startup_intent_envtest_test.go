@@ -14,6 +14,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 	"github.com/stokaro/kc/pkg/kubeconfig"
 )
@@ -25,7 +26,7 @@ func setupAppWithCluster(t *testing.T) (*App, *kccluster.Cluster) {
 		t.Fatalf("cluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	t.Cleanup(cl.Stop)
 
 	app := NewApp()
@@ -93,7 +94,7 @@ func waitForNamespaceReady(t *testing.T, app *App, ns string) {
 
 func TestStartupIntentGetMultiSelectEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "intent-multi"
+	ns := kctesting.UniqueName("intent-multi")
 	t.Cleanup(createNamespace(t, cl, ns))
 	t.Cleanup(createPod(t, cl, ns, "pod-a", nil))
 	t.Cleanup(createPod(t, cl, ns, "pod-b", nil))
@@ -131,7 +132,7 @@ func TestStartupIntentGetMultiSelectEnvtest(t *testing.T) {
 
 func TestStartupIntentGetOutputYAMLEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "intent-yaml"
+	ns := kctesting.UniqueName("intent-yaml")
 	podName := "pod-yaml"
 	t.Cleanup(createNamespace(t, cl, ns))
 	t.Cleanup(createPod(t, cl, ns, podName, nil))
@@ -176,7 +177,7 @@ func TestStartupIntentGetOutputYAMLEnvtest(t *testing.T) {
 // knows whether pods is empty and shows its row (#84).
 func TestStartupIntentGetFreshRootEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "intent-fresh"
+	ns := kctesting.UniqueName("intent-fresh")
 	podName := "pod-fresh"
 	t.Cleanup(createNamespace(t, cl, ns))
 	t.Cleanup(createPod(t, cl, ns, podName, nil))
@@ -213,7 +214,7 @@ func TestStartupIntentGetFreshRootEnvtest(t *testing.T) {
 // kc get still opens its list.
 func TestStartupIntentGetEmptyTypeEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "intent-empty"
+	ns := kctesting.UniqueName("intent-empty")
 	t.Cleanup(createNamespace(t, cl, ns))
 	waitForNamespaceReady(t, app, ns)
 
@@ -234,7 +235,7 @@ func TestStartupIntentGetEmptyTypeEnvtest(t *testing.T) {
 
 func TestStartupIntentLogsEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "intent-logs"
+	ns := kctesting.UniqueName("intent-logs")
 	podName := "pod-logs"
 	container := "main"
 	t.Cleanup(createNamespace(t, cl, ns))
@@ -273,7 +274,7 @@ func TestStartupIntentLogsEnvtest(t *testing.T) {
 // left panel lists pods across all namespaces and keeps that scope.
 func TestStartupIntentGetAllNamespacesEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "intent-all"
+	ns := kctesting.UniqueName("intent-all")
 	t.Cleanup(createNamespace(t, cl, ns))
 	t.Cleanup(createPod(t, cl, ns, "pod-all", nil))
 

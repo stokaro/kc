@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 )
 
@@ -48,7 +49,7 @@ func TestReaderListPodsEnvtest(t *testing.T) {
 		t.Fatalf("new reader: %v", err)
 	}
 
-	ns := &corev1.Namespace{Name: "tablecache-list"}
+	ns := &corev1.Namespace{Name: kctesting.UniqueName("tablecache-list")}
 	if err := cl.Create(ctx, ns); err != nil && !errors.IsAlreadyExists(err) {
 		t.Fatalf("create namespace: %v", err)
 	}
@@ -194,7 +195,7 @@ func TestReaderListCustomResourceColumnsEnvtest(t *testing.T) {
 		t.Fatalf("build client: %v", err)
 	}
 
-	ns := &corev1.Namespace{Name: "tablecache-crd"}
+	ns := &corev1.Namespace{Name: kctesting.UniqueName("tablecache-crd")}
 	if err := cl.Create(ctx, ns); err != nil && !errors.IsAlreadyExists(err) {
 		t.Fatalf("create namespace: %v", err)
 	}
@@ -313,7 +314,7 @@ func TestReaderWatchPodsEnvtest(t *testing.T) {
 		t.Fatalf("new reader: %v", err)
 	}
 
-	ns := &corev1.Namespace{Name: "tablecache-watch"}
+	ns := &corev1.Namespace{Name: kctesting.UniqueName("tablecache-watch")}
 	if err := cl.Create(ctx, ns); err != nil && !errors.IsAlreadyExists(err) {
 		t.Fatalf("create namespace: %v", err)
 	}

@@ -14,6 +14,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/helm/helmtest"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -23,7 +24,7 @@ func startTestCluster(t *testing.T, cfg *rest.Config) *kccluster.Cluster {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	go func() { _ = cl.Start(t.Context()) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	t.Cleanup(cl.Stop)
 	return cl
 }
@@ -65,7 +66,7 @@ func TestHelmFoldersEnvtest(t *testing.T) {
 	ctx := t.Context()
 	cl := startTestCluster(t, testCfg)
 	cli := cl.GetClient()
-	const ns = "helm-releases"
+	ns := kctesting.UniqueName("helm-releases")
 	createNamespace(t, cl, ns)
 
 	web := func(rev int, status string) helmtest.Release {
@@ -149,7 +150,8 @@ func TestHelmFoldersPartialAccessEnvtest(t *testing.T) {
 		t.Skip("envtest not available")
 	}
 	admin := startTestCluster(t, testCfg)
-	const ns = "helm-partial"
+	ns := kctesting.UniqueName("helm-partial")
+	nsUser := kctesting.UniqueName("helm-ns-user")
 	createNamespace(t, admin, ns)
 	createHelmSecret(t, admin.GetClient(), helmFixture(ns, "web", 1, "deployed"), false)
 
@@ -166,7 +168,7 @@ func TestHelmFoldersPartialAccessEnvtest(t *testing.T) {
 	binding := &rbacv1.RoleBinding{
 		Namespace: ns, Name: "secret-reader",
 		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: role.Name},
-		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: "helm-ns-user"}},
+		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: nsUser}},
 	}
 	if err := admin.GetClient().Create(ctx, binding); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatal(err)
@@ -177,8 +179,8 @@ func TestHelmFoldersPartialAccessEnvtest(t *testing.T) {
 		user string
 		want string
 	}{
-		{name: "Secrets only in the namespace", user: "helm-ns-user", want: "in " + ns + " but not in all namespaces"},
-		{name: "no Secrets at all", user: "helm-no-secrets", want: "listing Secrets is forbidden"},
+		{name: "Secrets only in the namespace", user: nsUser, want: "in " + ns + " but not in all namespaces"},
+		{name: "no Secrets at all", user: kctesting.UniqueName("helm-no-secrets"), want: "listing Secrets is forbidden"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

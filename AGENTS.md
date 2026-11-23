@@ -57,7 +57,8 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 - Envtest suites need control-plane binaries: `export KUBEBUILDER_ASSETS="$(setup-envtest use -p path 1.37.x)"`.
 - Run everything as CI does (an envtest startup failure fails the run): `KC_REQUIRE_ENVTEST=1 go test ./...`
 - Run only the tests that do not need envtest: `KC_SKIP_ENVTEST=1 go test ./...`
-- With neither variable, envtest tests skip when the control plane cannot start. New envtest tests start it through `internal/testing/kcenvtest` (`kcenvtest.Main` in `TestMain` plus `kcenvtest.Require`, or `kcenvtest.Start` per test), never by calling `envtest.Environment.Start` directly. See `docs/adr/0060-require-envtest-in-ci.md`.
+- With neither variable, envtest tests skip when the control plane cannot start. New envtest tests start it through `internal/testing/kcenvtest` (`kcenvtest.Main` in `TestMain` plus `kcenvtest.Require`, or `kcenvtest.Start` per test), never by calling `envtest.Environment.Start` directly (`kcenvtest.StartEnv` takes a configured `envtest.Environment`, for example with CRDs). See `docs/adr/0060-require-envtest-in-ci.md`.
+- Prefer the package control plane from `kcenvtest.Main`; start one per test only when the test changes cluster-wide state (CRDs, served kinds) that other tests must not see. On a shared control plane, name namespaces, impersonated users and other cluster-scoped objects with `kctesting.UniqueName`, so tests pass in parallel and with `-count=3`. Start clusters with `kctesting.RunInBackground(t, "cluster", cl.Start)` rather than `go cl.Start(ctx)`.
 - With coverage: `go test ./... -cover`
 - Static checks: `go vet ./...`
 - Lint: `make lint` (golangci-lint and nolintguard, pinned in the `go.mod` tool block). It checks the whole tree and must report 0 issues. `make lint-fix` applies automatic fixes. Config: `.golangci.yml`; decisions: `docs/adr/0118-lint-setup.md`.

@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	models "github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // TestInfoTopPodOpensInTheOtherPanelEnvtest opens a top pod of the Info
@@ -18,7 +19,7 @@ import (
 // of the list that the mode hides.
 func TestInfoTopPodOpensInTheOtherPanelEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	const ns = "info-open"
+	ns := kctesting.UniqueName("info-open")
 	t.Cleanup(createNamespace(t, cl, ns))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()

@@ -52,7 +52,7 @@ func TestOverviewCertificatesOnARealCache(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		go func() { _ = cl.Start(ctx) }()
+		kctesting.RunInBackground(t, "cluster", cl.Start)
 		e := newOverviewEngine(Deps{Cl: cl, Ctx: ctx}, AllNamespaces)
 		t.Cleanup(e.close)
 		return e

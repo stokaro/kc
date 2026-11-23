@@ -11,6 +11,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // WatchObject reports the instances under one name from the shared
@@ -28,7 +29,7 @@ func TestWatchObjectEnvtest(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 	ctx := t.Context()
-	const ns = "objectwatch"
+	ns := kctesting.UniqueName("objectwatch")
 	mustCreate(t, cli, &corev1.Namespace{Name: ns})
 	first := &corev1.ConfigMap{Namespace: ns, Name: "pinned"}
 	mustCreate(t, cli, first)
@@ -38,7 +39,7 @@ func TestWatchObjectEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	var mu sync.Mutex
 	var got []ObjectSighting

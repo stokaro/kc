@@ -20,15 +20,15 @@ import (
 func TestStartInformerForResourceEmitsSyncedAndWatches(t *testing.T) {
 	t.Parallel()
 
-	cfg := kcenvtest.Start(t)
-
-	cl, err := kccluster.New(cfg)
+	kcenvtest.Require(t, testCfg)
+	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
 
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
 
 	nsName := fmt.Sprintf("watch-%d", time.Now().UnixNano())
 	ns := &corev1.Namespace{Name: nsName}

@@ -21,6 +21,7 @@ import (
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/logmux"
 	"github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // recordingOpener serves one line per stream and then holds the stream open
@@ -188,7 +189,7 @@ func TestWorkloadLogsFollowsPodsThroughTheSharedCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	op := &recordingOpener{}
 	spec := models.WorkloadLogsSpec{
@@ -259,7 +260,7 @@ func TestWorkloadLogsSinglePodAndNoMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	op := &recordingOpener{}
 	podSpec := models.WorkloadLogsSpec{Namespace: ns, Pod: "web-1", Follow: true, TailLines: 20}

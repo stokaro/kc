@@ -12,6 +12,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // TestOverviewInfoWorkloadOnARealCache reads ReplicaSets as metadata
@@ -27,7 +28,7 @@ func TestOverviewInfoWorkloadOnARealCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const ns = "overview-workload"
+	ns := kctesting.UniqueName("overview-workload")
 	mustCreate(t, cli, &corev1.Namespace{Name: ns})
 	t.Cleanup(func() { _ = cli.Delete(ctx, &corev1.Namespace{Name: ns}) })
 
@@ -60,7 +61,7 @@ func TestOverviewInfoWorkloadOnARealCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	info := NewOverviewInfo(Deps{Cl: cl, Ctx: ctx}, ns)
 	defer info.Close()
 

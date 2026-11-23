@@ -151,14 +151,15 @@ func targetNames(f overviewFinding) []string {
 }
 
 func TestOverviewNamespaceOnlyUser(t *testing.T) {
-	const user, ns = "overview-user", "ov-team"
+	user, ns := kctesting.UniqueName("overview-user"), kctesting.UniqueName("ov-team")
 	e := newNamespaceUserEnv(t, user, ns)
 	grantOverviewReads(t, e.admin, ns, user)
-	createNamespace(t, e.admin, "ov-other") // not granted
+	other := kctesting.UniqueName("ov-other")
+	createNamespace(t, e.admin, other) // not granted
 	createPod(t, e.admin, ns, "web-1")
-	createPod(t, e.admin, "ov-other", "hidden-1")
+	createPod(t, e.admin, other, "hidden-1")
 	createWarningEvent(t, e.admin, ns, "web-1.backoff", "web-1")
-	createWarningEvent(t, e.admin, "ov-other", "hidden-1.backoff", "hidden-1")
+	createWarningEvent(t, e.admin, other, "hidden-1.backoff", "hidden-1")
 
 	eng := newOverviewEngine(e.deps, ns)
 	t.Cleanup(eng.close)
@@ -215,8 +216,8 @@ func TestOverviewNamespaceOnlyUser(t *testing.T) {
 }
 
 func TestOverviewNamespaceOnlyUserAllNamespaces(t *testing.T) {
-	const user = "overview-all-user"
-	e := newNamespaceUserEnv(t, user, "ov-all-a")
+	user := kctesting.UniqueName("overview-all-user")
+	e := newNamespaceUserEnv(t, user, kctesting.UniqueName("ov-all-a"))
 	eng := newOverviewEngine(e.deps, AllNamespaces)
 	t.Cleanup(eng.close)
 	r := waitOverview(t, eng, "computed", func(*overviewReport) bool { return true })
@@ -230,7 +231,7 @@ func TestOverviewNamespaceOnlyUserAllNamespaces(t *testing.T) {
 }
 
 func TestOverviewMixedAccess(t *testing.T) {
-	const user, ns = "overview-mixed-user", "ov-mixed"
+	user, ns := kctesting.UniqueName("overview-mixed-user"), kctesting.UniqueName("ov-mixed")
 	e := newNamespaceUserEnv(t, user, ns)
 	grantNodeReads(t, e.admin, user)
 	createPod(t, e.admin, ns, "api-1")

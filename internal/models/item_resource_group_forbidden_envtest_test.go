@@ -7,6 +7,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
@@ -20,10 +21,10 @@ func TestResourceGroupItemLimitedAccessBlocksPeeks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin cluster: %v", err)
 	}
-	go adminCl.Start(ctx)
+	kctesting.RunInBackground(t, "adminCl", adminCl.Start)
 	t.Cleanup(adminCl.Stop)
 
-	const ns = "limited-access-forbidden"
+	ns := kctesting.UniqueName("limited-access-forbidden")
 	createNamespace(t, adminCl, ns)
 	createConfigMap(t, adminCl, ns, "cm-visible")
 
@@ -34,7 +35,7 @@ func TestResourceGroupItemLimitedAccessBlocksPeeks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("limited cluster: %v", err)
 	}
-	go limitedCl.Start(ctx)
+	kctesting.RunInBackground(t, "limitedCl", limitedCl.Start)
 	t.Cleanup(limitedCl.Stop)
 
 	deps := Deps{

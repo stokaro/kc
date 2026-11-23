@@ -12,6 +12,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -33,7 +34,7 @@ func TestTimelineEnvtest(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 	ctx := t.Context()
-	const ns = "timeline"
+	ns := kctesting.UniqueName("timeline")
 	mustCreate(t, cli, &corev1.Namespace{Name: ns})
 	labels := map[string]string{"app": "web"}
 	newDeployment := func(image string) *appsv1.Deployment {
@@ -52,7 +53,7 @@ func TestTimelineEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	deps := Deps{Cl: cl, Ctx: ctx, AppConfig: appconfig.Default()}
 
 	ctor, ok := ChildFor(relDeploymentsGVR)
@@ -126,7 +127,7 @@ func TestTimelineEnvtest(t *testing.T) {
 	}
 	waitFor("rev/2", "spec", "image app busybox:1 -> busybox:2")
 	diff := view("rev/2")
-	for _, want := range []string{"gvr apps/v1/deployments, namespace timeline, name web@", "uid " + string(dep.UID), "-      - image: busybox:1", "+      - image: busybox:2"} {
+	for _, want := range []string{"gvr apps/v1/deployments, namespace " + ns + ", name web@", "uid " + string(dep.UID), "-      - image: busybox:1", "+      - image: busybox:2"} {
 		if !strings.Contains(diff, want) {
 			t.Fatalf("diff lacks %q:\n%s", want, diff)
 		}

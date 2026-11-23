@@ -11,6 +11,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -28,7 +29,7 @@ func TestCustomColumnsFromSharedCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	const ns = "custom-columns"
+	ns := kctesting.UniqueName("custom-columns")
 	mustCreate(t, cli, &corev1.Namespace{Name: ns})
 	mustCreate(t, cli, &corev1.ConfigMap{Name: "cm1", Namespace: ns, Data: map[string]string{"color": "blue"}})
 	mustCreate(t, cli, &corev1.ConfigMap{Name: "cm2", Namespace: ns})
@@ -37,7 +38,7 @@ func TestCustomColumnsFromSharedCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	cfg := appconfig.Default()
 	cfg.Columns = map[string][]appconfig.CustomColumn{

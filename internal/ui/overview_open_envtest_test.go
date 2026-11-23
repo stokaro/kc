@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // leftOverviewScope returns the namespace scope of the overview the left
@@ -27,7 +28,7 @@ func leftOverviewScope(t *testing.T, app *App) string {
 // kc -A overview: the left panel opens /overview in that scope.
 func TestStartupIntentOverviewEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "intent-overview"
+	ns := kctesting.UniqueName("intent-overview")
 	t.Cleanup(createNamespace(t, cl, ns))
 	waitForNamespaceReady(t, app, ns)
 	app.goToNamespace("default")
@@ -52,7 +53,7 @@ func TestStartupIntentOverviewEnvtest(t *testing.T) {
 // pod list: the panel opens /overview for that namespace.
 func TestOverviewKeyOpensTheListNamespaceEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "overview-key"
+	ns := kctesting.UniqueName("overview-key")
 	t.Cleanup(createNamespace(t, cl, ns))
 	waitForNamespaceReady(t, app, ns)
 	app.goToNamespace(ns)

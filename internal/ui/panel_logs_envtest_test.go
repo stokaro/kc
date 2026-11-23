@@ -12,6 +12,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // TestPanelAllContainersStream opens the Logs panel's merged stream of one
@@ -36,7 +37,7 @@ func TestPanelAllContainersStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	spec := models.LogsSpec{Namespace: ns, Pod: "web-1", Container: "app", Follow: true, TailLines: 20, Timestamps: true}
 	pod, err := panelLogsPod(ctx, cl, spec)

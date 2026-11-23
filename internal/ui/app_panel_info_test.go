@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	models "github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 func TestInfoModeIsAvailable(t *testing.T) {
@@ -40,7 +41,7 @@ func TestInfoModeIsAvailable(t *testing.T) {
 // the right panel shows the left panel's namespace scope.
 func TestInfoTargetFollowsTheOtherPanelEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "info-target"
+	ns := kctesting.UniqueName("info-target")
 	t.Cleanup(createNamespace(t, cl, ns))
 	waitForNamespaceReady(t, app, ns)
 	app.goToNamespace(ns)
@@ -61,7 +62,7 @@ func TestInfoTargetFollowsTheOtherPanelEnvtest(t *testing.T) {
 // the right panel narrows to that workload by its full GVR.
 func TestInfoTargetNamesTheWorkloadUnderTheCursorEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	ns := "info-workload"
+	ns := kctesting.UniqueName("info-workload")
 	t.Cleanup(createNamespace(t, cl, ns))
 	labels := map[string]string{"app": "web"}
 	dep := &appsv1.Deployment{

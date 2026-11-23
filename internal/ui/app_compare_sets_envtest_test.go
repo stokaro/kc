@@ -20,6 +20,7 @@ import (
 	"github.com/stokaro/kc/internal/manifestdiff"
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/setdiff"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
@@ -70,8 +71,9 @@ func createConfigMaps(t *testing.T, cfg *rest.Config, ns string, data map[string
 func TestCompareListsAcrossContexts(t *testing.T) {
 	kcenvtest.Require(t, testCfg)
 	prodCfg := kcenvtest.Start(t)
-	createConfigMaps(t, testCfg, "cmp-shop", map[string]string{"same": "1", "differs": "1", "staging-only": "1"})
-	createConfigMaps(t, prodCfg, "cmp-shop", map[string]string{"same": "1", "differs": "2", "prod-only": "1"})
+	shop := kctesting.UniqueName("cmp-shop")
+	createConfigMaps(t, testCfg, shop, map[string]string{"same": "1", "differs": "1", "staging-only": "1"})
+	createConfigMaps(t, prodCfg, shop, map[string]string{"same": "1", "differs": "2", "prod-only": "1"})
 	path := twoContextKubeconfig(t, map[string]*rest.Config{"staging": testCfg, "prod": prodCfg})
 
 	pool := kccluster.NewPool(time.Minute, 0)
@@ -86,9 +88,9 @@ func TestCompareListsAcrossContexts(t *testing.T) {
 	deps := func(cl *kccluster.Cluster, key kccluster.Key) models.Deps {
 		return models.Deps{Cl: cl, Ctx: t.Context(), CtxName: key.ContextName, AppConfig: appconfig.Default(), ClusterKey: key}
 	}
-	left := setSide{set: setdiff.Set{Context: "staging", GVR: configMapsGVR, Namespace: "cmp-shop"}, deps: deps(lease.Cluster(), stagingKey)}
+	left := setSide{set: setdiff.Set{Context: "staging", GVR: configMapsGVR, Namespace: shop}, deps: deps(lease.Cluster(), stagingKey)}
 	prodKey := kccluster.Key{KubeconfigPath: path, ContextName: "prod"}
-	right := setSide{set: setdiff.Set{Context: "prod", GVR: configMapsGVR, Namespace: "cmp-shop"}, deps: deps(nil, prodKey)}
+	right := setSide{set: setdiff.Set{Context: "prod", GVR: configMapsGVR, Namespace: shop}, deps: deps(nil, prodKey)}
 	var held atomic.Int32
 	acquire := func(ctx context.Context) (*kccluster.Cluster, func(), error) {
 		l, err := pool.Acquire(ctx, prodKey, nil)

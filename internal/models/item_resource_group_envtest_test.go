@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
@@ -20,10 +21,10 @@ func TestResourceGroupItemUpdatesCountOnInformerEvents(t *testing.T) {
 		t.Fatalf("cluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	t.Cleanup(cl.Stop)
 
-	ns := "rg-item"
+	ns := kctesting.UniqueName("rg-item")
 	createNamespace(t, cl, ns)
 	createConfigMap(t, cl, ns, "cm-1")
 

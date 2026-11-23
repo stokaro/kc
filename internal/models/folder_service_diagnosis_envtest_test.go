@@ -11,6 +11,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -30,7 +31,7 @@ func TestServiceDiagnosisEnvtest(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 	ctx := t.Context()
-	const ns = "diagnosis"
+	ns := kctesting.UniqueName("diagnosis")
 	mustCreate(t, cli, &corev1.Namespace{Name: ns})
 	mustCreate(t, cli, &corev1.Service{Namespace: ns, Name: "web", Spec: corev1.ServiceSpec{
 		Selector: map[string]string{"app": "web"},
@@ -45,7 +46,7 @@ func TestServiceDiagnosisEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	deps := Deps{Cl: cl, Ctx: ctx, AppConfig: appconfig.Default()}
 
 	ctor, ok := ChildFor(serviceGVR)

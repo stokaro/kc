@@ -25,16 +25,13 @@ func TestInfoWithNamespaceOnlyAccess(t *testing.T) {
 	if testCfg == nil {
 		t.Skip("envtest not available")
 	}
-	const (
-		ns   = "info-team-a"
-		user = "info-team-user"
-	)
+	ns, user := kctesting.UniqueName("info-team-a"), kctesting.UniqueName("info-team-user")
 	ctx := t.Context()
 	admin, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("admin cluster: %v", err)
 	}
-	go func() { _ = admin.Start(ctx) }()
+	kctesting.RunInBackground(t, "admin", admin.Start)
 	t.Cleanup(admin.Stop)
 	adminCreate(t, admin, &corev1.Namespace{Name: ns})
 	adminCreate(t, admin, &rbacv1.Role{

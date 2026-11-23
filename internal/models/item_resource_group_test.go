@@ -86,8 +86,7 @@ func TestResourceGroupItemPeeksStopAfterForbidden(t *testing.T) {
 	cfg := appconfig.Default()
 	cfg.Resources.PeekInterval.Duration = time.Second
 
-	testCfg := kcenvtest.Start(t)
-
+	kcenvtest.Require(t, testCfg)
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)

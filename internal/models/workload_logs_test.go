@@ -11,6 +11,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -141,7 +142,7 @@ func TestPodContainersFolderHasAllContainersLogsRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	deps := Deps{Cl: cl, Ctx: ctx, AppConfig: appconfig.Default()}
 
 	folder := NewPodContainersFolder(deps, []string{"namespaces", ns.Name, "pods", "api-1"}, ns.Name, "api-1")

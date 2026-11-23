@@ -28,7 +28,7 @@ func TestRereadResourceTypesRunsDiscoveryAgain(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	ns := &corev1.Namespace{Name: "reread-ns"}
 	mustCreate(t, cl.GetClient(), ns)

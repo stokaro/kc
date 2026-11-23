@@ -20,7 +20,9 @@ import (
 )
 
 func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
-	cfg := kcenvtest.Start(t)
+	kcenvtest.Require(t, testCfg)
+	cfg := testCfg
+	stem := kctesting.UniqueName("order")
 
 	// Seed three namespaces with slight delays to vary creation times
 	scheme := runtime.NewScheme()
@@ -30,7 +32,8 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	for _, n := range []string{"a", "b", "c"} {
+	nsA, nsB, nsC := stem+"-a", stem+"-b", stem+"-c"
+	for _, n := range []string{nsA, nsB, nsC} {
 		if err := cli.Create(ctx, &corev1.Namespace{Name: n}); err != nil {
 			t.Fatalf("create ns %s: %v", n, err)
 		}
@@ -42,7 +45,8 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
 
 	// Deps with objects order toggles
 	makeDeps := func(order string) models.Deps {
@@ -69,7 +73,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	rows := f1.Lines(ctx, 0, count)
 	got := normFirstCells(rows)
 	// Assert relative order of our namespaces regardless of other system entries
-	idxA, idxB, idxC := indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
+	idxA, idxB, idxC := indexOf(got, nsA), indexOf(got, nsB), indexOf(got, nsC)
 	if idxA < 0 || idxB < 0 || idxC < 0 || idxA >= idxB || idxB >= idxC {
 		t.Fatalf("name asc order unexpected (a<b<c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
@@ -102,7 +106,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	count = f2.Len(ctx)
 	rows = f2.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
-	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
+	idxA, idxB, idxC = indexOf(got, nsA), indexOf(got, nsB), indexOf(got, nsC)
 	if idxA < 0 || idxB < 0 || idxC < 0 || idxC >= idxB || idxB >= idxA {
 		t.Fatalf("name desc order unexpected (c>b>a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
@@ -113,7 +117,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	count = f3.Len(ctx)
 	rows = f3.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
-	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
+	idxA, idxB, idxC = indexOf(got, nsA), indexOf(got, nsB), indexOf(got, nsC)
 	if idxA < 0 || idxB < 0 || idxC < 0 || idxA >= idxB || idxB >= idxC {
 		t.Fatalf("creation asc order unexpected (a<b<c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}
@@ -124,7 +128,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	count = f4.Len(ctx)
 	rows = f4.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
-	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
+	idxA, idxB, idxC = indexOf(got, nsA), indexOf(got, nsB), indexOf(got, nsC)
 	if idxA < 0 || idxB < 0 || idxC < 0 || idxC >= idxB || idxB >= idxA {
 		t.Fatalf("creation desc order unexpected (c>b>a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
 	}

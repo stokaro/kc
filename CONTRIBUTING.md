@@ -25,7 +25,7 @@ CI runs `make lint` on every pull request. The lint tools are pinned in the `go.
 - Imports for Bubble Tea/Bubbles must use the v2 paths (e.g. `charm.land/bubbletea/v2`).
 - Read `AGENTS.md` for logging rules, naming conventions, module boundaries, and UI guidelines. Contributions should follow those instructions unless you propose an intentional refactor.
 - The UI is driven by controller-runtime caches; avoid touching live clusters in tests. Envtests cover navigation and resource hierarchy behavior.
-- Always add or update tests when you change non-trivial logic. The envtest suites live under `internal/cluster`, `internal/models`, `internal/navigation`, `internal/tablecache` and `internal/ui`.
+- Always add or update tests when you change non-trivial logic. The envtest suites live under `internal/cluster`, `internal/explain`, `internal/models`, `internal/navigation`, `internal/tablecache` and `internal/ui`.
 
 ## Opening Changes
 

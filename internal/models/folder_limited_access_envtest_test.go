@@ -25,11 +25,11 @@ func TestLimitedUserSeesAllowedResourcesOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin cluster: %v", err)
 	}
-	go adminCl.Start(ctx)
+	kctesting.RunInBackground(t, "adminCl", adminCl.Start)
 	t.Cleanup(adminCl.Stop)
 
+	ns := kctesting.UniqueName("limited-access")
 	const (
-		ns   = "limited-access"
 		user = "limited-user"
 		pod  = "pod-visible"
 		sec  = "secret-hidden"
@@ -47,7 +47,7 @@ func TestLimitedUserSeesAllowedResourcesOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("limited cluster: %v", err)
 	}
-	go limitedCl.Start(ctx)
+	kctesting.RunInBackground(t, "limitedCl", limitedCl.Start)
 	t.Cleanup(limitedCl.Stop)
 
 	deps := Deps{

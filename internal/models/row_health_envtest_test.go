@@ -21,14 +21,15 @@ import (
 // running, ready pod is neither kept nor colored.
 func TestPodRowHealthFromServerTable(t *testing.T) {
 	t.Parallel()
-	cfg := kcenvtest.Start(t)
-	cl, err := kccluster.New(cfg)
+	kcenvtest.Require(t, testCfg)
+	cl, err := kccluster.New(testCfg)
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
-	ns := &corev1.Namespace{Name: "row-health"}
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
+	ns := &corev1.Namespace{Name: kctesting.UniqueName("row-health")}
 	mustCreate(t, cl.GetClient(), ns)
 
 	waiting := func(phase corev1.PodPhase, reason string) corev1.PodStatus {

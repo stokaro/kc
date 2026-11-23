@@ -3,7 +3,6 @@ package cluster
 import (
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +14,8 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
+
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
 )
 
 // writeKubeconfig writes cfg as a kubeconfig with one context named "envtest".
@@ -39,15 +39,7 @@ func writeKubeconfig(t *testing.T, cfg *rest.Config) string {
 func TestPoolHeldNodeScopeStaysLivePastTTL(t *testing.T) {
 	t.Parallel()
 
-	env := &envtest.Environment{}
-	cfg, err := env.Start()
-	if err != nil {
-		if strings.Contains(err.Error(), "operation not permitted") || strings.Contains(err.Error(), "no such file or directory") {
-			t.Skipf("envtest unavailable: %v", err)
-		}
-		t.Fatalf("start envtest: %v", err)
-	}
-	t.Cleanup(func() { _ = env.Stop() })
+	cfg := kcenvtest.Start(t)
 
 	admin, err := crclient.New(cfg, crclient.Options{})
 	if err != nil {

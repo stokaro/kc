@@ -20,7 +20,9 @@ import (
 )
 
 func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
-	cfg := kcenvtest.Start(t)
+	kcenvtest.Require(t, testCfg)
+	cfg := testCfg
+	ns := kctesting.UniqueName("ns-objtest")
 
 	// Seed namespace and three configmaps with staggered creation times
 	scheme := runtime.NewScheme()
@@ -30,11 +32,11 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{Name: "ns-objtest"}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: ns}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 	for _, n := range []string{"a", "b", "c"} {
-		if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm-" + n, Namespace: "ns-objtest"}); err != nil {
+		if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm-" + n, Namespace: ns}); err != nil {
 			t.Fatalf("create cm %s: %v", n, err)
 		}
 		time.Sleep(1100 * time.Millisecond) // kube timestamps are second precision; ensure unique creation times
@@ -45,7 +47,8 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
 
 	// Deps with objects order
 	makeDeps := func(order string) models.Deps {
@@ -66,7 +69,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 
 	// Asc by name
-	f1 := models.NewNamespacedObjectsFolder(makeDeps("name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"}, nil)
+	f1 := models.NewNamespacedObjectsFolder(makeDeps("name"), gvrCM, ns, []string{"namespaces", ns, "configmaps"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len(ctx) >= 3 })
 	count := f1.Len(ctx)
 	rows := f1.Lines(ctx, 0, count)
@@ -97,7 +100,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Desc by name
-	f2 := models.NewNamespacedObjectsFolder(makeDeps("-name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"}, nil)
+	f2 := models.NewNamespacedObjectsFolder(makeDeps("-name"), gvrCM, ns, []string{"namespaces", ns, "configmaps"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len(ctx) >= 3 })
 	count = f2.Len(ctx)
 	rows = f2.Lines(ctx, 0, count)
@@ -108,7 +111,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Asc by creation
-	f3 := models.NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"}, nil)
+	f3 := models.NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, ns, []string{"namespaces", ns, "configmaps"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len(ctx) >= 3 })
 	count = f3.Len(ctx)
 	rows = f3.Lines(ctx, 0, count)
@@ -119,7 +122,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Desc by creation
-	f4 := models.NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"}, nil)
+	f4 := models.NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, ns, []string{"namespaces", ns, "configmaps"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len(ctx) >= 3 })
 	count = f4.Len(ctx)
 	rows = f4.Lines(ctx, 0, count)

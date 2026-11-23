@@ -13,6 +13,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -22,7 +23,7 @@ import (
 // that could never sync. Every namespace cache is given up on Close.
 func TestRelatedFoldersNamespaceUser(t *testing.T) {
 	t.Parallel()
-	const user, ns = "related-ns-user", "related-limited"
+	user, ns := kctesting.UniqueName("related-ns-user"), kctesting.UniqueName("related-limited")
 	e := newNamespaceUserEnv(t, user, ns)
 	admin := e.admin.GetClient()
 	ctx := t.Context()
@@ -103,7 +104,7 @@ func TestRequiresFolderEnvtest(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 	ctx := t.Context()
-	const ns = "related-requires"
+	ns := kctesting.UniqueName("related-requires")
 	mustCreate(t, cli, &corev1.Namespace{Name: ns})
 	mustCreate(t, cli, &corev1.ConfigMap{Namespace: ns, Name: "cfg"})
 	mustCreate(t, cli, &corev1.Pod{
@@ -118,7 +119,7 @@ func TestRequiresFolderEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	deps := Deps{Cl: cl, Ctx: ctx, AppConfig: appconfig.Default()}
 	readCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
