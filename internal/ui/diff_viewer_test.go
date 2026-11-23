@@ -16,6 +16,9 @@ import (
 
 	"github.com/stokaro/kc/internal/manifestdiff"
 	"github.com/stokaro/kc/internal/models"
+	modeltesting "github.com/stokaro/kc/internal/models/testing"
+	navui "github.com/stokaro/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/table"
 )
 
 var compareGVR = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
@@ -62,6 +65,65 @@ func loadedViewer(t *testing.T, snap *compareSnapshot) *DiffViewer {
 	v.SetDimensions(80, 12)
 	runCompare(t, v, v.Start())
 	return v
+}
+
+// The read result redraws the screen: the App caches its rendered view,
+// and a compare viewer that got its diff behind a cached "Reading both
+// manifests..." frame stayed on it until some other event redrew.
+func TestCompareObjectsResultRedraws(t *testing.T) {
+	t.Parallel()
+	row := func(ns string, vars map[int]string) *models.ObjectRow {
+		obj := &unstructured.Unstructured{Object: compareObject(ns, vars)}
+		r := models.NewObjectRow("web", []string{"web"}, []string{"web"}, compareGVR, ns, "web", models.WhiteStyle())
+		return r.WithManifest("mba", func(context.Context) (*unstructured.Unstructured, error) { return obj, nil })
+	}
+	a := NewApp()
+	t.Cleanup(a.cancel)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	a.leftNav = navui.NewNavigator(modeltesting.NewStaticFolder("/", nil, []table.Row{row("a", nil)}))
+	a.rightNav = navui.NewNavigator(modeltesting.NewStaticFolder("/", nil, []table.Row{row("b", map[int]string{5: "changed-value"})}))
+	a.leftPanel.UseFolder(t.Context(), true)
+	a.rightPanel.UseFolder(t.Context(), true)
+	a.syncPanelWithNavigator(0)
+	a.syncPanelWithNavigator(1)
+	a.leftPanel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	a.rightPanel.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+
+	a.Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+	_, cmd := a.Update(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
+	if m := a.modalManager.modals["compare_viewer"]; m == nil || !m.IsVisible() {
+		t.Fatal("C-x C-d did not open the compare viewer")
+	}
+	if got := viewString(a.View()); !strings.Contains(got, "Reading both manifests") {
+		t.Fatalf("the viewer does not show the loading state:\n%s", got)
+	}
+	msg := findCompareResult(t, cmd)
+	a.Update(msg)
+	if got := viewString(a.View()); !strings.Contains(got, "changed-value") {
+		t.Fatalf("the screen still shows the old frame after the result:\n%s", got)
+	}
+}
+
+// findCompareResult runs cmd, and the commands of any batch it returns,
+// until one yields a compareResultMsg.
+func findCompareResult(t *testing.T, cmd tea.Cmd) compareResultMsg {
+	t.Helper()
+	queue := []tea.Cmd{cmd}
+	for len(queue) > 0 {
+		c := queue[0]
+		queue = queue[1:]
+		if c == nil {
+			continue
+		}
+		switch m := c().(type) {
+		case compareResultMsg:
+			return m
+		case tea.BatchMsg:
+			queue = append(queue, m...)
+		}
+	}
+	t.Fatal("no compare result")
+	return compareResultMsg{}
 }
 
 // runCompare runs cmd, which must produce a compareResultMsg, and applies it.

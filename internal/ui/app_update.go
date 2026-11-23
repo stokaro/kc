@@ -850,7 +850,11 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	case relatedFolderMsg:
 		return a, a.handleRelatedFolder(msg)
 	case compareResultMsg:
-		return a, msg.view.apply(msg)
+		// The viewer changed behind the cached frame; without a redraw
+		// it showed "Reading both manifests..." until another event.
+		cmd := msg.view.apply(msg)
+		a.invalidateView("compare result")
+		return a, tea.Batch(append(cmds, cmd)...)
 	case setCompareMsg:
 		return a, a.applySetCompare(msg)
 	case copyResultMsg:
