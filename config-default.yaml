@@ -144,6 +144,13 @@ overview:
   # A cert-manager Certificate is flagged when it expires within this many
   # days.
   certificateExpiryDays: 14
+  # A pod that is not ready or pending, or a Deployment rolling out or not
+  # yet available, is "starting" for this long after the API server dated
+  # its state. Explicit failures never wait.
+  startupGrace: 5m
+  # A container flagged near its memory or CPU limit stays flagged until its
+  # usage is this many points below the warning percent.
+  usageHysteresisPercent: 5
 
 commands:
   - name: Top Nodes

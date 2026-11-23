@@ -64,8 +64,12 @@ cost on a shared Prometheus.
    series. Without them the block says that pods cannot be tied to the
    workload; it does not fall back to pod name prefixes or to today's pod
    list.
-5. **Shown in the Info panel, under the workload's bars.** "History, last
-   1h (Prometheus monitoring/prometheus-k8s:9090)", a CPU and a memory
+5. **Shown in the Info panel, under the workload's bars, as its own
+   block.** The session sparklines under each bar (kc's metrics.k8s.io
+   samples, labeled `15m session`, #177) stay as they are; the backend
+   block has its own heading, "Prometheus history, last 1h
+   (monitoring/prometheus-k8s:9090)", so the two sources are never mixed
+   up. It has a CPU and a memory
    sparkline scaled from zero to the peak with the peak and end values, the
    time span and step, the number of pods the owner series tie to the
    workload in the window, the steps without samples and the age of the last

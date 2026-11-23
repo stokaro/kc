@@ -6,267 +6,192 @@ import (
 	"strings"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
-	"github.com/stokaro/kc/internal/promhistory"
+	models "github.com/stokaro/kc/internal/models"
 )
 
 const (
-	// historyRefresh is the shortest time between two reads of one
-	// workload's history; a longer step waits for the next step.
-	historyRefresh = time.Minute
-	// historyRetry spaces reads after a failure.
-	historyRetry = 2 * time.Minute
+	// historyWindow is the time a sparkline shows, whatever the pane
+	// width. kc keeps the samples in memory for this session only.
+	historyWindow = 15 * time.Minute
+	// pollInterval is how often usage is measured.
+	pollInterval = models.UsagePollInterval
+	// gapAfter is the longest time between two samples that still counts
+	// as continuous: one missed poll is jitter, two are a gap.
+	gapAfter = 2*pollInterval + pollInterval/2
+	// maxCells is one cell per poll; a wider pane does not stretch the
+	// window, so empty cells between polls never look like gaps.
+	maxCells = int(historyWindow / pollInterval)
+	// maxSamples bounds a series if usage is measured faster than polled.
+	maxSamples = 4 * maxCells
 )
 
-// HistorySource reads the past usage of the workload under the other
-// panel's cursor from a metrics backend.
-type HistorySource struct {
-	// Key identifies the context, backend and workload. A new key cancels
-	// the read in flight and drops what was shown.
-	Key string
-	// Window is how far back the history goes, for the heading.
-	Window time.Duration
-	// Start begins one read on the UI goroutine without I/O: read runs in a
-	// tea.Cmd, cancel stops it.
-	Start func() (read func() (promhistory.History, error), cancel func())
+const (
+	gapCell     = '·' // no measurement there
+	pendingCell = ' ' // before the first sample
+)
+
+// sample is one measurement and when it was taken.
+type sample struct {
+	at time.Time
+	v  float64
 }
 
-// historyMsg is the result of one read. It is a BackgroundMsg, so it
-// reaches the widget behind a dialog too.
-type historyMsg struct {
-	w   *Widget
-	seq int
-	h   promhistory.History
-	err error
+// series holds the samples of one bar, oldest first, all of one base.
+type series struct {
+	base    string
+	samples []sample
 }
 
-func (historyMsg) WidgetBackground() {}
-
-// historyState is the history of the current workload.
-type historyState struct {
-	key      string
-	seq      int // of the read in flight or last finished
-	inflight bool
-	cancel   func()
-	done     time.Time // when the last read finished
-	h        *promhistory.History
-	err      string
+func (s *series) add(at time.Time, v float64, base string) {
+	if base != s.base {
+		// Percentages of another base do not compare; start again.
+		s.base, s.samples = base, nil
+	}
+	s.samples = append(s.samples, sample{at: at, v: v})
+	// Keep one sample older than the window: it tells whether the first
+	// cell continues a measurement or starts after a gap.
+	cut := 0
+	for cut+1 < len(s.samples) && at.Sub(s.samples[cut+1].at) >= historyWindow {
+		cut++
+	}
+	if len(s.samples)-cut > maxSamples {
+		cut = len(s.samples) - maxSamples
+	}
+	s.samples = s.samples[cut:]
 }
 
-// stopHistory cancels the read in flight and forgets the history.
-func (w *Widget) stopHistory() {
-	if w.hist.cancel != nil {
-		w.hist.cancel()
-	}
-	w.hist = historyState{seq: w.hist.seq}
+// history holds the usage samples of one scope, node or workload.
+type history struct {
+	last     time.Time
+	cpu, mem series
 }
 
-// historyCmd starts a read when the workload changed or its history is due
-// again. It runs on the UI goroutine after refresh.
-func (w *Widget) historyCmd() tea.Cmd {
-	src := w.target.History
-	if src == nil || src.Start == nil {
-		if w.hist.key != "" {
-			w.stopHistory()
-		}
-		return nil
-	}
-	if src.Key != w.hist.key {
-		w.stopHistory()
-		w.hist.key = src.Key
-	}
-	if w.hist.inflight || !w.historyDue() {
-		return nil
-	}
-	if w.deps.Paused != nil && w.deps.Paused() {
-		return nil
-	}
-	read, cancel := src.Start()
-	w.hist.seq++
-	w.hist.inflight, w.hist.cancel = true, cancel
-	seq := w.hist.seq
-	return func() tea.Msg {
-		h, err := read()
-		return historyMsg{w: w, seq: seq, h: h, err: err}
-	}
-}
-
-// historyDue reports whether the history should be read again.
-func (w *Widget) historyDue() bool {
-	if w.hist.done.IsZero() {
-		return true
-	}
-	wait := historyRetry
-	if w.hist.err == "" && w.hist.h != nil {
-		wait = max(historyRefresh, w.hist.h.Step)
-	}
-	return w.opts.Now().Sub(w.hist.done) >= wait
-}
-
-// takeHistory stores a result unless a newer read or another workload
-// replaced the one it answers.
-func (w *Widget) takeHistory(m historyMsg) {
-	if m.seq != w.hist.seq || !w.hist.inflight {
+func (h *history) add(at time.Time, cpu, mem usageSample) {
+	if !at.After(h.last) {
 		return
 	}
-	if w.hist.cancel != nil {
-		w.hist.cancel()
-	}
-	w.hist.inflight, w.hist.cancel = false, nil
-	w.hist.done = w.opts.Now()
-	if m.err != nil {
-		// Keep the last good history; the line says it is not current.
-		w.hist.err = m.err.Error()
-		return
-	}
-	h := m.h
-	w.hist.h, w.hist.err = &h, ""
+	h.last = at
+	h.cpu.add(at, cpu.percent, cpu.base)
+	h.mem.add(at, mem.percent, mem.base)
 }
 
-// historyLines renders the history block: a heading that names the backend
-// and window, a sparkline each for CPU and memory, and what the series
-// cover. Nil when no backend is configured for the workload.
-func (w *Widget) historyLines(width int) []string {
-	src := w.target.History
-	if src == nil || w.hist.key != src.Key {
-		return nil
-	}
-	out := []string{""}
-	h := w.hist.h
-	title := " History, last " + shortDuration(src.Window)
-	if h != nil {
-		title += " (Prometheus " + h.Source + ")"
-	}
-	out = append(out, title)
-	if w.hist.err != "" {
-		out = append(out, "   unavailable: "+w.hist.err)
-	}
-	if h == nil {
-		if w.hist.err == "" {
-			out = append(out, "   reading...")
+// usageSample is one bar's measured percentage and its base.
+type usageSample struct {
+	percent float64
+	base    string
+}
+
+// sparkView is a rendered history: the sparkline and the line that says
+// what it shows.
+type sparkView struct {
+	line, label string
+}
+
+// render draws the window that ends at now in at most width cells, with
+// the label that says what the cells show.
+func (s series) render(now time.Time, width int) (sparkView, bool) {
+	inWindow := 0
+	for _, sm := range s.samples {
+		if now.Sub(sm.at) < historyWindow {
+			inWindow++
 		}
-		return out
 	}
+	what := "use %"
+	if s.base != "" {
+		what = "% of " + s.base
+	}
+	n := min(width, maxCells)
 	switch {
-	case h.CPU == nil && h.Memory == nil && h.NoOwners:
-		out = append(out,
-			"   no kube_pod_owner series in "+h.Target.Namespace+" (kube-state-metrics missing?):",
-			"   pods cannot be tied to "+h.Target.String())
-		return out
-	case h.CPU == nil && h.Memory == nil:
-		out = append(out, "   no samples for the pods of "+h.Target.String()+" in this window")
-		return out
+	case len(s.samples) == 0 || n <= 0:
+		return sparkView{}, false
+	case inWindow == 0:
+		return sparkView{label: fmt.Sprintf("%s: no sample in the last %s", what, shortAge(historyWindow))}, true
+	case inWindow == 1:
+		return sparkView{label: fmt.Sprintf("%s: collecting, 1 sample so far", what)}, true
 	}
-	out = append(out,
-		seriesLine("CPU", *h, h.CPU, width, formatCores),
-		seriesLine("Memory", *h, h.Memory, width, formatBytes))
-	for _, line := range coverage(*h, w.opts.Now()) {
-		out = append(out, "   "+line)
-	}
-	for _, warn := range h.Warnings {
-		out = append(out, "   backend: "+warn)
-	}
-	return out
+	return sparkView{line: s.cells(now, n), label: s.label(now, what, inWindow)}, true
 }
 
-// seriesLine is "CPU     ▁▂ ▅█  max 1.50, end 0.75": the sparkline over the
-// window, gaps blank, scaled from zero to the largest value.
-func seriesLine(label string, h promhistory.History, ps []promhistory.Point, width int, format func(float64) string) string {
-	head := fmt.Sprintf(" %-*s", labelWidth, label)
-	if ps == nil {
-		return head + "no series"
+// cells draws n cells of historyWindow/n each, aligned to absolute time,
+// so the same sample stays in the same cell as now moves. A cell holds the
+// peak of its samples. A cell without one continues the previous value
+// when its neighbors are no more than gapAfter apart and shows gapCell
+// otherwise; cells before the first sample stay blank.
+func (s series) cells(now time.Time, n int) string {
+	d := historyWindow / time.Duration(n)
+	end := now.UnixNano() / int64(d)
+	cells := make([]rune, n)
+	j := 0 // the first sample not before the current cell
+	var prev *sample
+	for k := range n {
+		start := time.Unix(0, (end-int64(n-1)+int64(k))*int64(d))
+		stop := start.Add(d)
+		for j < len(s.samples) && s.samples[j].at.Before(start) {
+			prev = &s.samples[j]
+			j++
+		}
+		peak, found := 0.0, false
+		for j < len(s.samples) && s.samples[j].at.Before(stop) {
+			peak, found = math.Max(peak, s.samples[j].v), true
+			prev = &s.samples[j]
+			j++
+		}
+		switch {
+		case found:
+			cells[k] = sparkRune(peak)
+		case prev == nil:
+			cells[k] = pendingCell
+		case s.continues(prev, j, now):
+			cells[k] = sparkRune(prev.v)
+		default:
+			cells[k] = gapCell
+		}
 	}
-	peak, end := math.Inf(-1), ""
-	for _, p := range ps {
-		peak = math.Max(peak, p.Value)
-	}
-	if last := ps[len(ps)-1]; last.At.Equal(h.End) {
-		end = ", end " + format(last.Value)
-	}
-	tail := "  max " + format(peak) + end
-	cells := width - len([]rune(head)) - len([]rune(tail))
-	if cells < 4 {
-		return head + strings.TrimSpace(tail)
-	}
-	return head + scaledSparkline(h.Buckets(ps, cells), peak) + tail
+	return string(cells)
 }
 
-// scaledSparkline draws values from zero to peak; NaN is a gap.
-func scaledSparkline(cells []float64, peak float64) string {
-	var b strings.Builder
-	for _, v := range cells {
-		if math.IsNaN(v) {
-			b.WriteRune(' ')
+// continues reports whether the time after prev, up to the sample at
+// next (or up to now when there is none), is no gap.
+func (s series) continues(prev *sample, next int, now time.Time) bool {
+	if next < len(s.samples) {
+		return s.samples[next].at.Sub(prev.at) <= gapAfter
+	}
+	return now.Sub(prev.at) <= gapAfter
+}
+
+// label names the base, the samples in the window and their span, the
+// gaps, a stale end and the retention.
+func (s series) label(now time.Time, what string, inWindow int) string {
+	first, last, gaps := -1, -1, 0
+	for i, sm := range s.samples {
+		if now.Sub(sm.at) >= historyWindow {
 			continue
 		}
-		pct := 0.0
-		if peak > 0 {
-			pct = v / peak * 100
+		if first < 0 {
+			first = i
+		} else if sm.at.Sub(s.samples[i-1].at) > gapAfter {
+			gaps++
 		}
-		i := int(math.Round(math.Max(0, math.Min(pct, 100)) / 100 * float64(len(sparks)-1)))
-		b.WriteRune(sparks[i])
+		last = i
 	}
-	return b.String()
-}
-
-// coverage says what the series cover: the time span, the step and the
-// pods tied to the workload on one line; the steps without a sample (of
-// the series with more) and the age of the last sample, when it is not at
-// the end of the window, on another.
-func coverage(h promhistory.History, now time.Time) []string {
-	span := h.Start.Local().Format("15:04") + "-" + h.End.Local().Format("15:04") + ", step " + shortDuration(h.Step)
-	if h.PodsKnown {
-		span += fmt.Sprintf(", %d pods by owner series", h.Pods)
-	}
-	var gaps []string
-	if missing := max(h.Missing(h.CPU), h.Missing(h.Memory)); missing > 0 {
-		gaps = append(gaps, fmt.Sprintf("%d of %d steps without samples", missing, h.Steps()))
-	}
-	if last := lastSample(h); !last.IsZero() && last.Before(h.End) {
-		gaps = append(gaps, "last sample "+shortAge(now.Sub(last))+" ago")
-	}
-	if len(gaps) == 0 {
-		return []string{span}
-	}
-	return []string{span, strings.Join(gaps, ", ")}
-}
-
-func lastSample(h promhistory.History) time.Time {
-	var last time.Time
-	for _, ps := range [][]promhistory.Point{h.CPU, h.Memory} {
-		if len(ps) > 0 && ps[len(ps)-1].At.After(last) {
-			last = ps[len(ps)-1].At
-		}
-	}
-	return last
-}
-
-func formatCores(v float64) string {
-	if v < 1 {
-		return fmt.Sprintf("%.0fm", v*1000)
-	}
-	return fmt.Sprintf("%.2f", v)
-}
-
-func formatBytes(v float64) string {
-	const mi, gi = 1 << 20, 1 << 30
+	parts := []string{what, fmt.Sprintf("%d samples over %s", inWindow, shortAge(s.samples[last].at.Sub(s.samples[first].at)))}
 	switch {
-	case v >= gi:
-		return fmt.Sprintf("%.1fGi", v/gi)
-	default:
-		return fmt.Sprintf("%.0fMi", v/mi)
+	case gaps == 1:
+		parts = append(parts, "1 gap")
+	case gaps > 1:
+		parts = append(parts, fmt.Sprintf("%d gaps", gaps))
 	}
+	if age := now.Sub(s.samples[last].at); age > gapAfter {
+		parts = append(parts, fmt.Sprintf("stale, last %s ago", shortAge(age)))
+	}
+	parts = append(parts, shortAge(historyWindow)+" session")
+	return strings.Join(parts, " · ")
 }
 
-// shortDuration prints 1h, 90m, 30s.
-func shortDuration(d time.Duration) string {
-	switch {
-	case d >= time.Hour && d%time.Hour == 0:
-		return fmt.Sprintf("%dh", int(d/time.Hour))
-	case d >= time.Minute && d%time.Minute == 0:
-		return fmt.Sprintf("%dm", int(d/time.Minute))
-	default:
-		return fmt.Sprintf("%ds", int(d/time.Second))
-	}
+var sparks = []rune("▁▂▃▄▅▆▇█")
+
+// sparkRune is the block for a percentage (0 to 100).
+func sparkRune(v float64) rune {
+	v = math.Max(0, math.Min(v, 100))
+	return sparks[int(math.Round(v/100*float64(len(sparks)-1)))]
 }

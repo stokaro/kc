@@ -22,10 +22,7 @@ const (
 	// summary is cheap (the overview engine recomputes in the background);
 	// reading it also keeps the engine running.
 	DefaultInterval = time.Second
-	// historySize is how many usage samples a sparkline keeps: 15 minutes
-	// at the 15-second metrics poll.
-	historySize = 60
-	labelWidth  = 7
+	labelWidth      = 7
 )
 
 // Summarizer is the data behind the widget: models.OverviewInfo.
@@ -49,10 +46,10 @@ type Target struct {
 	// cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or
 	// CronJob. It wins over Node.
 	Workload *models.InfoWorkload
-	// History reads the past usage of Workload from a metrics backend. Nil
+	// PromHistory reads the past usage of Workload from a metrics backend. Nil
 	// when no backend is configured for the context or no workload is
 	// selected.
-	History *HistorySource
+	PromHistory *PromHistorySource
 	// Open creates the Summarizer for Key.
 	Open func() Summarizer
 	// Hint replaces the summary when Open is nil (no cluster yet).
@@ -87,30 +84,7 @@ type Widget struct {
 	src     Summarizer
 	summary models.InfoSummary
 	history map[string]*history
-	hist    historyState
-}
-
-// history holds the usage samples of one scope and node.
-type history struct {
-	last     time.Time
-	cpu, mem []float64
-}
-
-func (h *history) add(at time.Time, cpu, mem float64) {
-	if !at.After(h.last) {
-		return
-	}
-	h.last = at
-	h.cpu = appendBounded(h.cpu, cpu)
-	h.mem = appendBounded(h.mem, mem)
-}
-
-func appendBounded(s []float64, v float64) []float64 {
-	s = append(s, v)
-	if len(s) > historySize {
-		s = s[len(s)-historySize:]
-	}
-	return s
+	prom    promHistoryState
 }
 
 // New returns an Info widget.
@@ -130,7 +104,7 @@ func (w *Widget) Init(ctx context.Context) tea.Cmd {
 		return nil
 	}
 	w.refresh(ctx)
-	return tea.Batch(w.tick(), w.historyCmd())
+	return tea.Batch(w.tick(), w.promHistoryCmd())
 }
 
 func (w *Widget) tick() tea.Cmd {
@@ -140,11 +114,11 @@ func (w *Widget) tick() tea.Cmd {
 
 // Update handles the widget's own ticks.
 func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
-	if m, ok := msg.(historyMsg); ok {
+	if m, ok := msg.(promHistoryMsg); ok {
 		if m.w != w {
 			return nil, false
 		}
-		w.takeHistory(m)
+		w.takePromHistory(m)
 		return nil, true
 	}
 	t, ok := msg.(tickMsg)
@@ -155,7 +129,7 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	}
 	w.refresh(ctx)
-	return tea.Batch(w.tick(), w.historyCmd()), true
+	return tea.Batch(w.tick(), w.promHistoryCmd()), true
 }
 
 // SetFocus starts the widget when its panel enters Info mode and stops the
@@ -183,7 +157,7 @@ func (w *Widget) closeSource() {
 		w.src.Close()
 		w.src = nil
 	}
-	w.stopHistory()
+	w.stopPromHistory()
 	w.target = Target{}
 }
 
@@ -194,7 +168,7 @@ func (w *Widget) OnSelectionChanged(ctx context.Context, _ panelcontent.Selectio
 		return nil
 	}
 	w.refresh(ctx)
-	return w.historyCmd()
+	return w.promHistoryCmd()
 }
 
 // refresh resolves the target, swaps the source when the scope changed and
@@ -248,8 +222,9 @@ func (w *Widget) record() {
 	h.add(w.summary.UsageAt, cpu, mem)
 }
 
-// usagePercents returns the CPU and memory bars when both show usage.
-func usagePercents(s models.InfoSummary) (cpu, mem float64, ok bool) {
+// usagePercents returns the CPU and memory bars when both show usage. A
+// measurement that is not available adds no sample, never a zero.
+func usagePercents(s models.InfoSummary) (cpu, mem usageSample, ok bool) {
 	var gotCPU, gotMem bool
 	for _, b := range s.Bars {
 		if !b.Known || !b.Usage {
@@ -257,9 +232,9 @@ func usagePercents(s models.InfoSummary) (cpu, mem float64, ok bool) {
 		}
 		switch b.Label {
 		case "CPU":
-			cpu, gotCPU = b.Percent, true
+			cpu, gotCPU = usageSample{percent: b.Percent, base: b.Base}, true
 		case "Memory":
-			mem, gotMem = b.Percent, true
+			mem, gotMem = usageSample{percent: b.Percent, base: b.Base}, true
 		}
 	}
 	return cpu, mem, gotCPU && gotMem
@@ -292,7 +267,7 @@ func (w *Widget) lines(width, height int) []string {
 		} else {
 			add(" Loading...")
 		}
-		for _, line := range w.historyLines(width) {
+		for _, line := range w.promHistoryLines(width) {
 			add(line)
 		}
 		return clip(out, height)
@@ -316,11 +291,11 @@ func (w *Widget) lines(width, height int) []string {
 		add(" " + t)
 	}
 	for _, b := range w.summary.Bars {
-		for _, line := range barBlock(b, h, width) {
+		for _, line := range barBlock(b, h, w.opts.Now(), width) {
 			add(line)
 		}
 	}
-	for _, line := range w.historyLines(width) {
+	for _, line := range w.promHistoryLines(width) {
 		add(line)
 	}
 	add("")
@@ -339,8 +314,9 @@ func (w *Widget) lines(width, height int) []string {
 }
 
 // barBlock is one bar with the lines under it, each in its own state, and
-// the sparkline of its usage samples in h (nil when none).
-func barBlock(b models.InfoBar, h *history, width int) []string {
+// the sparkline of its usage samples in h (nil when none) with the line
+// that says what the sparkline covers.
+func barBlock(b models.InfoBar, h *history, now time.Time, width int) []string {
 	indent := strings.Repeat(" ", labelWidth+1)
 	out := []string{barLine(b, width), indent + styled(b.Detail, b.DetailHealth)}
 	for i, line := range b.More {
@@ -353,17 +329,23 @@ func barBlock(b models.InfoBar, h *history, width int) []string {
 	if h == nil {
 		return out
 	}
-	var samples []float64
+	var s series
 	switch b.Label {
 	case "CPU":
-		samples = h.cpu
+		s = h.cpu
 	case "Memory":
-		samples = h.mem
+		s = h.mem
+	default:
+		return out
 	}
-	if len(samples) > 1 {
-		out = append(out, indent+sparkline(samples, width-labelWidth-2))
+	view, ok := s.render(now, width-labelWidth-2)
+	if !ok {
+		return out
 	}
-	return out
+	if view.line != "" {
+		out = append(out, indent+view.line)
+	}
+	return append(out, indent+styled(view.label, models.RowHealthUnknown))
 }
 
 func clip(lines []string, height int) []string {
@@ -424,25 +406,6 @@ func renderBar(pct float64, width int) string {
 		cells++
 	}
 	b.WriteString(strings.Repeat("░", width-cells))
-	return b.String()
-}
-
-var sparks = []rune("▁▂▃▄▅▆▇█")
-
-// sparkline draws the last width samples (percent, 0 to 100).
-func sparkline(samples []float64, width int) string {
-	if width <= 0 || len(samples) == 0 {
-		return ""
-	}
-	if len(samples) > width {
-		samples = samples[len(samples)-width:]
-	}
-	var b strings.Builder
-	for _, v := range samples {
-		v = math.Max(0, math.Min(v, 100))
-		i := int(math.Round(v / 100 * float64(len(sparks)-1)))
-		b.WriteRune(sparks[i])
-	}
 	return b.String()
 }
 

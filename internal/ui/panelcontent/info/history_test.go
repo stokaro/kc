@@ -1,235 +1,199 @@
 package info
 
+// White-box: the history and its rendering are internal to the Info
+// widget; these tests drive them with a fake clock.
+
 import (
-	"errors"
+	"context"
 	"strings"
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	models "github.com/stokaro/kc/internal/models"
-	"github.com/stokaro/kc/internal/promhistory"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 )
 
-// fakeHistory is a HistorySource whose reads the test answers.
-type fakeHistory struct {
-	starts   int
-	canceled int
-	h        promhistory.History
-	err      error
-}
+var t0 = time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
 
-func (f *fakeHistory) source(key string) *HistorySource {
-	return &HistorySource{Key: key, Window: time.Hour, Start: func() (func() (promhistory.History, error), func()) {
-		f.starts++
-		h, err := f.h, f.err
-		return func() (promhistory.History, error) { return h, err }, func() { f.canceled++ }
-	}}
-}
-
-// sampleHistory is an hour at one-minute steps on a minute boundary:
-// samples an hour back, a gap, and samples at the end.
-func sampleHistory(end time.Time) promhistory.History {
-	start := end.Add(-time.Hour)
-	pt := func(minute int, v float64) promhistory.Point {
-		return promhistory.Point{At: start.Add(time.Duration(minute) * time.Minute), Value: v}
-	}
-	return promhistory.History{
-		Target: promhistory.Target{Kind: "Deployment", Namespace: "shop", Name: "web"},
-		Source: "monitoring/prom:9090",
-		Start:  start, End: end, Step: time.Minute,
-		CPU:       []promhistory.Point{pt(0, 0.5), pt(1, 0.25), pt(59, 1.5), pt(60, 0.75)},
-		Memory:    []promhistory.Point{pt(0, 512<<20), pt(60, 256<<20)},
-		Pods:      7,
-		PodsKnown: true,
+// fill adds a sample of v every step from from to to, both included.
+func fill(s *series, from, to, step time.Duration, v float64) {
+	for d := from; d <= to; d += step {
+		s.add(t0.Add(d), v, "allocatable")
 	}
 }
 
-func historyHarness(t *testing.T) (*harness, *fakeHistory) {
-	t.Helper()
-	h := newHarness(t)
-	h.summary = models.InfoSummary{UsageAt: h.now, Bars: bars(10, 20)}
-	f := &fakeHistory{h: sampleHistory(h.now.Truncate(time.Minute))}
-	h.target.Workload = &models.InfoWorkload{Namespace: "shop", Name: "web"}
-	h.target.History = f.source("ctx|web")
-	h.w.SetFocus(t.Context(), true)
-	return h, f
-}
-
-// run executes cmd, which must be one history read, and feeds the result.
-func run(t *testing.T, w *Widget, cmd tea.Cmd) {
-	t.Helper()
-	if cmd == nil {
-		t.Fatal("no history read started")
-	}
-	msg, ok := cmd().(historyMsg)
+func TestHistoryRenderContinuous(t *testing.T) {
+	t.Parallel()
+	var s series
+	fill(&s, 0, 5*time.Minute, pollInterval, 50)
+	view, ok := s.render(t0.Add(5*time.Minute), 60)
 	if !ok {
-		t.Fatalf("cmd returned %T, want historyMsg", msg)
+		t.Fatal("no view")
 	}
-	if _, handled := w.Update(t.Context(), msg); !handled {
-		t.Fatal("history result not handled")
+	if want := "% of allocatable · 21 samples over 5m · 15m session"; view.label != want {
+		t.Fatalf("label = %q, want %q", view.label, want)
+	}
+	if strings.ContainsRune(view.line, gapCell) {
+		t.Fatalf("a continuous history shows a gap: %q", view.line)
+	}
+	// 5 of 15 minutes are collected: about a third of the cells, at the
+	// right; the rest is blank, not a flat zero.
+	trimmed := strings.TrimLeft(view.line, string(pendingCell))
+	if n := len([]rune(trimmed)); n < 20 || n > 22 {
+		t.Fatalf("collected cells = %d of 60: %q", n, view.line)
+	}
+	if strings.ContainsRune(view.line, '▁') {
+		t.Fatalf("cells before the first sample must stay blank: %q", view.line)
 	}
 }
 
-func screen(w *Widget) string {
-	return ansi.Strip(strings.Join(w.lines(120, 60), "\n"))
-}
-
-func TestHistoryReadAndView(t *testing.T) {
+func TestHistoryRenderJitterIsNoGap(t *testing.T) {
 	t.Parallel()
-	h, f := historyHarness(t)
-	ctx := t.Context()
-	cmd := h.w.OnSelectionChanged(ctx, panelcontent.Selection{})
-	if got := screen(h.w); !strings.Contains(got, "History, last 1h\n   reading...") {
-		t.Fatalf("before the result:\n%s", got)
+	var s series
+	at := time.Duration(0)
+	for i := range 40 {
+		s.add(t0.Add(at), 30, "allocatable")
+		at += pollInterval + time.Duration(i%2*2-1)*900*time.Millisecond
 	}
-	run(t, h.w, cmd)
-	got := screen(h.w)
-	for _, want := range []string{
-		"History, last 1h (Prometheus monitoring/prom:9090)",
-		"max 1.50, end 750m",
-		"max 512Mi, end 256Mi",
-		"step 1m, 7 pods by owner series\n   59 of 61 steps without samples",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("view lacks %q:\n%s", want, got)
+	for _, width := range []int{20, 45, 60, 100} {
+		view, _ := s.render(t0.Add(at), width)
+		if strings.ContainsRune(view.line, gapCell) || strings.Contains(view.label, "gap") {
+			t.Fatalf("width %d: polls 14-16s apart show a gap: %q %q", width, view.line, view.label)
 		}
 	}
-	// The CPU sparkline starts with the two samples, then a gap; the peak
-	// is a full block.
-	var cpuLine string
-	for line := range strings.SplitSeq(got, "\n") {
-		if strings.HasPrefix(line, " CPU ") && strings.Contains(line, "max ") {
-			cpuLine = line
-		}
+}
+
+func TestHistoryRenderGapAndStale(t *testing.T) {
+	t.Parallel()
+	var s series
+	fill(&s, 0, 2*time.Minute, pollInterval, 20)
+	fill(&s, 5*time.Minute, 7*time.Minute, pollInterval, 80) // three minutes missed
+	view, _ := s.render(t0.Add(7*time.Minute), 60)
+	if !strings.Contains(view.label, "1 gap") || strings.Contains(view.label, "stale") {
+		t.Fatalf("label = %q", view.label)
 	}
-	if !strings.Contains(cpuLine, "▃▂ ") || !strings.Contains(cpuLine, "█") {
-		t.Errorf("CPU sparkline %q, want values, a gap and the peak", cpuLine)
+	line := strings.TrimLeft(view.line, string(pendingCell))
+	if got := strings.Count(line, string(gapCell)); got < 10 || got > 13 {
+		t.Fatalf("gap cells = %d, want about 12 (3m at 15s): %q", got, view.line)
+	}
+	if !strings.HasPrefix(line, "▂") || !strings.HasSuffix(line, "▇") {
+		t.Fatalf("oldest and newest samples keep their values: %q", line)
 	}
 
-	// Not due yet: no second read within a minute.
-	if cmd := h.w.OnSelectionChanged(ctx, panelcontent.Selection{}); cmd != nil || f.starts != 1 {
-		t.Fatalf("read again at once: cmd %v starts %d", cmd != nil, f.starts)
+	// No sample for three minutes since: the newest cells are gaps and
+	// the label says when the last sample was taken.
+	stale, _ := s.render(t0.Add(10*time.Minute), 60)
+	if !strings.Contains(stale.label, "stale, last 3m ago") {
+		t.Fatalf("label = %q", stale.label)
 	}
-	h.now = h.now.Add(time.Minute)
-	run(t, h.w, h.w.OnSelectionChanged(ctx, panelcontent.Selection{}))
-	if f.starts != 2 {
-		t.Fatalf("starts = %d, want a second read after a minute", f.starts)
+	if !strings.HasSuffix(stale.line, strings.Repeat(string(gapCell), 10)) {
+		t.Fatalf("stale cells must be gaps: %q", stale.line)
 	}
-
-	// A failure keeps the last good history and says so.
-	f.err = errors.New("prometheus monitoring/prom:9090: HTTP 503: no endpoints available")
-	h.now = h.now.Add(time.Minute)
-	run(t, h.w, h.w.OnSelectionChanged(ctx, panelcontent.Selection{}))
-	got = screen(h.w)
-	if !strings.Contains(got, "unavailable: prometheus monitoring/prom:9090: HTTP 503") || !strings.Contains(got, "max 1.50") {
-		t.Errorf("after a failure:\n%s", got)
-	}
-	// After a failure the next read waits longer.
-	h.now = h.now.Add(time.Minute)
-	if cmd := h.w.OnSelectionChanged(ctx, panelcontent.Selection{}); cmd != nil {
-		t.Error("retried a failure after one minute")
+	if !strings.Contains(stale.label, "18 samples over 7m") {
+		t.Fatalf("the span is oldest to newest sample, not the window: %q", stale.label)
 	}
 }
 
-func TestHistoryStaleResultDropped(t *testing.T) {
+func TestHistoryRenderKeepsTheIntervalOnResize(t *testing.T) {
 	t.Parallel()
-	h, f := historyHarness(t)
-	ctx := t.Context()
-	old := h.w.OnSelectionChanged(ctx, panelcontent.Selection{})
-	if old == nil {
-		t.Fatal("no read started")
+	var s series
+	fill(&s, 0, 6*time.Minute, pollInterval, 40)
+	now := t0.Add(6 * time.Minute)
+	collected := func(width int) float64 {
+		view, _ := s.render(now, width)
+		cells := []rune(view.line)
+		return float64(len([]rune(strings.TrimLeft(view.line, string(pendingCell))))) / float64(len(cells))
 	}
-	// The cursor moves to another workload while the read runs.
-	other := &fakeHistory{h: f.h}
-	other.h.Target.Name = "api"
-	h.target.History = other.source("ctx|api")
-	next := h.w.OnSelectionChanged(ctx, panelcontent.Selection{})
-	if f.canceled != 1 {
-		t.Fatalf("canceled = %d, want the obsolete read canceled", f.canceled)
-	}
-	if _, handled := h.w.Update(ctx, old()); !handled {
-		t.Fatal("old result not handled")
-	}
-	if got := screen(h.w); !strings.Contains(got, "reading...") || strings.Contains(got, "max ") {
-		t.Fatalf("the obsolete result replaced the current one:\n%s", got)
-	}
-	run(t, h.w, next)
-	if got := screen(h.w); !strings.Contains(got, "max 1.50") {
-		t.Fatalf("current result not shown:\n%s", got)
-	}
-
-	// Leaving the mode cancels a read in flight and its result is dropped.
-	h.now = h.now.Add(time.Minute)
-	late := h.w.OnSelectionChanged(ctx, panelcontent.Selection{})
-	h.w.SetFocus(ctx, false)
-	if other.canceled < 2 {
-		t.Fatalf("canceled = %d, want the read in flight canceled on leave", other.canceled)
-	}
-	if _, handled := h.w.Update(ctx, late()); !handled || h.w.hist.h != nil {
-		t.Fatal("a result after leaving the mode was stored")
+	// Six of fifteen minutes, at any width; wider than one cell per poll
+	// the line stays at maxCells.
+	for _, width := range []int{15, 30, 60, 90, 200} {
+		if got := collected(width); got < 0.36 || got > 0.48 {
+			t.Errorf("width %d: %0.2f of the cells hold samples, want about 0.4", width, got)
+		}
+		view, _ := s.render(now, width)
+		if n := len([]rune(view.line)); n != min(width, maxCells) {
+			t.Errorf("width %d: %d cells", width, n)
+		}
+		if view.label != "% of allocatable · 25 samples over 6m · 15m session" {
+			t.Errorf("width %d: label %q", width, view.label)
+		}
 	}
 }
 
 func TestHistoryStates(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		name string
-		edit func(*promhistory.History)
-		want string
-	}{
-		{name: "no owner series", edit: func(h *promhistory.History) { h.CPU, h.Memory, h.NoOwners = nil, nil, true }, want: "no kube_pod_owner series in shop (kube-state-metrics missing?):\n   pods cannot be tied to Deployment shop/web"},
-		{name: "no samples", edit: func(h *promhistory.History) { h.CPU, h.Memory = nil, nil }, want: "no samples for the pods of Deployment shop/web in this window"},
-		{name: "memory unavailable", edit: func(h *promhistory.History) { h.Memory = nil }, want: " Memory no series"},
-		{name: "old last sample", edit: func(h *promhistory.History) { h.CPU = h.CPU[:3]; h.Memory = h.Memory[:1] }, want: "last sample 1m ago"},
-		{name: "backend warning", edit: func(h *promhistory.History) { h.Warnings = []string{"PromQL info: metric might not be a counter"} }, want: "backend: PromQL info"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			h, f := historyHarness(t)
-			tc.edit(&f.h)
-			run(t, h.w, h.w.OnSelectionChanged(t.Context(), panelcontent.Selection{}))
-			if got := screen(h.w); !strings.Contains(got, tc.want) {
-				t.Errorf("view lacks %q:\n%s", tc.want, got)
-			}
-		})
+	var none series
+	if _, ok := none.render(t0, 60); ok {
+		t.Fatal("an empty series renders")
+	}
+	var one series
+	one.add(t0, 10, "limits")
+	if v, _ := one.render(t0, 60); v.line != "" || v.label != "% of limits: collecting, 1 sample so far" {
+		t.Fatalf("one sample: %+v", v)
+	}
+	var old series
+	fill(&old, 0, time.Minute, pollInterval, 10)
+	if v, _ := old.render(t0.Add(20*time.Minute), 60); v.line != "" || v.label != "% of allocatable: no sample in the last 15m" {
+		t.Fatalf("only old samples: %+v", v)
+	}
+	// A new base starts the series again.
+	var s series
+	fill(&s, 0, time.Minute, pollInterval, 10)
+	s.add(t0.Add(75*time.Second), 90, "requests")
+	if len(s.samples) != 1 || s.base != "requests" {
+		t.Fatalf("base change kept %d samples of base %q", len(s.samples), s.base)
+	}
+	// Samples older than the window go, but one stays to tell a gap from
+	// a continuation at the first cell.
+	var long series
+	fill(&long, 0, 40*time.Minute, pollInterval, 10)
+	if got := len(long.samples); got != maxCells+1 {
+		t.Fatalf("kept %d samples, want %d", got, maxCells+1)
 	}
 }
 
-func TestHistoryWithoutSourceOrPaused(t *testing.T) {
+// TestWidgetHistoryFollowsItsTarget checks that a context switch does not
+// join histories, and that unmeasured usage adds no sample.
+func TestWidgetHistoryFollowsItsTarget(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	h, f := historyHarness(t)
-	h.w.deps.Paused = func() bool { return true }
-	if cmd := h.w.OnSelectionChanged(ctx, panelcontent.Selection{}); cmd != nil || f.starts != 0 {
-		t.Fatal("read while a dialog is open")
+	now := t0
+	summary := models.InfoSummary{UsageAt: now, Bars: bars(30, 30)}
+	target := Target{Key: "ctx-a|ns", Label: "ctx-a", Open: func() Summarizer { return &liveSource{s: &summary} }}
+	w := New(panelcontent.WidgetDeps{}, Options{Resolve: func(context.Context) Target { return target }, Now: func() time.Time { return now }})
+	w.SetFocus(ctx, true)
+	_ = w.Init(ctx)
+	for range 8 {
+		now = now.Add(pollInterval)
+		summary.UsageAt = now
+		_ = w.OnSelectionChanged(ctx, panelcontent.Selection{})
 	}
-	h.w.deps.Paused = nil
-	h.target.History = nil
-	if cmd := h.w.OnSelectionChanged(ctx, panelcontent.Selection{}); cmd != nil {
-		t.Fatal("read without a source")
+	if view := ansi.Strip(strings.Join(w.lines(60, 40), "\n")); !strings.Contains(view, "9 samples over 2m") {
+		t.Fatalf("context a:\n%s", view)
 	}
-	if got := screen(h.w); strings.Contains(got, "History") {
-		t.Errorf("history block without a backend:\n%s", got)
+
+	target = Target{Key: "ctx-b|ns", Label: "ctx-b", Open: func() Summarizer { return &liveSource{s: &summary} }}
+	now = now.Add(pollInterval)
+	summary.UsageAt = now
+	_ = w.OnSelectionChanged(ctx, panelcontent.Selection{})
+	view := ansi.Strip(strings.Join(w.lines(60, 40), "\n"))
+	if !strings.Contains(view, "collecting, 1 sample so far") || strings.Contains(view, "samples over") {
+		t.Fatalf("context b joined the history of a:\n%s", view)
+	}
+
+	// Usage that is not measured adds nothing, not a zero.
+	now = now.Add(pollInterval)
+	summary = models.InfoSummary{UsageAt: now, Bars: []models.InfoBar{{Label: "CPU", Known: true, Percent: 10, Detail: "req"}, {Label: "Memory", Detail: "metrics unavailable"}}}
+	_ = w.OnSelectionChanged(ctx, panelcontent.Selection{})
+	if got := len(w.history[w.historyKey()].cpu.samples); got != 1 {
+		t.Fatalf("unmeasured usage added samples: %d", got)
 	}
 }
 
-// The overview may be refused while Prometheus answers: a namespace-only
-// user still sees the history.
-func TestHistoryShownWhenOverviewRefused(t *testing.T) {
-	t.Parallel()
-	h, _ := historyHarness(t)
-	h.summary = models.InfoSummary{Err: "not permitted"}
-	h.setScope("ctx|ns", "ctx: namespace ns")
-	h.target.Workload = &models.InfoWorkload{Namespace: "shop", Name: "web"}
-	f := &fakeHistory{h: sampleHistory(h.now.Truncate(time.Minute))}
-	h.target.History = f.source("ctx|web")
-	run(t, h.w, h.w.OnSelectionChanged(t.Context(), panelcontent.Selection{}))
-	got := screen(h.w)
-	if !strings.Contains(got, "Overview unavailable: not permitted") || !strings.Contains(got, "max 1.50") {
-		t.Errorf("view:\n%s", got)
-	}
-}
+// liveSource returns whatever the test put into s.
+type liveSource struct{ s *models.InfoSummary }
+
+func (l *liveSource) Summary(models.InfoFocus) models.InfoSummary { return *l.s }
+func (l *liveSource) Close()                                      {}

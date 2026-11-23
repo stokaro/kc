@@ -56,7 +56,7 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 	}
 	cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
 	if t.Workload != nil && a.cfg != nil {
-		t.History = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload)
+		t.PromHistory = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload)
 	}
 	t.Open = func() infowidget.Summarizer {
 		return newGatedInfo(root, cl.CanListWatchAllNamespaces, func() infowidget.Summarizer {
@@ -69,7 +69,7 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 // infoHistory is the history source of workload wl when metricsHistory
 // names a backend for the context, nil otherwise. The client is built in
 // the read, off the UI goroutine.
-func infoHistory(root context.Context, restConfig func() *rest.Config, key kccluster.Key, mh appconfig.MetricsHistoryConfig, wl models.InfoWorkload) *infowidget.HistorySource {
+func infoHistory(root context.Context, restConfig func() *rest.Config, key kccluster.Key, mh appconfig.MetricsHistoryConfig, wl models.InfoWorkload) *infowidget.PromHistorySource {
 	backend, ok := mh.BackendFor(key.ContextName)
 	if !ok {
 		return nil
@@ -80,7 +80,7 @@ func infoHistory(root context.Context, restConfig func() *rest.Config, key kcclu
 	}
 	window, timeout := mh.EffectiveWindow(), mh.EffectiveTimeout()
 	target := promhistory.Target{Kind: kind, Namespace: wl.Namespace, Name: wl.Name}
-	return &infowidget.HistorySource{
+	return &infowidget.PromHistorySource{
 		// The cluster key carries the impersonation, which changes what
 		// the proxy lets through.
 		Key:    fmt.Sprintf("%+v|%s/%s|%s|%s/%s|%s", key, backend.Namespace, backend.Service, wl.GVR, wl.Namespace, wl.Name, window),

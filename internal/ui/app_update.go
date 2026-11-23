@@ -804,6 +804,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, tea.Batch(append(cmds, a.handleExecEnded(msg))...)
 	case nodeShellDeletedMsg:
 		return a, tea.Batch(append(cmds, a.handleNodeShellDeleted(msg))...)
+	case diagnosticDoneMsg:
+		return a, a.handleDiagnosticDone(msg)
 	case objectActionPreparedMsg:
 		return a, a.handleObjectActionPrepared(msg)
 	case objectActionDoneMsg:
