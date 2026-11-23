@@ -1,6 +1,6 @@
 # 0233. Info history: label first, framed sparkline
 
-- Status: Accepted
+- Status: Accepted; the frame mark extended by 0342
 - Date: 2026-11-23
 - PR: #233
 - Supersedes: the label format and placement in ADR 0177, section "Label"
