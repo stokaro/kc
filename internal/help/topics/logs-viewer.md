@@ -26,7 +26,8 @@ back; the filter, the search and follow mode stay.
 The status line shows the stream options (`tail 200, since 1h,
 timestamps`), the view (`formatted, 12 of 40 lines`), the filter, and
 the stream state: `(connecting)`, `(reconnecting)`, `(ended)` or
-`(failed)`. A merged log starts with its coverage, for example
+`(failed)`. `(reconnecting)` shows only while a retry is pending; a
+stream that gave up or was refused shows `(failed)`. A merged log starts with its coverage, for example
 `incomplete: 50 streaming, 20 waiting (limit 50)`.
 
 The last line shows the `kubectl logs` command that prints the same

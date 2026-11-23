@@ -396,3 +396,57 @@ func TestOpenReturnsTheFirstError(t *testing.T) {
 		t.Fatalf("Open = %v, want boom", err)
 	}
 }
+
+// TestReaderClearsReconnectingWhenItStops ends a Reader while it waits to
+// reconnect: a refusal, the last failed attempt, or a close. Nothing is
+// pending after that, so Reconnecting must be false.
+func TestReaderClearsReconnectingWhenItStops(t *testing.T) {
+	t.Parallel()
+	forbidden := apierrors.NewForbidden(schema.GroupResource{Resource: "pods/log"}, "p", errors.New("no"))
+	tests := []struct {
+		name     string
+		attempts []attempt
+		max      int
+		close    bool
+		wantErr  func(error) bool
+	}{
+		{name: "permanent refusal", attempts: []attempt{{lines: []string{t1 + " a"}, end: io.ErrUnexpectedEOF}, {err: forbidden}},
+			wantErr: apierrors.IsForbidden},
+		{name: "attempts run out", attempts: []attempt{{lines: []string{t1 + " a"}, end: io.ErrUnexpectedEOF}, {err: errors.New("connection refused")}},
+			max: 1, wantErr: func(err error) bool { return errors.Is(err, logresume.ErrGaveUp) }},
+		{name: "closed while waiting", attempts: []attempt{{lines: []string{t1 + " a"}, end: io.ErrUnexpectedEOF}},
+			close: true, wantErr: func(err error) bool { return err != nil }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				s := &script{attempts: tt.attempts}
+				r, err := logresume.Open(t.Context(), logresume.Config{Options: follow, Open: s.open, Check: running, MaxAttempts: tt.max})
+				if err != nil {
+					t.Fatalf("Open = %v", err)
+				}
+				defer func() { _ = r.Close() }()
+				br := bufio.NewReader(r)
+				if line, err := br.ReadString('\n'); line != "a\n" || err != nil {
+					t.Fatalf("first line = %q, %v", line, err)
+				}
+				synctest.Wait()
+				if !r.Reconnecting() {
+					t.Fatal("Reconnecting() = false while a retry is pending")
+				}
+				if tt.close {
+					_ = r.Close()
+				}
+				_, err = io.ReadAll(br)
+				if !tt.wantErr(err) {
+					t.Fatalf("read error = %v", err)
+				}
+				<-r.Done()
+				if r.Reconnecting() {
+					t.Fatal("Reconnecting() = true after the reader stopped")
+				}
+			})
+		})
+	}
+}
