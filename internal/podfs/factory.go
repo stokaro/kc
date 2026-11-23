@@ -101,6 +101,15 @@ func (h *helperAwareSession) ReadFile(ctx context.Context, p string, limit int64
 	return h.ExecSession.ReadFile(ctx, HelperPath(p), limit)
 }
 
+// ReadFileRange reads part of a file of the target container.
+func (h *helperAwareSession) ReadFileRange(ctx context.Context, p string, offset, length int64) (io.ReadCloser, int64, error) {
+	rr, ok := h.ExecSession.(RangeReader)
+	if !ok {
+		return nil, 0, errors.New("pod filesystem: the session cannot read part of a file")
+	}
+	return rr.ReadFileRange(ctx, HelperPath(p), offset, length)
+}
+
 // checkTarget makes sure the helper sees the target's filesystem. Without
 // a shared process namespace PID 1 is the helper itself, and kc would show
 // the helper's files as the container's.

@@ -49,9 +49,17 @@ func (b *viewerCommandBar) render(width int) string {
 	return style.Width(width).Render(text)
 }
 
+// barText is the text a command bar copies with M-a, and the state that
+// keeps the bar's keys and clicks away from it.
+type barText interface {
+	SearchMode() bool
+	PlainText() string
+	Selecting() bool
+}
+
 // handle processes copy keys, clicks on the bar and copy results. inner is
 // the viewer widget; width and height are the full content area.
-func (b *viewerCommandBar) handle(msg tea.Msg, inner *viewer.Widget, width, height int) (tea.Cmd, bool) {
+func (b *viewerCommandBar) handle(msg tea.Msg, inner barText, width, height int) (tea.Cmd, bool) {
 	switch m := msg.(type) {
 	case copyResultMsg:
 		b.flash, b.flashErr = m.text, m.error

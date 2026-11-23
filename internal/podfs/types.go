@@ -69,6 +69,19 @@ type ExecSession interface {
 	Close() error
 }
 
+// RangeReader reads part of a file, for a viewer that pages through it.
+// The native session and the debug helper session implement it.
+type RangeReader interface {
+	// ReadFileRange reads up to length bytes of path from offset, which
+	// must be a multiple of RangeAlign. It returns the bytes and the size
+	// of the file when the read started.
+	ReadFileRange(ctx context.Context, path string, offset, length int64) (io.ReadCloser, int64, error)
+}
+
+// RangeAlign is the alignment of a RangeReader offset: dd reads in blocks
+// of this size.
+const RangeAlign = 4096
+
 // Factory constructs ExecSessions on demand. ctx bounds establishing the
 // session; the session stays usable after ctx ends, until Close.
 type Factory interface {

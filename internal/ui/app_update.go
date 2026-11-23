@@ -123,6 +123,15 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return model, cmd
 	case workloadLogsReadyMsg:
 		return a, tea.Batch(append(cmds, a.showWorkloadLogs(msg))...)
+	case viewer.PagedMsg:
+		// Block reads and search results go to their viewer even when a
+		// dialog (F2) covers it.
+		if target := msg.PagedTarget(); target != nil {
+			cmd, _ := target.Update(msg)
+			cmds = append(cmds, cmd)
+			a.invalidateView("paged viewer")
+		}
+		return a, tea.Batch(cmds...)
 	case logStreamOpenedMsg, logStreamMsg:
 		// Stream results go to their viewer even when a dialog (F2) covers
 		// it; routed through the top modal they would be dropped and the
