@@ -585,6 +585,7 @@ type liveObjectRowSource struct {
 	dirty           bool
 	once            sync.Once
 	watchFactory    func(func(), func()) (func(), error)
+	startWatch      func(func(), func()) (func(), error) // watchFactory before a forbidden answer
 	watchCancel     func()
 	watchTimer      *time.Timer
 	watchTTL        time.Duration
@@ -638,6 +639,7 @@ func newLiveObjectRowSourceWithHooks(
 		onFolderDirty: onDirty,
 		dirty:         true,
 		watchFactory:  startInformer,
+		startWatch:    startInformer,
 	}
 	return src
 }
@@ -989,6 +991,23 @@ func (s *liveObjectRowSource) ItemByID(ctx context.Context, id string) (Item, bo
 	it, ok := s.items[id]
 	s.mu.Unlock()
 	return it, ok
+}
+
+// reread is the explicit reread (C-r): a list or watch given up after a
+// forbidden answer is tried again, because the permission may have been
+// granted since, and the next load skips the listRefreshInterval spacing.
+// A running watch stays: the shared cache keeps the rows current.
+func (s *liveObjectRowSource) reread() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	if s.listBlocked || s.watchBlocked {
+		s.listBlocked, s.watchBlocked, s.forbiddenLogged = false, false, false
+		s.watchFactory = s.startWatch
+	}
+	s.lastLoad = time.Time{}
 }
 
 func (s *liveObjectRowSource) MarkDirty() {

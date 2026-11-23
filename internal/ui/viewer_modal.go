@@ -15,6 +15,43 @@ type TextViewer struct {
 	onOptions func() tea.Cmd
 	onClose   func() tea.Cmd
 	bar       viewerCommandBar
+	// read reads the shown content again for C-r; nil when it cannot.
+	read func() (title, body, lang, mime, filename string, err error)
+}
+
+// textViewerRereadMsg carries the content C-r read for a viewer.
+type textViewerRereadMsg struct {
+	v                                 *TextViewer
+	title, body, lang, mime, filename string
+	err                               error
+}
+
+// SetReread lets C-r read the content again with read, which runs off the
+// UI goroutine, for example models.Viewable.ViewContent.
+func (v *TextViewer) SetReread(read func() (title, body, lang, mime, filename string, err error)) {
+	v.read = read
+}
+
+// reread starts reading the content again.
+func (v *TextViewer) reread() tea.Cmd {
+	read := v.read
+	return func() tea.Msg {
+		title, body, lang, mime, filename, err := read()
+		return textViewerRereadMsg{v: v, title: title, body: body, lang: lang, mime: mime, filename: filename, err: err}
+	}
+}
+
+// applyReread shows the content C-r read and keeps the scroll position; a
+// failed read keeps the shown content.
+func (v *TextViewer) applyReread(msg textViewerRereadMsg) error {
+	if msg.err != nil {
+		return msg.err
+	}
+	if msg.filename == "" {
+		msg.filename = msg.title
+	}
+	v.inner.UpdateContent(msg.body, viewer.Metadata{Title: msg.title, Language: msg.lang, MimeType: msg.mime, Filename: msg.filename})
+	return nil
 }
 
 // SetCommand sets the kubectl command shown under the text.
@@ -48,6 +85,9 @@ func (v *TextViewer) Init() tea.Cmd { return nil }
 func (v *TextViewer) SetDimensions(w, h int) { v.width, v.height = w, h }
 
 func (v *TextViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == rereadKey && v.read != nil && !v.inner.SearchMode() {
+		return v, v.reread()
+	}
 	if cmd, handled := v.bar.handle(msg, v.inner, v.width, v.height); handled {
 		return v, cmd
 	}
@@ -90,6 +130,7 @@ func (v *TextViewer) FooterHints() []FooterHint {
 		{Key: "F7", Label: "Search", Enabled: true},
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "n", Label: "Next", Enabled: v.inner.HasSearchMatches()},
+		{Key: "C-r", Label: "Reread", Enabled: v.read != nil},
 	}, viewerCopyHints(v.bar.command != "")...)
 }
 

@@ -2073,6 +2073,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	view.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	view.SetCommand(itemViewCommand(item))
 	view.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(view) })
+	view.SetReread(viewable.ViewContent)
 	modalTitle := a.modalTitleFromItem(item, title)
 	modal := NewModal(modalTitle, view)
 	modal.SetMode(ModalModeFullscreen)

@@ -105,6 +105,16 @@ func (f *ResourcesFolder) ApplyResourceViewOptions(showNonEmpty bool, order appc
 	}
 }
 
+// Reread drops the cached API discovery and lists the resource types again,
+// so a type installed since (a new CRD) shows at once instead of after the
+// next periodic discovery refresh. The discovery request runs on the next
+// read of the rows.
+func (f *ResourcesFolder) Reread(ctx context.Context) {
+	ctrllog.FromContext(ctx).WithName("resourcesFolder").Info("rereading API discovery", "context", f.Deps.CtxName, "namespace", f.Deps.ClusterKey.Namespace)
+	f.Deps.Cl.RefreshDiscovery()
+	f.BaseFolder.Reread(ctx)
+}
+
 func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpec) []table.Row {
 	log := ctrllog.FromContext(ctx).WithName("resourcesFolder")
 
