@@ -67,6 +67,9 @@ type overviewEngine struct {
 	idleAfter time.Duration
 	keepEvery time.Duration
 	now       func() time.Time
+	// life follows the targets across recomputes (overview_lifecycle.go).
+	// Only recompute uses it, one at a time.
+	life *overviewLifecycle
 
 	dirty atomic.Bool
 
@@ -113,6 +116,7 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 		idleAfter: ttl,
 		keepEvery: ttl / 3,
 		now:       time.Now,
+		life:      newOverviewLifecycle(),
 		listeners: make(map[int]func()),
 	}
 	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps) }
@@ -285,7 +289,11 @@ func (e *overviewEngine) recompute(ctx context.Context, conn overviewConn) bool 
 	e.mu.Lock()
 	m := e.measuredLocked()
 	e.mu.Unlock()
-	report := computeOverview(in, e.cfg, e.now(), m)
+	now := e.now()
+	report := computeOverviewWith(in, e.cfg, now, m, e.life)
+	if e.life != nil {
+		e.life.apply(report, now)
+	}
 	e.mu.Lock()
 	e.lastNodes = nodeNames(in.nodes)
 	e.report = report
