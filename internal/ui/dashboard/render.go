@@ -236,7 +236,29 @@ func (m *Model) chartFrame(v *view, wd widget, c chart.Chart, r rect) []string {
 	legend := legendLines(m.legend(v, wd, c), r.w-2)
 	body := slices.Concat(legend, c.Render())
 	m.placeImage(wd, c, body[len(legend)-1:])
-	return frame(title, m.sourceLabel(v, wd), v.focus == wd, r.w, r.h, body)
+	return frame(title, shortFooter(m.sourceLabel(v, wd), r.w-6), v.focus == wd, r.w, r.h, body)
+}
+
+// shortFooter fits a source note into w cells without cutting a word:
+// "3 of 3 pods measured" becomes "3/3 pods", then the last notes go,
+// the source and the samples last.
+func shortFooter(s string, w int) string {
+	if ansi.StringWidth(s) <= w {
+		return s
+	}
+	parts := strings.Split(s, " · ")
+	for i, p := range parts {
+		if n, rest, ok := strings.Cut(p, " of "); ok {
+			if d, ok := strings.CutSuffix(rest, " pods measured"); ok {
+				parts[i] = n + "/" + d + " pods"
+			}
+		}
+		parts[i] = strings.TrimSuffix(parts[i], " (C-x m)")
+	}
+	for len(parts) > 1 && ansi.StringWidth(strings.Join(parts, " · ")) > w {
+		parts = parts[:len(parts)-1]
+	}
+	return strings.Join(parts, " · ")
 }
 
 // topBar is the menu bar row: the menu titles, the breadcrumb of the

@@ -104,6 +104,8 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) []string {
 	parts = append(parts, reqPart)
 	limPart := swatch(limStyle, "┄") + " limit "
 	switch {
+	case !limKnown && v.target.Kind == KindPod:
+		limPart += "missing on some containers"
 	case !limKnown:
 		limPart += "missing on some pods"
 	case lim <= 0:
@@ -120,8 +122,8 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) []string {
 	return parts
 }
 
-// legendLines packs the parts of a legend into lines of width w, two at
-// most: a narrow chart gives up a plot row rather than cut the legend.
+// legendLines packs the parts of a legend into lines of width w, three
+// at most: a narrow chart gives up plot rows rather than cut the legend.
 func legendLines(parts []string, w int) []string {
 	var lines []string
 	cur := ""
@@ -137,8 +139,8 @@ func legendLines(parts []string, w int) []string {
 		}
 	}
 	lines = append(lines, cur)
-	if len(lines) > 2 {
-		lines = []string{lines[0], strings.Join(lines[1:], "  ")}
+	if len(lines) > 3 {
+		lines = append(lines[:2], strings.Join(lines[2:], "  "))
 	}
 	return lines
 }

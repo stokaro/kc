@@ -391,6 +391,9 @@ func TestLiveRefreshAndPausedReads(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
 	m := open(t, f, true, web, 80, 24)
+	// Braille reads a step of half a cell, under a minute at this width:
+	// a reread waits for minRefresh or a step, the longer.
+	key(t, m, "b")
 	ticks(t, f, m, 5, time.Second)
 	if len(f.reads) != 1 {
 		t.Fatalf("%d reads in 5s, want 1", len(f.reads))
@@ -633,14 +636,24 @@ func TestBlocksToggle(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
 	m := open(t, f, true, web, 120, 30)
-	if !strings.ContainsAny(strings.Join(screen(t, m, 120, 30), ""), "⣀⣤⣶⣿") {
-		t.Fatal("braille mode draws no braille")
+	// Text starts in blocks: a solid area that reads the same in every
+	// font.
+	if s := strings.Join(screen(t, m, 120, 30), ""); !strings.Contains(s, "█") || containsBraille(s) || m.FunctionKeys()[5].Label != "Braille" {
+		t.Fatal("blocks mode draws braille, or no solid area")
 	}
 	key(t, m, "b")
-	lines := screen(t, m, 120, 30)
-	if strings.ContainsAny(strings.Join(lines, ""), "⣀⣤⣶⣿") || m.FunctionKeys()[5].Label != "Braille" {
-		t.Error("block mode still draws braille")
+	if s := strings.Join(screen(t, m, 120, 30), ""); !containsBraille(s) || m.FunctionKeys()[5].Label != "Blocks" {
+		t.Error("braille mode draws no braille edge")
 	}
+}
+
+func containsBraille(s string) bool {
+	for _, r := range s {
+		if r > 0x2800 && r <= 0x28ff {
+			return true
+		}
+	}
+	return false
 }
 
 // TestChartsShareTheCellGrid: the CPU and memory charts have labels of

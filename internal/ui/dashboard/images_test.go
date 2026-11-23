@@ -104,21 +104,21 @@ func TestDrawKeyCyclesThroughImages(t *testing.T) {
 	}
 	hasPlaceholders := func() bool { return strings.ContainsRune(m.View(), kittygfx.Placeholder) }
 	next := func() string { return m.FunctionKeys()[5].Label }
-	if !hasPlaceholders() || next() != "Braille" {
+	if !hasPlaceholders() || next() != "Blocks" {
 		t.Fatalf("images are not drawn first (F6 offers %q)", next())
 	}
 	if out := press("b"); !strings.Contains(out, "a=d,d=I") || hasPlaceholders() {
-		t.Errorf("b from images: deletes %v, placeholders %v; want braille without images", strings.Contains(out, "a=d"), hasPlaceholders())
+		t.Errorf("b from images: deletes %v, placeholders %v; want blocks without images", strings.Contains(out, "a=d"), hasPlaceholders())
 	}
-	if next() != "Blocks" {
-		t.Errorf("F6 offers %q after images, want Blocks", next())
+	if next() != "Braille" {
+		t.Errorf("F6 offers %q after images, want Braille", next())
 	}
 	press("f6")
 	if next() != "Images" {
-		t.Errorf("F6 offers %q after blocks, want Images", next())
+		t.Errorf("F6 offers %q after braille, want Images", next())
 	}
 	if out := press("f6"); !strings.Contains(out, "a=T") || !hasPlaceholders() {
-		t.Error("F6 from blocks does not bring the images back")
+		t.Error("F6 from braille does not bring the images back")
 	}
 }
 
@@ -178,8 +178,8 @@ func TestNoImagesWithoutTheSource(t *testing.T) {
 		t.Fatal("placeholders without images")
 	}
 	key(t, m, "b")
-	if l := m.FunctionKeys()[5].Label; l != "Braille" || strings.ContainsRune(m.View(), kittygfx.Placeholder) {
-		t.Errorf("F6 offers %q from blocks without images, want Braille", l)
+	if l := m.FunctionKeys()[5].Label; l != "Blocks" || strings.ContainsRune(m.View(), kittygfx.Placeholder) {
+		t.Errorf("F6 offers %q from braille without images, want Blocks", l)
 	}
 	for _, it := range m.Menus(nil)[2].Items {
 		if strings.Contains(it.Label, "images") {

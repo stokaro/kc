@@ -33,17 +33,19 @@ func imageKey(wd widget) (int, bool) {
 func (m *Model) images() bool { return m.src.Images != nil && m.pixels }
 
 // nextDraw is the draw mode b and F6 switch to: images, when the
-// terminal shows them, then braille, then blocks, then images again.
+// terminal shows them, then blocks, then braille, then images again.
+// Text starts in blocks: a solid area with an edge in eighths reads the
+// same in every font; braille draws two samples per cell at the edge.
 func (m *Model) nextDraw() (chart.Mode, bool) {
 	switch {
 	case m.images():
-		return chart.Braille, false
-	case m.mode == chart.Braille:
 		return chart.Blocks, false
+	case m.mode == chart.Blocks:
+		return chart.Braille, false
 	case m.src.Images != nil:
-		return chart.Braille, true
+		return chart.Blocks, true
 	}
-	return chart.Braille, false
+	return chart.Blocks, false
 }
 
 // nextDrawName names nextDraw for the key line.
@@ -83,7 +85,7 @@ func (m *Model) drawName() string {
 func (m *Model) drawNamed(name string) (mode chart.Mode, pixels, ok bool) {
 	switch name {
 	case drawImages:
-		return chart.Braille, true, m.src.Images != nil
+		return chart.Blocks, true, m.src.Images != nil
 	case drawBraille:
 		return chart.Braille, false, true
 	case drawBlocks:

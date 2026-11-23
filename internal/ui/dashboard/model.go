@@ -193,7 +193,7 @@ func IsMsg(msg tea.Msg) bool {
 
 // New opens a dashboard of t.
 func New(src Sources, t Target) *Model {
-	m := &Model{src: src, sess: newSession(), mode: chart.Braille, pixels: true}
+	m := &Model{src: src, sess: newSession(), mode: chart.Blocks, pixels: true}
 	m.stack = []*view{m.newView(t, nil)}
 	m.firstRow(m.stack[0])
 	return m
