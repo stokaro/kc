@@ -25,7 +25,7 @@ import (
 // builtinObjectRows are rows models itself adds inside objects, next to
 // the rows registered with RegisterObjectRows.
 func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
-	diagnosis := gvr == serviceGVR || gvr == hpaGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr) || hasRouteDiagnosis(gvr)
+	diagnosis := gvr == serviceGVR || gvr == hpaGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr) || hasGitOpsDiagnosis(gvr) || hasRouteDiagnosis(gvr)
 	if !diagnosis && !hasTimeline(gvr) {
 		return nil, false
 	}
@@ -61,6 +61,8 @@ func diagnosisRow(deps Deps, gvr schema.GroupVersionResource, namespace, name st
 		item.RowItem.details = "Check the selector, pods, EndpointSlices and target ports of this Service"
 	case gvr == hpaGVR:
 		item.RowItem.details = "Explain the replica bounds, conditions, metrics and behavior of this autoscaler"
+	case hasGitOpsDiagnosis(gvr):
+		item.RowItem.details = "Check the source, revisions, conditions and dependencies of this GitOps object"
 	case gvr == pvcGVR:
 		item.RowItem.details = "Explain provisioning, binding, attachment and mount events of this claim"
 	case hasRouteDiagnosis(gvr):
@@ -115,6 +117,8 @@ func diagnosisWatches(gvr schema.GroupVersionResource, namespace string, self re
 		return relatedWatch{gvr: g, namespace: namespace}
 	}
 	switch {
+	case hasGitOpsDiagnosis(gvr):
+		return gitopsDiagnosisWatches(gvr, namespace, self), true
 	case hasRouteDiagnosis(gvr):
 		return routeDiagnosisWatches(gvr, namespace, self), true
 	case gvr == serviceGVR:
@@ -167,6 +171,9 @@ const serviceDiagnosisNote = "Configuration only: a consistent Service does not 
 // renders it: summary rows, each finding with the sources it cites, then
 // the backends of a Service.
 func (f *RelatedObjectsFolder) diagnosisRows(ctx context.Context) ([]table.Row, error) {
+	if hasGitOpsDiagnosis(f.gvr) {
+		return f.gitopsDiagnosisRows(ctx)
+	}
 	if hasRouteDiagnosis(f.gvr) {
 		return f.routeDiagnosisRows(ctx)
 	}

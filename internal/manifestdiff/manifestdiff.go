@@ -64,6 +64,10 @@ type Side struct {
 	GVR       schema.GroupVersionResource
 	Namespace string
 	Name      string
+	// Revision names the version compared, when it is not obvious: the
+	// checksum of a desired-state file, the resourceVersion of the live
+	// object it is compared with. Empty leaves it out of the header.
+	Revision string
 	// Object is the manifest as unstructured JSON. Compare does not modify it.
 	Object map[string]any
 }
@@ -79,6 +83,9 @@ func (s Side) Label() string {
 		parts = append(parts, "namespace "+s.Namespace)
 	}
 	parts = append(parts, "name "+s.Name)
+	if s.Revision != "" {
+		parts = append(parts, s.Revision)
+	}
 	return strings.Join(parts, ", ")
 }
 

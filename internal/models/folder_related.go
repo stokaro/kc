@@ -113,11 +113,12 @@ func newRelatedFolder(ctx context.Context, deps Deps, reader *scopedReader, rele
 		if err != nil {
 			return fail(err)
 		}
-		if len(obj.GetOwnerReferences()) == 0 {
+		claims := gitopsClaims(obj)
+		if len(obj.GetOwnerReferences()) == 0 && len(claims) == 0 {
 			return fail(ErrNoOwners)
 		}
 		segment = OwnersSegment
-		f.watches = []relatedWatch{self}
+		f.watches = append([]relatedWatch{self}, gitopsWatches(deps, claims)...)
 	case RelatedUsedBy:
 		finder, ok := UsedByFor(gvr)
 		if !ok {
@@ -253,6 +254,9 @@ func (f *RelatedObjectsFolder) KubectlCommand() string {
 	case RelatedRollout:
 		return kubectlCommand(f.Deps, "get", "deployment,replicasets,pods", "-n", f.namespace, "-o", "wide") + "  # rollout of deployment/" + f.name
 	case RelatedDiagnosis:
+		if hasGitOpsDiagnosis(f.gvr) {
+			return kubectlCommand(f.Deps, "get", kubectlResource(f.gvr), f.name, "-n", f.namespace, "-o", "yaml") + "  # and its source and dependencies"
+		}
 		if hasRouteDiagnosis(f.gvr) {
 			return kubectlCommand(f.Deps, "describe", kubectlResource(f.gvr), f.name, "-n", f.namespace) + "  # and its backend services"
 		}
@@ -380,8 +384,9 @@ func (f *RelatedObjectsFolder) findRefs(ctx context.Context) ([]RelatedRef, erro
 		if err != nil {
 			return nil, err
 		}
-		refs := ResolveOwners(f.Deps.Cl.RESTMapper(), f.namespace, obj.GetOwnerReferences())
-		return checkOwners(ctx, f.reader, refs), nil
+		mapper := f.Deps.Cl.RESTMapper()
+		refs := checkOwners(ctx, f.reader, ResolveOwners(mapper, f.namespace, obj.GetOwnerReferences()))
+		return append(refs, gitopsRefs(ctx, f.reader, mapper, obj)...), nil
 	case RelatedDependsOn:
 		obj, err := f.reader.GetByGVR(ctx, f.gvr, f.namespace, f.name)
 		if err != nil {
