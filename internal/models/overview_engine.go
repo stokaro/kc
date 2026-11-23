@@ -420,7 +420,7 @@ func (c *clusterOverviewConn) Watch(ctx context.Context, onEvent func()) func() 
 		if err != nil {
 			reason := err.Error()
 			if meta.IsNoMatchError(err) {
-				reason = "not served by this cluster"
+				reason = notServedReason
 			}
 			log.Info("overview kind unavailable", "gvr", k.gvr.String(), "reason", reason)
 			c.mu.Lock()

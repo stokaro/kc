@@ -84,6 +84,10 @@ type overviewFinding struct {
 	// <workload>); see overview_commands.go.
 	supplies []string
 	targets  []overviewTarget
+
+	// notApplicable says why there is nothing to check (no objects of the
+	// kind in scope, an add-on not installed). It is not a pass.
+	notApplicable string
 }
 
 // overviewReport is the result of one recompute.
@@ -207,12 +211,18 @@ var overviewRules = []overviewRule{
 // countFinding builds a row whose value is the number of targets and whose
 // severity is the worst target's.
 func countFinding(rc *ruleContext, f overviewFinding, needs []schema.GroupVersionResource, targets func() []overviewTarget) overviewFinding {
+	if reason := optionalNotServed(rc.in, needs); reason != "" {
+		return notApplicable(f, reason)
+	}
 	if reason := rc.in.missingReason(needs...); reason != "" {
 		f.unavailable = reason
 		f.value = "n/a"
 		f.severity = severityUnknown
 		f.state = severityUnknown.String()
 		return f
+	}
+	if reason := noSubjectsReason(rc.in, needs); reason != "" {
+		return notApplicable(f, reason)
 	}
 	f.targets = sortTargets(targets())
 	f.value = fmt.Sprintf("%d", len(f.targets))

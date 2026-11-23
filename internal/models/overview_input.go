@@ -9,6 +9,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -164,6 +165,9 @@ func loadOverviewInput(ctx context.Context, r crclient.Reader, namespace string,
 		}
 		if err := r.List(ctx, list, opts...); err != nil {
 			in.missing[k.gvr] = err.Error()
+			if meta.IsNoMatchError(err) {
+				in.missing[k.gvr] = notServedReason
+			}
 			continue
 		}
 		in.assign(k.gvr, list)
