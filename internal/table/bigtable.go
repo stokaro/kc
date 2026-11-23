@@ -490,7 +490,7 @@ func (m *BigTable) scrollContent() (idx []int, headers []string, rows [][]string
 		}
 		headers[i] = h
 	}
-	return idx, headers, rowsToStringRowsSliced(m.window, idx, cuts, widths, !m.bColumn)
+	return idx, headers, rowsToStringRowsSliced(m.window, idx, cuts, widths, base, !m.bColumn)
 }
 
 // fitContent returns the column indexes, the headers and the rows of
@@ -900,7 +900,27 @@ func (m *BigTable) computeScrollBaseWidths() []int {
 			w[i] = 1
 		}
 	}
+	m.shrinkToViewport(w)
 	return w
+}
+
+// shrinkToViewport narrows the columns with a MinWidth, the widest first,
+// until the line fits the viewport or each is at its MinWidth.
+func (m *BigTable) shrinkToViewport(w []int) {
+	excess := scrollPlanWidth(w) - m.w
+	for excess > 0 {
+		widest := -1
+		for i := range w {
+			if minW := m.cols[i].MinWidth; minW > 0 && w[i] > minW && (widest < 0 || w[i] > w[widest]) {
+				widest = i
+			}
+		}
+		if widest < 0 {
+			return
+		}
+		w[widest]--
+		excess--
+	}
 }
 
 func asciiSlicePad(s string, start, width int) string {
@@ -926,7 +946,18 @@ func asciiSlicePad(s string, start, width int) string {
 	return out
 }
 
-func rowsToStringRowsSliced(rows []Row, idx, cuts, widths []int, spaceSep bool) [][]string {
+// ellipsize ends the slice s of a longer cell in "…" within width cells.
+// A cell that is not ASCII after all may be cut inside a rune; the broken
+// bytes are dropped and the cell is padded back to width.
+func ellipsize(s string, width int) string {
+	out := strings.ToValidUTF8(s[:len(s)-1], "") + "…"
+	return out + strings.Repeat(" ", max(0, width-ansi.StringWidth(out)))
+}
+
+// rowsToStringRowsSliced slices the cells of the visible columns. full are
+// the columns' widths in the plan: a cell longer than its column's width
+// ends in "…" where the column ends.
+func rowsToStringRowsSliced(rows []Row, idx, cuts, widths, full []int, spaceSep bool) [][]string {
 	out := make([][]string, len(rows))
 	for i := range rows {
 		_, cells, _, _ := rows[i].Columns()
@@ -937,6 +968,9 @@ func rowsToStringRowsSliced(rows []Row, idx, cuts, widths []int, spaceSep bool) 
 				cell = cells[k]
 			}
 			s := asciiSlicePad(cell, cuts[j], widths[j])
+			if k < len(full) && len(cell) > full[k] && widths[j] > 0 && cuts[j]+widths[j] >= full[k] {
+				s = ellipsize(s, widths[j])
+			}
 			if spaceSep && j < len(idx)-1 {
 				s = ensureTrailingSpace(s)
 			}

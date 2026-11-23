@@ -211,7 +211,7 @@ type overviewFindingsFolder struct {
 }
 
 func newOverviewFindingsFolder(overview *OverviewFolder, path []string, what string, findings func(*overviewReport) []overviewFinding) *overviewFindingsFolder {
-	base := NewBaseFolder(overview.Deps, []table.Column{{Title: " Name"}, {Title: "Value"}, {Title: "State"}}, path)
+	base := NewBaseFolder(overview.Deps, overviewFindingColumns(), path)
 	f := &overviewFindingsFolder{BaseFolder: base, overview: overview, what: what, findings: findings}
 	engine := overview.engine
 	base.SetRowSource(newReadingRowSource(newSliceRowSource(f.populate), func() { _, _ = engine.snapshot() }))

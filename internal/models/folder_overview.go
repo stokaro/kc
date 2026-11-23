@@ -34,11 +34,18 @@ func NewOverviewFolder(deps Deps, namespace string, path []string) *OverviewFold
 }
 
 func newOverviewFolder(deps Deps, namespace string, path []string, engine *overviewEngine) *OverviewFolder {
-	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}, {Title: "Value"}, {Title: "State"}}, path)
+	base := NewBaseFolder(deps, overviewFindingColumns(), path)
 	f := &OverviewFolder{BaseFolder: base, engine: engine, namespace: namespace}
 	base.SetRowSource(newReadingRowSource(newSliceRowSource(f.populate), func() { _, _ = engine.snapshot() }))
 	f.unsub = engine.subscribe(f.Refresh)
 	return f
+}
+
+// overviewFindingColumns are the columns of finding rows. In a narrow pane
+// the name and a long value give up width, so the state stays visible
+// without horizontal panning (ADR 0176); F3 and Info show the full text.
+func overviewFindingColumns() []table.Column {
+	return []table.Column{{Title: " Name", MinWidth: 12}, {Title: "Value", MinWidth: 10}, {Title: "State"}}
 }
 
 // Close stops the engine; navigators call it when they drop the folder.
@@ -219,7 +226,9 @@ type OverviewTargetsFolder struct {
 }
 
 func newOverviewTargetsFolder(deps Deps, engine *overviewEngine, findingID, title string, path []string) *OverviewTargetsFolder {
-	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}, {Title: "Namespace"}, {Title: "Resource"}, {Title: "Value"}}, path)
+	// The value says why the object is listed; the name, namespace and
+	// resource give up width first in a narrow pane (ADR 0176).
+	base := NewBaseFolder(deps, []table.Column{{Title: " Name", MinWidth: 14}, {Title: "Namespace", MinWidth: 8}, {Title: "Resource", MinWidth: 8}, {Title: "Value"}}, path)
 	f := &OverviewTargetsFolder{BaseFolder: base, engine: engine, findingID: findingID, title: title}
 	base.SetRowSource(newReadingRowSource(newSliceRowSource(f.populate), func() { _, _ = engine.snapshot() }))
 	f.unsub = engine.subscribe(f.Refresh)
