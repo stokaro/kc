@@ -294,6 +294,15 @@ type OverviewConfig struct {
 	// CertificateExpiryDays flags a cert-manager Certificate whose
 	// status.notAfter is less than this many days away.
 	CertificateExpiryDays int `json:"certificateExpiryDays"`
+	// StartupGrace is how long a pod that is not ready or still pending, or
+	// a Deployment that is rolling out or not yet available, counts as
+	// starting rather than as a problem. It applies only to states the API
+	// server dates; explicit failures never wait.
+	StartupGrace metav1.Duration `json:"startupGrace"`
+	// UsageHysteresisPercent holds a container flagged near its memory or
+	// CPU limit until its usage drops this many points below the warning
+	// percent, so a value around the threshold does not flap.
+	UsageHysteresisPercent int `json:"usageHysteresisPercent"`
 }
 
 // DefaultOverview returns the default overview thresholds.
@@ -318,6 +327,8 @@ func DefaultOverview() OverviewConfig {
 		VolumeWarnPercent:        80,
 		StatsMaxNodes:            50,
 		CertificateExpiryDays:    14,
+		StartupGrace:             metav1.Duration{Duration: 5 * time.Minute},
+		UsageHysteresisPercent:   5,
 	}
 }
 
@@ -327,6 +338,9 @@ func (o OverviewConfig) Normalized() OverviewConfig {
 	d := DefaultOverview()
 	if o.Window.Duration <= 0 {
 		o.Window = d.Window
+	}
+	if o.StartupGrace.Duration <= 0 {
+		o.StartupGrace = d.StartupGrace
 	}
 	positive := func(v *int, def int) {
 		if *v <= 0 {
@@ -349,6 +363,7 @@ func (o OverviewConfig) Normalized() OverviewConfig {
 	positive(&o.VolumeWarnPercent, d.VolumeWarnPercent)
 	positive(&o.StatsMaxNodes, d.StatsMaxNodes)
 	positive(&o.CertificateExpiryDays, d.CertificateExpiryDays)
+	positive(&o.UsageHysteresisPercent, d.UsageHysteresisPercent)
 	if o.UnderRequestedFactor <= 1 {
 		// A factor of 1 or less would flag every node that uses what it
 		// requests.
