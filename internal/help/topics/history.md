@@ -9,7 +9,8 @@ without walking the folders.
 - A place is the context, the panel's namespace scope and the rows
   entered from the panel root.
 - Every move is recorded: entering or leaving a folder, a scope change,
-  a context switch, a hotlist jump, the place kc started in.
+  a context switch, a hotlist jump, a `cd` on the shell line, the place
+  kc started in.
 - A place is kept once. Visiting it again moves it to the newest end.
 - Recording after going back drops the entries ahead, like a browser.
 - Each panel keeps the last 50 places, in memory for this session.
