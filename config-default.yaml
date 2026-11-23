@@ -25,6 +25,11 @@ viewer:
     # in MiB; older lines are dropped and the footer counts them.
     maxLines: 100000
     maxMemoryMiB: 64
+    # JSON fields that M-d "Follow request" filters by, first one found.
+    correlationFields: [trace_id, traceId, traceID, request_id, requestId, requestID]
+    # URL template for the trace of a line; {trace} is the field value.
+    # Empty: no trace link. Example: https://tempo.example/trace/{trace}
+    traceURL: ""
 
 panel:
   scrolling:

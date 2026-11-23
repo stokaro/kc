@@ -124,6 +124,17 @@ type LogsViewer struct {
 	// lostPlace is set when the lines the user was reading were dropped
 	// to stay within the limits; the next scroll clears it.
 	lostPlace bool
+
+	// Record actions (M-d, M-z; see logs_fields.go).
+	onFields  func() tea.Cmd
+	fieldOpts logsFieldOptions
+	history   []logsViewState
+	// context, when set, is shown in place of the filtered lines.
+	context *logsContext
+	// correlated is the field=value a Follow action filters by.
+	correlated string
+	// note is a message for the status line until the next key.
+	note string
 }
 
 // SetCommand sets the kubectl command shown under the log. A command builder
@@ -211,6 +222,7 @@ func (v *LogsViewer) SetLogOptions(opts LogOptions) tea.Cmd {
 	v.inner.ScrollToEnd()
 	v.autoFollow = true
 	v.lostPlace = false
+	v.context, v.correlated = nil, ""
 	return v.start()
 }
 
@@ -237,6 +249,7 @@ func (v *LogsViewer) SetDimensions(w, h int) {
 
 func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
+		v.note = ""
 		if cmd, handled := v.handleLogViewKey(key); handled {
 			return v, cmd
 		}
@@ -363,6 +376,9 @@ func (v *LogsViewer) statusText() string {
 	text := v.LogOptions().summary() + ", " + v.logViewStatus()
 	if mux := v.Mux(); mux != nil {
 		text = mux.Stats().String() + "; " + text
+	}
+	if fields := v.fieldsStatus(); fields != "" {
+		text += "; " + fields
 	}
 	switch {
 	case v.opening:
