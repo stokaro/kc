@@ -59,6 +59,18 @@ func (m *ScopePickerModel) SetChoices(choices []scopeChoice) {
 	m.refilter()
 }
 
+// selectValue moves the highlight to the visible entry with value v, if
+// there is one.
+func (m *ScopePickerModel) selectValue(v string) {
+	for i, idx := range m.visible {
+		if idx >= 0 && m.choices[idx].Value == v {
+			m.selected = i
+			m.ensureVisible()
+			return
+		}
+	}
+}
+
 // HandleModalEscape makes one Esc clear the filter, or close the picker
 // when there is none, instead of the modal's Esc Esc sequence.
 func (m *ScopePickerModel) HandleModalEscape(tea.KeyMsg) (bool, tea.Cmd) {

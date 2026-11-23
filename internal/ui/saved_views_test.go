@@ -133,6 +133,40 @@ func TestSavedViewRoundTrip(t *testing.T) {
 	}
 }
 
+// The hotlist stays open under the name dialog. A view F2 saves, or a name
+// F6 changes, shows in it at once, with the cursor on that entry.
+func TestHotlistShowsSavedViewAtOnce(t *testing.T) {
+	t.Parallel()
+	a, _ := newViewApp(t, filepath.Join(t.TempDir(), hotlist.FileName))
+	enter(t, a, "pods")
+	a.Update(tea.KeyPressMsg{Code: '\\', Mod: tea.ModCtrl})
+	hotlistPicker(t, a).Update(tea.KeyPressMsg{Code: tea.KeyInsert})
+
+	hotlistPicker(t, a).Update(tea.KeyPressMsg{Code: tea.KeyF2})
+	a.Update(viewNameMsg{Panel: 0, Entry: -1, Name: "payments failures", Confirm: true, Close: true})
+	picker := hotlistPicker(t, a)
+	labels := func() []string {
+		var out []string
+		for _, i := range picker.visible {
+			out = append(out, picker.choices[i].Label)
+		}
+		return out
+	}
+	if got := labels(); len(got) != 2 || got[1] != "payments failures" {
+		t.Fatalf("hotlist after F2 = %v, want the bookmark and the new view", got)
+	}
+	if picker.selected != 1 {
+		t.Errorf("cursor on entry %d, want the new view (1)", picker.selected)
+	}
+
+	hotlistPicker(t, a).Update(tea.KeyPressMsg{Code: tea.KeyF6})
+	a.Update(viewNameMsg{Panel: 0, Entry: 1, Name: "api pods", Confirm: true, Close: true})
+	picker = hotlistPicker(t, a)
+	if got := labels(); len(got) != 2 || got[1] != "api pods" {
+		t.Fatalf("hotlist after F6 = %v, want the renamed view", got)
+	}
+}
+
 func TestApplySavedViewReportsWhatItCannotRestore(t *testing.T) {
 	t.Parallel()
 	a, pods := newViewApp(t, filepath.Join(t.TempDir(), hotlist.FileName))
