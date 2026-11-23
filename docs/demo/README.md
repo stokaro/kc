@@ -50,6 +50,7 @@ The scenes are shell functions near the end of `record.sh` and run in the order 
 | `search` | Quick search (C-s): type the start of a name, Enter opens the row; The Info panel follows the cursor: usage, pods, top pods |
 | `overview` | Cluster overview (M-i): what needs attention in this namespace; Info explains the finding under the cursor; Enter lists the objects behind a finding |
 | `diagnosis` | /diagnosis explains why a Deployment is broken; ... and why a Service has no endpoints |
+| `help` | F1 opens the help page of what is in focus: here /diagnosis; In a dialog it explains the dialog: the investigation window (C-x w) |
 | `menu` | F9 opens the menu bar, as in mc; each entry shows its key; The Right menu switches the right panel from Info to a list |
 | `drain` | Node actions (M-n): drain a node with progress, then uncordon; Uncordon makes the node schedulable again; the pods come back |
 | `scale` | /timeline records every change kc observes on an object; Scale... asks first; the pods on the right follow live; The timeline shows the scale-up, newest first; F3 on an entry diffs it against the revision before |
@@ -78,4 +79,4 @@ The number after `snap` is how long a frame stays in the GIF. The scenes use nam
 | `TYPE` | 1 | a frame that shows typed text |
 | `ANIM` | 0.8 | one step of a live change: the scale-up, the drain progress |
 
-The GIF runs about 2 minutes 20 seconds. `snapshot <file> color` renders a frame with its colors, Go Mono and drawn box lines; ffmpeg builds one shared 64-color palette without dithering, which keeps the file near 1.4 MB.
+The GIF runs about 2 minutes 25 seconds. `snapshot <file> color` renders a frame with its colors, Go Mono and drawn box lines; ffmpeg builds one shared 64-color palette without dithering, which keeps the file near 1.4 MB.

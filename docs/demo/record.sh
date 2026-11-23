@@ -440,6 +440,30 @@ scene_diagnosis() {
 	narrow
 }
 
+scene_help() {
+	caption "F1 opens the help page of what is in focus: here /diagnosis"
+	key f1
+	wait_for "How to read it"
+	sleep 0.5
+	snap $FIRST
+	key f10
+	sleep 0.5
+	key ctrl+x
+	key w
+	wait_for "15m or 2h (live)"
+	key f1
+	wait_for "What the field accepts"
+	sleep 0.5
+	caption "In a dialog it explains the dialog: the investigation window (C-x w)"
+	snap $FIRST
+	# F10 closes the help, then a single Esc the dialog; Esc needs its
+	# one-second timeout before the next key.
+	key f10
+	sleep 0.5
+	key esc
+	sleep 1.2
+}
+
 scene_menu() {
 	caption "F9 opens the menu bar, as in mc; each entry shows its key"
 	# F9 starts on the Left menu; File is the next one.
@@ -503,9 +527,11 @@ scene_scale() {
 	key end
 	# The rows end with the revisions, the note and "stop recording"; the
 	# spec change is the oldest entry after the initial one. The line under
-	# the list shows the whole change of the row under the cursor.
+	# the list shows the revision, uid and change of the row under the
+	# cursor. The row itself shows the change too, so match the line with
+	# the uid; the generation numbers differ between clusters.
 	local n=0
-	until shows "; spec.replicas"; do
+	until screen | grep -q 'uid .*; spec\.replicas'; do
 		n=$((n + 1))
 		[ $n -lt 12 ] || die "no timeline row with the spec change"
 		key up
@@ -742,7 +768,7 @@ scene_terminal() {
 # The scenes in recording order. KC_DEMO_SCENES picks some of them, such as
 # the first few, to check a change quickly; each scene starts where the one
 # before it ends.
-SCENES="intro search overview diagnosis menu drain scale yaml compare logs files hotlist terminal"
+SCENES="intro search overview diagnosis help menu drain scale yaml compare logs files hotlist terminal"
 
 scenes() {
 	local s
