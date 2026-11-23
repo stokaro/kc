@@ -58,7 +58,7 @@ type overviewPodUsage struct {
 // summarizeNodes returns the load of every node, or nil when nodes or pods
 // cannot be read.
 func summarizeNodes(rc *ruleContext) []overviewNodeSummary {
-	if rc.in.missingReason(ovNodesGVR, ovPodsGVR) != "" {
+	if rc.in.clusterWideReason(ovNodesGVR, ovPodsGVR) != "" {
 		return nil
 	}
 	loads := nodeLoads(rc)

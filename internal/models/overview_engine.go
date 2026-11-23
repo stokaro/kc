@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,14 +37,18 @@ const (
 
 // overviewConn is the overview's handle on a running cache.
 type overviewConn interface {
-	// Reader lists objects from the cache.
-	Reader() crclient.Reader
+	// Reader lists objects of gvr from the cache that serves it; nil when
+	// no cache does (Unavailable then says why).
+	Reader(gvr schema.GroupVersionResource) crclient.Reader
 	// Watch calls onEvent on every change of an overview kind and returns a
 	// function that removes the handlers.
 	Watch(ctx context.Context, onEvent func()) (stop func())
 	// Unavailable returns why gvr cannot be read now, or "". pending is true
 	// while the reason may still go away by itself (the cache is syncing).
 	Unavailable(gvr schema.GroupVersionResource) (reason string, pending bool)
+	// OnlyNamespace returns the namespace gvr is read in when it cannot be
+	// read in all namespaces, or "" when its cache covers them all.
+	OnlyNamespace(gvr schema.GroupVersionResource) string
 	// KeepAlive renews the cache's pool entry.
 	KeepAlive(ctx context.Context)
 }
@@ -119,7 +122,7 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 		life:      newOverviewLifecycle(),
 		listeners: make(map[int]func()),
 	}
-	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps) }
+	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps, namespace) }
 	e.measure = func() *overviewMeasured {
 		return measuredUsage(deps, namespace, e, func() { e.dirty.Store(true) })
 	}
@@ -281,11 +284,16 @@ func (e *overviewEngine) recompute(ctx context.Context, conn overviewConn) bool 
 	ctx, cancel := context.WithTimeout(ctx, overviewComputeTimeout)
 	defer cancel()
 	pending := false
-	in := loadOverviewInput(ctx, conn.Reader(), e.namespace, func(gvr schema.GroupVersionResource) string {
+	in := loadOverviewInputFrom(ctx, conn.Reader, e.namespace, func(gvr schema.GroupVersionResource) string {
 		reason, p := conn.Unavailable(gvr)
 		pending = pending || p
 		return reason
 	})
+	for _, k := range overviewKinds {
+		if ns := conn.OnlyNamespace(k.gvr); ns != "" && k.namespaced {
+			in.onlyIn[k.gvr] = ns
+		}
+	}
 	e.mu.Lock()
 	m := e.measuredLocked()
 	e.mu.Unlock()
@@ -372,33 +380,31 @@ func overviewClusterKey(k kccluster.Key) kccluster.Key {
 	return k
 }
 
-// acquireOverviewConn leases the overview's cluster from the pool. Without
-// a factory (tests, examples) it uses deps.Cl. The lease is given up when
-// the engine stops watching (the stop function Watch returns); the pool then
-// stops the cache one TTL later.
-func acquireOverviewConn(_ context.Context, deps Deps) (overviewConn, error) {
+// acquireOverviewConn leases the overview's caches from the pool: the
+// cluster-wide one for the kinds the user may list and watch in all
+// namespaces, one limited to namespace for the others (ADR 0182). Without
+// a factory (tests, examples) it reads every kind from deps.Cl. The leases
+// are given up when the engine stops watching (the stop function Watch
+// returns); the pool then stops the caches one TTL later.
+func acquireOverviewConn(ctx context.Context, deps Deps, namespace string) (overviewConn, error) {
 	if deps.NamespaceFactory == nil {
 		if deps.Cl == nil {
-			return nil, fmt.Errorf("no cluster")
+			return nil, errNoCluster
 		}
-		return newClusterOverviewConn(deps.Cl, noRelease), nil
+		return newClusterOverviewConn(deps.Cl, noRelease, overviewKinds), nil
 	}
-	// The pool ties the cache's life to this context: use the app's.
-	cl, release, err := deps.NamespaceFactory(deps.Ctx, overviewClusterKey(deps.ClusterKey), nil)
-	if err != nil {
-		return nil, err
-	}
-	return newClusterOverviewConn(cl, release), nil
+	return acquireScopedOverviewConn(ctx, deps, namespace)
 }
 
-func newClusterOverviewConn(cl *kccluster.Cluster, release func()) *clusterOverviewConn {
-	return &clusterOverviewConn{cl: cl, release: release, informers: make(map[schema.GroupVersionResource]crcache.Informer), failed: make(map[schema.GroupVersionResource]string)}
+func newClusterOverviewConn(cl *kccluster.Cluster, release func(), kinds []overviewKind) *clusterOverviewConn {
+	return &clusterOverviewConn{cl: cl, release: release, kinds: kinds, informers: make(map[schema.GroupVersionResource]crcache.Informer), failed: make(map[schema.GroupVersionResource]string)}
 }
 
-// clusterOverviewConn reads the overview kinds from a kc cluster's cache.
+// clusterOverviewConn reads some overview kinds from a kc cluster's cache.
 type clusterOverviewConn struct {
 	cl      *kccluster.Cluster
 	release func() // gives up the pool lease; called once by Watch's stop
+	kinds   []overviewKind
 
 	mu        sync.Mutex
 	started   time.Time
@@ -406,7 +412,14 @@ type clusterOverviewConn struct {
 	failed    map[schema.GroupVersionResource]string
 }
 
-func (c *clusterOverviewConn) Reader() crclient.Reader { return c.cl.GetCache() }
+func (c *clusterOverviewConn) Reader(schema.GroupVersionResource) crclient.Reader {
+	return c.cl.GetCache()
+}
+
+// OnlyNamespace returns the namespace a namespace-scoped cache is limited to.
+func (c *clusterOverviewConn) OnlyNamespace(schema.GroupVersionResource) string {
+	return c.cl.Namespace()
+}
 
 func (c *clusterOverviewConn) Watch(ctx context.Context, onEvent func()) func() {
 	log := ctrllog.FromContext(ctx).WithName("overview")
@@ -419,7 +432,7 @@ func (c *clusterOverviewConn) Watch(ctx context.Context, onEvent func()) func() 
 	c.mu.Lock()
 	c.started = time.Now()
 	c.mu.Unlock()
-	for _, k := range overviewKinds {
+	for _, k := range c.kinds {
 		getCtx, cancel := context.WithTimeout(ctx, informerStartTimeout)
 		// Do not wait for the sync: rows of a kind that cannot be listed
 		// say so instead of blocking the overview.
@@ -452,13 +465,18 @@ func (c *clusterOverviewConn) Watch(ctx context.Context, onEvent func()) func() 
 		for _, r := range regs {
 			r()
 		}
-		c.mu.Lock()
-		release := c.release
-		c.release = nil
-		c.mu.Unlock()
-		if release != nil {
-			release()
-		}
+		c.giveUp()
+	}
+}
+
+// giveUp gives the pool lease up, once.
+func (c *clusterOverviewConn) giveUp() {
+	c.mu.Lock()
+	release := c.release
+	c.release = nil
+	c.mu.Unlock()
+	if release != nil {
+		release()
 	}
 }
 

@@ -176,6 +176,9 @@ func (f *OverviewFolder) explainFinding(finding overviewFinding) string {
 	if finding.unavailable != "" {
 		fmt.Fprintf(&b, "Not available: %s\n", finding.unavailable)
 	}
+	if finding.partial != "" {
+		fmt.Fprintf(&b, "Partial, not counted: %s\n", finding.partial)
+	}
 	fmt.Fprintf(&b, "\nHow it is computed\n\n%s\n", finding.explain)
 	b.WriteString(`
 The overview reads kc's informer cache, recomputed at most once a second

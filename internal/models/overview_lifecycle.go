@@ -242,7 +242,17 @@ func (l *overviewLifecycle) apply(report *overviewReport, now time.Time) {
 			}
 			e.target = *t
 		}
+		// A kind a partial row cannot read now resolves nothing: its
+		// targets stay active and are listed as unknown.
+		for k, e := range l.entries {
+			if k.finding == f.id && e.recoveredAt.IsZero() && slices.Contains(f.partialGVRs, k.gvr) {
+				current[k] = true
+			}
+		}
 		f.targets = append(f.targets, l.recovered(f.id, current, names, now)...)
+		if f.partial != "" {
+			f.targets = append(f.targets, l.unknownTargets(f.id, f.partial, f.partialGVRs...)...)
+		}
 	}
 }
 
@@ -288,11 +298,15 @@ func (l *overviewLifecycle) recovered(findingID string, current map[lifecycleKey
 }
 
 // unknownTargets lists the active targets of a finding whose source is not
-// available now. They stay active: nothing has shown them recovered.
-func (l *overviewLifecycle) unknownTargets(findingID, reason string) []overviewTarget {
+// available now, or only those of the kinds in only. They stay active:
+// nothing has shown them recovered.
+func (l *overviewLifecycle) unknownTargets(findingID, reason string, only ...schema.GroupVersionResource) []overviewTarget {
 	var out []overviewTarget
 	for k, e := range l.entries {
 		if k.finding != findingID || !e.recoveredAt.IsZero() {
+			continue
+		}
+		if len(only) > 0 && !slices.Contains(only, k.gvr) {
 			continue
 		}
 		t := e.target
