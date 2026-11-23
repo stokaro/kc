@@ -1,6 +1,6 @@
 # 0038. "Faults only" toggle for object lists
 
-- Status: Accepted
+- Status: Accepted; the health source superseded by 0241
 - Date: 2026-11-22
 - Issue: #38
 
