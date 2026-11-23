@@ -44,7 +44,12 @@ func Open(ctx context.Context, cfg Config) (*Reader, error) {
 	}
 	go func() {
 		defer close(r.done)
-		pw.CloseWithError(endOrErr(run(ctx, cfg, sink, first)))
+		err := run(ctx, cfg, sink, first)
+		// Run can end while it waits to reconnect: a refusal, the last
+		// failed attempt, a stopped instance or a cancel. Nothing is
+		// pending then, so the state is cleared before the end shows.
+		r.reconnecting.Store(false)
+		pw.CloseWithError(endOrErr(err))
 	}()
 	return r, nil
 }
@@ -66,7 +71,8 @@ func (r *Reader) Close() error {
 	return r.pr.Close()
 }
 
-// Reconnecting reports whether the stream is waiting to reconnect.
+// Reconnecting reports whether the stream is waiting to reconnect. It is
+// false once the stream has stopped for good.
 func (r *Reader) Reconnecting() bool { return r.reconnecting.Load() }
 
 // Done is closed when the stream and its retries have stopped.

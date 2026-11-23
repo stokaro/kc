@@ -770,19 +770,15 @@ func (w *Widget) windowCoverage(h *history) string {
 	if loc == nil {
 		loc = time.Local
 	}
-	label := "window " + win.Label(loc) + ": "
-	// One sample older than the sparkline is kept; it is not shown.
-	first := h.first()
-	if from := now.Add(-historyWindow); !first.IsZero() && first.Before(from) {
-		first = from
+	to := end
+	if to.IsZero() || to.After(now) {
+		to = now
 	}
-	switch {
-	case first.IsZero():
-		return label + "no session usage history yet (incomplete)"
-	case !end.IsZero() && end.Before(first):
-		return label + "no session usage history for it (incomplete)"
-	case start.Before(first):
-		return label + "session usage history from " + first.In(loc).Format("15:04:05") + " only (incomplete)"
+	// CPU and memory are judged apart: one may have restarted after its
+	// percentage base changed, or have no samples at all.
+	var cpu, mem seriesCoverage
+	if h != nil {
+		cpu, mem = h.cpu.coverage(start, to, now), h.mem.coverage(start, to, now)
 	}
-	return label + "covered by the session usage history"
+	return "window " + win.Label(loc) + ": " + coverageText(cpu, mem, loc)
 }

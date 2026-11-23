@@ -111,6 +111,56 @@ func TestLogsViewerStreamsAndRestartsWithNewOptions(t *testing.T) {
 	}
 }
 
+// stuckReconnectingReader reports a pending reconnect while its stream
+// ends: the state a reader had before it cleared the flag on its end.
+type stuckReconnectingReader struct {
+	io.Reader
+	end error
+}
+
+func (r *stuckReconnectingReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if errors.Is(err, io.EOF) && r.end != nil {
+		err = r.end
+	}
+	return n, err
+}
+
+func (r *stuckReconnectingReader) Close() error       { return nil }
+func (r *stuckReconnectingReader) Reconnecting() bool { return true }
+
+// TestLogsViewerTerminalStateWinsOverReconnecting ends a stream whose reader
+// still says it reconnects. The footer must report the end, not a retry.
+func TestLogsViewerTerminalStateWinsOverReconnecting(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		end  error
+		want string
+	}{
+		{name: "failed", end: errors.New("gave up reconnecting"), want: "(failed)"},
+		{name: "ended", want: "(ended)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			open := func(models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) {
+				return &stuckReconnectingReader{Reader: strings.NewReader("one\n"), end: tt.end}, func() {}, nil
+			}
+			v := NewLogsViewer("t", testLogsSpec(), open, "dracula")
+			v.SetDimensions(80, 20)
+			drain(t, v, v.Init())
+			got := v.statusText()
+			if !strings.HasSuffix(got, tt.want) {
+				t.Fatalf("status = %q, want it to end with %s", got, tt.want)
+			}
+			if footer := v.FooterStatus(120); strings.Contains(footer, "reconnecting") {
+				t.Fatalf("footer = %q, still reconnecting", footer)
+			}
+		})
+	}
+}
+
 func TestLogsViewerDropsMessagesOfAReplacedStream(t *testing.T) {
 	t.Parallel()
 	streams := &fakeLogStreams{text: func(models.LogsSpec) string { return "line\n" }}
