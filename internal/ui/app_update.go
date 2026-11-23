@@ -944,7 +944,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 				if cmd != nil {
 					cmds = append(cmds, cmd)
 				}
-				if panelMsg.Intent == PanelMouseClick && panelMsg.Button == tea.MouseLeft && panel != nil {
+				// A double click enters the list's row. Another mode, such
+				// as Info with its own clickable rows, hides the list, so a
+				// double click there must not enter a row nobody sees.
+				if panelMsg.Intent == PanelMouseClick && panelMsg.Button == tea.MouseLeft && panel != nil && panel.Mode() == PanelModeList {
 					ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
 					selectionID := panel.currentSelectionID(ctxSel)
 					cancelSel()

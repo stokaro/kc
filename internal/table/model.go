@@ -11,6 +11,11 @@ import (
 type Column struct {
 	Title string
 	Width int
+	// MinWidth lets the column give up width in ModeScroll: when the
+	// columns are wider than the viewport, it shrinks, down to MinWidth,
+	// before the line needs horizontal panning, so the columns after it
+	// stay visible. A cell cut this way ends in "…". Zero never shrinks.
+	MinWidth int
 }
 
 // Row represents a single logical row in the table.
