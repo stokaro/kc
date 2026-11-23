@@ -34,7 +34,7 @@ func TestCompareObjectsReadsBothManifestsFast(t *testing.T) {
 	}
 	folder := models.NewNamespacedObjectsFolder(deps, configMapsGVR, "cmp-objects", []string{"namespaces", "cmp-objects", "configmaps"}, nil)
 	t.Cleanup(folder.Close)
-	sources := map[string]models.ManifestSource{}
+	sources := make(map[string]models.ManifestSource)
 	kctesting.Eventually(t, 10*time.Second, 50*time.Millisecond, func() bool {
 		for _, r := range folder.Lines(ctx, 0, folder.Len(ctx)) {
 			if src, ok := r.(models.ManifestSource); ok {

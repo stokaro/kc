@@ -67,7 +67,7 @@ func TestPodRowHealthFromServerTable(t *testing.T) {
 		colored bool
 	}
 	read := func() map[string]seen {
-		out := map[string]seen{}
+		out := make(map[string]seen)
 		for _, r := range folder.Lines(ctx, 0, folder.Len(ctx)) {
 			c, ok := r.(rowFactsCarrier)
 			if !ok {
