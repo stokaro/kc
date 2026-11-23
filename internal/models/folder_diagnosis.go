@@ -13,6 +13,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -174,6 +175,9 @@ func (f *RelatedObjectsFolder) workloadDiagnosisRows(ctx context.Context) ([]tab
 	}
 	in.Events, in.EventsErr = listTyped[corev1.Event](ctx, f.reader, ovEventsGVR, f.namespace)
 	in.Claims, in.ClaimsErr = listTyped[corev1.PersistentVolumeClaim](ctx, f.reader, pvcGVR, f.namespace)
+	if f.gvr == podGVR {
+		in.Scheduling = f.readScheduling(ctx, obj, in)
+	}
 	d, err := diagnoseWorkload(in)
 	if err != nil {
 		return nil, err
@@ -219,6 +223,60 @@ func scaleTargetGVR(deps Deps, ref autoscalingv2.CrossVersionObjectReference) (s
 		return schema.GroupVersionResource{}, false
 	}
 	return mapping.Resource, true
+}
+
+// readScheduling reads what kc's node checks of an unschedulable pod need,
+// through the same scoped reads as the rest of the diagnosis: the nodes,
+// the pods of every namespace when the pod requests resources, and the
+// volumes of its bound claims. Nothing is read for another pod. These
+// reads do not refresh the folder; C-r reads them again.
+func (f *RelatedObjectsFolder) readScheduling(ctx context.Context, obj *unstructured.Unstructured, in workloadInput) *schedulingInput {
+	var pod corev1.Pod
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil || !needsSchedulingExplanation(&pod) {
+		return nil
+	}
+	log := ctrllog.FromContext(ctx).WithName("diagnosis")
+	s := &schedulingInput{Pod: &pod, Now: in.Now, Claims: in.Claims, ClaimsErr: in.ClaimsErr}
+	s.Nodes, s.NodesErr = listTyped[corev1.Node](ctx, f.reader, relNodesGVR, "")
+	if s.NodesErr != nil {
+		return s
+	}
+	if requests, _ := podRequestsAndLimits(&pod); len(requests) == 0 {
+		s.AssignedSkipped = true
+	} else {
+		s.Assigned, s.AssignedErr = listTyped[corev1.Pod](ctx, f.reader, podGVR, "")
+	}
+	if in.ClaimsErr == nil {
+		for _, name := range boundClaimVolumes(&pod, in.Claims) {
+			pv, err := readVolume(ctx, f.reader, name)
+			if err != nil {
+				if s.VolumeErrs == nil {
+					s.VolumeErrs = make(map[string]error)
+				}
+				s.VolumeErrs[name] = err
+				continue
+			}
+			if s.Volumes == nil {
+				s.Volumes = make(map[string]*corev1.PersistentVolume)
+			}
+			s.Volumes[name] = pv
+		}
+	}
+	log.V(1).Info("scheduling inputs", "namespace", pod.Namespace, "pod", pod.Name, "nodes", len(s.Nodes), "assigned", len(s.Assigned), "volumes", len(s.Volumes))
+	return s
+}
+
+// readVolume reads one PersistentVolume through r.
+func readVolume(ctx context.Context, r RelatedReader, name string) (*corev1.PersistentVolume, error) {
+	u, err := r.GetByGVR(ctx, pvGVR, "", name)
+	if err != nil {
+		return nil, err
+	}
+	var v corev1.PersistentVolume
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &v); err != nil {
+		return nil, fmt.Errorf("decode persistentvolume %s: %w", name, err)
+	}
+	return &v, nil
 }
 
 func listTyped[T any](ctx context.Context, r RelatedReader, gvr schema.GroupVersionResource, namespace string) ([]T, error) {

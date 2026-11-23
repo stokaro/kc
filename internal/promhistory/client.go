@@ -155,7 +155,7 @@ func (c *Client) statusError(code int, body []byte, r apiResponse, jsonErr error
 	case jsonErr == nil && r.Error != "":
 		return fmt.Errorf("prometheus %s: %s: %s", c.Source, r.ErrorType, r.Error)
 	case code == http.StatusForbidden || code == http.StatusUnauthorized:
-		return fmt.Errorf("prometheus %s: %s (needs get on services/proxy)", c.Source, k8sMessage(body, http.StatusText(code)))
+		return forbiddenError{msg: fmt.Sprintf("prometheus %s: %s (needs get on services/proxy)", c.Source, k8sMessage(body, http.StatusText(code)))}
 	case code != http.StatusOK:
 		return fmt.Errorf("prometheus %s: HTTP %d: %s", c.Source, code, k8sMessage(body, http.StatusText(code)))
 	default:
