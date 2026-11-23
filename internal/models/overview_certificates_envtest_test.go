@@ -2,6 +2,7 @@ package models
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,8 +19,8 @@ import (
 )
 
 // TestOverviewCertificatesOnARealCache runs the engine against an API server
-// of its own: without cert-manager the certificate row is n/a because the
-// kind is not served; once the CRD is installed, a new overview reads
+// of its own: without cert-manager the certificate row is not applicable
+// because the kind is not served; once the CRD is installed, a new overview reads
 // Certificates through its cache as unstructured objects and lists the
 // failing and expiring ones.
 func TestOverviewCertificatesOnARealCache(t *testing.T) {
@@ -59,7 +60,7 @@ func TestOverviewCertificatesOnARealCache(t *testing.T) {
 
 	before := newEngine()
 	waitCert(before, "the row to say cert-manager is not served", func(f overviewFinding) bool {
-		return f.value == "n/a" && f.unavailable == "certificates.cert-manager.io: not served by this cluster"
+		return f.value == "none" && f.unavailable == "" && strings.Contains(f.notApplicable, "certificates.cert-manager.io is not served by this cluster")
 	})
 	before.close()
 

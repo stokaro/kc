@@ -142,6 +142,8 @@ func (a *App) commandMenuItems() []menubar.Item {
 		{Label: "Switch panels &on/off", Shortcut: "C-o", Run: a.toggleTerminal},
 		{Label: "Copy &command", Shortcut: "M-c", Run: a.copyPanelCommand},
 		{Label: "Compare ob&jects", Shortcut: "C-x C-d", Run: a.compareSelectedObjects},
+		{Label: "Compare lis&ts", Shortcut: "C-x d", Run: a.compareLists},
+		{Label: "Compare with conte&xt...", Shortcut: "C-x c", Run: a.compareListWithContext},
 		menubar.Separator(),
 		{Label: "Hot&list", Shortcut: "C-\\", Run: a.showHotlist},
 		{Label: "History &back", Shortcut: "M-y", Run: a.historyBack},

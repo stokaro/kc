@@ -91,7 +91,7 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if a.Viewer.Mode != b.Viewer.Mode {
 		t.Fatalf("viewer.mode mismatch: yaml=%q code=%q", a.Viewer.Mode, b.Viewer.Mode)
 	}
-	if a.Viewer.Logs != b.Viewer.Logs {
+	if !reflect.DeepEqual(a.Viewer.Logs, b.Viewer.Logs) {
 		t.Fatalf("viewer.logs mismatch: yaml=%+v code=%+v", a.Viewer.Logs, b.Viewer.Logs)
 	}
 	if a.Panel.Scrolling.Horizontal.Step != b.Panel.Scrolling.Horizontal.Step {
@@ -139,6 +139,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	// No custom columns by default; the sample may spell that as {}.
 	if len(a.Columns) != 0 || len(b.Columns) != 0 {
 		t.Fatalf("columns mismatch: yaml=%v code=%v, want none", a.Columns, b.Columns)
+	}
+	if len(a.Health) != 0 || len(b.Health) != 0 {
+		t.Fatalf("health mismatch: yaml=%v code=%v, want none", a.Health, b.Health)
 	}
 	// Compare the YAML as written: a key missing from the file must fail
 	// here, not be filled in by Normalized.
