@@ -112,6 +112,8 @@ var builtinHotkeys = map[string]string{
 	"M-x":     "shell in a container",
 	"M-y":     "history back",
 	"C-x C-d": "compare manifests",
+	"C-x d":   "compare lists",
+	"C-x c":   "compare a list with another context",
 }
 
 // BuiltinHotkey reports whether kc binds key (normalized by ParseHotkey)
