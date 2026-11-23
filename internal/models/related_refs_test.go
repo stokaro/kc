@@ -405,7 +405,8 @@ func TestRelatedRows(t *testing.T) {
 	t.Parallel()
 	refs := []RelatedRef{
 		{GVR: replicaSetGVRForTest(), Namespace: "shop", Name: "web-1", Relation: "controller"},
-		{GVR: ingressGVR, Namespace: "shop", Name: "front", Relation: "backend"},
+		// A ServiceAccount has no folder: its row opens nothing.
+		{GVR: schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"}, Namespace: "shop", Name: "front", Relation: "service account"},
 		{GVR: replicaSetGVRForTest(), Namespace: "shop", Name: "web-1", Relation: "controller"},
 		{Name: "w", Relation: "owner", APIVersion: "example.com/v1", Kind: "Widget", Problem: "unknown kind"},
 		{GVR: deploymentGVR, Namespace: "shop", Name: "gone", Relation: "owner", Problem: "not found"},
@@ -424,7 +425,7 @@ func TestRelatedRows(t *testing.T) {
 	}
 	wants := []want{
 		{id: "apps/v1/replicasets/shop/web-1", title: "/web-1", relation: "controller", object: true, enterable: true, pathSuffix: "owners/web-1"},
-		{id: "networking.k8s.io/v1/ingresses/shop/front", title: "front", relation: "backend", object: true},
+		{id: "v1/serviceaccounts/shop/front", title: "front", relation: "service account", object: true},
 		{id: "unresolved/example.com/v1/Widget//w", title: "w", relation: "owner: unknown kind"},
 		{id: "apps/v1/deployments/shop/gone", title: "gone", relation: "owner: not found"},
 	}

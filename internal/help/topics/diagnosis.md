@@ -2,9 +2,11 @@
 
 `/diagnosis` is a row inside a Service, a Pod, a Deployment, ReplicaSet,
 StatefulSet, DaemonSet, Job or HorizontalPodAutoscaler (`autoscaling/v2`),
-an Ingress, a Gateway API HTTPRoute, a Flux Kustomization or HelmRelease,
-an Argo CD Application, and inside a namespaced custom resource that has
-an entry in the `health:` configuration. It collects what the
+a PersistentVolumeClaim, an Ingress, a Gateway API HTTPRoute, a Flux
+Kustomization or HelmRelease, an Argo CD Application, and inside a
+namespaced custom resource that has an entry in the `health:`
+configuration. Objects of these kinds list with a leading `/`: Enter
+opens their folder, and `F3` shows the YAML. It collects what the
 object, its pods, their containers, claims and events say about a
 problem, with the evidence for each finding. Use it when a row is red
 and you want to know why without reading five describes.
