@@ -33,10 +33,11 @@ func hasRowHealthRule(gvr schema.GroupVersionResource) bool {
 // to keep manifests out of memory), so health rules, which read status and
 // spec, would see nothing. The objects come from the list's own informer
 // (startInformerForObjectsFolder), whose events trigger the refresh that
-// calls this, so the cache already holds the state the table shows. Kinds
+// calls this, so the cache already holds the state the table shows. Events
+// are read too, for their occurrence times (eventColumnTimes). Other kinds
 // without a health rule read nothing.
 func loadRowObjects(ctx context.Context, deps Deps, gvr schema.GroupVersionResource, namespace string) rowObjects {
-	if deps.Cl == nil || !hasRowHealthRule(gvr) {
+	if deps.Cl == nil || (!hasRowHealthRule(gvr) && !isEventGVR(gvr)) {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, customColumnsLookupTimeout)
