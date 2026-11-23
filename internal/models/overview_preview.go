@@ -30,6 +30,9 @@ type FindingPreview struct {
 	// read-only commands that show it.
 	Unavailable string
 	Verify      []string
+	// NotApplicable says why the finding had nothing to check (ADR 0172);
+	// its value is then "none", not a result.
+	NotApplicable string
 	// Inputs is how many input commands M-c copies.
 	Inputs int
 }
@@ -67,10 +70,11 @@ func (f *OverviewFolder) findingPreview(finding overviewFinding) FindingPreview 
 	p := FindingPreview{
 		ID: finding.id, Title: finding.title, Scope: scope,
 		Value: finding.value, State: finding.state, Health: finding.severity.RowHealth(),
-		Why:         firstParagraph(finding.explain),
-		TargetCount: len(finding.targets),
-		Unavailable: finding.unavailable,
-		Inputs:      len(runnableInputs(findingInputs(f.Deps, finding, nil))),
+		Why:           firstParagraph(finding.explain),
+		TargetCount:   len(finding.targets),
+		Unavailable:   finding.unavailable,
+		NotApplicable: finding.notApplicable,
+		Inputs:        len(runnableInputs(findingInputs(f.Deps, finding, nil))),
 	}
 	for _, t := range finding.targets[:min(len(finding.targets), findingPreviewTargets)] {
 		p.Targets = append(p.Targets, FindingPreviewTarget{

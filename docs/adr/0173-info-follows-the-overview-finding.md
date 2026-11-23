@@ -37,6 +37,11 @@ finding the cursor is on. `infoTarget` narrows the summary only for an
   - the finding's first input command.
 - A finding with no targets says "Nothing matched. Checked:" and shows the
   calculation's first paragraph.
+- A finding with nothing to check (n/a, ADR 0172) says "Not applicable"
+  with its reason, such as "cert-manager is not installed", instead of
+  "Nothing matched".
+- The rows inside `/attention` and the `/N quiet checks` folders (ADR 0172)
+  are the overview's own finding rows, so they preview the same way.
 
 ## Deviations
 

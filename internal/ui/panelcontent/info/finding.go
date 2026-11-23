@@ -35,6 +35,9 @@ func findingLines(p models.FindingPreview, width int) []string {
 				wrap("   ", c)
 			}
 		}
+	case p.NotApplicable != "":
+		add(" Not applicable")
+		wrap("   ", p.NotApplicable)
 	case p.TargetCount == 0:
 		add(" Nothing matched. Checked:")
 		wrap("   ", p.Why)

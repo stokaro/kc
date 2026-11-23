@@ -26,17 +26,40 @@ func previewFolder(t *testing.T, ns string, r *overviewReport) *OverviewFolder {
 	return newOverviewFolder(deps, ns, []string{"overview"}, e)
 }
 
+// previewOf previews the finding row id of the overview or, when the
+// finding is quiet, of its section's quiet checks folder (ADR 0172).
 func previewOf(t *testing.T, f *OverviewFolder, id string) FindingPreview {
 	t.Helper()
-	item, ok := f.ItemByID(t.Context(), id)
-	if !ok {
-		t.Fatalf("no row %s", id)
-	}
-	p, ok := item.(*OverviewFindingItem).FindingPreview()
+	item := findingItem(t, f, id)
+	p, ok := item.FindingPreview()
 	if !ok {
 		t.Fatalf("%s: no preview", id)
 	}
 	return p
+}
+
+// findingItem finds the row of finding id among the overview's rows or in
+// the quiet checks folder of its section.
+func findingItem(t *testing.T, f *OverviewFolder, id string) *OverviewFindingItem {
+	t.Helper()
+	if item, ok := f.ItemByID(t.Context(), id); ok {
+		return item.(*OverviewFindingItem)
+	}
+	section, _, _ := strings.Cut(id, "/")
+	quiet, ok := f.ItemByID(t.Context(), overviewQuietIDPrefix+section)
+	if !ok {
+		t.Fatalf("no row %s and no quiet checks of %s", id, section)
+	}
+	folder, err := quiet.(*ChildResourceItem).Enter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { folder.(*overviewFindingsFolder).Close() })
+	item, ok := folder.ItemByID(t.Context(), id)
+	if !ok {
+		t.Fatalf("no row %s in the quiet checks of %s", id, section)
+	}
+	return item.(*OverviewFindingItem)
 }
 
 func TestFindingPreviewMatchesTheRowAndTheDrillDown(t *testing.T) {
@@ -117,8 +140,32 @@ func TestFindingPreviewZeroResult(t *testing.T) {
 	t.Parallel()
 	pod := withPod(overviewRunningPod("shop", "web"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("100m", "64Mi", "", "64Mi") })
 	r := measuredReport(t, "shop", &overviewMeasured{}, readyNode("n1", "4", "8Gi", 110), pod)
-	p := previewOf(t, previewFolder(t, "shop", r), "health/pods-crashloop")
-	if p.TargetCount != 0 || p.Targets != nil || p.Value != "0" || p.Why == "" || p.Unavailable != "" {
+	f := previewFolder(t, "shop", r)
+	// A check that found nothing folds into the quiet checks; its row there
+	// previews the same way.
+	if _, ok := f.ItemByID(t.Context(), "health/pods-crashloop"); ok {
+		t.Fatal("a check that found nothing is a row of the overview, want it in the quiet checks")
+	}
+	p := previewOf(t, f, "health/pods-crashloop")
+	if p.TargetCount != 0 || p.Targets != nil || p.Value != "0" || p.Why == "" || p.Unavailable != "" || p.NotApplicable != "" {
 		t.Fatalf("zero preview = %+v", p)
+	}
+}
+
+// TestFindingPreviewNotApplicable checks that a check with nothing to look
+// at says why in the preview, not that nothing matched.
+func TestFindingPreviewNotApplicable(t *testing.T) {
+	t.Parallel()
+	in := loadOverviewInput(t.Context(), newOverviewFakeClient(readyNode("n1", "4", "8Gi", 110)), AllNamespaces, func(gvr schema.GroupVersionResource) string {
+		if gvr == ovCertificatesGVR {
+			return "not served by this cluster"
+		}
+		return ""
+	})
+	r := computeOverview(in, appconfig.DefaultOverview(), overviewTestNow, nil)
+	p := previewOf(t, previewFolder(t, AllNamespaces, r), "risks/certificates")
+	if p.Value != "none" || p.State != "n/a" || p.Unavailable != "" ||
+		p.NotApplicable != "cert-manager is not installed (certificates.cert-manager.io is not served by this cluster)" {
+		t.Fatalf("n/a preview = %+v", p)
 	}
 }

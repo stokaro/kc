@@ -51,6 +51,13 @@ func TestWidgetFollowsTheSelectedFinding(t *testing.T) {
 			not:  []string{"Nothing matched"},
 		},
 		{
+			name: "not applicable",
+			finding: &models.FindingPreview{Title: "/certificates expiring", Scope: "cluster", Value: "none", State: "n/a",
+				Why: "Certificates that expire soon.", NotApplicable: "cert-manager is not installed"},
+			want: []string{" Not applicable\n   cert-manager is not installed"},
+			not:  []string{"Nothing matched", "Certificates that expire soon"},
+		},
+		{
 			name: "back to a list",
 			want: []string{" CPU ", "pods 1.0/4.0 cores allocatable"},
 			not:  []string{"Scope:", "/nodes cpu"},
