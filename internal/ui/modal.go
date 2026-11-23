@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/stokaro/kc/internal/help"
 	"github.com/stokaro/kc/internal/overlay"
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
 	"github.com/stokaro/kc/pkg/appconfig"
@@ -48,6 +49,10 @@ type Modal struct {
 	footerCursor   *tea.Cursor
 	mode           ModalMode
 	escTimeout     time.Duration
+	// name and manager are set by ModalManager.Register; F1 asks the
+	// manager for the help page of this dialog.
+	name    string
+	manager *ModalManager
 }
 
 type modalEscapeHandler interface {
@@ -352,11 +357,25 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if mm, ok := msg.(tea.MouseMsg); ok {
 		updateMsg = shiftMouseMsg(mm, m.contentOffsetX, m.contentOffsetY)
 	}
+	if key, ok := updateMsg.(tea.KeyMsg); ok && key.String() == "f1" {
+		if page := m.helpPage(); page != "" && m.manager.openHelp != nil {
+			return m, tea.Batch(append(cmds, m.manager.openHelp(page))...)
+		}
+	}
 	model, cmd := m.content.Update(updateMsg)
 	m.content = model
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+// helpPage returns the help page F1 opens over this dialog, or "" when the
+// dialog has none (the help window itself).
+func (m *Modal) helpPage() help.ID {
+	if m.manager == nil || m.manager.helpPage == nil {
+		return ""
+	}
+	return m.manager.helpPage(m.name)
 }
 
 // View renders the modal and optionally returns a cursor when the content
@@ -748,6 +767,15 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 		}
 	}
 
+	// "F1 Help" in the key bar of every dialog that has a help page, where
+	// mc shows it. A content hint for F1 wins.
+	withHelp := m.helpPage() != ""
+	for _, hint := range hints {
+		if functionKeyNumber(hint.Key) == 1 {
+			withHelp = false
+		}
+	}
+
 	var keys []functionKey
 	var hotkeys []string
 	if numbered {
@@ -757,9 +785,18 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 			keys[i] = functionKey{Key: fmt.Sprintf("%2d", i+1)}
 			hotkeys[i] = fmt.Sprintf("F%d", i+1)
 		}
-	} else if includeEsc && m.closeOnSingleEsc && !hasEsc {
-		keys = append(keys, functionKey{Key: " Esc", Label: "Close", Enabled: true})
-		hotkeys = append(hotkeys, "Esc")
+		if withHelp {
+			keys[0].Label, keys[0].Enabled = "Help", true
+		}
+	} else {
+		if withHelp {
+			keys = append(keys, functionKey{Key: " F1", Label: "Help", Enabled: true})
+			hotkeys = append(hotkeys, "F1")
+		}
+		if includeEsc && m.closeOnSingleEsc && !hasEsc {
+			keys = append(keys, functionKey{Key: " Esc", Label: "Close", Enabled: true})
+			hotkeys = append(hotkeys, "Esc")
+		}
 	}
 	for _, hint := range hints {
 		if n := functionKeyNumber(hint.Key); n > 0 {
@@ -1020,6 +1057,26 @@ type ModalManager struct {
 	modals map[string]*Modal
 	stack  []string // modal name stack; top-most is last
 	cfg    *appconfig.Config
+	// helpPage names the help page of a dialog, "" for none; openHelp
+	// shows a page over the open dialogs. See SetHelp.
+	helpPage func(name string) help.ID
+	openHelp func(help.ID) tea.Cmd
+}
+
+// SetHelp makes F1 in a dialog open its help page: page names the page of
+// a registered dialog ("" for none) and open shows it.
+func (mm *ModalManager) SetHelp(page func(name string) help.ID, open func(help.ID) tea.Cmd) {
+	mm.helpPage = page
+	mm.openHelp = open
+}
+
+// TopName returns the name of the dialog on top, or "".
+func (mm *ModalManager) TopName() string {
+	mm.dropHidden()
+	if len(mm.stack) == 0 {
+		return ""
+	}
+	return mm.stack[len(mm.stack)-1]
 }
 
 // Init initializes the modal manager
@@ -1042,6 +1099,8 @@ func NewModalManager(cfg *appconfig.Config) *ModalManager {
 // Register registers a modal
 func (mm *ModalManager) Register(name string, modal *Modal) {
 	modal.SetEscTimeout(mm.cfg.Input.EscTimeout.Duration)
+	modal.name = name
+	modal.manager = mm
 	mm.modals[name] = modal
 }
 

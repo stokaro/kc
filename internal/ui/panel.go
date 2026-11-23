@@ -831,9 +831,15 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.StopQuickSearch()
 	}
 	if p.freeze != nil {
-		switch msg.(type) {
-		case tea.KeyMsg, tea.MouseMsg:
-			// Keys would move the live widget behind the picture.
+		switch m := msg.(type) {
+		case tea.KeyMsg:
+			// Keys would move the live widget behind the picture; F1
+			// still explains the panel.
+			if m.String() == "f1" {
+				return p, p.invokeActionIfAllowed(ctx, PanelActionHelp)
+			}
+			return p, nil
+		case tea.MouseMsg:
 			return p, nil
 		}
 	}
