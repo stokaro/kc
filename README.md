@@ -118,7 +118,7 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | `M-f`      | Filter the rows of an object list (see [Filtering Rows](#filtering-rows)). `Esc f` does the same. |
 | `C-z`      | Show only the rows in a fault state, or all rows again (object lists).         |
 | `M-p`      | Port forward the selected pod, container or service (see below). `Esc p` does the same. |
-| `C-\`      | Hotlist, as in mc: saved panel locations with their context and namespace. `Enter` goes to the highlighted entry, `Ins` adds the active panel's location, `Del` (or `F8`) removes the entry. Typing filters the list. Saved in `~/.kc/hotlist.yaml`. |
+| `C-\`      | Hotlist, as in mc: saved panel locations with their context and namespace. `Enter` goes to the highlighted entry, `Ins` adds the active panel's location, `F2` saves it as a named view (see [Saved Views](#saved-views)), `F4` stores the current settings in the highlighted view, `F6` renames, `Del` (or `F8`) removes the entry. Typing filters the list. Saved in `~/.kc/hotlist.yaml`. |
 | `M-y`      | Go back in the active panel's history of visited locations (`Esc y` does the same). |
 | `M-u`      | Go forward in that history (`Esc u`).                                           |
 | `M-H`      | List the active panel's history, newest first; `Enter` goes there (`Esc H`).   |
@@ -228,6 +228,35 @@ A row whose cell is empty, `<none>` or `n/a` (no metrics) matches no column term
 The copied kubectl command (`M-c`) gets the label selector as `-l`, and a single `-n ns` in a list of all namespaces as `-n ns`. Terms kubectl has no flag for are listed after it, for example `kubectl get pods -A -l app=api  # kc also filters: -n prod,stage, cpu>500m, faults`.
 
 The active filter shows next to the scope in the bottom border (`Filter: !nginx, faults`); a click on it clears it. The filter belongs to the folder: it stays while you look at its objects and come back, and a new listing starts unfiltered. It applies to live updates, and the cursor stays on its row when the row is kept. Marked rows that the filter hides are unmarked.
+## Saved Views
+
+A saved view is a named hotlist entry that also restores how the list looks. `F2` in the hotlist (`C-\`) asks for a name, such as "payments failures", and saves the active panel's location with its settings:
+
+- the columns mode (normal or wide),
+- the sort (`objects.order` syntax, e.g. `-mem`),
+- "Group by namespace", for lists that span namespaces,
+- the row filter text and faults only.
+
+`Enter` on a view goes to its context, namespace scope and path, then applies the settings to that panel. Columns, sort and grouping become the panel's settings, as if set in the panel options. A view stores settings only, never listed objects or their state, so it always shows the cluster as it is now. Nothing changes a view while you browse: `F4` on a view replaces its location and settings with the active panel's, and `F6` renames it. Names are unique, in any case.
+
+kc does not guess when a view cannot be restored. A missing context is reported and the panel stays where it is; no context with a similar name is used. When the path stops early (a resource type or namespace that is gone), the panel stays at the last step it reached and the settings are not applied. A saved filter is parsed again: an invalid one is left out with a warning, and a term on a column the list does not have is kept, so it hides every row, and reported.
+
+In `~/.kc/hotlist.yaml` a view is an entry with `name` and `view` next to the location fields. Bookmarks have neither, so files from older kc versions load unchanged, and fields kc does not know are ignored:
+
+```yaml
+entries:
+- context: prod
+  namespace: payments
+  steps: ["payments//v1/pods"]
+  path: /pods
+  name: payments failures
+  view:
+    columns: wide
+    order: -restarts
+    filter: api restarts>3
+    faultsOnly: true
+```
+
 ### cd on the shell line
 
 As in mc, `cd` typed on the shell line below the panels moves the active panel instead of running in the shell:
