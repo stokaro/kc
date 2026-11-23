@@ -7,7 +7,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -28,11 +27,10 @@ func TestLimitedUserSeesAllowedResourcesOnly(t *testing.T) {
 	kctesting.RunInBackground(t, "adminCl", adminCl.Start)
 	t.Cleanup(adminCl.Stop)
 
-	ns := kctesting.UniqueName("limited-access")
+	ns, user := kctesting.UniqueName("limited-access"), kctesting.UniqueName("limited-user")
 	const (
-		user = "limited-user"
-		pod  = "pod-visible"
-		sec  = "secret-hidden"
+		pod = "pod-visible"
+		sec = "secret-hidden"
 	)
 
 	createNamespace(t, adminCl, ns)
@@ -150,18 +148,21 @@ func grantLimitedUser(t *testing.T, cl *kccluster.Cluster, user string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
+	// Cluster-scoped and shared by every test on the control plane, so the
+	// names are unique and the grant goes away with the test.
+	name := kctesting.UniqueName("limited-reader")
 	role := &rbacv1.ClusterRole{
-		Name: "limited-reader",
+		Name: name,
 		Rules: []rbacv1.PolicyRule{
 			{APIGroups: []string{""}, Resources: []string{"namespaces"}, Verbs: []string{"get", "list", "watch"}},
 			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch"}},
 		},
 	}
-	if err := cl.GetClient().Create(ctx, role); err != nil && !apierrors.IsAlreadyExists(err) {
+	if err := cl.GetClient().Create(ctx, role); err != nil {
 		t.Fatalf("create clusterrole: %v", err)
 	}
 	binding := &rbacv1.ClusterRoleBinding{
-		Name: "limited-reader",
+		Name: name,
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
 			Kind:     "ClusterRole",
@@ -171,9 +172,15 @@ func grantLimitedUser(t *testing.T, cl *kccluster.Cluster, user string) {
 			{Kind: rbacv1.UserKind, Name: user},
 		},
 	}
-	if err := cl.GetClient().Create(ctx, binding); err != nil && !apierrors.IsAlreadyExists(err) {
+	if err := cl.GetClient().Create(ctx, binding); err != nil {
 		t.Fatalf("create clusterrolebinding: %v", err)
 	}
+	t.Cleanup(func() {
+		delCtx, cancelDel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancelDel()
+		_ = cl.GetClient().Delete(delCtx, binding)
+		_ = cl.GetClient().Delete(delCtx, role)
+	})
 	kctesting.WaitForAccess(t, cl.GetClient(), user, "", "", "namespaces", "list", "watch")
 	kctesting.WaitForAccess(t, cl.GetClient(), user, "", "", "pods", "list", "watch")
 }
