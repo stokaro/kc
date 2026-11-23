@@ -52,6 +52,7 @@ func (s *nativeSession) TarStream(ctx context.Context, dir, name string) (io.Rea
 // tarCreateScript runs tar cf - and keeps a heartbeat file fresh while it
 // runs. Arguments: heartbeat file, directory, name.
 const tarCreateScript = `hb=$1 dir=$2 name=$3
+touch "$hb" 2>/dev/null
 ( while kill -0 $$ 2>/dev/null; do touch "$hb" 2>/dev/null; sleep 10; done ) </dev/null >/dev/null 2>&1 &
 hbpid=$!
 tar -cf - -C "$dir" "./$name"

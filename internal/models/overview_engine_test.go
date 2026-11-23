@@ -251,6 +251,18 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		}
 		e, _ := newTestOverviewEngine(t, deps, AllNamespaces, objs...)
 		e.now = func() time.Time { return overviewTestNow }
+		// Lines starts the engine and then reads its report; hold the first
+		// recompute, or a fast machine has the report before that read.
+		release := make(chan struct{})
+		connect := e.connect
+		e.connect = func(ctx context.Context) (overviewConn, error) {
+			select {
+			case <-release:
+				return connect(ctx)
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		folder := newOverviewFolder(deps, AllNamespaces, []string{"overview"}, e)
 		defer folder.Close()
 		ctx := t.Context()
@@ -258,6 +270,7 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		if ids := overviewRowIDs(folder.Lines(ctx, 0, 100)); !slices.Contains(ids, "overview/loading") {
 			t.Fatalf("rows before the first report = %v, want a loading row", ids)
 		}
+		close(release)
 		synctest.Wait()
 		rows := folder.Lines(ctx, 0, 100)
 		ids := overviewRowIDs(rows)
