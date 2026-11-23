@@ -2,11 +2,16 @@ package ui
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 
+	kccluster "github.com/stokaro/kc/internal/cluster"
 	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/promhistory"
 	infowidget "github.com/stokaro/kc/internal/ui/panelcontent/info"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 var infoNodesGVR = schema.GroupVersionResource{Version: "v1", Resource: "nodes"}
@@ -43,12 +48,47 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 		}
 	}
 	cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
+	if t.Workload != nil && t.Finding == nil && a.cfg != nil {
+		t.PromHistory = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload)
+	}
 	t.Open = func() infowidget.Summarizer {
 		return newGatedInfo(root, cl.CanListWatchAllNamespaces, func() infowidget.Summarizer {
 			return models.NewOverviewInfo(a.makeDeps(cl, cfg, key), ns)
 		})
 	}
 	return t
+}
+
+// infoHistory is the history source of workload wl when metricsHistory
+// names a backend for the context, nil otherwise. The client is built in
+// the read, off the UI goroutine.
+func infoHistory(root context.Context, restConfig func() *rest.Config, key kccluster.Key, mh appconfig.MetricsHistoryConfig, wl models.InfoWorkload) *infowidget.PromHistorySource {
+	backend, ok := mh.BackendFor(key.ContextName)
+	if !ok {
+		return nil
+	}
+	kind, ok := promhistory.KindFor(wl.GVR.Group, wl.GVR.Resource)
+	if !ok {
+		return nil
+	}
+	window, timeout := mh.EffectiveWindow(), mh.EffectiveTimeout()
+	target := promhistory.Target{Kind: kind, Namespace: wl.Namespace, Name: wl.Name}
+	return &infowidget.PromHistorySource{
+		// The cluster key carries the impersonation, which changes what
+		// the proxy lets through.
+		Key:    fmt.Sprintf("%+v|%s/%s|%s|%s/%s|%s", key, backend.Namespace, backend.Service, wl.GVR, wl.Namespace, wl.Name, window),
+		Window: window,
+		Start: func() (func() (promhistory.History, error), func()) {
+			ctx, cancel := context.WithTimeout(root, timeout)
+			return func() (promhistory.History, error) {
+				c, err := promhistory.NewServiceProxyClient(restConfig(), backend)
+				if err != nil {
+					return promhistory.History{}, err
+				}
+				return c.Fetch(ctx, target, promhistory.Options{Window: window})
+			}, cancel
+		},
+	}
 }
 
 // narrowInfoTarget points t at the row under the other panel's cursor: an
