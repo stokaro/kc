@@ -1,6 +1,6 @@
 # 0280. No terminal graphics for charts yet
 
-- Status: Declined
+- Status: Superseded by 0320
 - Date: 2026-11-23
 - Issue: #280
 
