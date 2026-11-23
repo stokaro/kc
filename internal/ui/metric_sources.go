@@ -10,6 +10,8 @@ import (
 
 	textinput "charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/dialog"
 	"github.com/stokaro/kc/internal/ui/menubar"
+	uistyles "github.com/stokaro/kc/internal/ui/styles"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -73,6 +76,7 @@ type metricSourcesDialog struct {
 	seq        int
 	lines      []string
 	errLines   map[int]bool
+	detailCol  int // column of the detail in lines
 	note       string
 	isErr      bool
 	candidates []metricsources.Candidate
@@ -92,14 +96,26 @@ func newMetricSourcesDialog(a *App, contextName, namespace string, b appconfig.M
 		labels:  dialog.NewInput(skin, ""),
 		rows:    metricSourcesRows,
 	}
-	d.service.Placeholder = "monitoring/prometheus-k8s:9090"
-	d.prefix.Placeholder = "/prometheus for Mimir; empty for Prometheus"
-	d.labels.Placeholder = "cluster=prod-eu"
+	// The examples must not read as entered values: they say "e.g." and
+	// are drawn in grey.
+	setPlaceholder(&d.service, skin, "e.g. monitoring/prometheus-k8s:9090")
+	setPlaceholder(&d.prefix, skin, "e.g. /prometheus for Mimir; empty for Prometheus")
+	setPlaceholder(&d.labels, skin, "e.g. cluster=prod-eu")
 	if configured {
 		d.setBackend(b)
 	}
 	d.syncItems()
 	return d
+}
+
+// setPlaceholder sets an example text in the dialog's grey on the
+// input color.
+func setPlaceholder(in *textinput.Model, skin dialog.Skin, text string) {
+	in.Placeholder = text
+	st := in.Styles()
+	grey := skin.Input.Foreground(lipgloss.Color(uistyles.ColorDarkGrey)).Faint(false)
+	st.Focused.Placeholder, st.Blurred.Placeholder = grey, grey
+	in.SetStyles(st)
 }
 
 func (d *metricSourcesDialog) setBackend(b appconfig.MetricsBackendConfig) {
@@ -133,15 +149,16 @@ func (d *metricSourcesDialog) syncItems() {
 		dialog.Text{Text: d.note, Error: d.isErr},
 		dialog.Rule{},
 	}
+	rows, errRows := d.reportRows()
 	for i := range d.rows {
 		line := ""
-		if i < len(d.lines) {
-			line = d.lines[i]
+		if i < len(rows) {
+			line = rows[i]
 		}
-		if i == d.rows-1 && len(d.lines) > d.rows {
-			line = fmt.Sprintf("... and %d more", len(d.lines)-d.rows+1)
+		if i == d.rows-1 && len(rows) > d.rows {
+			line = fmt.Sprintf("... and %d more", len(rows)-d.rows+1)
 		}
-		items = append(items, dialog.Text{Text: line, Error: d.errLines[i]})
+		items = append(items, dialog.Text{Text: line, Error: i < len(errRows) && errRows[i]})
 	}
 	items = append(items,
 		dialog.Rule{},
@@ -154,6 +171,30 @@ func (d *metricSourcesDialog) syncItems() {
 		},
 	)
 	d.form.Items = items
+}
+
+// reportRows wraps the report lines to the dialog's text width. The rest
+// of a long detail goes under the detail column, so "no backend" and its
+// hint are read whole. errRows marks the rows of failed checks.
+func (d *metricSourcesDialog) reportRows() (rows []string, errRows []bool) {
+	// dialog.Form keeps a margin of one column on each side.
+	width := max(d.width, 20) - 2
+	indent := strings.Repeat(" ", d.detailCol)
+	for i, line := range d.lines {
+		pieces := []string{line}
+		if room := width - d.detailCol; ansi.StringWidth(line) > width && room >= 20 && d.detailCol < len(line) {
+			wrapped := strings.Split(ansi.Wrap(line[d.detailCol:], room, ""), "\n")
+			pieces = []string{line[:d.detailCol] + wrapped[0]}
+			for _, w := range wrapped[1:] {
+				pieces = append(pieces, indent+w)
+			}
+		}
+		for _, p := range pieces {
+			rows = append(rows, p)
+			errRows = append(errRows, d.errLines[i])
+		}
+	}
+	return rows, errRows
 }
 
 func (d *metricSourcesDialog) Init() tea.Cmd { return d.form.FocusFirst() }
@@ -309,6 +350,7 @@ func (d *metricSourcesDialog) showReport(m metricSourcesReportMsg) {
 		return
 	}
 	d.lines = metricsources.Text(m.checks)
+	d.detailCol = metricsources.DetailColumn(m.checks)
 	d.errLines = make(map[int]bool)
 	bad := 0
 	for i, c := range m.checks {
