@@ -38,20 +38,20 @@ The screen of a namespace on a kind cluster, a minute after opening:
 ```
   Dashboard     Range     View     Help                                                         kind-kc-demo › namespace shop  LIVE · last 15 minutes
 ┌─ Workloads in shop ─────────────────────────────────────────┐┌─ CPU, cores · 1m of 15m collected so far ───────────────────────────────────────────┐
-│Name            Ready    CPU  of req  Memory  of req Restarts││Now:  █ usage 0.002  ┄ request 0.04 (5% used) ↑ off the scale  ┄ limit not set on al…│
+│Name            Ready    CPU  of req  Memory  of req Restarts││Now:  █ usage 0.002  ┄ request 0.04 (5% used) ↑ above  ┄ limit missing on some pods  │
 │web               2/2      0      0%    11Mi     34%        0││ 0.003│                                                                             ↑│
-│api               1/1  0.002     20%   604Ki      7%        0││      │             ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
-│checkout          0/1      -       -       -       -        0││      │             ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│  ⚠ ImagePullBackOff                                         ││      │             ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│                                                             ││ 0.001│             ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│                                                             ││      │⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│                                                             ││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│                                                             ││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│api               1/1  0.002     20%   596Ki      7%        0││      │⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
+│checkout          0/1      -       -       -       -        0││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│  ⚠ ImagePullBackOff                                         ││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│                                                             ││ 0.001│⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│Pods of Deployment web (Enter to open)                       ││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│web-698…-dgqgj    1/1      0      0%   5.5Mi     35%        0││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│web-698…-fvz9j    1/1      0      0%   5.5Mi     34%        0││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │                                                             ││     0│⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│                                                             ││      └20:07:37───────────────────────────20:08:30───────────────────────────20:09:23│
+│                                                             ││      └20:24:19───────────────────────────20:25:02───────────────────────────20:25:46│
 │                                                             │└───────────── Metrics API, 6 samples · 3 of 3 pods measured · no Prometheus (C-x m) ─┘
 │                                                             │┌─ Memory · 1m of 15m collected so far ───────────────────────────────────────────────┐
-│                                                             ││Now:  █ usage 12Mi  ┄ request 56Mi (21% used) ↑ off the scale  ┄ limit not set on al…│
+│                                                             ││Now:  █ usage 12Mi  ┄ request 56Mi (21% used) ↑ above  ┄ limit missing on some pods  │
 │                                                             ││  20Mi│                                                                             ↑│
 │                                                             ││      │                                                                              │
 │                                                             ││      │                                                                              │
@@ -61,14 +61,14 @@ The screen of a namespace on a kind cluster, a minute after opening:
 │                                                             ││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │                                                             ││      │⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │                                                             ││     0│⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│                                                             ││      └20:07:37───────────────────────────20:08:30───────────────────────────20:09:23│
+│                                                             ││      └20:24:19───────────────────────────20:25:02───────────────────────────20:25:46│
 │                                                             │└───────────── Metrics API, 6 samples · 3 of 3 pods measured · no Prometheus (C-x m) ─┘
 │                                                             │┌─ Events in the last 15 minutes: 2 · ▲ warning ◆ rollout • other ────────────────────┐
-│                                                             ││Events                                                                               │
-│                                                             ││       ← 2 earlier                                                                   │
+│                                                             ││              •        ▲                                                             │
+│                                                             ││                       Failed ×372                                                   │
 │                                                             ││Time      Type      Reason             Count  Message                                │
-│                                                             ││20:04:39  ▲ Warning Failed               285  Error: ImagePullBackOff                │
-│                                                             ││20:04:25  • Normal  BackOff              284  Back-off pulling image "nginx:1.27-che…│
+│                                                             ││20:24:38  ▲ Warning Failed               372  Error: ImagePullBackOff                │
+│                                                             ││20:24:27  • Normal  BackOff              371  Back-off pulling image "nginx:1.27-che…│
 │                                                             ││                                                                                     │
 │                                                             ││                                                                                     │
 │                                                             ││                                                                                     │
@@ -100,13 +100,15 @@ The screen of a namespace on a kind cluster, a minute after opening:
    selected row, `Backspace` (or the `..` row) goes up: pod, its
    workload, the namespace scope. Going up past the target the dashboard
    opened for replaces it with its parent. `Esc` keeps its order from
-   ADR 0252.
+   ADR 0252. When the workloads leave room in the list, the pods of the
+   selected one are listed under them (`models.UsageAmounts.PodRows`),
+   so a short namespace does not leave the column empty.
 3. **Usage against request and limit, per row.** Each row shows CPU and
    memory now and the share of the request in use (`of req`). Over the
    request is yellow; at 90% of the limit or more, red. Above each
    chart a legend says the same for the whole target in words:
-   `Now: █ usage 0.002  ┄ request 0.04 (5% used)  ┄ limit not set on all
-   pods`, with `over the request` and `near the limit` in the same
+   `Now: █ usage 0.002  ┄ request 0.04 (5% used) ↑ above  ┄ limit
+   missing on some pods`, with `over the request` and `near the limit` in the same
    colors.
 4. **Health next to usage.** Each row shows the ready pods and the
    restarts, and a second line names the problem when there is one: a
@@ -117,8 +119,8 @@ The screen of a namespace on a kind cluster, a minute after opening:
 5. **A scale that fits the usage.** The value axis fits the usage with
    a tenth of headroom, and a request or limit up to three times above
    it. A line further above is not drawn; an `↑` in its color at the top
-   right says it is above the chart, and the legend adds `↑ off the
-   scale` with its value. A usage of 0.002 against a request of 0.04
+   right says it is above the chart, and the legend adds `↑ above` after
+   its value. A usage of 0.002 against a request of 0.04
    fills the chart instead of one dot.
 6. **A time range that fits the data.** While the session history is
    shorter than the range, a session chart starts at its first sample
@@ -133,7 +135,9 @@ The screen of a namespace on a kind cluster, a minute after opening:
    the charts' time axis, and the line under it names the marks that
    fit, warnings first (`Failed ×285`). Before the oldest Event the API
    server keeps, it says `no Events kept before 18:59`; when a fitted
-   chart starts after some Events of the range, `← 2 earlier`. The list
+   chart starts after some Events of the range, `← 2 Events before the
+   chart starts`. The lane has no label of its own: the frame title
+   names it. The list
    has column headers: Time, Type, Reason, Object (from 100 columns),
    Count, Message. With the charts side by side, the lane follows the
    left chart's axis.
