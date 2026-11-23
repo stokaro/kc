@@ -28,7 +28,8 @@ const (
 	// RelatedDependsOn lists the objects an object names in its spec.
 	RelatedDependsOn
 	// RelatedDiagnosis checks a Service against its pods and EndpointSlices
-	// (service_diagnosis.go). It is entered from the Service's folder, not
+	// (service_diagnosis.go), or explains the problems of a workload or pod
+	// (workload_diagnosis.go). It is entered from the object's folder, not
 	// opened by a key.
 	RelatedDiagnosis
 )
@@ -144,13 +145,14 @@ func newRelatedFolder(ctx context.Context, deps Deps, reader *scopedReader, rele
 		// watched until the folder is opened again.
 		f.watches = append([]relatedWatch{self}, dependencyWatches(dependencies)...)
 	case RelatedDiagnosis:
-		if gvr != serviceGVR {
+		watches, ok := diagnosisWatches(gvr, namespace, self)
+		if !ok {
 			return fail(fmt.Errorf("no diagnosis for %s", gvr))
 		}
 		// Built on Enter, on the UI thread: no reads here. The first
 		// populate and startWatch decide the scopes in the background.
 		segment = DiagnosisSegment
-		f.watches = []relatedWatch{self, {gvr: podGVR, namespace: namespace}, {gvr: endpointSlicesGVR, namespace: namespace}}
+		f.watches = watches
 	default:
 		return fail(fmt.Errorf("unknown related kind %d", kind))
 	}
@@ -227,6 +229,9 @@ func (f *RelatedObjectsFolder) Close() {
 func (f *RelatedObjectsFolder) KubectlCommand() string {
 	switch f.kind {
 	case RelatedDiagnosis:
+		if f.gvr != serviceGVR {
+			return kubectlCommand(f.Deps, "describe", kubectlResource(f.gvr), f.name, "-n", f.namespace) + "  # and its pods, events and claims"
+		}
 		return kubectlCommand(f.Deps, "get", "service,pods,endpointslices", "-n", f.namespace) + "  # behind service/" + f.name
 	case RelatedOwners, RelatedDependsOn:
 		args := []string{"get", kubectlResource(f.gvr), f.name}

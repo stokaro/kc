@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/stokaro/kc/internal/hotlist"
 	navui "github.com/stokaro/kc/internal/navigation"
 	"github.com/stokaro/kc/pkg/kubeconfig"
 )
@@ -35,6 +36,8 @@ type pathJump struct {
 	// record adds the reached location to the panel history; history
 	// moves themselves do not record.
 	record bool
+	// view is the saved view to apply once the whole path is entered.
+	view *hotlist.View
 }
 
 // pathJumpMsg resumes a jump after a wait.
@@ -45,6 +48,7 @@ type pendingJump struct {
 	panel  int
 	target navui.Location
 	record bool
+	view   *hotlist.View
 }
 
 // currentContextName is the name of kc's kubeconfig context, "" before one
@@ -119,6 +123,11 @@ func (a *App) findContext(name string) *kubeconfig.Context {
 // jumpTo moves panel idx to target. A target in another context switches kc
 // to that context first, which puts both panels at their roots.
 func (a *App) jumpTo(idx int, target navui.Location, record bool) tea.Cmd {
+	return a.jumpToView(idx, target, record, nil)
+}
+
+// jumpToView is jumpTo that applies view when the jump reaches target.
+func (a *App) jumpToView(idx int, target navui.Location, record bool, view *hotlist.View) tea.Cmd {
 	if idx < 0 || idx > 1 {
 		return nil
 	}
@@ -132,7 +141,7 @@ func (a *App) jumpTo(idx int, target navui.Location, record bool) tea.Cmd {
 		if cmd == nil {
 			return nil
 		}
-		a.pendingJump = &pendingJump{panel: idx, target: target, record: record}
+		a.pendingJump = &pendingJump{panel: idx, target: target, record: record, view: view}
 		return cmd
 	}
 	nav := a.navigatorFor(idx)
@@ -160,6 +169,7 @@ func (a *App) jumpTo(idx int, target navui.Location, record bool) tea.Cmd {
 		target: target,
 		done:   done,
 		record: record,
+		view:   view,
 	})
 }
 
@@ -170,7 +180,7 @@ func (a *App) resumePendingJump() tea.Cmd {
 	if p == nil || p.target.Context != a.currentContextName() {
 		return nil
 	}
-	return a.jumpTo(p.panel, p.target, p.record)
+	return a.jumpToView(p.panel, p.target, p.record, p.view)
 }
 
 // continueJump enters the remaining steps of j. It gives up quietly when the
@@ -199,7 +209,14 @@ func (a *App) continueJump(j pathJump) tea.Cmd {
 	a.finishJump(j)
 	if err != nil {
 		ctrllog.FromContext(a.ctx).WithName("jump").Info("jump stopped", "path", j.target.Path, "error", err.Error())
-		return a.ShowToast(fmt.Sprintf("Cannot open %s: %v", j.target.Path, err), 3*time.Second)
+		msg := fmt.Sprintf("Cannot open %s: %v", j.target.Path, err)
+		if j.view != nil {
+			msg += "; the view settings were not applied"
+		}
+		return a.ShowToast(msg, 4*time.Second)
+	}
+	if j.view != nil {
+		return a.applySavedView(j.panel, *j.view)
 	}
 	return nil
 }

@@ -56,7 +56,7 @@ func (f *OverviewFolder) NamespaceScope() string { return f.namespace }
 // workloads in scope.
 func (f *OverviewFolder) KubectlCommand() string {
 	args := []string{"get", "nodes,pods,deployments,statefulsets,daemonsets,jobs"}
-	return kubectlCommand(f.Deps, append(args, namespaceArgs(f.namespace, true)...)...)
+	return kubectlCommand(f.Deps, append(args, namespaceArgs(f.namespace, true)...)...) + "  # objects the overview reads; a finding row shows its inputs"
 }
 
 func (f *OverviewFolder) populate(context.Context) ([]table.Row, error) {
@@ -70,40 +70,69 @@ func (f *OverviewFolder) populate(context.Context) ([]table.Row, error) {
 	}
 	rows := make([]table.Row, 0, len(report.findings)+len(overviewSections))
 	for _, section := range overviewSections {
-		rows = append(rows, NewSimpleItem("section/"+strings.ToLower(section), []string{" " + section, "", ""}, f.Path(), overviewSectionStyle()))
+		// The header names the scope, so cluster capacity next to an
+		// empty namespace does not read as that namespace's figures.
+		scope, mixed := sectionScope(report.findings, section, f.namespace)
+		header := NewSimpleItem("section/"+strings.ToLower(section), []string{" " + section + " · " + scope, "", ""}, f.Path(), overviewSectionStyle())
+		header.SetDetails(section + " covers " + scope + ". " + overviewSwitchHint)
+		rows = append(rows, header)
 		for _, finding := range report.findings {
 			if finding.section != section {
 				continue
 			}
-			rows = append(rows, f.findingRow(finding))
+			rows = append(rows, f.findingRow(finding, mixed))
 		}
 	}
 	return rows, nil
 }
 
-func (f *OverviewFolder) findingRow(finding overviewFinding) table.Row {
+// findingRow is the row of finding. In a section that mixes namespace and
+// cluster findings (mixed), a cluster finding's title says so.
+func (f *OverviewFolder) findingRow(finding overviewFinding, mixed bool) table.Row {
 	path := append(f.Path(), strings.TrimPrefix(finding.title, "/"))
 	style := overviewSeverityStyle(finding.severity)
+	title := finding.title
+	if _, cluster := findingScope(finding.id, f.namespace); cluster && mixed {
+		title += " (cluster)"
+	}
 	item := &OverviewFindingItem{
-		RowItem: NewRowItem(finding.id, []string{finding.title, finding.value, finding.state}, path, style),
+		RowItem: NewRowItem(finding.id, []string{title, finding.value, finding.state}, path, style),
 		folder:  f,
 		id:      finding.id,
 	}
-	item.SetDetails(finding.title + ": " + finding.value)
-	// The command line holds one command; F3 lists all of them.
-	if len(finding.kubectl) > 0 {
-		item.SetViewCommand(kubectlCommand(f.Deps, finding.kubectl[0]...))
+	item.SetDetails(title + ": " + finding.value)
+	// The viewer's command line holds one runnable command; with several
+	// inputs F3 lists them all and the viewer shows none, so it never
+	// presents one of them as the source of the value.
+	if line, ok := findingCommandLine(f.Deps, finding, nil); ok && line.Copy == "" {
+		item.SetViewCommand(line.Show)
 	}
 	return item
 }
 
-// findingCommands joins the kubectl commands that show a finding's inputs.
+// findingCommands lists the inputs of a finding for F3: what each one
+// supplies, then its commands.
 func (f *OverviewFolder) findingCommands(finding overviewFinding) string {
-	cmds := make([]string, 0, len(finding.kubectl))
-	for _, args := range finding.kubectl {
-		cmds = append(cmds, kubectlCommand(f.Deps, args...))
+	var b strings.Builder
+	for i, in := range findingInputs(f.Deps, finding, nil) {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		if in.supplies != "" {
+			fmt.Fprintf(&b, "# %s\n", in.supplies)
+		}
+		if len(in.commands) == 0 {
+			fmt.Fprintf(&b, "# %s\n", templateHint(in.template))
+			continue
+		}
+		for _, c := range in.commands {
+			b.WriteString(c + "\n")
+		}
+		if in.omitted > 0 {
+			fmt.Fprintf(&b, "# %d more; %s\n", in.omitted, templateHint(in.template))
+		}
 	}
-	return strings.Join(cmds, "\n")
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // OverviewFindingItem is an overview row. Enter lists the objects behind it;
@@ -139,9 +168,9 @@ func (f *OverviewFolder) currentFinding(id string) (overviewFinding, bool) {
 
 func (f *OverviewFolder) explainFinding(finding overviewFinding) string {
 	var b strings.Builder
-	scope := "all namespaces"
-	if f.namespace != AllNamespaces {
-		scope = "namespace " + f.namespace
+	scope, cluster := findingScope(finding.id, f.namespace)
+	if cluster && f.namespace != AllNamespaces {
+		scope += ", whatever the namespace scope (" + namespaceScopeText(f.namespace) + ")"
 	}
 	fmt.Fprintf(&b, "%s\n\nValue: %s\nState: %s\nScope: %s\n", finding.title, finding.value, finding.state, scope)
 	if finding.unavailable != "" {
@@ -154,7 +183,7 @@ after a change. Thresholds are set under overview: in ~/.kc/config.yaml.
 `)
 	b.WriteString("\nkubectl\n\n")
 	b.WriteString(f.findingCommands(finding))
-	b.WriteString("\n")
+	b.WriteString("\n\n" + overviewSwitchHint + "\n")
 	return b.String()
 }
 
@@ -184,14 +213,18 @@ func (f *OverviewTargetsFolder) Close() {
 	}
 }
 
-// KubectlCommand shows the commands of the finding.
+// KubectlCommand shows the first input of the finding, with a count when
+// there are more; CommandLineFor gives the whole set.
 func (f *OverviewTargetsFolder) KubectlCommand() string {
-	report, _ := f.engine.snapshot()
-	finding, ok := report.finding(f.findingID)
-	if !ok || len(finding.kubectl) == 0 {
+	finding, ok := f.finding()
+	if !ok {
 		return ""
 	}
-	return kubectlCommand(f.Deps, finding.kubectl[0]...)
+	line, ok := findingCommandLine(f.Deps, finding, nil)
+	if !ok {
+		return ""
+	}
+	return line.Show
 }
 
 func (f *OverviewTargetsFolder) populate(context.Context) ([]table.Row, error) {
