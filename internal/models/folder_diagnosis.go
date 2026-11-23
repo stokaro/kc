@@ -10,6 +10,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -24,7 +25,7 @@ import (
 // builtinObjectRows are rows models itself adds inside objects, next to
 // the rows registered with RegisterObjectRows.
 func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
-	diagnosis := gvr == serviceGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr) || hasRouteDiagnosis(gvr)
+	diagnosis := gvr == serviceGVR || gvr == hpaGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr) || hasRouteDiagnosis(gvr)
 	if !diagnosis && !hasTimeline(gvr) {
 		return nil, false
 	}
@@ -55,6 +56,8 @@ func diagnosisRow(deps Deps, gvr schema.GroupVersionResource, namespace, name st
 	switch {
 	case gvr == serviceGVR:
 		item.RowItem.details = "Check the selector, pods, EndpointSlices and target ports of this Service"
+	case gvr == hpaGVR:
+		item.RowItem.details = "Explain the replica bounds, conditions, metrics and behavior of this autoscaler"
 	case gvr == pvcGVR:
 		item.RowItem.details = "Explain provisioning, binding, attachment and mount events of this claim"
 	case hasRouteDiagnosis(gvr):
@@ -98,6 +101,10 @@ func diagnosisWatches(gvr schema.GroupVersionResource, namespace string, self re
 		return routeDiagnosisWatches(gvr, namespace, self), true
 	case gvr == serviceGVR:
 		return []relatedWatch{self, in(podGVR), in(endpointSlicesGVR)}, true
+	case gvr == hpaGVR:
+		// The target is read once per refresh; the HPA's status follows
+		// the target's scale, so watching the HPA is enough.
+		return []relatedWatch{self, in(ovEventsGVR)}, true
 	case gvr == podGVR:
 		return []relatedWatch{self, in(ovEventsGVR), in(pvcGVR)}, true
 	case gvr == pvcGVR:
@@ -146,6 +153,8 @@ func (f *RelatedObjectsFolder) diagnosisRows(ctx context.Context) ([]table.Row, 
 		return f.routeDiagnosisRows(ctx)
 	}
 	switch f.gvr {
+	case hpaGVR:
+		return f.hpaDiagnosisRows(ctx)
 	case pvcGVR:
 		return f.claimDiagnosisRows(ctx)
 	case serviceGVR:
@@ -205,6 +214,45 @@ func (f *RelatedObjectsFolder) workloadDiagnosisRows(ctx context.Context) ([]tab
 	}
 	log.V(1).Info("workload diagnosis", "gvr", f.gvr.String(), "namespace", f.namespace, "name", f.name, "findings", len(d.Findings))
 	return renderDiagnosis(f.Deps, f.rowDeps, f.Path(), d), nil
+}
+
+// hpaDiagnosisRows reads the HPA, its scale target and the events of its
+// namespace from the cache and renders the explanation.
+func (f *RelatedObjectsFolder) hpaDiagnosisRows(ctx context.Context) ([]table.Row, error) {
+	log := ctrllog.FromContext(ctx).WithName("diagnosis")
+	obj, err := f.reader.GetByGVR(ctx, hpaGVR, f.namespace, f.name)
+	if err != nil {
+		return nil, err
+	}
+	in := hpaInput{HPA: &autoscalingv2.HorizontalPodAutoscaler{}, Now: time.Now()}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, in.HPA); err != nil {
+		return nil, fmt.Errorf("decode horizontalpodautoscaler: %w", err)
+	}
+	if gvr, ok := scaleTargetGVR(f.Deps, in.HPA.Spec.ScaleTargetRef); ok {
+		in.TargetGVR = gvr
+		in.Target, in.TargetErr = f.reader.GetByGVR(ctx, gvr, f.namespace, in.HPA.Spec.ScaleTargetRef.Name)
+	}
+	in.Events, in.EventsErr = listTyped[corev1.Event](ctx, f.reader, ovEventsGVR, f.namespace)
+	d := diagnoseHPA(in)
+	log.V(1).Info("hpa diagnosis", "namespace", f.namespace, "name", f.name, "target", in.TargetGVR.String(), "findings", len(d.Findings))
+	return renderDiagnosis(f.Deps, f.rowDeps, f.Path(), d), nil
+}
+
+// scaleTargetGVR maps an HPA's scaleTargetRef to a resource through the
+// RESTMapper; false when the kind is not served.
+func scaleTargetGVR(deps Deps, ref autoscalingv2.CrossVersionObjectReference) (schema.GroupVersionResource, bool) {
+	if deps.Cl == nil || deps.Cl.RESTMapper() == nil {
+		return schema.GroupVersionResource{}, false
+	}
+	gv, err := schema.ParseGroupVersion(ref.APIVersion)
+	if err != nil {
+		return schema.GroupVersionResource{}, false
+	}
+	mapping, err := deps.Cl.RESTMapper().RESTMapping(schema.GroupKind{Group: gv.Group, Kind: ref.Kind}, gv.Version)
+	if err != nil {
+		return schema.GroupVersionResource{}, false
+	}
+	return mapping.Resource, true
 }
 
 // readScheduling reads what kc's node checks of an unschedulable pod need,

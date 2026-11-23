@@ -1,9 +1,9 @@
 # Diagnosis
 
 `/diagnosis` is a row inside a Service, a Pod, a Deployment, ReplicaSet,
-StatefulSet, DaemonSet or Job, an Ingress, a Gateway API HTTPRoute, and
-inside a namespaced custom resource that has an entry in the `health:`
-configuration. It collects what the
+StatefulSet, DaemonSet, Job or HorizontalPodAutoscaler (`autoscaling/v2`),
+an Ingress, a Gateway API HTTPRoute, and inside a namespaced custom
+resource that has an entry in the `health:` configuration. It collects what the
 object, its pods, their containers, claims and events say about a
 problem, with the evidence for each finding. Use it when a row is red
 and you want to know why without reading five describes.
@@ -147,6 +147,36 @@ its `/diagnosis` for the node checks.
 
 A pod with `spec.schedulingGates` is reported as waiting for its gates
 (a warning), not as unschedulable, and gets no node checks.
+
+## A HorizontalPodAutoscaler
+
+The summary shows the target and min, current, desired and max replicas,
+and the last scale time. The findings explain the current state:
+
+- `hpa/at-max` and `hpa/at-min`: the desired count is at a bound.
+- `hpa/condition/...`: the controller's own `AbleToScale`, `ScalingActive`
+  and `ScalingLimited` reasons and messages, for example
+  `FailedGetResourceMetric` (the metrics API did not answer),
+  `ScalingDisabled` (the target has 0 replicas), `TooManyReplicas`, or
+  `ScaleDownStabilized` and the backoff reasons. These are what the
+  controller reports; kc does not show a countdown, since the API does
+  not expose the controller's recommendation history.
+- `hpa/metric/N`: each `spec.metrics` entry against its value in
+  `status.currentMetrics`, with the ratio and whether it asks for more or
+  fewer replicas. A metric without a reported value is a warning, never
+  zero. Several metrics stay separate findings.
+- `hpa/requests/N`: a CPU or memory `Utilization` target needs a request
+  on every container it counts; the finding names the containers of the
+  target's pod template without one.
+- `hpa/target`: the target does not exist (error) or cannot be read
+  (incomplete).
+- `hpa/stale`, `hpa/no-status`: the status describes an older
+  generation, or the controller has not reported at all.
+- `hpa/behavior`: the configured scale-up and scale-down windows and
+  policies, with the API defaults for omitted fields.
+
+kc reads the HPA, its target and the namespace's events from the cache.
+It does not query the metrics APIs and changes nothing.
 
 ## Storage: a claim or a pod that uses one
 
