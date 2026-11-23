@@ -1,0 +1,163 @@
+package dashboard_test
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/stokaro/kc/internal/investigation"
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/dashboard"
+)
+
+var (
+	podsGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
+	rsGVR   = schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}
+	evGVR   = schema.GroupVersionResource{Version: "v1", Resource: "events"}
+)
+
+func event(name, typ, reason, kind string, obj models.ObjectRef, first, last time.Time, count int32) models.UsageEvent {
+	return models.UsageEvent{
+		Event:  models.ObjectRef{GVR: evGVR, Namespaced: true, Namespace: "shop", Name: name},
+		Object: obj, Kind: kind, Type: typ, Reason: reason, Message: reason + " message",
+		Count: count, First: first, Last: last, FirstKnown: true,
+	}
+}
+
+// withEvents is measured() with a rollout 40 minutes ago, a repeated
+// BackOff of web-1, and an Event about an object kc cannot open. The API
+// server kept Events from 50 minutes ago.
+func withEvents() models.UsageAmounts {
+	a := measured()
+	pod := models.ObjectRef{GVR: podsGVR, Namespaced: true, Namespace: "shop", Name: "web-1"}
+	rs := models.ObjectRef{GVR: rsGVR, Namespaced: true, Namespace: "shop", Name: "web-abc"}
+	a.Events = models.UsageEvents{
+		Oldest: t0.Add(-50 * time.Minute),
+		Items: []models.UsageEvent{
+			event("e-scale", "Normal", "SuccessfulCreate", "ReplicaSet", rs, t0.Add(-40*time.Minute), t0.Add(-40*time.Minute), 1),
+			event("e-custom", "Normal", "Synced", "Widget", models.ObjectRef{Namespaced: true, Namespace: "shop", Name: "w"}, t0.Add(-20*time.Minute), t0.Add(-20*time.Minute), 1),
+			event("e-backoff", "Warning", "BackOff", "Pod", pod, t0.Add(-30*time.Minute), t0.Add(-2*time.Minute), 12),
+		},
+	}
+	return a
+}
+
+func lane(t *testing.T, lines []string) string {
+	t.Helper()
+	for i, l := range lines {
+		if strings.Contains(l, "Events ·") && i+1 < len(lines) {
+			return lines[i+1]
+		}
+	}
+	t.Fatalf("no events widget:\n%s", strings.Join(lines, "\n"))
+	return ""
+}
+
+// TestEventsLaneAndList: the lane marks a rollout and a warning at their
+// times and the cells before the oldest kept Event as unknown; the list
+// is newest first with the repeat count.
+func TestEventsLaneAndList(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: withEvents()}
+	m := open(t, f, true, web, 120, 40)
+	lines := screen(t, m, 120, 40)
+	requireText(t, lines, "Events · 3 in range · kept from 09:10:00", "BackOff Pod web-1 ×12", "SuccessfulCreate ReplicaSet web-abc")
+	l := lane(t, lines)
+	for _, r := range []string{"▲", "◆", "·"} {
+		if !strings.Contains(l, r) {
+			t.Errorf("lane %q lacks %q", l, r)
+		}
+	}
+	// The hour shown starts at 09:00: the first sixth is before 09:10.
+	cells := []rune(strings.TrimLeft(l, " "))
+	if cells[0] != '·' || strings.IndexRune(l, '◆') < strings.LastIndex(l, "·") {
+		t.Errorf("lane %q: want unknown cells first, then the rollout", l)
+	}
+	joined := strings.Join(lines, "\n")
+	if strings.Index(joined, "BackOff") > strings.Index(joined, "SuccessfulCreate") {
+		t.Error("the list is not newest first")
+	}
+}
+
+// TestEventsOfTheCursorCell: with the cursor, the list holds the Events
+// of the cell only.
+func TestEventsOfTheCursorCell(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: withEvents()}
+	m := open(t, f, true, web, 100, 30)
+	screen(t, m, 100, 30)
+	// The newest cell is after the BackOff's last time, 09:58: empty.
+	key(t, m, "left")
+	requireText(t, screen(t, m, 100, 30), "Events · 0 in the cell")
+	// Walk back into the BackOff's span; Synced at 09:40 stays out.
+	var lines []string
+	for range 10 {
+		key(t, m, "left")
+		if lines = screen(t, m, 100, 30); contains(lines, "Events · 1 in the cell") {
+			break
+		}
+	}
+	requireText(t, lines, "Events · 1 in the cell", "BackOff", "▏09:5")
+	if contains(lines, "Synced") {
+		t.Error("an Event outside the cursor cell is listed")
+	}
+	key(t, m, "home")
+	requireText(t, screen(t, m, 100, 30), "Events · 0 in the cell", "no Events in the cell")
+}
+
+// TestOpenEventAndLogsAround: o opens the involved object with the Event;
+// an object kc cannot open opens the Event itself; l asks for the logs of
+// the pod around the Event's time.
+func TestOpenEventAndLogsAround(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: withEvents()}
+	m := open(t, f, true, web, 100, 30)
+	key(t, m, "tab")
+	key(t, m, "tab") // Events
+	act := key(t, m, "o")
+	if act.Open == nil || act.Open.Name != "web-1" || act.Open.GVR != podsGVR || act.Event == nil || act.Event.Reason != "BackOff" {
+		t.Fatalf("o on BackOff = %+v", act)
+	}
+	act = key(t, m, "l")
+	want := investigation.Window{Start: t0.Add(-7 * time.Minute), End: time.Time{}}
+	if act.Logs == nil || act.Logs.Name != "web-1" || act.Window != want {
+		t.Errorf("l on BackOff = %+v, want the pod from 09:53 to now", act)
+	}
+	key(t, m, "down")
+	act = key(t, m, "enter")
+	if act.Open == nil || act.Open.GVR != evGVR || act.Open.Name != "e-custom" {
+		t.Errorf("Enter on an Event of an unknown kind = %+v, want the Event", act.Open)
+	}
+	if act = key(t, m, "l"); act.Logs != nil || !strings.Contains(act.Note, "has no logs") {
+		t.Errorf("l on a Widget = %+v, want a note", act)
+	}
+	key(t, m, "down")
+	act = key(t, m, "l")
+	want = investigation.Window{Start: t0.Add(-45 * time.Minute), End: t0.Add(-35 * time.Minute)}
+	if act.Logs == nil || act.Logs.GVR != rsGVR || act.Window != want {
+		t.Errorf("l on the rollout = %+v, want the ReplicaSet around 09:20", act)
+	}
+}
+
+// TestEventsUnavailableAndTooOld: missing Events say why; a range older
+// than every kept Event says the API server keeps none that old.
+func TestEventsUnavailableAndTooOld(t *testing.T) {
+	t.Parallel()
+	a := withEvents()
+	a.Events = models.UsageEvents{Missing: "events is forbidden"}
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, true, web, 100, 30)
+	requireText(t, screen(t, m, 100, 30), "Events · cannot be read: events is forbidden")
+
+	f2 := &fakes{now: t0, amounts: withEvents(), win: investigation.Window{Start: t0.Add(-3 * time.Hour), End: t0.Add(-2 * time.Hour)}}
+	m2 := open(t, f2, true, web, 100, 30)
+	lines := screen(t, m2, 100, 30)
+	requireText(t, lines, "Events · 0 in range", "the API server keeps no Events this old")
+	if l := lane(t, lines); strings.ContainsAny(l, "▲◆") || !strings.Contains(l, "·") {
+		t.Errorf("lane %q, want every cell unknown", l)
+	}
+}
+
+var _ = dashboard.IsRollout

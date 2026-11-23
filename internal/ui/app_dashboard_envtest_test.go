@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +198,97 @@ func TestDashboardOpensOverUnchangedPanelsEnvtest(t *testing.T) {
 	defer scancel()
 	if sel := app.leftPanel.currentSelectionID(sctx); sel != "web" {
 		t.Fatalf("selection = %q, want web", sel)
+	}
+}
+
+// TestDashboardEventsAndLogsAroundEnvtest: an Event of the Deployment
+// shows in the dashboard's Events; o opens the Deployment and points at
+// its /rollout for the revisions; l sets the investigation window around the
+// Event and shows the Deployment's logs, with the dashboard's panel in
+// Logs mode.
+func TestDashboardEventsAndLogsAroundEnvtest(t *testing.T) {
+	if testCfg == nil {
+		t.Skip("envtest not available")
+	}
+	ns := kctesting.UniqueName("dash-ev")
+	admin, err := kccluster.New(testCfg)
+	if err != nil {
+		t.Fatalf("admin cluster: %v", err)
+	}
+	kctesting.RunInBackground(t, "admin", admin.Start)
+	t.Cleanup(admin.Stop)
+	adminCreate(t, admin, &corev1.Namespace{Name: ns})
+	labels := map[string]string{"app": "web"}
+	dep := &appsv1.Deployment{
+		Namespace: ns, Name: "web",
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "nginx"}}},
+			},
+		},
+	}
+	adminCreate(t, admin, dep)
+	at := metav1.NewTime(time.Now().Add(-2 * time.Minute).Truncate(time.Second))
+	adminCreate(t, admin, &corev1.Event{
+		Namespace: ns, Name: "web.scale",
+		InvolvedObject: corev1.ObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Namespace: ns, Name: "web", UID: dep.UID},
+		Type:           corev1.EventTypeNormal, Reason: "ScalingReplicaSet", Message: "Scaled up replica set web-abc to 1",
+		FirstTimestamp: at, LastTimestamp: at, Count: 1,
+	})
+	app := pooledTestApp(t, ns)
+	app.goToNamespace(ns)
+	_, _ = app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	app.activePanel = 0
+	deployments := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+	runLinkCmds(t, app, app.openObjectRef(models.ObjectRef{GVR: deployments, Namespaced: true, Namespace: ns, Name: "web"}, ""))
+	app.activePanel = 1
+	openDash := func() {
+		t.Helper()
+		_, _ = app.Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+		_, _ = app.Update(tea.KeyPressMsg{Code: 'g', Text: "g"})
+		if !app.dashboardOpen() {
+			t.Fatal("C-x g did not open the dashboard")
+		}
+	}
+	openDash()
+	s := waitDashboard(t, app, "ScalingReplicaSet Deployment web")
+	if !strings.Contains(s, "Events · 1 in range") {
+		t.Fatalf("events title:\n%s", s)
+	}
+	for range 2 {
+		_, _ = app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	}
+	if !strings.Contains(dashboardScreen(app), "▸ Events") {
+		t.Fatalf("Tab did not reach the Events:\n%s", dashboardScreen(app))
+	}
+
+	_, cmd := app.Update(tea.KeyPressMsg{Code: 'o', Text: "o"})
+	toasts := runLinkCmds(t, app, cmd)
+	if app.dashboardOpen() || app.activePanel != 0 || app.leftPanel.GetCurrentPath() != "/deployments" {
+		t.Fatalf("o: open %v, active %d at %q; want the Deployment in the left panel", app.dashboardOpen(), app.activePanel, app.leftPanel.GetCurrentPath())
+	}
+	if !slices.ContainsFunc(toasts, func(s string) bool { return strings.Contains(s, "its revisions are in /rollout") }) {
+		t.Errorf("toasts = %q, want the Deployment's revisions pointed at /rollout", toasts)
+	}
+
+	// From the left panel, C-x g on the same row restores the dashboard
+	// with the Events in focus; l asks for the logs around the Event.
+	openDash()
+	if s := waitDashboard(t, app, "ScalingReplicaSet Deployment web"); !strings.Contains(s, "▸ Events") {
+		t.Fatalf("the restored dashboard lost the focus:\n%s", s)
+	}
+	_, _ = app.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+	if app.dashboardOpen() {
+		t.Fatal("l did not leave the dashboard")
+	}
+	// The Event was last seen at its lastTimestamp or, later, when the API
+	// server created it: the window starts five minutes before that.
+	if lo, hi := at.Add(-5*time.Minute), time.Now().Add(-5*time.Minute); app.window.Start.Before(lo) || app.window.Start.After(hi) || !app.window.End.IsZero() {
+		t.Errorf("window = %+v, want from between %v and %v up to now", app.window, lo, hi)
+	}
+	if app.leftPanel.Mode() != PanelModeLogs || app.rightPanel.GetCurrentPath() != "/deployments" {
+		t.Errorf("left mode %v, right at %q; want the left panel in Logs following the Deployment on the right", app.leftPanel.Mode(), app.rightPanel.GetCurrentPath())
 	}
 }

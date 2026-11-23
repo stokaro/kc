@@ -130,6 +130,19 @@ func recordingFor(deps Deps, gvr schema.GroupVersionResource, namespace, name st
 	return r
 }
 
+// RecordedRevisions reports whether kc records, or recorded, the revisions
+// of the object in this session: when the recording started, and whether
+// it still runs. It starts nothing.
+func RecordedRevisions(cluster kccluster.Key, gvr schema.GroupVersionResource, namespace, name string) (since time.Time, running, ok bool) {
+	recordings.Lock()
+	r, found := recordings.m[recordingKey{cluster: cluster, gvr: gvr, namespace: namespace, name: name}]
+	recordings.Unlock()
+	if !found {
+		return time.Time{}, false, false
+	}
+	return r.tl.Snapshot().Started, !r.isStopped(), true
+}
+
 func (r *recording) isStopped() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()

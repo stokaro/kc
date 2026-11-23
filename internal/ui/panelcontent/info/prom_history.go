@@ -25,8 +25,10 @@ type PromHistorySource struct {
 	// Key identifies the context, backend and workload. A new key cancels
 	// the read in flight and drops what was shown.
 	Key string
-	// Window is how far back the history goes, for the heading.
+	// Window is how far back the history goes, for the heading; Label
+	// replaces it when the history reads an investigation window.
 	Window time.Duration
+	Label  string
 	// Start begins one read on the UI goroutine without I/O: read runs in a
 	// tea.Cmd, cancel stops it.
 	Start func() (read func() (promhistory.History, error), cancel func())
@@ -137,6 +139,9 @@ func (w *Widget) promHistoryLines(width int) []string {
 	// Named apart from the session sparklines under the bars, which are
 	// kc's own metrics.k8s.io samples.
 	title := " Prometheus history, last " + promDuration(src.Window)
+	if src.Label != "" {
+		title = " Prometheus history, " + src.Label
+	}
 	if h != nil {
 		title += " (" + h.Source + ")"
 	}

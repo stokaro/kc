@@ -67,6 +67,8 @@ type UsageAmounts struct {
 	// Top lists the measured pods by memory, most first, at most the n
 	// asked for.
 	Top []UsageConsumer
+	// Events are the retained Kubernetes Events about the focus.
+	Events UsageEvents
 }
 
 // overviewPodAmount is what UsageAmounts needs of one pod that has not
@@ -91,16 +93,20 @@ type objectStamp struct {
 
 // overviewAmounts is the input of UsageAmounts, kept with each report.
 type overviewAmounts struct {
-	pods      []overviewPodAmount
-	workloads map[InfoWorkload]objectStamp
+	pods       []overviewPodAmount
+	workloads  map[InfoWorkload]objectStamp
+	events     []overviewEvent
+	eventsMeta UsageEvents
 }
 
 func summarizeAmounts(rc *ruleContext, byPod map[string][]InfoWorkload) overviewAmounts {
 	out := overviewAmounts{workloads: make(map[InfoWorkload]objectStamp)}
+	idx := newWorkloadIndex(rc)
 	if rc.in.missingReason(ovPodsGVR) != "" {
+		out.events, out.eventsMeta = summarizeEvents(rc, idx, nil, nil)
 		return out
 	}
-	for gvr, objs := range newWorkloadIndex(rc).objects {
+	for gvr, objs := range idx.objects {
 		for _, om := range objs {
 			w := InfoWorkload{GVR: gvr, Namespace: om.Namespace, Name: om.Name}
 			out.workloads[w] = objectStamp{uid: om.UID, created: om.CreationTimestamp.Time}
@@ -136,6 +142,7 @@ func summarizeAmounts(rc *ruleContext, byPod map[string][]InfoWorkload) overview
 		}
 		return cmp.Compare(x.namespace+"/"+x.name, y.namespace+"/"+y.name)
 	})
+	out.events, out.eventsMeta = summarizeEvents(rc, idx, byPod, out.pods)
 	return out
 }
 
@@ -158,6 +165,8 @@ func usageAmounts(report *overviewReport, err error, focus UsageFocus, topN int)
 	}
 	out.ReadAt = report.usageReadAt
 	out.At = cmp.Or(report.usageAt, report.usageReadAt)
+	out.Events = report.amounts.eventsMeta
+	out.Events.Items = focusEvents(report.amounts.events, focus)
 	if r := report.info.podsMissing; r != "" {
 		out.Note = "pods cannot be read: " + r
 		return out

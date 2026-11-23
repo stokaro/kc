@@ -116,6 +116,11 @@ func (m *Model) sessionCoverage(v *view) string {
 	end := m.shownEnd(v)
 	in := m.sess.within(v.target.Key(), end.Add(-v.span(m)), end)
 	if len(in) == 0 {
+		// A range outside what was kept stays where it is; it does not
+		// move to the samples there are.
+		if first, last, ok := m.sess.kept(v.target.Key()); ok {
+			return "nothing recorded in this range; kept " + first.In(m.loc()).Format("15:04:05") + "–" + last.In(m.loc()).Format("15:04:05")
+		}
 		return "no samples yet"
 	}
 	last := in[len(in)-1]
@@ -173,7 +178,7 @@ func (m *Model) keysLine(v *view, rects map[widget]rect, w int) string {
 		if m.mode == chart.Blocks {
 			mode = "braille"
 		}
-		keys = append(keys[:6], append([][2]string{{"b", mode}}, keys[6:]...)...)
+		keys = append(keys[:6], append([][2]string{{"l", "logs"}, {"w", "window"}, {"b", mode}}, keys[6:]...)...)
 	}
 	parts := make([]string, len(keys))
 	for i, k := range keys {
