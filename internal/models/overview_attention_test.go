@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -261,5 +262,25 @@ func TestOverviewRowIDsStableAcrossSeverityChanges(t *testing.T) {
 	kept := slices.DeleteFunc(slices.Clone(before), func(id string) bool { return id == "health/pods-pending" })
 	if !slices.Equal(kept, after) {
 		t.Fatalf("IDs moved:\nbefore %v\nafter  %v", kept, after)
+	}
+}
+
+// TestRecoveredTargetsKeepTheRowApplicable checks where the lifecycle
+// (#190) meets ADR 0172: when the last failing pod is gone, the row lists
+// it as recovered, so the check is applicable (0 ok) and stays visible,
+// while rules without recovered targets and no pods are still n/a.
+func TestRecoveredTargetsKeepTheRowApplicable(t *testing.T) {
+	t.Parallel()
+	life := newOverviewLifecycle()
+	failing := &overviewInput{namespace: AllNamespaces, pods: []corev1.Pod{imagePod("web", "u1")}}
+	fixed := &overviewInput{namespace: AllNamespaces}
+	lifeCompute(failing, overviewTestNow, nil, life)
+	r := lifeCompute(fixed, overviewTestNow.Add(time.Minute), nil, life)
+	f := mustFinding(t, r, "health/pods-image")
+	if f.notApplicable != "" || f.value != "0" || f.state != "ok" || len(f.targets) != 1 || quietFinding(f) {
+		t.Fatalf("recovered row = %q %q n/a %q targets %d quiet %v", f.value, f.state, f.notApplicable, len(f.targets), quietFinding(f))
+	}
+	if other := mustFinding(t, r, "health/pods-crashloop"); other.notApplicable == "" || !quietFinding(other) {
+		t.Fatalf("a rule without recovered targets = %q %q", other.value, other.notApplicable)
 	}
 }

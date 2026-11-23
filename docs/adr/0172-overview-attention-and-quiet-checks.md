@@ -31,6 +31,12 @@ Enter lists the objects, F3 explains the value.
   CronJob, ReplicaSets, the nodes whose stats hold a volume) do not count
   as subjects. Rules over events in a window always apply: their zero
   means a quiet window.
+- **Recovered targets keep a check applicable.** When the finding
+  lifecycle (#190) lists recovered targets, the finding is applicable even
+  though their objects are gone. Its value stays `0 ok`, and it does not
+  fold into the quiet checks while it holds them. Once the retention ends
+  and nothing is left, it is not applicable again. An unavailable source
+  stays unavailable, together with its unknown targets.
 - **An optional add-on that is not installed is not applicable.**
   `overviewOptionalKinds` names cert-manager's Certificates. When the
   cluster does not serve the kind, the row is not applicable, with the
@@ -63,9 +69,9 @@ Enter lists the objects, F3 explains the value.
   gives the priority order in one place.
 - A finding that turns quiet moves into the quiet list, even while the
   cursor is on it; the cursor is then on another row. Other rows keep their
-  IDs and order, which a test checks. Holding a recovered finding in place for a while is
-  the lifecycle work of #190 (recovered findings kept for a bounded
-  window), not this change.
+  IDs and order, which a test checks. A finding whose targets the
+  lifecycle (#190) lists as recovered is not quiet, so it stays in place
+  for the retention window.
 - The PVC-near-full rule now needs the PersistentVolumeClaim list as well
   as the nodes. Its subjects are the claims in scope, so a namespace without
   claims is not applicable. It is unavailable when claims cannot be read,

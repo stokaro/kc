@@ -39,6 +39,21 @@ func notApplicable(f overviewFinding, reason string) overviewFinding {
 	return f
 }
 
+// stillApplicable undoes notApplicable for a finding that lists recovered
+// targets: their objects are gone, so the rules found nothing to check, yet
+// the row describes them and must not read as nothing to check or fold
+// into the quiet checks. Its value is the count of active targets, zero,
+// and its state ok, as for any other finding whose targets recovered.
+func stillApplicable(f *overviewFinding) {
+	if f.notApplicable == "" {
+		return
+	}
+	f.notApplicable = ""
+	f.value = "0"
+	f.state = severityOK.String()
+	f.severity = severityOK
+}
+
 // optionalNotServed says which add-on a rule needs that the cluster does
 // not have, or "".
 func optionalNotServed(in *overviewInput, needs []schema.GroupVersionResource) string {
