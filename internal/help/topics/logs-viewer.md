@@ -66,6 +66,10 @@ ends with `[kc] line truncated: ...`.
 - `M-d` opens the [fields of a line](logs-fields.md); `M-z` returns to
   the filter and the line before the last field action.
 - `M-s` opens the [log sources](logs-sources.md) of a merged log.
+- `M-m` (Solo) in a merged log shows only the source of the line under
+  the cursor; `M-m` again shows every source. The other sources keep
+  streaming and their lines are kept, so they come back. The status
+  line shows `solo: pod/container`. `M-s` is what stops a source.
 - `M-a` copies the shown lines, `M-A` the original records that pass
   the filter, unchanged. Both copy only the kept lines and say when
   older lines were dropped.
