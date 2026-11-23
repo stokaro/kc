@@ -59,8 +59,12 @@ sample so far; `stale, last 3m ago` means no recent sample.
 
 ## Limits
 
-- Needs list and watch on nodes and pods in all namespaces; kc asks
-  first and otherwise starts nothing and says so.
+- The capacity bars need list and watch on nodes and pods in all
+  namespaces. In a namespace scope, pods readable in that namespace are
+  enough for the workload and pod usage; the capacity bars then say what
+  they cannot read. kc asks first and starts nothing it cannot read.
+- `C-x m` shows which metric sources the context has
+  ([Metric sources](metric-sources.md)).
 - The history is kept in memory while the panel is in Info mode, for
   this session only. It restarts when the base of a percentage changes.
 - With `metricsHistory.backends` set, Info also shows a workload's past
@@ -70,5 +74,6 @@ sample so far; `stale, last 3m ago` means no recent sample.
 
 - [Overview](overview.md)
 - [Investigation window](investigation-window.md)
+- [Metric sources](metric-sources.md)
 - [Pin and freeze](pin-freeze.md)
 - [Panel mode](panel-mode.md)

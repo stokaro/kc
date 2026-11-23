@@ -154,6 +154,7 @@ The pages are in [`internal/help/topics`](internal/help/topics/index.md) and shi
 | `C-x p`    | Pin the Describe, Manifest, Logs or Info panel (the active one, else the other) to what it shows, or unpin it. See [Pin, freeze and the investigation window](#pin-freeze-and-the-investigation-window). |
 | `C-x f`    | Freeze the display of that panel at the current time, or return it to live data. |
 | `C-x w`    | Set the investigation window the Logs and Info panels use. |
+| `C-x m`    | Show which metric sources the context has and set its Prometheus backend. |
 | `M-e`      | Explain: browse the field documentation of the selected object or resource type, read from the cluster's OpenAPI v3 schema for exactly that group and version (CRDs included). See [Field documentation](#field-documentation). `Esc e` does the same. |
 | `M-i`      | Open the [cluster overview](#cluster-overview) in the active panel for the namespace of the list it shows (all namespaces for a list across namespaces). `Esc` and `/..` return to the panel root. `Esc i` does the same. |
 | `M-k`      | Access – show what the current identity may do with the selected object or resource type: allowed, denied or unknown for get, list, watch, create, update, patch, delete and the subresources kc uses (pod logs, exec, port-forward, attach, eviction; scale for workloads), with the reason and the matching `kubectl auth can-i` command (`Enter` copies it, `r` checks again). `Esc k` does the same. |
@@ -384,7 +385,7 @@ In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. See [Node acti
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
 - `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, measured pod and node usage, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
 - `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
-- `metricsHistory.window`, `metricsHistory.timeout`, `metricsHistory.backends` – past workload usage from Prometheus in the Info panel mode (off by default; see [Cluster Overview](#cluster-overview)).
+- `metricsHistory.window`, `metricsHistory.timeout`, `metricsHistory.backends` – past workload usage from Prometheus in the Info panel mode (off by default; see [Cluster Overview](#cluster-overview)). `C-x m` tests a backend and saves it for the current context; see [Metric sources](internal/help/topics/metric-sources.md).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 

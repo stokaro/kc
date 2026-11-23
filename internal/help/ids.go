@@ -41,6 +41,7 @@ const (
 	CompareLists        ID = "compare-lists"
 	PinFreeze           ID = "pin-freeze"
 	InvestigationWindow ID = "investigation-window"
+	MetricSources       ID = "metric-sources"
 
 	// Special folders.
 	Overview    ID = "overview"

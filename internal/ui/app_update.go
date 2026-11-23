@@ -76,6 +76,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		a.pendingCmds = nil
 	}
 	a.pendingCmdsMu.Unlock()
+	if cmd, ok := a.routeMetricSources(msg); ok {
+		return a, tea.Batch(append(cmds, cmd)...)
+	}
 	if cmd, ok := a.updatePin(msg); ok {
 		return a, tea.Batch(append(cmds, cmd)...)
 	}
