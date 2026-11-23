@@ -2109,6 +2109,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
 	logsViewer.SetOnFilter(func() tea.Cmd { return a.showLogsFilterModal(logsViewer) })
+	a.setupLogFields(logsViewer)
 	logsViewer.SetOnClose(func() tea.Cmd {
 		a.hideModal()
 		return nil

@@ -128,6 +128,8 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | `M-A`      | In the logs viewer: copy the original records that pass the filter, unchanged.  |
 | `M-v`      | In the logs viewer: switch between the formatted and the raw view.              |
 | `M-g`      | In the logs viewer: open the filter dialog.                                     |
+| `M-d`      | In the logs viewer: the fields of the line in focus (exact filters, follow a request, copy, trace URL, context). |
+| `M-z`      | In the logs viewer: return to the filter and the line before the last `M-d` action. |
 | `M-s`      | In a merged logs viewer: open the sources dialog (states, source filter, stream limit, retry). |
 | `M-l`      | Open a local directory in the active panel, or leave it again. `Esc l` does the same. |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel; on an overview finding, all of its input commands). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
@@ -161,6 +163,8 @@ Inside a Service, next to `/endpointslices`, `/diagnosis` checks the path from t
 
 Pods, Deployments, ReplicaSets, StatefulSets, DaemonSets and Jobs have a `/diagnosis` row inside them too. It explains what the object's status, its pods (matched by controller owner UID, through the ReplicaSets of a Deployment), their containers, the claims they use and the events about them show: a rollout that does not progress, a replica failure, unavailable replicas, a failed Job, an unschedulable pod with the scheduler's message, an image that cannot be pulled, a container that cannot start, an OOM kill, a crash loop or a restart in the last hour, a failed exit (also of an init container), and a claim the pod uses that is missing or not Bound. Each finding shows when it was observed and is followed by its sources: the object with the exact status field, and the newest events about that object or container. A container failure offers the current and previous log of that container of that pod, never another one. A `maybe` row is a possible explanation (a correlation by owner, not a confirmed cause) and a `next` row says what to inspect. Up to ten pods with problems are explained; the rest are counted. Pods, events or claims kc may not read are shown as unavailable, not as absent. Objects and events are matched by UID, so a recreated object with the same name does not inherit the pods or events of the one it replaced.
 
+Objects with a child folder, and pods, also have a `/timeline` row (not Secrets or Events). Entering it starts recording that object from the shared cache, without extra watches: the first entry is the object as kc saw it, then every revision kc observes, newest first, with what changed (images, replicas, ready and available counts, phase, conditions, restarts, generation, a requested deletion). `F3` on an entry shows its manifest diff against the previous recorded revision; a status-only change shows the status diff, and a change of both has a second `status` row. Notifications that repeat a resourceVersion or change only `managedFields` are counted, not recorded. A deletion and a recreation with a new UID are separate entries, and the new object is never compared with the old one. The recording keeps running when you leave the folder, until `stop recording`, until more than `timeline.maxObjects` objects are recorded (the oldest stops) or until kc exits; it is kept in memory only, within `timeline.maxEntries` and `timeline.maxBytes` per object. The first rows say when recording started, which entries are kept and how many were evicted, and a gap entry marks where changes may be missing (the cache lost the final state of a deletion, or the watch stopped). Only observed revisions are known: changes between two notifications, or before recording started, are not. For Deployments, StatefulSets and DaemonSets the timeline also lists the ReplicaSets or ControllerRevisions their controller kept, as older evidence.
+
 `F4`, `F8` and `F3` on container logs are grayed out when a SelfSubjectAccessReview for the current context, impersonation and namespace says the action is denied (`F4` needs get and patch, as `kubectl edit` sends a patch). Answers are cached for 30 seconds. An unknown or failed review keeps the key enabled; the API server still decides every request.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
@@ -177,13 +181,16 @@ The logs viewer and the Logs panel keep the most recent lines they read: up to `
 | `"conn refused"`    | lines that contain the quoted text                                      |
 | `/5\d\d/`           | lines that match the regular expression (RE2)                           |
 | `level=error,warn`  | JSON lines whose field equals one of the values, in any case            |
+| `id=="a,b C"`       | JSON lines whose field is exactly the quoted value: case, commas and every character count (`\"` and `\\` inside) |
 | `msg~^GET`          | JSON lines whose field matches the regular expression                   |
 | `!term`             | drops the lines that match `term`                                       |
 | `.msg .http.status` | shows only these fields of JSON lines (a line without them is shown whole) |
 
-Field names are paths: `http.status`, `items[0].name`, `["key with spaces"]`; `http.status` also finds a literal `http.status` key. Field terms never match a text line. Filtering only changes what is shown: the stream is not reopened, and clearing the filter brings every line back. An invalid term is reported in the dialog. `M-a` copies the shown lines, `M-A` the original records.
+Field names are paths: `http.status`, `items[0].name`, `["key with spaces"]`; `http.status` also finds a literal `http.status` key, while a quoted `["a.b"]` is always the one key. Field terms never match a text line. Filtering only changes what is shown: the stream is not reopened, and clearing the filter brings every line back. An invalid term is reported in the dialog. `M-a` copies the shown lines, `M-A` the original records.
 
 In a merged log (all pods of a workload, all containers of a pod) the colored `[pod/container]` prefix is the source of the line: it stays in front in both views, the JSON after it is formatted, and `M-A` copies the records without it.
+
+`M-d` opens the fields of the line in focus: the active search match (`F7`, `n`), else the last line while the view follows, else the top line. It lists every JSON field with its value, starting on the first `viewer.logs.correlationFields` field the line has (`trace_id`, `traceId`, `request_id`, ...). On a field, `Enter` adds an exact `field=="value"` filter term, `-` an exclude term, `f` follows the request: the filter becomes that one term, and the status line names what it searches (the kept lines, their time span with `--timestamps`, and the sources of a merged log, never older history). `c` copies the value, and `t` copies the trace URL from `viewer.logs.traceURL` with `{trace}` replaced by the value, escaped for a URL. `x` shows 10 lines before and after the line from all sources, `s` from its own container only: `>` marks the line, `*` other lines that pass the filter, the rest are context; the context view stays while new lines arrive. `M-z` returns to the filter and the line before the last of these actions; a line dropped meanwhile is reported. A text line has no fields, but `x` and `s` work.
 
 ## Field documentation
 
@@ -463,6 +470,8 @@ Read-only mode refuses `M-n` before the menu opens.
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer and a Logs panel open with. `F2` in the viewer or the panel changes them there; `C-s` saves them as the defaults.
 - `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot. `M-s` in a merged viewer changes it for that view.
+- `viewer.logs.correlationFields` – the JSON fields `M-d` starts on and follows a request by, first one found (default `trace_id`, `traceId`, `traceID`, `request_id`, `requestId`, `requestID`); a name is a top-level key or a dotted path to a nested one.
+- `viewer.logs.traceURL` – URL template for `M-d` `t`, for example `https://tempo.example/trace/{trace}`; empty (the default) means no trace link.
 - `viewer.logs.maxLines`, `viewer.logs.maxMemoryMiB` – how many lines, and about how much memory, one logs viewer or Logs panel keeps (defaults 100000 and 64); older lines are dropped, see [JSON logs](#json-logs).
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
@@ -538,6 +547,11 @@ viewer:
     # in MiB; older lines are dropped and the footer counts them.
     maxLines: 100000
     maxMemoryMiB: 64
+    # JSON fields that M-d "Follow request" filters by, first one found.
+    correlationFields: [trace_id, traceId, traceID, request_id, requestId, requestID]
+    # URL template for the trace of a line; {trace} is the field value.
+    # Empty: no trace link. Example: https://tempo.example/trace/{trace}
+    traceURL: ""
 
 panel:
   scrolling:
@@ -618,6 +632,16 @@ portForward:
 # Columns per resource type, keyed by group/version/resource (v1/pods for
 # the core group). See "Custom Columns" above.
 columns: {}
+
+# Object timelines (/timeline inside an object): kc records the revisions
+# it observes from the shared cache while a recording runs.
+timeline:
+  # Revisions kept per object; the oldest are evicted first.
+  maxEntries: 100
+  # Bytes of revisions (as JSON) kept per object.
+  maxBytes: 4194304
+  # Objects recorded at once; one more stops the oldest recording.
+  maxObjects: 10
 
 overview:
   # How far back warning events and container restarts count.
