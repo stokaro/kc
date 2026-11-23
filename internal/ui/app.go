@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"sort"
@@ -241,6 +242,11 @@ type App struct {
 	toastUntil  time.Time
 	// Logger that emits toasts on errors with rate limiting
 	toastLogger *ToastLogger
+
+	// execProcess hands the terminal to an external program, such as the
+	// editor F4 opens on a local file. Tests replace tea.ExecProcess.
+	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
+
 	// Pins and the investigation window: docs/adr/0187-pin-freeze-window.md.
 	pinSignal              chan struct{}
 	pinWaiting             bool
@@ -348,6 +354,7 @@ func NewApp() *App {
 	app := &App{
 		cfg:                    cfg,
 		terminal:               NewTerminal(),
+		execProcess:            tea.ExecProcess,
 		functionBar:            newFunctionBar(),
 		modalManager:           NewModalManager(cfg),
 		activePanel:            0,
@@ -2054,7 +2061,9 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	}
 	theme := a.viewerTheme()
 	var onEdit func() tea.Cmd
-	if _, ok := item.(models.ObjectItem); ok {
+	_, isObject := item.(models.ObjectItem)
+	_, isLocalFile := item.(*models.LocalFileItem)
+	if isObject || isLocalFile {
 		onEdit = func() tea.Cmd { return a.editSelectionForPanel(panel) }
 	}
 	view := NewTextViewer(title, body, lang, mime, filename, theme, onEdit, nil, func() tea.Cmd {
@@ -2190,6 +2199,9 @@ func (a *App) editSelectionForPanel(panel *Panel) tea.Cmd {
 	if !ok || item == nil {
 		return nil
 	}
+	if local, ok := item.(models.LocalEntryItem); ok {
+		return a.editLocalFile(panelIdx, local.LocalPath())
+	}
 	obj, ok := item.(models.ObjectItem)
 	if !ok {
 		return nil
@@ -2229,7 +2241,20 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 	log.Info("launching kubectl edit", "command", commandStr)
 	a.logCommandToTerminal(commandStr)
 
-	// Ensure the UI returns to the primary panel view before launching the editor.
+	a.leaveForEditor("kubectl edit exit terminal")
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return kubectlEditFinishedMsg{
+			err:         err,
+			panelIndex:  panelIdx,
+			resourceRef: resourceRef,
+		}
+	})
+}
+
+// leaveForEditor returns the UI to the panels before an editor takes the
+// terminal.
+func (a *App) leaveForEditor(reason string) {
 	if a.modalManager != nil {
 		for a.modalManager.IsModalVisible() {
 			a.hideModal()
@@ -2240,18 +2265,10 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 		if a.terminal != nil {
 			a.terminal.SetShowPanels(true)
 		}
-		a.invalidateView("kubectl edit exit terminal")
+		a.invalidateView(reason)
 		a.invalidateFunctionBar("terminal exit")
 		a.invalidateTerminalArea("terminal exit")
 	}
-
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return kubectlEditFinishedMsg{
-			err:         err,
-			panelIndex:  panelIdx,
-			resourceRef: resourceRef,
-		}
-	})
 }
 
 func kubectlResourceRef(gvr schema.GroupVersionResource, name string) string {

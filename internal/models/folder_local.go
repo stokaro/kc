@@ -1,8 +1,11 @@
 package models
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,9 +20,9 @@ import (
 // reads like a cluster path.
 const LocalPathPrefix = "local:"
 
-// LocalDirFolder lists a directory of the local filesystem. kc does not
-// change it except through a copy: it is the destination of a copy from a
-// container and the source of a copy into one.
+// LocalDirFolder lists a directory of the local filesystem. kc changes it
+// only through a copy and through the editor F4 opens on a file: it is the
+// destination of a copy from a container and the source of a copy into one.
 type LocalDirFolder struct {
 	*BaseFolder
 	dir string
@@ -177,8 +180,107 @@ type LocalFileItem struct {
 // LocalPath returns the absolute path of the entry.
 func (f *LocalFileItem) LocalPath() string { return f.path }
 
+// ViewContent reads the file for the viewer (F3). It refuses a directory, a
+// special file and a binary file with an error that says why.
+//
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (f *LocalFileItem) ViewContent() (title, body, lang, mime, filename string, err error) {
+	data, err := ReadLocalTextFile(f.path, localViewMaxBytes)
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	return f.path, string(data), "", "", filepath.Base(f.path), nil
+}
+
+// ViewContent refuses: a directory is opened with Enter, not viewed.
+//
+//revive:disable-next-line:function-result-limit the Viewable interface fixes these six results; internal/ui calls it
+func (d *LocalDirItem) ViewContent() (title, body, lang, mime, filename string, err error) {
+	return "", "", "", "", "", localDirError(d.dir)
+}
+
+// localViewMaxBytes is how much of a local file the viewer shows, the same
+// limit as for a container file.
+const localViewMaxBytes = fsFileViewMaxBytes
+
+// localBinarySniffBytes is how much of a file is checked for a NUL byte,
+// the test git and grep use to call a file binary.
+const localBinarySniffBytes = 8000
+
+func localDirError(p string) error {
+	return fmt.Errorf("%s is a directory; press Enter to open it", filepath.Base(p))
+}
+
+// localRegularFile checks that p names a regular file, following links.
+// Reading a FIFO or a device could block or never end.
+func localRegularFile(p string) error {
+	info, err := os.Stat(p)
+	if err != nil {
+		return fmt.Errorf("cannot read %s: %w", filepath.Base(p), pathErrReason(err))
+	}
+	switch {
+	case info.IsDir():
+		return localDirError(p)
+	case !info.Mode().IsRegular():
+		return fmt.Errorf("%s is not a regular file (%s)", filepath.Base(p), info.Mode().Type())
+	}
+	return nil
+}
+
+// pathErrReason drops the path from err: the messages name the entry, and
+// a toast cuts a long path short before the reason.
+func pathErrReason(err error) error {
+	if pe, ok := errors.AsType[*fs.PathError](err); ok {
+		return pe.Err
+	}
+	return err
+}
+
+func localBinaryError(p string) error {
+	return fmt.Errorf("%s is a binary file", filepath.Base(p))
+}
+
+// ReadLocalTextFile reads up to limit bytes of the text file p. It fails
+// with a message for the user, naming the entry by its base name, when p
+// cannot be read, is a directory or a special file, or holds a NUL byte in
+// its first bytes.
+func ReadLocalTextFile(p string, limit int64) ([]byte, error) {
+	if err := localRegularFile(p); err != nil {
+		return nil, err
+	}
+	file, err := os.Open(p) // #nosec G304 -- the user picked this file in the local panel
+	if err != nil {
+		return nil, fmt.Errorf("cannot read %s: %w", filepath.Base(p), pathErrReason(err))
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, limit))
+	if err != nil {
+		return nil, fmt.Errorf("cannot read %s: %w", filepath.Base(p), pathErrReason(err))
+	}
+	if bytes.IndexByte(data[:min(len(data), localBinarySniffBytes)], 0) >= 0 {
+		return nil, localBinaryError(p)
+	}
+	return data, nil
+}
+
+// CheckLocalEditable reports why the editor should not open p: it cannot
+// be read or written, or it is not a regular text file.
+func CheckLocalEditable(p string) error {
+	if _, err := ReadLocalTextFile(p, localBinarySniffBytes); err != nil {
+		return err
+	}
+	// O_WRONLY without O_TRUNC leaves the content alone.
+	file, err := os.OpenFile(p, os.O_WRONLY, 0) // #nosec G304 -- the user picked this file in the local panel
+	if err != nil {
+		return fmt.Errorf("cannot write %s: %w", filepath.Base(p), pathErrReason(err))
+	}
+	return file.Close()
+}
+
 var (
 	_ Enterable      = (*LocalDirItem)(nil)
 	_ LocalEntryItem = (*LocalDirItem)(nil)
 	_ LocalEntryItem = (*LocalFileItem)(nil)
+	_ Viewable       = (*LocalDirItem)(nil)
+	_ Viewable       = (*LocalFileItem)(nil)
 )
