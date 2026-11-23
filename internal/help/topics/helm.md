@@ -40,10 +40,14 @@ release.
 
 ## Limits
 
-- kc needs get, list and watch on Secrets in all namespaces, because
-  its cache watches Secrets cluster-wide. Without that, `/helm` shows
-  one row that says what is missing and the `helm list` command to use
-  instead. After access is granted, leave and enter `/helm` again.
+- kc needs list and watch on Secrets where `/helm` looks. In a
+  namespace, a Role in that namespace is enough: kc then reads and
+  watches Secrets in that namespace only. With all namespaces selected,
+  list and watch on Secrets in all namespaces is needed. Without access,
+  `/helm` shows one row that says what is denied and the `helm list`
+  command to use instead; it never shows an empty list. A denial in
+  one namespace does not affect another. After access is granted,
+  leave and enter `/helm` again.
 - Releases stored with `HELM_DRIVER=configmap` or `sql` are not shown.
 - Computed values (`helm get values --all`) are not shown.
 - The Live column is read once, with one GET per object, when

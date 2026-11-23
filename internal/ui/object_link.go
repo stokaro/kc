@@ -2,9 +2,11 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/stokaro/kc/internal/models"
 	navui "github.com/stokaro/kc/internal/navigation"
@@ -53,7 +55,7 @@ func (a *App) openLinkedObject(link models.ObjectLink) tea.Cmd {
 	}
 	a.syncPanelWithNavigator(idx)
 	a.syncPanelScopeLabels()
-	cmds := []tea.Cmd{a.selectLinkedRow(linkSelectMsg{panelIdx: idx, path: panel.GetCurrentPath(), id: ref.Name})}
+	cmds := []tea.Cmd{a.selectLinkedRow(linkSelectMsg{panelIdx: idx, path: panel.GetCurrentPath(), ref: ref, reportMissing: missing == ""})}
 	if missing != "" {
 		cmds = append(cmds, a.ShowToast(missing, linkToastTTL))
 	}
@@ -64,28 +66,81 @@ func (a *App) openLinkedObject(link models.ObjectLink) tea.Cmd {
 type linkSelectMsg struct {
 	panelIdx int
 	path     string
-	id       string
+	ref      models.ObjectRef
 	attempt  int
+	// reportMissing says to tell the user when the object never shows up;
+	// it is false when the link already said why it may be missing.
+	reportMissing bool
 }
 
 // selectLinkedRow selects the linked object. The list may still be loading
 // in the background, so it retries like the startup selection, until the
 // row is selected, the attempts run out, or the panel shows another folder.
+//
+// A reference with a UID names one object instance. When the listed object
+// of that name has another UID, the referenced object was deleted and the
+// row is a replacement: the row is not selected, so the replacement is not
+// shown as the object an event is about, and a message names both UIDs.
+// Moving the cursor to the row is the explicit way to look at it.
 func (a *App) selectLinkedRow(msg linkSelectMsg) tea.Cmd {
 	panel := a.panelByIndex(msg.panelIdx)
 	if panel == nil || panel.GetCurrentPath() != msg.path {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	panel.SelectByRowID(ctx, msg.id)
-	selected := panel.currentSelectionID(ctx) == msg.id
-	cancel()
-	if selected || msg.attempt+1 >= startupSelectAttempts {
+	defer cancel()
+	ref := msg.ref
+	last := msg.attempt+1 >= startupSelectAttempts
+	if ref.UID != "" {
+		uid, found := panel.listedObjectUID(ctx, ref.Name)
+		switch {
+		case !found && !last:
+			return retryLinkSelect(msg)
+		case found && uid == "":
+			panel.SelectByRowID(ctx, ref.Name)
+			return a.ShowToast(linkLabel(ref)+": kc cannot read the listed object's UID, so it may be a newer object with the same name", linkToastTTL)
+		case found && uid != ref.UID:
+			return a.ShowToast(linkReplacedMessage(ref, uid), linkToastTTL)
+		}
+	}
+	panel.SelectByRowID(ctx, ref.Name)
+	if panel.currentSelectionID(ctx) == ref.Name {
 		return nil
 	}
+	if !last {
+		return retryLinkSelect(msg)
+	}
+	if !msg.reportMissing {
+		return nil
+	}
+	text := linkLabel(ref) + " is not in the list"
+	if ref.UID != "" {
+		text += "; the object may be deleted, or you may not be allowed to list it"
+	}
+	return a.ShowToast(text, linkToastTTL)
+}
+
+func retryLinkSelect(msg linkSelectMsg) tea.Cmd {
 	next := msg
 	next.attempt++
 	return tea.Tick(startupSelectRetry, func(time.Time) tea.Msg { return next })
+}
+
+// linkLabel names a linked object for a message: resource, namespace and
+// name.
+func linkLabel(ref models.ObjectRef) string {
+	name := ref.Name
+	if ref.Namespace != "" {
+		name = ref.Namespace + "/" + name
+	}
+	return ref.GVR.Resource + " " + name
+}
+
+// linkReplacedMessage says that the listed object is not the referenced
+// instance.
+func linkReplacedMessage(ref models.ObjectRef, listed types.UID) string {
+	return fmt.Sprintf("%s was replaced: the reference is to UID %s, the listed object is UID %s; its row is not selected",
+		linkLabel(ref), ref.UID, listed)
 }
 
 // linkedTypeFolder builds the object list of ref's type as the root would.

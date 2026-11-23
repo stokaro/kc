@@ -1,6 +1,6 @@
 # 0070. Browse Helm releases from their storage Secrets
 
-- Status: Accepted
+- Status: Accepted; section 6 superseded by [0266](0266-helm-namespace-scoped-access.md)
 - Date: 2026-11-22
 - Issue: #70
 

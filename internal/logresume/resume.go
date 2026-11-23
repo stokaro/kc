@@ -11,7 +11,9 @@
 //
 // Run reconnects only while the same container instance still runs. A
 // container that terminated or restarted, or a pod that was recreated, ends
-// the stream as before: its next instance is a new stream. A request the
+// the stream as before: its next instance is a new stream. The state is
+// checked when a stream stops and again after each wait, right before the
+// reopen, so a change seen during the wait is not followed. A request the
 // server refuses (authorization, a missing pod or container) is not
 // retried.
 package logresume
@@ -252,6 +254,30 @@ func (r *resumer) running(ctx context.Context, clean bool) bool {
 	return r.start == (Instance{}) || (inst.PodUID == r.start.PodUID && inst.Restarts == r.start.Restarts)
 }
 
+// changed says why the streamed instance is known to be over: it stopped,
+// restarted, or its pod was replaced. It is empty while the same instance
+// runs or its state is not known; an unknown state keeps retrying, as
+// after any other failure.
+func (r *resumer) changed(ctx context.Context) string {
+	if r.cfg.Check == nil {
+		return ""
+	}
+	inst, ok := r.cfg.Check(ctx)
+	switch {
+	case !ok:
+		return ""
+	case inst == (Instance{}):
+		return "the pod or container is gone"
+	case r.start != (Instance{}) && inst.PodUID != r.start.PodUID:
+		return "the pod was replaced"
+	case r.start != (Instance{}) && inst.Restarts != r.start.Restarts:
+		return "the container restarted"
+	case !inst.Running:
+		return "the container stopped"
+	}
+	return ""
+}
+
 // reconnect waits and opens the stream again until it opens, the server
 // refuses it, the instance stopped running or the attempts run out. It
 // returns a nil body when Run ends, with the error to return.
@@ -270,6 +296,13 @@ func (r *resumer) reconnect(ctx context.Context, cause error, failures *int) (io
 			timer.Stop()
 			return nil, nil
 		case <-timer.C:
+		}
+		// The container may have restarted, been replaced or stopped
+		// while Run waited. Reopening then would deliver the next
+		// instance's lines as if they continued this one.
+		if stop := r.changed(ctx); stop != "" {
+			r.notice("not reconnecting: " + stop)
+			return nil, nil
 		}
 		body, err := r.cfg.Open(ctx, r.options())
 		if ctx.Err() != nil {

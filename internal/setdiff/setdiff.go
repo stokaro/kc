@@ -30,6 +30,9 @@ type Set struct {
 	// namespaces. Objects are then matched by namespace and name.
 	AllNamespaces bool
 	Objects       []unstructured.Unstructured
+	// Selection narrows Objects to what the panel showed or marked; the
+	// zero value compares the whole list.
+	Selection Selection
 }
 
 // Label is "ctx: deployments.apps in shop", for the heading.
@@ -100,6 +103,8 @@ type Report struct {
 	Rows        []Row
 	// Counts holds the rows per state.
 	Counts map[State]int
+	// LeftCount and RightCount say what each side evaluated.
+	LeftCount, RightCount SideCount
 	// Options are the manifest view the pairs were compared in.
 	Options manifestdiff.Options
 	// PairedNamespaces is true when two different namespaces were paired:
@@ -117,6 +122,11 @@ func (r Report) Summary() string {
 	return strings.Join(parts, ", ")
 }
 
+// Scopes is "left: marked 2 of 10; right: counterparts 2 of 12".
+func (r Report) Scopes() string {
+	return "left: " + r.LeftCount.String() + "; right: " + r.RightCount.String()
+}
+
 // ErrIncompatible is returned when two sets cannot be matched.
 var ErrIncompatible = errors.New("sets cannot be compared")
 
@@ -131,10 +141,20 @@ func Compare(left, right Set, opts manifestdiff.Options) (Report, error) {
 	if left.AllNamespaces != right.AllNamespaces {
 		return Report{}, fmt.Errorf("%w: one side lists all namespaces, the other one namespace; open the same scope on both sides", ErrIncompatible)
 	}
-	r := Report{Left: left, Right: right, Counts: make(map[State]int), Options: opts}
+	lost, lc, rc := applyScopes(&left, &right)
+	r := Report{Left: left, Right: right, Counts: make(map[State]int), Options: opts, LeftCount: lc, RightCount: rc}
 	r.PairedNamespaces = !left.AllNamespaces && left.Namespace != right.Namespace
 	ls, lBad, lDup := index(left, r.PairedNamespaces)
 	rs, rBad, rDup := index(right, r.PairedNamespaces)
+	// A selected row whose object went away during the read is not
+	// missing on its side: it cannot be compared on either.
+	for _, key := range slices.Sorted(maps.Keys(lost)) {
+		delete(ls, key)
+		delete(rs, key)
+		delete(lDup, key)
+		delete(rDup, key)
+		lBad = append(lBad, Row{Key: key, State: Unavailable, Reason: lost[key]})
+	}
 	// A key that occurs twice on one side cannot be matched on either.
 	for key, where := range mergeDups(lDup, rDup) {
 		delete(ls, key)
