@@ -49,6 +49,28 @@ func choiceIndex(c *scopeChoice, n int) (int, bool) {
 	return i, err == nil && i >= 0 && i < n
 }
 
+// hotlistChoices shows bookmarks as their location and saved views by name,
+// with the path in the note.
+func hotlistChoices(entries []hotlist.Entry) []scopeChoice {
+	out := make([]scopeChoice, 0, len(entries))
+	for i, e := range entries {
+		c := locationChoice(i, e.Location)
+		if e.Name != "" {
+			c.Label = e.Name
+			path := e.Path
+			if path == "" {
+				path = "/"
+			}
+			c.Note = path + "  " + c.Note
+		}
+		if e.View != nil {
+			c.Note = "view  " + c.Note
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
 // loadHotlist reads the hotlist file. A broken file is reported and left
 // alone: kc does not overwrite it until the user changes the hotlist.
 func (a *App) loadHotlist() tea.Cmd {
@@ -68,7 +90,7 @@ func (a *App) loadHotlist() tea.Cmd {
 }
 
 // setHotlist saves entries and keeps them when the save works.
-func (a *App) setHotlist(entries []navui.Location) error {
+func (a *App) setHotlist(entries []hotlist.Entry) error {
 	if a.hotlistPath == "" {
 		return fmt.Errorf("hotlist: no file path")
 	}
@@ -103,18 +125,23 @@ func (a *App) removeFromHotlist(i int) error {
 	return a.setHotlist(hotlist.Remove(a.hotlist, i))
 }
 
-// showHotlist opens the hotlist (C-\): Enter goes to the entry, Ins adds
-// the active panel's location, Del removes the highlighted entry.
+// hotlistTitle names the hotlist keys.
+const hotlistTitle = "Hotlist: Enter go, Ins add, F2 save view, F4 update view, F6 rename, Del remove"
+
+// showHotlist opens the hotlist (C-\): Enter goes to the entry and applies
+// a saved view, Ins adds the active panel's location, F2 saves it as a
+// named view with its list settings, F4 stores the current settings in the
+// highlighted view, F6 renames, Del removes.
 func (a *App) showHotlist() tea.Cmd {
 	idx := a.activePanel
-	picker := NewScopePickerModel(locationChoices(a.hotlist), "", func(c scopeChoice) tea.Cmd {
+	picker := NewScopePickerModel(hotlistChoices(a.hotlist), "", func(c scopeChoice) tea.Cmd {
 		i, ok := choiceIndex(&c, len(a.hotlist))
 		if !ok {
 			return nil
 		}
 		target := a.hotlist[i]
 		a.hideModal()
-		return a.jumpTo(idx, target, true)
+		return a.jumpToView(idx, target.Location, true, target.View)
 	}, func() tea.Cmd {
 		a.hideModal()
 		return nil
@@ -126,9 +153,28 @@ func (a *App) showHotlist() tea.Cmd {
 			if err != nil {
 				return true, a.ShowToast("Cannot add to hotlist: "+err.Error(), 3*time.Second)
 			}
-			picker.SetChoices(locationChoices(a.hotlist))
+			picker.SetChoices(hotlistChoices(a.hotlist))
 			picker.move(len(a.hotlist))
 			return true, a.ShowInfo(msg, 2*time.Second)
+		case "f2":
+			return true, a.promptViewName(idx, -1)
+		case "f4":
+			i, ok := choiceIndex(c, len(a.hotlist))
+			if !ok {
+				return true, nil
+			}
+			msg, err := a.updateSavedView(idx, i)
+			if err != nil {
+				return true, a.ShowToast("Cannot update the view: "+err.Error(), 3*time.Second)
+			}
+			picker.SetChoices(hotlistChoices(a.hotlist))
+			return true, a.ShowInfo(msg, 2*time.Second)
+		case "f6":
+			i, ok := choiceIndex(c, len(a.hotlist))
+			if !ok {
+				return true, nil
+			}
+			return true, a.promptViewName(idx, i)
 		case "delete", "f8":
 			i, ok := choiceIndex(c, len(a.hotlist))
 			if !ok {
@@ -137,15 +183,15 @@ func (a *App) showHotlist() tea.Cmd {
 			if err := a.removeFromHotlist(i); err != nil {
 				return true, a.ShowToast("Cannot remove from hotlist: "+err.Error(), 3*time.Second)
 			}
-			picker.SetChoices(locationChoices(a.hotlist))
+			picker.SetChoices(hotlistChoices(a.hotlist))
 			return true, nil
 		}
 		return false, nil
 	}
-	modal := NewModal("Hotlist: Enter go, Ins add, Del remove", picker)
+	modal := NewModal(hotlistTitle, picker)
 	modal.SetCloseOnSingleEsc(true)
 	a.modalManager.Register(hotlistModalKey, modal)
-	a.configureModalWindow(modal, picker, idx, "", 70, min(max(len(a.hotlist), 4)+3, 20))
+	a.configureModalWindow(modal, picker, idx, "", 84, min(max(len(a.hotlist), 4)+3, 20))
 	a.showModal(hotlistModalKey)
 	return nil
 }

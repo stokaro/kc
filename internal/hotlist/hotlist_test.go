@@ -17,7 +17,16 @@ var (
 	prod = navigation.Location{Context: "prod", Namespace: "default", Steps: []string{"default//v1/pods"}, Path: "/pods"}
 )
 
-func paths(entries []navigation.Location) []string {
+// bookmarks returns locs as bookmark entries.
+func bookmarks(locs ...navigation.Location) []hotlist.Entry {
+	out := make([]hotlist.Entry, 0, len(locs))
+	for _, l := range locs {
+		out = append(out, hotlist.Entry{Location: l})
+	}
+	return out
+}
+
+func paths(entries []hotlist.Entry) []string {
 	var out []string
 	for _, e := range entries {
 		out = append(out, e.Context+":"+e.Path)
@@ -29,15 +38,16 @@ func TestAdd(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name      string
-		start     []navigation.Location
+		start     []hotlist.Entry
 		add       navigation.Location
 		wantAdded bool
 		want      []string
 	}{
 		{"to empty", nil, pods, true, []string{"mba:/pods"}},
-		{"appends", []navigation.Location{pods}, web, true, []string{"mba:/pods", "mba:/pods/web"}},
-		{"skips a duplicate", []navigation.Location{pods, web}, pods, false, []string{"mba:/pods", "mba:/pods/web"}},
-		{"same path in another context is new", []navigation.Location{pods}, prod, true, []string{"mba:/pods", "prod:/pods"}},
+		{"appends", bookmarks(pods), web, true, []string{"mba:/pods", "mba:/pods/web"}},
+		{"skips a duplicate", bookmarks(pods, web), pods, false, []string{"mba:/pods", "mba:/pods/web"}},
+		{"same path in another context is new", bookmarks(pods), prod, true, []string{"mba:/pods", "prod:/pods"}},
+		{"a view at the place does not block a bookmark", []hotlist.Entry{{Location: pods, Name: "v", View: &hotlist.View{}}}, pods, true, []string{"mba:/pods", "mba:/pods"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,7 +82,7 @@ func TestRemove(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			start := []navigation.Location{pods, web, prod}
+			start := bookmarks(pods, web, prod)
 			got := hotlist.Remove(start, tc.index)
 			if !slices.Equal(paths(got), tc.want) {
 				t.Fatalf("entries = %v, want %v", paths(got), tc.want)
@@ -88,11 +98,11 @@ func TestSaveLoad(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
-		entries []navigation.Location
+		entries []hotlist.Entry
 	}{
 		{"empty", nil},
-		{"one", []navigation.Location{pods}},
-		{"several", []navigation.Location{pods, web, prod, {Context: "mba", Namespace: "", Path: "/"}}},
+		{"one", bookmarks(pods)},
+		{"several", bookmarks(pods, web, prod, navigation.Location{Context: "mba", Namespace: "", Path: "/"})},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,7 +115,7 @@ func TestSaveLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
-			if !slices.EqualFunc(got, tc.entries, func(a, b navigation.Location) bool { return a.Equal(b) && a.Path == b.Path }) {
+			if !slices.EqualFunc(got, tc.entries, func(a, b hotlist.Entry) bool { return a.Location.Equal(b.Location) && a.Path == b.Path }) {
 				t.Fatalf("loaded %v, want %v", got, tc.entries)
 			}
 			if runtime.GOOS != "windows" {
@@ -131,10 +141,10 @@ func TestSaveLoad(t *testing.T) {
 func TestSaveReplaces(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), hotlist.FileName)
-	if err := hotlist.Save(path, []navigation.Location{pods, web}); err != nil {
+	if err := hotlist.Save(path, bookmarks(pods, web)); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if err := hotlist.Save(path, []navigation.Location{prod}); err != nil {
+	if err := hotlist.Save(path, bookmarks(prod)); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	got, err := hotlist.Load(path)

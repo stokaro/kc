@@ -36,6 +36,7 @@ import (
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/execctx"
 	"github.com/stokaro/kc/internal/explain"
+	"github.com/stokaro/kc/internal/hotlist"
 	models "github.com/stokaro/kc/internal/models"
 	navui "github.com/stokaro/kc/internal/navigation"
 	"github.com/stokaro/kc/internal/objectaction"
@@ -301,7 +302,7 @@ type App struct {
 	history     [2]*navui.History
 	jumpToken   [2]int
 	pendingJump *pendingJump
-	hotlist     []navui.Location
+	hotlist     []hotlist.Entry
 	hotlistPath string // empty until Init; tests set it
 	// panelNavs are the running NavigatePanel walks, one per panel.
 	panelNavs   [2]*panelNavigation
