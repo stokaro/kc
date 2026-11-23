@@ -27,6 +27,8 @@
 #                         show it (default /tmp/kc-shots)
 #   KC_SHOTS_DASH_WAIT    seconds the dashboard collects samples before its
 #                         first screenshot (default 300)
+#   KC_SHOTS_COLS         terminal width kc runs in (default 150); the
+#                         committed screenshots use the default
 set -euo pipefail
 
 CLUSTER=${KC_SHOTS_CLUSTER:-kc-shots}
@@ -38,7 +40,7 @@ SSH_DEST=${KC_SHOTS_SSH:-}
 REMOTE_KIND=${KC_SHOTS_REMOTE_KIND:-}
 # shellcheck disable=SC2034 # used by scenes/04-dashboard.sh
 DASH_WAIT=${KC_SHOTS_DASH_WAIT:-300}
-COLS=150
+COLS=${KC_SHOTS_COLS:-150}
 ROWS=42
 WORKERS=2
 LIB_TAG=shots
