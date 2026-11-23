@@ -16,7 +16,8 @@ workload is short of resources.
   its pods (found through owner references), their usage against their
   limits (requests when a pod has no limit) and ready of desired pods.
 - On an `/overview` finding: that finding, its value, how it is
-  computed and the first objects behind it.
+  computed and the first objects behind it. Long lines wrap at the
+  panel width, as the rest of Info does.
 
 ## How to read the bars
 

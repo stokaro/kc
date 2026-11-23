@@ -91,10 +91,41 @@ func TestWidgetFollowsTheSelectedFinding(t *testing.T) {
 	}
 }
 
-func TestWrapWords(t *testing.T) {
+// Every line of a finding wraps at the pane width, as the rest of Info
+// does: no word of the title, scope, value, targets or key hints is cut.
+func TestFindingLinesWrapLongLines(t *testing.T) {
 	t.Parallel()
-	got := wrapWords("aa bb cc dd", 5)
-	if strings.Join(got, "|") != "aa bb|cc dd" {
-		t.Fatalf("wrap = %q", got)
+	p := models.FindingPreview{
+		Title: "/pods waiting for an image pull for longer than five minutes", Scope: "namespace payments-production-europe-west",
+		Value: "3", State: "warning", Health: models.RowHealthNotReady,
+		Why:         "Containers waiting in ImagePullBackOff or ErrImagePull.",
+		TargetCount: 4, Inputs: 2,
+		Partial: "statefulsets.apps: not permitted to list",
+		Targets: []models.FindingPreviewTarget{{
+			Resource: "pods", Namespace: "payments-production-europe-west", Name: "checkout-7d9c8b6f5-x2x4q",
+			Value: "ImagePullBackOff: registry.example.com/checkout:v2 not found", Health: models.RowHealthNotReady,
+		}},
+	}
+	for _, width := range []int{24, 40} {
+		lines := findingLines(p, width)
+		for _, l := range lines {
+			if w := ansi.StringWidth(l); w > width {
+				t.Errorf("width %d: line %q is %d cells wide", width, ansi.Strip(l), w)
+			}
+		}
+		text := noSpaces(ansi.Strip(strings.Join(lines, " ")))
+		for _, want := range []string{
+			p.Title, "Scope: " + p.Scope, "Value: 3", "State: warning",
+			"pods payments-production-europe-west/checkout-7d9c8b6f5-x2x4q", p.Targets[0].Value,
+			"and 3 more", "In the list: Enter lists the objects, F3 shows the calculation", "M-c copies the 2 input commands",
+		} {
+			if !strings.Contains(text, noSpaces(want)) {
+				t.Errorf("width %d: view misses %q:\n%s", width, want, ansi.Strip(strings.Join(lines, "\n")))
+			}
+		}
 	}
 }
+
+// noSpaces drops the spaces, so a word broken across lines by the wrap
+// compares equal to the unbroken text.
+func noSpaces(s string) string { return strings.ReplaceAll(s, " ", "") }
