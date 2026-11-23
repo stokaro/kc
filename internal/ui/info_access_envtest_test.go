@@ -49,6 +49,8 @@ func TestInfoWithNamespaceOnlyAccess(t *testing.T) {
 		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: "reader"},
 		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: user}},
 	})
+	kctesting.WaitForAccess(t, admin.GetClient(), user, ns, "", "pods", "list", "watch")
+	kctesting.WaitForAccess(t, admin.GetClient(), user, ns, "apps", "statefulsets", "list", "watch")
 
 	labels := map[string]string{"app": "db"}
 	sts := &appsv1.StatefulSet{
