@@ -742,7 +742,12 @@ func (w *Widget) updateMaxLineWidth() {
 }
 
 func (w *Widget) viewportWidth() int {
-	width := w.width
+	return w.TextWidth(w.width)
+}
+
+// TextWidth returns how many columns of a line the widget shows in a frame
+// width columns wide. Without wrapping it keeps two columns free.
+func (w *Widget) TextWidth(width int) int {
 	if width <= 0 {
 		return 1
 	}

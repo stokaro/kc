@@ -3,8 +3,10 @@ package ui
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/manifestdiff"
 	"github.com/stokaro/kc/internal/ui/viewer"
@@ -60,6 +62,12 @@ type DiffViewer struct {
 	result  manifestdiff.Result
 	loaded  bool
 	current int // index of the change last jumped to, -1 for none
+
+	// headerRows is how many rows wrapping the header added above the
+	// diff; the change rows of result move down by as many. laidOut is
+	// the width the text was wrapped for.
+	headerRows int
+	laidOut    int
 }
 
 // NewDiffViewer creates the viewer in its loading state. leftCmd and
@@ -114,9 +122,92 @@ func (v *DiffViewer) apply(msg compareResultMsg) tea.Cmd {
 	v.shown = msg.opts
 	v.loaded = true
 	v.current = -1
-	v.inner.SetContent(msg.result.Text, viewer.Metadata{Title: "compare", Language: "diff", Filename: "compare.diff"})
+	v.layout()
 	v.bar.command = compareCommand(v.leftCmd, v.rightCmd, msg.opts.Mode == manifestdiff.ModeRaw)
 	return nil
+}
+
+// layout shows the result with its header wrapped to the viewer's width.
+func (v *DiffViewer) layout() {
+	text, added := wrapCompareHeader(v.result.Text, v.textWidth(v.width))
+	v.headerRows, v.laidOut = added, v.textWidth(v.width)
+	v.inner.SetContent(text, viewer.Metadata{Title: "compare", Language: "diff", Filename: "compare.diff"})
+}
+
+// wrapCompareHeader wraps the "# name:   value" lines above the first empty
+// line of a comparison to width, at the ", " between the parts of a
+// value. The continuation rows start with "#" and line up with the value.
+// It returns the text and how many rows it added. A part longer than the
+// width stays whole.
+func wrapCompareHeader(text string, width int) (string, int) {
+	if width <= 0 {
+		return text, 0
+	}
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	added := 0
+	for i, line := range lines {
+		if line == "" {
+			out = append(out, lines[i:]...)
+			break
+		}
+		wrapped := wrapHeaderLine(line, width)
+		added += len(wrapped) - 1
+		out = append(out, wrapped...)
+	}
+	return strings.Join(out, "\n"), added
+}
+
+func wrapHeaderLine(line string, width int) []string {
+	colon := strings.Index(line, ":")
+	if ansi.StringWidth(line) <= width || !strings.HasPrefix(line, "# ") || colon < 0 {
+		return []string{line}
+	}
+	col := colon + 1
+	for col < len(line) && line[col] == ' ' {
+		col++
+	}
+	indent := "#" + strings.Repeat(" ", col-1)
+	parts := strings.Split(line[col:], ", ")
+	var out []string
+	cur := line[:col] + parts[0]
+	for i, p := range parts[1:] {
+		// A row that more parts follow ends with a comma.
+		comma := 0
+		if i < len(parts)-2 {
+			comma = 1
+		}
+		if ansi.StringWidth(cur)+len(", ")+ansi.StringWidth(p)+comma <= width {
+			cur += ", " + p
+			continue
+		}
+		out = append(out, cur+",")
+		cur = indent + p
+	}
+	out = append(out, cur)
+	// A part wider than the screen, such as a long file path, is cut into
+	// pieces under the value.
+	var rows []string
+	for _, row := range out {
+		rows = append(rows, splitHeaderRow(row, indent, width)...)
+	}
+	return rows
+}
+
+// splitHeaderRow cuts row into pieces of at most width; the pieces after
+// the first start with indent. It leaves row whole when indent leaves no
+// room.
+func splitHeaderRow(row, indent string, width int) []string {
+	room := width - len(indent)
+	if ansi.StringWidth(row) <= width || room < 10 {
+		return []string{row}
+	}
+	r := []rune(row)
+	out := []string{string(r[:width])}
+	for r = r[width:]; len(r) > room; r = r[room:] {
+		out = append(out, indent+string(r[:room]))
+	}
+	return append(out, indent+string(r))
 }
 
 func (v *DiffViewer) flash(text string, isErr bool) tea.Cmd {
@@ -139,7 +230,32 @@ func compareCommand(leftCmd, rightCmd string, raw bool) string {
 
 func (v *DiffViewer) Init() tea.Cmd { return nil }
 
-func (v *DiffViewer) SetDimensions(w, h int) { v.width, v.height = w, h }
+// SetDimensions sizes the viewer. A new width wraps the header again and
+// keeps the same diff row at the top.
+func (v *DiffViewer) SetDimensions(w, h int) {
+	v.width, v.height = w, h
+	if v.loaded && v.textWidth(w) != v.laidOut {
+		v.relayout()
+	}
+}
+
+// textWidth is the width of the shown text in a viewer w columns wide; 0
+// before the viewer has a size, which leaves the header unwrapped.
+func (v *DiffViewer) textWidth(w int) int {
+	if w <= 0 {
+		return 0
+	}
+	return v.inner.TextWidth(w)
+}
+
+// relayout wraps the header again and keeps the same diff row on top.
+func (v *DiffViewer) relayout() {
+	top := v.inner.Offset() - v.headerRows
+	v.layout()
+	if top > 0 {
+		v.inner.ScrollToLine(top + v.headerRows)
+	}
+}
 
 func (v *DiffViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, handled := v.bar.handle(msg, v.inner, v.width, v.height); handled {
@@ -199,7 +315,8 @@ func (v *DiffViewer) jump(dir int) {
 	if !v.loaded || len(lines) == 0 {
 		return
 	}
-	anchor := v.inner.Offset()
+	// The change rows of the result count without the wrapped header.
+	anchor := v.inner.Offset() - v.headerRows
 	if v.current >= 0 && lines[v.current] >= anchor {
 		anchor = lines[v.current]
 	}
@@ -223,7 +340,7 @@ func (v *DiffViewer) jump(dir int) {
 		return
 	}
 	v.current = next
-	v.inner.ScrollToLine(lines[next])
+	v.inner.ScrollToLine(lines[next] + v.headerRows)
 }
 
 func (v *DiffViewer) View() tea.View {
@@ -304,7 +421,14 @@ func (v *DiffViewer) SetTheme(theme string) {
 
 func (v *DiffViewer) Theme() string { return v.inner.Theme() }
 
-func (v *DiffViewer) SetWrapMode(on bool) { v.inner.SetWrapMode(on) }
+// SetWrapMode turns wrapping on or off; the header is wrapped again for
+// the width the viewer then shows.
+func (v *DiffViewer) SetWrapMode(on bool) {
+	v.inner.SetWrapMode(on)
+	if v.loaded {
+		v.relayout()
+	}
+}
 
 func (v *DiffViewer) WrapMode() bool { return v.inner.WrapMode() }
 
