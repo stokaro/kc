@@ -133,12 +133,15 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 		c := rl.Columns[vis[i]]
 		cols[i] = table.Column{Title: c.Name}
 	}
+	// The name column sorts by the object name. It is found by its
+	// format, not its place: the Event table starts with Last Seen.
+	nameCol := nameColumn(rl.Columns)
 	keys := make([]string, len(vis))
 	for i := range vis {
 		keys[i] = appconfig.ObjectsOrderKey(rl.Columns[vis[i]].Name)
-	}
-	if len(keys) > 0 {
-		keys[0] = sortKeyName
+		if vis[i] == nameCol {
+			keys[i] = sortKeyName
+		}
 	}
 	for _, c := range cc.tableColumns() {
 		cols = append(cols, c)
@@ -150,8 +153,10 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 	}
 	o.SetColumns(cols)
 	ageCols := ageColumnIndices(cols)
+	times := eventColumnTimes(o.gvr, rl.Items, rl.Columns, objs)
+	timeCols, timeSrc := timeColumnIndices(cols, vis, rl.Columns, namespaced, times)
 
-	idxs, sortBy := orderRowIndices(rl.Items, rl.Columns, order, layoutFor(namespaced, o.requestedGrouping()))
+	idxs, sortBy := orderRowIndicesWithTimes(rl.Items, rl.Columns, order, layoutFor(namespaced, o.requestedGrouping()), times)
 	o.setSortState(sortBy, keys, namespaced)
 	rows := make([]table.Row, 0, len(idxs))
 	var hooks []*ageCellHook
@@ -205,11 +210,9 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 		obj.WithManifest(o.Deps.CtxName, objectManifest(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
-		if len(ageCols) > 0 {
-			if hook := newAgeCellHook(ageCols, rr.ObjectMeta.CreationTimestamp.Time); hook != nil {
-				obj.RowItem.SetCellsHook(hook.apply)
-				hooks = append(hooks, hook)
-			}
+		if hook := rowTimeHook(ageCols, rr.ObjectMeta.CreationTimestamp.Time, timeCols, timeSrc, times, ii); hook != nil {
+			obj.RowItem.SetCellsHook(hook.apply)
+			hooks = append(hooks, hook)
 		}
 		if hasChild && ctor != nil {
 			nm := name
@@ -562,6 +565,46 @@ func objectDetails(namespace, name, kind, gv string) string {
 		return fmt.Sprintf("%s/%s (%s)", namespace, name, gv)
 	}
 	return fmt.Sprintf("%s (%s)", name, gv)
+}
+
+// timeColumnIndices returns the shown columns that have times, and for
+// each the server column its times belong to. vis maps shown server
+// columns to server columns; a list across namespaces shows a Namespace
+// column after the first one.
+func timeColumnIndices(cols []table.Column, vis []int, serverCols []metav1.TableColumnDefinition, namespaced bool, times columnTimes) (shown, server []int) {
+	if len(times) == 0 {
+		return nil, nil
+	}
+	for i, sc := range vis {
+		if _, ok := times[sc]; !ok || sc >= len(serverCols) {
+			continue
+		}
+		at := i
+		if namespaced && i > 0 {
+			at++ // after the inserted Namespace column
+		}
+		if at < len(cols) {
+			shown = append(shown, at)
+			server = append(server, sc)
+		}
+	}
+	return shown, server
+}
+
+// rowTimeHook returns the hook that keeps the relative time cells of row
+// item current: Age from the creation time, and the columns with times
+// from their own.
+func rowTimeHook(ageCols []int, created time.Time, timeCols, timeSrc []int, times columnTimes, item int) *ageCellHook {
+	cols := slices.Clone(ageCols)
+	at := make([]time.Time, 0, len(ageCols)+len(timeCols))
+	for range ageCols {
+		at = append(at, created)
+	}
+	for i, c := range timeCols {
+		cols = append(cols, c)
+		at = append(at, times[timeSrc[i]][item])
+	}
+	return newTimeCellHook(cols, at)
 }
 
 func ageColumnIndices(cols []table.Column) []int {
