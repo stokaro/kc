@@ -1065,8 +1065,56 @@ func applyBackground(line string, width int, bg string) string {
 	}
 	line = padLine(strings.TrimSuffix(line, reset), width)
 	line = sliceANSI(line, 0, width)
-	line = bg + line + reset
+	line = bg + keepBackground(line, bg) + reset
 	return line
+}
+
+// keepBackground sets bg again after every SGR sequence in line that
+// resets the background, such as the full reset lipgloss ends a styled
+// prefix with, so the rest of the line keeps the viewer's background
+// instead of the terminal's default.
+func keepBackground(line, bg string) string {
+	if !strings.Contains(line, "\x1b[") {
+		return line
+	}
+	var b strings.Builder
+	for i := 0; i < len(line); {
+		if seq := ansiSequenceLength(line[i:]); seq > 0 {
+			b.WriteString(line[i : i+seq])
+			if resetsBackground(line[i : i+seq]) {
+				b.WriteString(bg)
+			}
+			i += seq
+			continue
+		}
+		b.WriteByte(line[i])
+		i++
+	}
+	return b.String()
+}
+
+// resetsBackground reports whether the CSI sequence seq is an SGR that
+// resets the background: a full reset (ESC[m, ESC[0m) or default
+// background (49). The arguments of 38 and 48 colors are skipped, so a
+// color index 0 does not count as a reset.
+func resetsBackground(seq string) bool {
+	if len(seq) < 3 || seq[len(seq)-1] != 'm' {
+		return false
+	}
+	params := strings.Split(seq[2:len(seq)-1], ";")
+	for i := 0; i < len(params); i++ {
+		switch params[i] {
+		case "", "0", "49":
+			return true
+		case "38", "48", "58":
+			if i+1 < len(params) && params[i+1] == "5" {
+				i += 2
+			} else if i+1 < len(params) && params[i+1] == "2" {
+				i += 4
+			}
+		}
+	}
+	return false
 }
 
 func trimBackgroundPrefix(line string) string {
@@ -1118,6 +1166,9 @@ func paintMatches(line string, matches []displayMatch) string {
 	for i := 0; i < len(line); {
 		if seq := ansiSequenceLength(line[i:]); seq > 0 {
 			b.WriteString(line[i : i+seq])
+			if resetsBackground(line[i : i+seq]) {
+				b.WriteString(currentBg)
+			}
 			i += seq
 			continue
 		}
