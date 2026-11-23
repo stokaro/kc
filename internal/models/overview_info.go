@@ -29,6 +29,9 @@ type overviewInfoInput struct {
 	podsMissing      string // why pods cannot be read
 	scopedPods       int    // pods of the scope that have not terminated
 	scopedPodsOnNode map[string]int
+	// capacityReason is why node capacity cannot be summed: nodes or pods
+	// in all namespaces cannot be read. Empty when they can.
+	capacityReason string
 }
 
 func infoInput(rc *ruleContext) overviewInfoInput {
@@ -36,6 +39,7 @@ func infoInput(rc *ruleContext) overviewInfoInput {
 		namespace:        rc.in.namespace,
 		podsReason:       rc.m.podsReason,
 		podsMissing:      rc.in.missingReason(ovPodsGVR),
+		capacityReason:   rc.in.clusterWideReason(ovNodesGVR, ovPodsGVR),
 		scopedPodsOnNode: make(map[string]int),
 	}
 	rc.scopedPods(func(p *corev1.Pod) {
@@ -264,6 +268,9 @@ func infoSummary(report *overviewReport, err error, cfgIn appconfig.OverviewConf
 	}
 	if len(cpus) == 0 {
 		note := "nodes and pods cannot be read"
+		if r := report.info.capacityReason; r != "" {
+			note = "capacity needs every node and pod: " + r
+		}
 		if node != "" {
 			note = "node " + node + " is not known"
 		}

@@ -52,7 +52,8 @@ func TestHeadLinesWrap(t *testing.T) {
 	for _, want := range []string{
 		"ctx: namespace a-rather-long-namespace-name",
 		"usage measured 10m ago: stale, metrics-server returns old samples, read 0s ago",
-		"window last 1h: session usage history from 11:50:00 only (incomplete)",
+		// One sample, ten minutes old: it starts late and no longer covers the end.
+		"window last 1h: session usage history from 11:50:00 only, stale since 11:50:00 (incomplete)",
 	} {
 		if !strings.Contains(flat, strings.Join(strings.Fields(want), "")) {
 			t.Errorf("head misses %q:\n%s", want, joined)

@@ -160,7 +160,7 @@ func TestResumeAfterAFailureSkipsWhatWasDelivered(t *testing.T) {
 			{lines: []string{t1 + " a", t2 + " same", t2 + " same", t2 + " same", t3 + " b"}, end: io.EOF},
 		}}
 		rec := &recorder{}
-		err := logresume.Run(t.Context(), logresume.Config{Options: follow, Open: s.open, Check: stopsAfter(2)}, rec.sink())
+		err := logresume.Run(t.Context(), logresume.Config{Options: follow, Open: s.open, Check: stopsAfter(3)}, rec.sink())
 		if err != nil {
 			t.Fatalf("Run = %v", err)
 		}
@@ -362,7 +362,7 @@ func TestReaderWritesNoticesAndReportsState(t *testing.T) {
 			{lines: []string{t1 + " a"}, end: io.ErrUnexpectedEOF},
 			{lines: []string{t1 + " a", t3 + " b"}, end: io.EOF},
 		}}
-		r, err := logresume.Open(t.Context(), logresume.Config{Options: follow, Open: s.open, Check: stopsAfter(2)})
+		r, err := logresume.Open(t.Context(), logresume.Config{Options: follow, Open: s.open, Check: stopsAfter(3)})
 		if err != nil {
 			t.Fatalf("Open = %v", err)
 		}
@@ -395,6 +395,116 @@ func TestOpenReturnsTheFirstError(t *testing.T) {
 	if _, err := logresume.Open(t.Context(), logresume.Config{Options: follow, Open: s.open}); err == nil || err.Error() != "boom" {
 		t.Fatalf("Open = %v, want boom", err)
 	}
+}
+
+// mutableCheck is a Checker whose answer a test changes while Run waits.
+type mutableCheck struct {
+	mu   sync.Mutex
+	inst logresume.Instance
+	ok   bool
+}
+
+func (m *mutableCheck) check(context.Context) (logresume.Instance, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.inst, m.ok
+}
+
+func (m *mutableCheck) set(inst logresume.Instance, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inst, m.ok = inst, ok
+}
+
+// TestResumeRechecksTheInstanceAfterTheWait changes the container's state
+// while Run waits to reconnect. A restart, a new pod or a stop known by
+// then must end the stream instead of reopening it, because the reopened
+// stream would be the next instance's log. An unknown state still
+// reconnects.
+func TestResumeRechecksTheInstanceAfterTheWait(t *testing.T) {
+	t.Parallel()
+	start := logresume.Instance{PodUID: "uid-A", Restarts: 2, Running: true}
+	tests := []struct {
+		name  string
+		after logresume.Instance
+		ok    bool
+		want  []string
+	}{
+		{name: "restart count changed", after: logresume.Instance{PodUID: "uid-A", Restarts: 3, Running: true}, ok: true,
+			want: []string{"old", "notice: reconnecting in 1s: unexpected EOF", "notice: not reconnecting: the container restarted"}},
+		{name: "pod replaced", after: logresume.Instance{PodUID: "uid-B", Restarts: 2, Running: true}, ok: true,
+			want: []string{"old", "notice: reconnecting in 1s: unexpected EOF", "notice: not reconnecting: the pod was replaced"}},
+		{name: "container terminated", after: logresume.Instance{PodUID: "uid-A", Restarts: 2}, ok: true,
+			want: []string{"old", "notice: reconnecting in 1s: unexpected EOF", "notice: not reconnecting: the container stopped"}},
+		{name: "pod gone", ok: true,
+			want: []string{"old", "notice: reconnecting in 1s: unexpected EOF", "notice: not reconnecting: the pod or container is gone"}},
+		{name: "unknown state still reconnects",
+			want: []string{"old", "notice: reconnecting in 1s: unexpected EOF", "notice: reconnected", "NEW"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			synctest.Test(t, func(t *testing.T) {
+				s := &script{attempts: []attempt{
+					{lines: []string{t1 + " old"}, end: io.ErrUnexpectedEOF},
+					{lines: []string{t1 + " old", t3 + " NEW"}, end: io.EOF},
+				}}
+				chk := &mutableCheck{inst: start, ok: true}
+				rec := &recorder{}
+				sink := rec.sink()
+				notice := sink.Notice
+				sink.Notice = func(text string) {
+					notice(text)
+					if strings.HasPrefix(text, "reconnecting") {
+						// Known before the timer fires.
+						chk.set(tt.after, tt.ok)
+					}
+				}
+				line := sink.Line
+				sink.Line = func(text string) bool {
+					line(text)
+					return text != "NEW"
+				}
+				err := logresume.Run(t.Context(), logresume.Config{Options: follow, Open: s.open, Check: chk.check, Start: start}, sink)
+				if err != nil {
+					t.Fatalf("Run = %v", err)
+				}
+				equal(t, rec.lines(), tt.want)
+				wantOpens := 1
+				if !tt.ok {
+					wantOpens = 2
+				}
+				if n := len(s.opens()); n != wantOpens {
+					t.Fatalf("opened %d times, want %d", n, wantOpens)
+				}
+			})
+		})
+	}
+}
+
+// TestResumeSameInstanceAfterTheWaitResumes keeps the instance unchanged
+// over the wait: the stream reopens and skips what was delivered.
+func TestResumeSameInstanceAfterTheWaitResumes(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		start := logresume.Instance{PodUID: "uid-A", Restarts: 2, Running: true}
+		s := &script{attempts: []attempt{
+			{lines: []string{t1 + " a"}, end: io.ErrUnexpectedEOF},
+			{lines: []string{t1 + " a", t3 + " b"}, end: io.EOF},
+		}}
+		chk := &mutableCheck{inst: start, ok: true}
+		rec := &recorder{}
+		sink := rec.sink()
+		line := sink.Line
+		sink.Line = func(text string) bool {
+			line(text)
+			return text != "b"
+		}
+		if err := logresume.Run(t.Context(), logresume.Config{Options: follow, Open: s.open, Check: chk.check, Start: start}, sink); err != nil {
+			t.Fatalf("Run = %v", err)
+		}
+		equal(t, rec.lines(), []string{"a", "notice: reconnecting in 1s: unexpected EOF", "notice: reconnected", "b"})
+	})
 }
 
 // TestReaderClearsReconnectingWhenItStops ends a Reader while it waits to

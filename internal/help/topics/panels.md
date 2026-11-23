@@ -46,7 +46,9 @@ the copy button at its right copies it.
   while the list is still loading is kept and applied when the rows
   arrive.
 - `M-o` sorts by the next column, `M-r` reverses the sort. The sorted
-  column title ends in an up or down arrow.
+  column title ends in an up or down arrow. In an Events list, Last Seen
+  and First Seen sort by the Event's own times, most recent first, and
+  count on with the clock; the wide Name column sorts by name.
 - `M-f` filters rows; `C-z` keeps only rows in a fault state.
 - `C-w` switches the columns between normal and wide.
 - `C-r` reads the list again ("Reread" in the Left and Right menus).

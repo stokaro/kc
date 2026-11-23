@@ -66,6 +66,10 @@ type workloadInput struct {
 	Claims         []corev1.PersistentVolumeClaim // of the namespace
 	ClaimsErr      error
 
+	// Scheduling is set for an unschedulable pod: what kc's node checks
+	// read.
+	Scheduling *schedulingInput
+
 	health healthVerdict // of a type with a health config entry
 }
 
@@ -118,6 +122,9 @@ func diagnoseWorkload(in workloadInput) (diagReport, error) {
 		}
 	}
 	d.Findings = append(append(d.Findings, status...), problems...)
+	if in.Scheduling != nil {
+		d.Findings = append(d.Findings, explainScheduling(*in.Scheduling)...)
+	}
 	if len(d.Findings) == 0 {
 		d.Findings = append(d.Findings, diagFinding{
 			Code: "no-problem", Severity: diagInfo, Observed: in.Now,
@@ -427,19 +434,49 @@ func (in *workloadInput) podLink(pod *corev1.Pod, evidence string) diagLink {
 	return diagLink{GVR: podGVR, Namespace: pod.Namespace, Name: pod.Name, Evidence: evidence}
 }
 
+// schedulingFinding reports a pod the scheduler has not placed: the
+// scheduler's condition and events are the reported outcome. A gated pod
+// is waiting for a controller, not failing.
 func (in *workloadInput) schedulingFinding(pod *corev1.Pod) (diagFinding, bool) {
+	if schedulingStateOf(pod) == schedGated {
+		return in.gatedFinding(pod), true
+	}
 	c := podCondition(pod, corev1.PodScheduled)
 	if c == nil || c.Status != corev1.ConditionFalse || podTerminal(pod) {
 		return diagFinding{}, false
 	}
 	links := []diagLink{in.podLink(pod, fmt.Sprintf("status.conditions[PodScheduled]=False %s, uid %s", c.Reason, pod.UID))}
+	next := "Open the /diagnosis of pod " + pod.Name + " for kc's node checks: selectors, affinity, taints, bound volumes and requests against allocatable."
+	if in.GVR == podGVR {
+		next = "The scheduler's message is the decision. kc's node checks below explain the constraints kc can read."
+	}
 	return diagFinding{
 		Code: "unschedulable/" + pod.Name, Severity: diagError, Observed: c.LastTransitionTime.Time,
 		Title:  fmt.Sprintf("Pod %s cannot be scheduled: %s", pod.Name, c.Reason),
 		Detail: c.Message,
 		Links:  append(links, in.eventLinks(pod.Namespace, pod.UID, "", true)...),
-		Next:   "Read the scheduler message: check the node selector, affinity, taints and tolerations, and the free capacity of the nodes.",
+		Next:   next,
 	}, true
+}
+
+// gatedFinding reports a pod whose spec.schedulingGates keep the
+// scheduler from considering it.
+func (in *workloadInput) gatedFinding(pod *corev1.Pod) diagFinding {
+	gates := make([]string, 0, len(pod.Spec.SchedulingGates))
+	for _, g := range pod.Spec.SchedulingGates {
+		gates = append(gates, g.Name)
+	}
+	observed := in.Now
+	if c := podCondition(pod, corev1.PodScheduled); c != nil && !c.LastTransitionTime.IsZero() {
+		observed = c.LastTransitionTime.Time
+	}
+	return diagFinding{
+		Code: "gated/" + pod.Name, Severity: diagWarning, Observed: observed,
+		Title:  fmt.Sprintf("Pod %s waits for scheduling gates: %s", pod.Name, strings.Join(gates, ", ")),
+		Detail: "The scheduler does not consider a pod while spec.schedulingGates is not empty; the controller that added a gate removes it.",
+		Links:  []diagLink{in.podLink(pod, "spec.schedulingGates="+strings.Join(gates, ","))},
+		Next:   "Find the controller that owns the gate (its name usually says which). kc runs no node checks for a gated pod.",
+	}
 }
 
 // containerFinding reports the worst state of one container: an image it
