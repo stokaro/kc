@@ -1,6 +1,6 @@
 # 0128. Lint the whole tree: baseline removed, flag-parameter off, third_party excluded
 
-- Status: Accepted
+- Status: Accepted; the third_party exclusion superseded by 0243
 - Date: 2026-11-22
 - Issue: #128
 

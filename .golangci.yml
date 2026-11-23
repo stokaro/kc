@@ -319,7 +319,6 @@ linters:
         linters:
           - revive
     paths:
-      - '(^|/)third_party/'
       - 'builtin$'
 
 issues:
@@ -339,5 +338,4 @@ formatters:
   exclusions:
     generated: lax
     paths:
-      - '(^|/)third_party/'
       - 'builtin$'
