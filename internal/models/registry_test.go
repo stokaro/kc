@@ -77,6 +77,19 @@ func TestKindsWithDiagnosisCanBeEntered(t *testing.T) {
 	}
 }
 
+// TestDeploymentFolderListsOnlyReplicaSets checks that a Deployment folder
+// offers the ReplicaSets it owns and no ReplicationControllers, which a
+// Deployment never owns (#323).
+func TestDeploymentFolderListsOnlyReplicaSets(t *testing.T) {
+	ids := enteredRowIDs(t, relDeploymentsGVR, "ns")
+	if !hasSegment(ids, "replicasets") {
+		t.Fatalf("Deployment folder rows = %v, want /replicasets", ids)
+	}
+	if hasSegment(ids, "replicationcontrollers") {
+		t.Fatalf("Deployment folder rows = %v, want no /replicationcontrollers", ids)
+	}
+}
+
 // TestKindsWithoutRowsOpenYAML shows the rule refuses: a kind with no
 // diagnosis and no registered rows still opens its YAML on Enter.
 func TestKindsWithoutRowsOpenYAML(t *testing.T) {

@@ -77,9 +77,10 @@ func builtinChildren() map[schema.GroupVersionResource]ChildConstructor {
 		return NewChildResourceTypesFolder(deps,
 			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
 			ns, name,
+			// A Deployment owns ReplicaSets only; ReplicationControllers
+			// are the older, unrelated controller.
 			[]schema.GroupVersionResource{
 				{Group: "apps", Version: "v1", Resource: "replicasets"},
-				{Group: "", Version: "v1", Resource: "replicationcontrollers"},
 			},
 			basePath,
 		)
