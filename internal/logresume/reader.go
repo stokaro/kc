@@ -26,8 +26,7 @@ type Reader struct {
 // error is returned as it is.
 func Open(ctx context.Context, cfg Config) (*Reader, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	r0 := &resumer{cfg: cfg}
-	first, err := cfg.Open(ctx, r0.options())
+	first, err := cfg.Open(ctx, newResumer(cfg, Sink{}).options())
 	if err != nil {
 		cancel()
 		return nil, err
