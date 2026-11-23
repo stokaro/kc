@@ -229,3 +229,49 @@ func TestPlotCellsWidensTheLabels(t *testing.T) {
 		t.Errorf("cells = %d, want the free width %d", got, free)
 	}
 }
+
+// TestRefFollowsItsPoints: a reference line with points sits at the value
+// of each time, and leaves a gap where its points stop for longer than
+// Hold; RefAt reads it back per cell.
+func TestRefFollowsItsPoints(t *testing.T) {
+	t.Parallel()
+	// 20 minutes in 20 cells of a 5-row plot with a top of 5: a request
+	// of 2 (row 3) for ten minutes, then of 4 (row 1), with no point in
+	// minutes 14 to 16.
+	pts := every(time.Minute, 21, func(i int) float64 {
+		if i < 10 {
+			return 2
+		}
+		return 4
+	})
+	pts = append(pts[:14], pts[17:]...)
+	c := chart.Chart{
+		Start: t0, End: t0.Add(20 * time.Minute), Mode: chart.Blocks, Width: 22, Height: 6, Format: func(float64) string { return "5" },
+		Refs: []chart.Ref{{Points: pts, Hold: 90 * time.Second}},
+	}
+	if got := c.Cells(); got != 20 {
+		t.Fatalf("cells = %d, want 20", got)
+	}
+	lines := plain(c.Render())
+	line := func(row int) string { return string([]rune(lines[row])[2:]) }
+	// Minute 13's point holds cell 14; cells 15 and 16 are over 90s from it.
+	if got, want := line(1), "          ┄┄┄┄┄  ┄┄┄"; got != want {
+		t.Errorf("row 1 %q, want %q: the request of 4 after minute 10, a gap in cells 15 and 16", got, want)
+	}
+	if got, want := line(3), "┄┄┄┄┄┄┄┄┄┄          "; got != want {
+		t.Errorf("row 3 %q, want %q: the request of 2 in the first ten minutes only", got, want)
+	}
+	for _, tc := range []struct {
+		cell int
+		v    float64
+		ok   bool
+	}{{0, 2, true}, {9, 2, true}, {10, 4, true}, {15, 0, false}, {17, 4, true}, {19, 4, true}} {
+		v, ok := c.RefAt(0, tc.cell)
+		if v != tc.v || ok != tc.ok {
+			t.Errorf("RefAt(0, %d) = %v, %v; want %v, %v", tc.cell, v, ok, tc.v, tc.ok)
+		}
+	}
+	if _, ok := c.RefAt(1, 0); ok {
+		t.Error("RefAt of a missing line reports a value")
+	}
+}

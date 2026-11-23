@@ -5,6 +5,7 @@ package chart
 
 import (
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -29,10 +30,34 @@ const (
 	Blocks
 )
 
-// Ref is a horizontal line at V, such as a request or a limit.
+// Ref is a reference line, such as a request or a limit: at V, or, with
+// Points, at the value it had at each time.
 type Ref struct {
-	V     float64
-	Style lipgloss.Style
+	V float64
+	// Points make the line follow a history: a plot cell shows the newest
+	// point before its end (at or before it for the last cell), while that
+	// point is within Hold of the cell's start. A cell without one has no
+	// line, so a missing sample never reads as an unchanged value.
+	Points []Point
+	Hold   time.Duration
+	Style  lipgloss.Style
+}
+
+// at is the value of r in the cell [from, to); last closes the cell.
+func (r Ref) at(from, to time.Time, last bool) (float64, bool) {
+	if len(r.Points) == 0 {
+		return r.V, r.V > 0
+	}
+	for _, p := range slices.Backward(r.Points) {
+		if p.At.After(to) || (!last && p.At.Equal(to)) {
+			continue
+		}
+		if from.Sub(p.At) > r.Hold {
+			return 0, false
+		}
+		return p.V, true
+	}
+	return 0, false
 }
 
 // Chart is one time series over [Start, End] with its scale and axes.
@@ -94,6 +119,9 @@ type layout struct {
 	label, plot, rows int
 	cols              []column
 	top               float64
+	// refRows is the plot row of each reference line per plot cell, -1
+	// where it is not drawn.
+	refRows [][]int
 }
 
 func (c Chart) format(v float64) string {
@@ -124,7 +152,36 @@ func (c Chart) layout() layout {
 		l.label = c.Width - 1 - l.plot
 	}
 	l.cols = c.pool(Samples(l.plot, c.Mode))
+	l.refRows = make([][]int, len(c.Refs))
+	for i, ref := range c.Refs {
+		rows := make([]int, max(0, l.plot))
+		for x := range rows {
+			rows[x] = -1
+			from, to := c.cellSpan(l, x)
+			if v, ok := ref.at(from, to, x == l.plot-1); ok {
+				rows[x] = refRow(l, v)
+			}
+		}
+		l.refRows[i] = rows
+	}
 	return l
+}
+
+// cellSpan is the time span of plot cell x.
+func (c Chart) cellSpan(l layout, x int) (from, to time.Time) {
+	span := c.End.Sub(c.Start)
+	return c.Start.Add(time.Duration(float64(span) * float64(x) / float64(l.plot))),
+		c.Start.Add(time.Duration(float64(span) * float64(x+1) / float64(l.plot)))
+}
+
+// RefAt is the value of reference line ref in plot cell x.
+func (c Chart) RefAt(ref, x int) (float64, bool) {
+	l := c.layout()
+	if ref < 0 || ref >= len(c.Refs) || x < 0 || x >= l.plot {
+		return 0, false
+	}
+	from, to := c.cellSpan(l, x)
+	return c.Refs[ref].at(from, to, x == l.plot-1)
 }
 
 func (c Chart) maxValue() float64 {
@@ -136,6 +193,11 @@ func (c Chart) maxValue() float64 {
 	}
 	for _, r := range c.Refs {
 		top = max(top, r.V)
+		for _, p := range r.Points {
+			if !p.At.After(c.End) && c.Start.Sub(p.At) <= r.Hold {
+				top = max(top, p.V)
+			}
+		}
 	}
 	return top
 }
@@ -212,11 +274,8 @@ func (c Chart) Cell(i int) CellValue {
 		return CellValue{}
 	}
 	per := len(l.cols) / l.plot
-	span := c.End.Sub(c.Start)
-	cv := CellValue{
-		From: c.Start.Add(time.Duration(float64(span) * float64(i) / float64(l.plot))),
-		To:   c.Start.Add(time.Duration(float64(span) * float64(i+1) / float64(l.plot))),
-	}
+	cv := CellValue{}
+	cv.From, cv.To = c.cellSpan(l, i)
 	for _, col := range l.cols[i*per : (i+1)*per] {
 		if col.ok && (!cv.OK || col.v > cv.V) {
 			cv.V, cv.OK = col.v, true
@@ -298,7 +357,7 @@ func (c Chart) cellRune(l layout, row, x int) (rune, *Ref) {
 	}
 	for i := range c.Refs {
 		ref := &c.Refs[i]
-		if refRow(l, ref.V) != row {
+		if l.refRows[i][x] != row {
 			continue
 		}
 		if r == ' ' || r == brailleBlank {

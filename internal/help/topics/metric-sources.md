@@ -42,6 +42,12 @@ checked and what it means. A check that is not `ok` is red. States:
   endpoints. When the server itself cannot be reached or is refused, the
   remaining checks are skipped.
 
+The dashboard's request, limit and allocatable lines need
+kube-state-metrics 2 or later: `kube_pod_container_resource_requests`,
+`kube_pod_container_resource_limits` (with a `resource` label),
+`kube_pod_container_info`, `kube_pod_status_phase` and
+`kube_node_status_allocatable`.
+
 A missing family disables only the views that need it. Without
 kube-state-metrics kc cannot tie pods to workloads in the past, but
 current usage from the metrics API still works.

@@ -94,7 +94,12 @@ type Usage struct {
 	// how many running pods the scope had then, from kube-state-metrics.
 	// Expected is nil when it cannot be read.
 	Measured, Expected []Point
-	Warnings           []string
+	// Resources is the requests and limits history; nil when it could
+	// not be read, with the reason in ResourcesErr. A failed resources
+	// read does not fail the usage read.
+	Resources    *Resources
+	ResourcesErr string
+	Warnings     []string
 }
 
 // Coverage is how much of a range the measured pods cover.
@@ -210,10 +215,10 @@ func buildUsageQueries(s selector, scope Scope, r Range) (usageQueries, error) {
 	return q, nil
 }
 
-// Usage reads the CPU, memory, memory peaks and contributor counts of
-// scope over r: five range queries, at most three at a time. A failed
-// usage query fails the read; failed contributor counts leave Expected or
-// Measured nil.
+// Usage reads the CPU, memory, memory peaks, contributor counts and the
+// requests and limits of scope over r: seven range queries, at most three
+// at a time. A failed usage query fails the read; failed contributor
+// counts leave Expected or Measured nil, failed resources Resources.
 func (c *Client) Usage(ctx context.Context, scope Scope, r Range) (Usage, error) {
 	u := Usage{Scope: scope, Asked: r, Range: r}
 	if !scope.Since.IsZero() && scope.Since.After(r.Start) {
@@ -241,7 +246,7 @@ func (c *Client) Usage(ctx context.Context, scope Scope, r Range) (Usage, error)
 		return u, err
 	}
 	u.RateWindow, u.PeakResolution = q.rateWindow, q.peakResolution
-	var warnings [5][]string
+	var warnings [6][]string
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(3)
 	g.Go(func() (err error) { u.CPU, warnings[0], err = c.rangeSeries(gctx, q.cpu, u.Range); return err })
@@ -259,6 +264,15 @@ func (c *Client) Usage(ctx context.Context, scope Scope, r Range) (Usage, error)
 		if err == nil {
 			u.Expected, warnings[4] = nonNil(pts), w
 		}
+		return nil
+	})
+	g.Go(func() error {
+		res, w, err := c.resources(gctx, sel, scope, u.Range)
+		if err != nil {
+			u.ResourcesErr = err.Error()
+			return nil
+		}
+		u.Resources, warnings[5] = res, w
 		return nil
 	})
 	if err := g.Wait(); err != nil {

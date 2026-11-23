@@ -26,18 +26,32 @@ func (m *Model) chartTitle(v *view, wd widget, w int) string {
 	if v.focus == wd {
 		head = focusStyle.Render(head)
 	}
-	legend := " " + useStyle.Render("█use") + " " + reqStyle.Render("┄req") + " " + limStyle.Render("┄lim")
+	return fit(head+" · "+m.sourceLabel(v, wd)+m.legend(v, wd), w)
+}
+
+// legend names the lines of a chart, or why the requests and limits have
+// no history to draw.
+func (m *Model) legend(v *view, wd widget) string {
+	legend := " " + useStyle.Render("█use")
+	if u := v.prom.usage; m.usesProm(v) && !u.Resources.Known() {
+		why := "no kube-state-metrics container series"
+		if u.ResourcesErr != "" {
+			why = u.ResourcesErr
+		}
+		return legend + dimStyle.Render(" · no req/lim history: "+why)
+	}
+	legend += " " + reqStyle.Render("┄req") + " " + limStyle.Render("┄lim")
 	if (wd == widgetCPU && v.now.CPU.Capacity > 0) || (wd == widgetMemory && v.now.Memory.Capacity > 0) {
 		legend += " " + allocStyle.Render("┄alloc")
 	}
-	return fit(head+" · "+m.sourceLabel(v, wd)+legend, w)
+	return legend
 }
 
 // sourceLabel says where a chart's line comes from and what it covers:
 // Prometheus with its averaging window or peak resolution and its pod
 // coverage, else the Metrics API history of this session and why.
 func (m *Model) sourceLabel(v *view, wd widget) string {
-	if u := v.prom.usage; m.src.Usage != nil && u != nil && v.prom.err == nil {
+	if u := v.prom.usage; m.usesProm(v) {
 		label := seriesLabel(u, wd) + " · " + coverageLabel(u.Coverage())
 		if u.Clipped {
 			layout := "15:04"
