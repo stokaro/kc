@@ -5,6 +5,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // DefaultLogsTailLines controls how many lines to fetch before following.
@@ -22,6 +23,10 @@ type LogsSpec struct {
 	// SinceSeconds limits the log to lines newer than this many seconds.
 	// Zero means no limit.
 	SinceSeconds int64
+	// SinceTime limits the log to lines from this time on. It wins over
+	// SinceSeconds; the zero time means no limit. An investigation window
+	// sets it.
+	SinceTime time.Time
 	// Timestamps prefixes every line with its RFC3339 timestamp.
 	Timestamps bool
 	// Previous reads the log of the previous, terminated instance of the
@@ -54,7 +59,11 @@ func (s LogsSpec) PodLogOptions() *corev1.PodLogOptions {
 	if tail := s.EffectiveTailLines(); tail > 0 {
 		opts.TailLines = &tail
 	}
-	if s.SinceSeconds > 0 {
+	switch {
+	case !s.SinceTime.IsZero():
+		since := metav1.NewTime(s.SinceTime)
+		opts.SinceTime = &since
+	case s.SinceSeconds > 0:
 		since := s.SinceSeconds
 		opts.SinceSeconds = &since
 	}

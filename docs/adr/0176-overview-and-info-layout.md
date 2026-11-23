@@ -57,7 +57,9 @@ mode the list is hidden, so a double click entered a row nobody could see.
    to it, so a wide pane uses the spare width for the explanation.
 3. **Wrapping, not truncation.** The scope, titles, the lines under each
    bar, the sparkline label, hints and errors wrap at word boundaries with
-   their indent. So do the lines of the Prometheus history block (#197),
+   their indent. So do the head lines (scope, usage age with its stale
+   color on every line, investigation-window coverage) and the lines of
+   the Prometheus history block (#197),
    which scrolls with the rest of the content. In a pane too narrow for the usual indent, the lines under
    a bar indent by two cells. A top pod's name wraps under itself.
 4. **Info scrolls.** PgUp and PgDn move by a page less one line, Home and

@@ -33,6 +33,8 @@ type FindingPreview struct {
 	// NotApplicable says why the finding had nothing to check (ADR 0172);
 	// its value is then "none", not a result.
 	NotApplicable string
+	// Partial names the sources a partial count leaves out (ADR 0182).
+	Partial string
 	// Inputs is how many input commands M-c copies.
 	Inputs int
 }
@@ -74,6 +76,7 @@ func (f *OverviewFolder) findingPreview(finding overviewFinding) FindingPreview 
 		TargetCount:   len(finding.targets),
 		Unavailable:   finding.unavailable,
 		NotApplicable: finding.notApplicable,
+		Partial:       finding.partial,
 		Inputs:        len(runnableInputs(findingInputs(f.Deps, finding, nil))),
 	}
 	for _, t := range finding.targets[:min(len(finding.targets), findingPreviewTargets)] {
@@ -102,18 +105,37 @@ func runnableInputs(inputs []findingInput) []string {
 // finding's first input command.
 func (f *OverviewFolder) verifyCommands(finding overviewFinding) []string {
 	var out []string
-	resource, reason, ok := strings.Cut(finding.unavailable, ": ")
-	if ok && strings.Contains(strings.ToLower(reason), "forbidden") && !strings.ContainsAny(resource, " /") {
-		args := []string{"auth", "can-i", "list", resource}
-		if _, cluster := findingScope(finding.id, f.namespace); !cluster {
-			args = append(args, namespaceArgs(f.namespace, true)...)
-		}
+	if args := f.permissionCheck(finding); args != nil {
 		out = append(out, kubectlCommand(f.Deps, args...))
 	}
 	if cmds := runnableInputs(findingInputs(f.Deps, finding, nil)); len(cmds) > 0 {
 		out = append(out, cmds[0])
 	}
 	return out
+}
+
+// permissionCheck is the kubectl auth can-i arguments that show why the
+// source of finding is not read, or nil when the reason is no permission.
+func (f *OverviewFolder) permissionCheck(finding overviewFinding) []string {
+	resource, reason, ok := strings.Cut(finding.unavailable, ": ")
+	if !ok || strings.ContainsAny(resource, " /") {
+		return nil
+	}
+	args := []string{"auth", "can-i", "list", resource}
+	switch {
+	case strings.HasPrefix(reason, overviewDeniedInNamespace):
+		return append(args, namespaceArgs(f.namespace, true)...)
+	case strings.HasPrefix(reason, overviewDeniedAll), strings.HasPrefix(reason, overviewOnlyIn):
+		return append(args, namespaceArgs(AllNamespaces, true)...)
+	case reason == overviewDenied:
+		return args // a cluster-scoped kind
+	case strings.Contains(strings.ToLower(reason), "forbidden"):
+		if _, cluster := findingScope(finding.id, f.namespace); !cluster {
+			args = append(args, namespaceArgs(f.namespace, true)...)
+		}
+		return args
+	}
+	return nil
 }
 
 // firstParagraph is text up to the first blank line, joined into one line.

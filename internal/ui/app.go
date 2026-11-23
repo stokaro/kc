@@ -37,6 +37,7 @@ import (
 	"github.com/stokaro/kc/internal/execctx"
 	"github.com/stokaro/kc/internal/explain"
 	"github.com/stokaro/kc/internal/hotlist"
+	"github.com/stokaro/kc/internal/investigation"
 	models "github.com/stokaro/kc/internal/models"
 	navui "github.com/stokaro/kc/internal/navigation"
 	"github.com/stokaro/kc/internal/objectaction"
@@ -239,7 +240,11 @@ type App struct {
 	toastInfo   bool
 	toastUntil  time.Time
 	// Logger that emits toasts on errors with rate limiting
-	toastLogger            *ToastLogger
+	toastLogger *ToastLogger
+	// Pins and the investigation window: docs/adr/0187-pin-freeze-window.md.
+	pinSignal              chan struct{}
+	pinWaiting             bool
+	window                 investigation.Window
 	pendingCmdsMu          sync.Mutex
 	pendingCmds            []tea.Cmd
 	cfgStore               *appconfig.Store // ~/.kc/config.yaml; see configStore

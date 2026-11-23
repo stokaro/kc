@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/stokaro/kc/internal/investigation"
 	models "github.com/stokaro/kc/internal/models"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
@@ -76,6 +77,9 @@ type Options struct {
 	Resolve  func(context.Context) Target
 	Interval time.Duration
 	Now      func() time.Time
+	// Window returns the investigation window and the time zone of its
+	// label; nil or an off window shows nothing about it.
+	Window func() (investigation.Window, *time.Location)
 }
 
 // tickMsg re-reads the summary. It is a BackgroundMsg, so it reaches the
@@ -376,13 +380,13 @@ func (w *Widget) content(width int) []infoLine {
 		}
 		return out
 	}
-	para(" ", w.scopeText())
-	text, health := w.usageText()
-	for _, part := range wrapText(text, width-1) {
-		add(" " + styled(part, health))
+	h := w.history[w.historyKey()]
+	for _, line := range w.headLines(h) {
+		for _, part := range wrapText(line.text, width-1) {
+			add(" " + styled(part, line.health))
+		}
 	}
 	add("")
-	h := w.history[w.historyKey()]
 	if t := w.summary.BarsTitle; t != "" {
 		para(" ", t)
 	}
@@ -695,4 +699,55 @@ func (w *Widget) FrameInfo(_ context.Context, req panelcontent.FrameInfoRequest)
 	}
 	info.FooterStatus = strings.Join(status, " • ")
 	return info
+}
+
+// headLine is one line of the head as plain text with its state, so it
+// wraps like the rest of Info and keeps its color on every wrapped line.
+type headLine struct {
+	text   string
+	health models.RowHealth
+}
+
+// headLines name what the panel shows, when its usage was measured and
+// how much of the investigation window the session history covers.
+func (w *Widget) headLines(h *history) []headLine {
+	usage, health := w.usageText()
+	out := []headLine{{text: w.scopeText(), health: models.RowHealthUnknown}, {text: usage, health: health}}
+	if line := w.windowCoverage(h); line != "" {
+		out = append(out, headLine{text: line, health: models.RowHealthUnknown})
+	}
+	return out
+}
+
+// windowCoverage says how much of the investigation window the usage
+// history covers. The sparklines always show the last historyWindow of
+// this session; Info cannot show usage from before kc measured it.
+func (w *Widget) windowCoverage(h *history) string {
+	if w.opts.Window == nil {
+		return ""
+	}
+	win, loc := w.opts.Window()
+	now := w.opts.Now()
+	start, end, ok := win.Bounds(now)
+	if !ok {
+		return ""
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	label := "window " + win.Label(loc) + ": "
+	// One sample older than the sparkline is kept; it is not shown.
+	first := h.first()
+	if from := now.Add(-historyWindow); !first.IsZero() && first.Before(from) {
+		first = from
+	}
+	switch {
+	case first.IsZero():
+		return label + "no session usage history yet (incomplete)"
+	case !end.IsZero() && end.Before(first):
+		return label + "no session usage history for it (incomplete)"
+	case start.Before(first):
+		return label + "session usage history from " + first.In(loc).Format("15:04:05") + " only (incomplete)"
+	}
+	return label + "covered by the session usage history"
 }

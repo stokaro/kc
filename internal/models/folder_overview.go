@@ -201,6 +201,9 @@ func (f *OverviewFolder) explainFinding(finding overviewFinding) string {
 	if finding.unavailable != "" {
 		fmt.Fprintf(&b, "Not available: %s\n", finding.unavailable)
 	}
+	if finding.partial != "" {
+		fmt.Fprintf(&b, "Partial, not counted: %s\n", finding.partial)
+	}
 	if finding.notApplicable != "" {
 		fmt.Fprintf(&b, "Not applicable: %s; nothing was checked, which is not a pass.\n", finding.notApplicable)
 	}

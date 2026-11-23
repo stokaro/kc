@@ -148,6 +148,8 @@ func (a *App) applyContextSwitch(msg contextSwitchedMsg) tea.Cmd {
 		}
 	})
 	a.ensureTermContext()
+	// Pinned objects belong to the old cluster.
+	a.dropPins()
 	a.goToNamespace(contextNamespace(msg.target))
 	// Read-only mode follows the context: redraw the RO marker and the keys.
 	a.syncPanelScopeLabels()
