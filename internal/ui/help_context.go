@@ -142,8 +142,11 @@ func folderHelpPage(folder models.Folder) help.ID {
 		return help.Panels
 	}
 	if f, ok := folder.(*models.RelatedObjectsFolder); ok {
-		if f.Kind() == models.RelatedDiagnosis {
+		switch f.Kind() {
+		case models.RelatedDiagnosis:
 			return help.Diagnosis
+		case models.RelatedRollout:
+			return help.Rollout
 		}
 		return help.Related
 	}

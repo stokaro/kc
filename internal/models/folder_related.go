@@ -32,6 +32,10 @@ const (
 	// (workload_diagnosis.go). It is entered from the object's folder, not
 	// opened by a key.
 	RelatedDiagnosis
+	// RelatedRollout shows a Deployment's revisions, their pods and the
+	// rollout progress (rollout.go). It is entered from the Deployment's
+	// folder like a diagnosis.
+	RelatedRollout
 )
 
 // Path segments of the related-objects folders under an object.
@@ -153,19 +157,25 @@ func newRelatedFolder(ctx context.Context, deps Deps, reader *scopedReader, rele
 		// populate and startWatch decide the scopes in the background.
 		segment = DiagnosisSegment
 		f.watches = watches
+	case RelatedRollout:
+		if gvr != relDeploymentsGVR {
+			return fail(fmt.Errorf("no rollout view for %s", gvr))
+		}
+		segment = RolloutSegment
+		f.watches = rolloutWatches(namespace, self)
 	default:
 		return fail(fmt.Errorf("unknown related kind %d", kind))
 	}
 	// Decide the scope of every watched type here, off the UI thread, so
 	// startWatch (on it) finds the decisions made.
-	if kind != RelatedDiagnosis {
+	if !kind.lazy() {
 		for _, w := range f.watches {
 			reader.scopeFor(w.gvr, w.namespace)
 		}
 	}
 	path := append(append([]string(nil), objectPath...), segment)
 	last := "Relation"
-	if kind == RelatedDiagnosis {
+	if kind.lazy() {
 		last = "Evidence"
 	}
 	f.BaseFolder = NewBaseFolder(deps, relatedColumns(last), path)
@@ -216,6 +226,10 @@ func dependencyWatches(deps []Dependency) []relatedWatch {
 	return out
 }
 
+// lazy reports whether the folder is entered on the UI thread and decides
+// its scopes on first use (diagnosis, rollout).
+func (k RelatedKind) lazy() bool { return k == RelatedDiagnosis || k == RelatedRollout }
+
 // Kind reports what the folder lists.
 func (f *RelatedObjectsFolder) Kind() RelatedKind { return f.kind }
 
@@ -236,6 +250,8 @@ func (f *RelatedObjectsFolder) Close() {
 // KubectlCommand prints what the folder is built from.
 func (f *RelatedObjectsFolder) KubectlCommand() string {
 	switch f.kind {
+	case RelatedRollout:
+		return kubectlCommand(f.Deps, "get", "deployment,replicasets,pods", "-n", f.namespace, "-o", "wide") + "  # rollout of deployment/" + f.name
 	case RelatedDiagnosis:
 		if hasRouteDiagnosis(f.gvr) {
 			return kubectlCommand(f.Deps, "describe", kubectlResource(f.gvr), f.name, "-n", f.namespace) + "  # and its backend services"
@@ -344,6 +360,9 @@ func (f *RelatedObjectsFolder) startWatch(onEvent, onStop func()) (func(), error
 func (f *RelatedObjectsFolder) populate(ctx context.Context) ([]table.Row, error) {
 	if f.kind == RelatedDiagnosis {
 		return f.diagnosisRows(ctx)
+	}
+	if f.kind == RelatedRollout {
+		return f.rolloutRows(ctx)
 	}
 	log := ctrllog.FromContext(ctx).WithName("related")
 	refs, err := f.findRefs(ctx)
