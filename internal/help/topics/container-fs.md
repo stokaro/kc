@@ -32,16 +32,18 @@ spec until the pod is recreated. kc asks again before it adds another.
 
 ## Keys
 
-- `Enter` opens a directory; `/..` goes up.
+- `Enter` opens a directory and views a file, like `F3`; `/..` goes up.
 - `F3` shows a file. The viewer shows the matching
   `kubectl exec ... -- cat <path>` command.
 - `F5` saves the file under the cursor locally (export dialog).
 - `F5` with a local panel on the other side copies the marked files
   and directories (or the row under the cursor) there. `F5` in the
   local panel copies the other way, into the container.
-- `C-t` or `Ins` marks a row; `*` inverts the marks.
+- `C-t` or `Ins` marks a row; `*` inverts the marks; `+` and `-` mark
+  or unmark the names that match a pattern such as `*.log`.
 - `Enter` on the `shell` row opens a shell in the container, as
-  `M-x` does on the container row.
+  `M-x` does on the container row. `Enter` on a `logs` row opens the
+  logs viewer, as `F3` does.
 
 ## Copying between a container and a local panel
 

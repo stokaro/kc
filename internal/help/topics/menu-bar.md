@@ -12,7 +12,9 @@ one.
   Freeze display, Panel options, Columns normal/wide, the sort, Group by
   namespace, Filter and Faults only, Namespace... and Context....
 - File: View, Edit, Copy, Create namespace, Delete, Port forward,
-  Owners, Used by, Requires, Explain, marking rows, Quick search, Exit.
+  Owners, Used by, Requires, Explain, the marks (Toggle mark, Select
+  group, Unselect group, Invert selection, Select all), Quick search,
+  Exit.
 - Command: the User menu (`F2`), Swap panels, Switch panels on/off,
   Copy command, the compare commands, Investigation window, Hotlist,
   History back, forward and list, Help.

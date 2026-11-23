@@ -1086,13 +1086,6 @@ func (a *App) setupModals() {
 	a.modalManager.Register("copy_local", copyModal)
 	a.copyInput = copyModel
 
-	for idx := range 2 {
-		modeModel := NewPanelModeModel(idx, []PanelViewMode{PanelModeList}, PanelModeList)
-		modeModal := NewModal("Panel Mode", modeModel)
-		modeModal.SetCloseOnSingleEsc(true)
-		a.modalManager.Register(panelModeModalKey(idx), modeModal)
-	}
-
 	helpViewer := NewHelpViewer(help.Index)
 	helpModal := NewModal("Help", helpViewer)
 	helpModal.SetCloseOnSingleEsc(true)
@@ -1401,13 +1394,6 @@ func (a *App) cyclePanelModeIfVisible(idx int) (tea.Cmd, bool) {
 		return nil, false
 	}
 	return a.cyclePanelMode(idx), true
-}
-
-func panelModeModalKey(idx int) string {
-	if idx == 0 {
-		return "panel_mode_left"
-	}
-	return "panel_mode_right"
 }
 
 func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {

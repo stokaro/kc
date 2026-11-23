@@ -29,7 +29,9 @@ the copy button at its right copies it.
 
 ## Keys
 
-- `Enter` enters the row; on `/..` it goes up.
+- `Enter` enters the row; on `/..` it goes up. On a row that cannot be
+  entered, such as a `logs` row, a key of a ConfigMap or a file, it does
+  what `F3` does.
 - `Up`, `Down`, `PgUp`, `PgDn`, `Home`, `End` move the cursor.
 - `Tab` switches to the other panel.
 - `F1` help, `F2` user menu, `F3` view, `F4` edit, `F5` copy,
@@ -45,6 +47,11 @@ the copy button at its right copies it.
 - `C-w` switches the columns between normal and wide.
 - `C-r` reads the list again ("Reread" in the Left and Right menus).
 - `Ins` or `C-t` marks the row, `*` inverts the marks, `C-a` marks all.
+  `+` (Select group) and `-` (Unselect group) ask for a shell pattern and
+  mark or unmark the rows whose name matches it: `*` any text, `?` one
+  character, `[a-z]` a set. The pattern matches the whole name and
+  ignores case, so `web-*` takes `web-0` and `web-1`. The `..` row is
+  never marked.
   `F2` commands, node actions (`M-n`) and `F5` between a container and
   a local panel work on the marked rows instead of the cursor row.
   `F8` always deletes the row under the cursor.
@@ -57,7 +64,8 @@ the copy button at its right copies it.
 ## Limits
 
 - Letters, digits and `Space` go to the shell line below the panels,
-  as in mc. Use `Esc` plus a letter where Option does not send Meta.
+  as in mc. So do `+`, `-` and `*` while the shell line holds text.
+  Use `Esc` plus a letter where Option does not send Meta.
 - Rows that a filter hides are unmarked.
 - The sort belongs to the panel and follows it through navigation. The
   row filter belongs to the folder: it stays while you look at its

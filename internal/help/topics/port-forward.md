@@ -51,7 +51,8 @@ the local address, target, pod, namespace, context and age.
   `~/.kc/config.yaml` says otherwise. `0.0.0.0` exposes the port to
   your network.
 - A service without a selector cannot be forwarded.
-- Read-only mode refuses new forwards.
+- Read-only mode refuses new forwards. Stopping one with `F8` stays
+  allowed: the forward runs in kc, so the cluster does not change.
 - You need create on `pods/portforward` in the namespace.
 
 ## See also

@@ -128,6 +128,10 @@ type SelectionListener interface {
 	OnSelectionChanged(context.Context, Selection) tea.Cmd
 }
 
+// MarkGroupRequest asks for mc's Select group (Mark true, the "+" key) or
+// Unselect group ("-") dialog on the active panel.
+type MarkGroupRequest struct{ Mark bool }
+
 // Action identifies panel-level shortcuts widgets may invoke.
 type Action string
 

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -84,14 +86,17 @@ const MaxCommandPrompts = 8
 // commandChordPrefix is the only prefix key of two-key hotkeys, as in mc.
 const commandChordPrefix = "C-x"
 
-// builtinHotkeys lists the keys kc binds itself in the panels, in the
-// notation ParseHotkey returns. Each M-<letter> also has an Esc <letter>
-// fallback, so a user key must not take the letter either.
+// builtinHotkeys lists the keys kc binds itself in the panels and viewers,
+// in the notation ParseHotkey returns. Each M-<letter> also has an Esc
+// <letter> fallback, so a user key must not take the letter either.
+// builtin_hotkeys_test.go derives the keys from internal/ui and fails when
+// this list misses one or names one kc no longer handles.
 var builtinHotkeys = map[string]string{
 	"M-a":     "copy all in the viewer",
 	"M-A":     "copy original log records",
 	"M-b":     "used-by objects",
 	"M-c":     "copy command",
+	"M-d":     "required objects; the fields of a log line in the viewer",
 	"M-e":     "explain fields",
 	"M-f":     "row filter",
 	"M-g":     "log filter",
@@ -111,6 +116,7 @@ var builtinHotkeys = map[string]string{
 	"M-w":     "cycle panel width",
 	"M-x":     "shell in a container",
 	"M-y":     "history back",
+	"M-z":     "undo the last log field action in the viewer",
 	"C-x C-d": "compare manifests",
 	"C-x d":   "compare lists",
 	"C-x c":   "compare a list with another context",
@@ -124,6 +130,12 @@ var builtinHotkeys = map[string]string{
 func BuiltinHotkey(key string) (string, bool) {
 	what, ok := builtinHotkeys[key]
 	return what, ok
+}
+
+// BuiltinHotkeys yields every key kc binds itself and what for, in no
+// particular order.
+func BuiltinHotkeys() iter.Seq2[string, string] {
+	return maps.All(builtinHotkeys)
 }
 
 // ParseHotkey checks a hotkey in mc notation and returns it normalized:

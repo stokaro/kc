@@ -28,9 +28,14 @@ type Confirmation struct {
 	Notes   []string    // what the change does and what stays behind
 	Command string      // the equivalent kubectl command, when there is one
 	Action  string      // label of the confirming button
+	// Local is set when the action changes only what kc runs on this
+	// machine, such as stopping a local port forward. Read-only mode
+	// allows it.
+	Local bool
 }
 
-// ConfirmedAction is a row whose Enter changes the cluster. The UI shows
+// ConfirmedAction is a row whose Enter changes the cluster (or, with
+// Confirmation.Local, only kc's own local state). The UI shows
 // its Confirmation and calls Confirm only after the user agrees.
 type ConfirmedAction interface {
 	Item

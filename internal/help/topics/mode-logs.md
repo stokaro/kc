@@ -56,7 +56,7 @@ start of the window instead of its tail, and the header shows the window.
   not have them. "All containers" stays.
 - JSON formatting, the log filter (`M-g`), the fields view (`M-d`) and
   the raw toggle (`M-v`) are only in the full-screen logs viewer. Press
-  `F3` on a `logs` row for it.
+  `Enter` or `F3` on a `logs` row for it.
 - The user menu is not on `F2` in this mode; `F9` shows it disabled.
 
 ## See also
