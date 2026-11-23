@@ -1881,7 +1881,7 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	}
 	target, err := deleteTargetFor(panelIdx, obj)
 	if err != nil {
-		return a.ShowToast(fmt.Sprintf("Cannot delete %s: %v", kubectlResourceRef(obj.GVR(), obj.Name()), err), 5*time.Second)
+		return a.ShowToast(fmt.Sprintf("Cannot delete %s: %v", objectLabel(obj.GVR(), itemKind(obj), obj.Namespace(), obj.Name()), err), 5*time.Second)
 	}
 	a.pendingDelete = &target
 
@@ -1896,8 +1896,7 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 		}
 		a.deleteConfirm = model
 	}
-	resourceLabel := kubectlResourceRef(target.gvr, target.name)
-	a.deleteConfirm.Configure(resourceLabel, target.namespace, target.context)
+	a.deleteConfirm.Configure(target.label, target.context)
 	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
 	modal.SetContent(a.deleteConfirm)
 	modal.SetDimensions(a.width, a.height)

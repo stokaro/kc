@@ -224,6 +224,7 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 		obj.WithManifest(o.Deps.CtxName, objectManifest(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
+		obj.SetKind(kind)
 		if hook := rowTimeHook(ageCols, rr.ObjectMeta.CreationTimestamp.Time, timeCols, timeSrc, times, ii); hook != nil {
 			obj.RowItem.SetCellsHook(hook.apply)
 			hooks = append(hooks, hook)
@@ -328,6 +329,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		obj.WithManifest(o.Deps.CtxName, objectManifest(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
+		obj.SetKind(kind)
 		if hasChild && ctor != nil {
 			nm := name
 			rows = append(rows, NewObjectWithChildItem(obj, func() (Folder, error) {
