@@ -58,6 +58,7 @@ fi
 cd "$dir" 2>/dev/null || fail "cannot enter $dir"
 hbpid=
 if [ -n "$hb" ]; then
+  touch "$hb" 2>/dev/null
   ( while kill -0 $$ 2>/dev/null; do touch "$hb" 2>/dev/null; sleep 10; done ) </dev/null >/dev/null 2>&1 &
   hbpid=$!
 fi

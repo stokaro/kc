@@ -82,6 +82,20 @@ func TestCopyDialogsRenderedLayout(t *testing.T) {
 			want: []string{"Copy from the container?", "│ to:", "├──", "│ [ ] Overwrite existing entries", "[< OK >] [ Cancel ]"},
 		},
 		{
+			// A target longer than the dialog scrolls inside its one line
+			// and keeps the frame whole.
+			name: "container to a long local path",
+			open: func(t *testing.T, a *App) {
+				dest := filepath.Join(t.TempDir(), strings.Repeat("a-very-long-directory-name/", 4))
+				a.openTransfer(&transferJob{
+					model:  NewTransferModel([][2]string{{"Pod", "demo/web"}, {"Entries", "a.txt"}}, dest, nil),
+					req:    filexfer.Request{Dir: "/data", Entries: fileEntries("a.txt")},
+					source: &fakeTransferSource{},
+				})
+			},
+			want: []string{"Copy from the container?", "│ to:", "├──", "──┤", "│ [ ] Overwrite existing entries", "a-very-long-directory-name  │", "[< OK >] [ Cancel ]"},
+		},
+		{
 			name: "local to container",
 			open: func(t *testing.T, a *App) {
 				job, _ := uploadJob(t, &uploadFS{}, 1, "a.txt")

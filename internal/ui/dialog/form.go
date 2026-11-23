@@ -353,8 +353,10 @@ func (f *Form) View(width int) (string, *tea.Cursor, []int) {
 		case Input:
 			if it.Model != nil {
 				// One column stays free for the cursor after the text.
-				it.Model.SetWidth(max(1, inner-1))
-				field := f.Skin.Input.Width(inner).MaxWidth(inner).Render(it.Model.View())
+				fitInput(it.Model, max(1, inner-1))
+				// The field stays on one line: a wrapped field would shift
+				// every row below it off the rows the frame joins.
+				field := f.Skin.Input.Width(inner).Render(ansi.Truncate(it.Model.View(), inner, ""))
 				lines = append(lines, pad+field+pad)
 				if stopAt == f.focus {
 					if c := it.Model.Cursor(); c != nil {
@@ -389,6 +391,20 @@ func (f *Form) View(width int) (string, *tea.Cursor, []int) {
 		}
 	}
 	return strings.Join(lines, "\n"), cursor, append([]int(nil), f.rules...)
+}
+
+// fitInput sets the width of m. SetWidth alone keeps the visible window
+// the input had, and an input whose value was set before its width shows
+// the whole value. Moving the cursor to the end and back makes the input
+// scroll its value inside the new width, with the cursor in view.
+func fitInput(m *textinput.Model, width int) {
+	if m.Width() == width {
+		return
+	}
+	pos := m.Position()
+	m.SetWidth(width)
+	m.CursorEnd()
+	m.SetCursor(pos)
 }
 
 // Width is the narrowest width that shows every line of the form whole,
