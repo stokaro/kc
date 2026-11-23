@@ -12,6 +12,7 @@ import (
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"golang.org/x/image/font"
+	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/gomonobold"
 	"golang.org/x/image/font/opentype"
@@ -260,10 +261,86 @@ func drawBox(img *image.RGBA, rect image.Rectangle, arms [4]int, fg color.Color)
 	horizontal(right, cx-reach(max(up, down))+1, rect.Max.X)
 }
 
-// colorSnapshotToPNG writes the screen with colors and real glyphs.
-func colorSnapshotToPNG(cells [][]uv.Cell, path string) error {
+// Where a caption goes on a color snapshot.
+const (
+	captionBottom = "bottom"
+	captionTop    = "top"
+)
+
+// A caption box covers captionRows terminal rows and spans the width of its
+// text plus padding, centered horizontally. At the bottom it hides the shell
+// line and the middle of the function-key bar, which a caption explains
+// better than they do.
+const (
+	captionFontSize = 22
+	captionRows     = 2
+	captionPadX     = 22
+	captionBorder   = 2
+)
+
+var (
+	captionBg     = color.RGBA{R: 0x0c, G: 0x0c, B: 0x1c, A: 0xff}
+	captionFg     = color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+	captionAccent = color.RGBA{R: 0xff, G: 0xc8, B: 0x00, A: 0xff}
+)
+
+var loadCaptionFace = sync.OnceValues(func() (font.Face, error) {
+	f, err := opentype.Parse(gobold.TTF)
+	if err != nil {
+		return nil, fmt.Errorf("parse caption font: %w", err)
+	}
+	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: captionFontSize, DPI: 72, Hinting: font.HintingFull})
+	if err != nil {
+		return nil, fmt.Errorf("create caption font face: %w", err)
+	}
+	return face, nil
+})
+
+// drawCaption draws text in a solid box with an accent frame over the top or
+// bottom rows of img. Text wider than the image is cut at the box edge.
+func drawCaption(img *image.RGBA, text, position string) error {
+	if text == "" {
+		return nil
+	}
+	face, err := loadCaptionFace()
+	if err != nil {
+		return err
+	}
+	bounds := img.Bounds()
+	height := min(captionRows*colorCellHeight, bounds.Dy())
+	textWidth := font.MeasureString(face, text).Ceil()
+	width := min(textWidth+2*captionPadX, bounds.Dx())
+	x0 := bounds.Min.X + (bounds.Dx()-width)/2
+	y0 := bounds.Max.Y - height
+	if position == captionTop {
+		y0 = bounds.Min.Y
+	}
+	box := image.Rect(x0, y0, x0+width, y0+height)
+	draw.Draw(img, box, image.NewUniform(captionAccent), image.Point{}, draw.Src)
+	inner := box.Inset(captionBorder)
+	draw.Draw(img, inner, image.NewUniform(captionBg), image.Point{}, draw.Src)
+
+	metrics := face.Metrics()
+	glyphHeight := (metrics.Ascent + metrics.Descent).Ceil()
+	baseline := y0 + (height-glyphHeight)/2 + metrics.Ascent.Ceil()
+	d := &font.Drawer{
+		Dst:  img.SubImage(inner).(*image.RGBA),
+		Src:  image.NewUniform(captionFg),
+		Face: face,
+		Dot:  fixed.P(x0+(width-textWidth)/2, baseline),
+	}
+	d.DrawString(text)
+	return nil
+}
+
+// colorSnapshotToPNG writes the screen with colors and real glyphs, and the
+// caption, if any, over the rows that position names.
+func colorSnapshotToPNG(cells [][]uv.Cell, caption, position, path string) error {
 	img, err := renderCells(cells)
 	if err != nil {
+		return err
+	}
+	if err := drawCaption(img, caption, position); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

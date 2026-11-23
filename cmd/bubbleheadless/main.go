@@ -98,6 +98,11 @@ type session struct {
 	cmd    *exec.Cmd
 	exited bool
 	exitCh chan struct{}
+
+	// caption is drawn over color snapshots at captionAt (top or bottom)
+	// until it is cleared.
+	caption   string
+	captionAt string
 }
 
 func newSession(cols, rows int) (*session, error) {
@@ -111,8 +116,9 @@ func newSession(cols, rows int) (*session, error) {
 	}
 
 	s := &session{
-		emu:    emu,
-		exitCh: make(chan struct{}),
+		emu:       emu,
+		exitCh:    make(chan struct{}),
+		captionAt: captionBottom,
 	}
 	emu.SetOnExit(func(string) {
 		s.mu.Lock()
@@ -228,7 +234,7 @@ func (s *session) terminate() error {
 func printWelcome(command []string, cols, rows int) {
 	fmt.Printf("bubbleheadless ready (cols=%d rows=%d)\n", cols, rows)
 	fmt.Printf("running command: %s\n", strings.Join(command, " "))
-	fmt.Println("commands: help, key <token>, text <value>, enter, screen [ansi|plain], snapshot <file> [color], mouse <button> <x> <y> <press|release|motion>, resize <cols> <rows>, wait, exit")
+	fmt.Println("commands: help, key <token>, text <value>, enter, screen [ansi|plain], snapshot <file> [color], caption [text], caption-at <top|bottom>, mouse <button> <x> <y> <press|release|motion>, resize <cols> <rows>, wait, exit")
 }
 
 func parseKeyToken(token string) (string, error) {
@@ -389,14 +395,7 @@ func (s *session) handleLine(line string, help func()) bool {
 	case "key":
 		s.cmdKey(parts)
 	case "text":
-		if len(parts) < 2 {
-			fmt.Println("usage: text <string>")
-			return false
-		}
-		payload := strings.TrimPrefix(line, parts[0]+" ")
-		if err := s.sendKey(payload); err != nil {
-			fmt.Printf("error: %v\n", err)
-		}
+		s.cmdText(line, parts)
 	case "enter":
 		if err := s.sendKey("\r"); err != nil {
 			fmt.Printf("error: %v\n", err)
@@ -405,6 +404,10 @@ func (s *session) handleLine(line string, help func()) bool {
 		s.cmdScreen(parts)
 	case "snapshot":
 		s.cmdSnapshot(parts)
+	case "caption":
+		s.caption = strings.TrimSpace(strings.TrimPrefix(line, parts[0]))
+	case "caption-at":
+		s.cmdCaptionAt(parts)
 	case "mouse":
 		s.cmdMouse(parts)
 	case "resize":
@@ -426,6 +429,25 @@ func (s *session) handleLine(line string, help func()) bool {
 		fmt.Printf("unknown command %q (type 'help' for help)\n", cmd)
 	}
 	return false
+}
+
+func (s *session) cmdText(line string, parts []string) {
+	if len(parts) < 2 {
+		fmt.Println("usage: text <string>")
+		return
+	}
+	payload := strings.TrimPrefix(line, parts[0]+" ")
+	if err := s.sendKey(payload); err != nil {
+		fmt.Printf("error: %v\n", err)
+	}
+}
+
+func (s *session) cmdCaptionAt(parts []string) {
+	if len(parts) != 2 || (parts[1] != captionTop && parts[1] != captionBottom) {
+		fmt.Println("usage: caption-at <top|bottom>")
+		return
+	}
+	s.captionAt = parts[1]
 }
 
 func (s *session) cmdKey(parts []string) {
@@ -472,7 +494,7 @@ func (s *session) cmdSnapshot(parts []string) {
 	}
 	var err error
 	if len(parts) == 3 {
-		err = colorSnapshotToPNG(s.emu.GetCells(), path)
+		err = colorSnapshotToPNG(s.emu.GetCells(), s.caption, s.captionAt, path)
 	} else {
 		err = snapshotToPNG(s.emu.GetScreen(), path)
 	}

@@ -4,7 +4,7 @@
 
 > **Origin:** kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) (upstream). This repository is developed independently and has diverged a lot from it: key bindings, features and internals differ. Report issues for this version at [stokaro/kc](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE) for attribution.
 
-![kc demo: two panels, a live pod list while scaling a Deployment, YAML and logs, copying a file out of a container, draining a node, the terminal](docs/demo.gif)
+![kc demo with a caption per scene: two panels and quick search, the cluster overview and diagnosis of broken objects, the menu bar, draining a node, scaling a Deployment and its timeline, YAML, comparing two objects, filtered JSON logs, copying a file out of a container, the hotlist, the terminal](docs/demo.gif)
 
 The demo was recorded before the menu bar stayed on the top row (see [Menu Bar](#menu-bar)).
 
