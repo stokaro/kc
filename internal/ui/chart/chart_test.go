@@ -207,3 +207,25 @@ func TestCellSpan(t *testing.T) {
 		t.Error("Cell past the plot reports a value")
 	}
 }
+
+// TestPlotCellsWidensTheLabels: a fixed plot width that fits pads the
+// labels; one that does not fit is ignored.
+func TestPlotCellsWidensTheLabels(t *testing.T) {
+	t.Parallel()
+	c := chart.Chart{Start: t0, End: t0.Add(10 * time.Minute), Mode: chart.Blocks, Width: 20, Height: 4, Format: func(float64) string { return "1" },
+		Points: every(time.Minute, 10, func(int) float64 { return 1 })}
+	free := c.Cells()
+	c.PlotCells = free - 3
+	if got := c.Cells(); got != free-3 {
+		t.Errorf("cells = %d, want %d", got, free-3)
+	}
+	for _, l := range plain(c.Render()) {
+		if n := len([]rune(l)); n != 20 {
+			t.Errorf("line %q is %d cells, want 20", l, n)
+		}
+	}
+	c.PlotCells = free + 5
+	if got := c.Cells(); got != free {
+		t.Errorf("cells = %d, want the free width %d", got, free)
+	}
+}

@@ -91,16 +91,29 @@ func (m *Model) View() string {
 	rects := layout(v, w, h)
 	charts := make(map[widget]chart.Chart)
 	m.rects = make(map[widget]rect, len(rects))
+	cells := 0
 	for wd, r := range rects {
+		m.rects[wd] = r
 		if wd == widgetTop {
-			m.rects[wd] = r
 			continue
 		}
 		c := m.chartOf(v, wd, r.w, r.h-1)
 		charts[wd] = c
+		if n := c.Cells(); cells == 0 || n < cells {
+			cells = n
+		}
+	}
+	// One cell grid for both charts, so the cursor is the same time in
+	// each: their value labels differ in width.
+	if cells > 0 {
+		m.cells = cells
+	}
+	for wd, c := range charts {
+		c.PlotCells = m.cells
+		charts[wd] = c
+		r := m.rects[wd]
 		r.plotX = r.x + r.w - c.Cells()
 		m.rects[wd] = r
-		m.cells = c.Cells()
 	}
 	if v.cursor >= m.cells {
 		v.cursor = m.cells - 1
@@ -242,6 +255,7 @@ func (m *Model) statusLine(v *view, charts map[widget]chart.Chart, w int) string
 			c, ok := charts[wd]
 			if !ok {
 				c = m.chartOf(v, wd, max(w, 40), minChartHeight)
+				c.PlotCells = m.cells
 			}
 			cv := c.Cell(v.cursor)
 			if span == "" && !cv.From.IsZero() {

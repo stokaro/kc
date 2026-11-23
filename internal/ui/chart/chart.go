@@ -58,6 +58,10 @@ type Chart struct {
 	Cursor int
 	// Loc is the time zone of the axis labels; nil is UTC.
 	Loc *time.Location
+	// PlotCells fixes the plot width when it fits, widening the labels:
+	// charts that share a cursor need the same cells. Zero fits the plot
+	// to the labels.
+	PlotCells int
 }
 
 const (
@@ -115,6 +119,10 @@ func (c Chart) layout() layout {
 		l.label = max(l.label, len(c.labelText(l, row)))
 	}
 	l.plot = PlotWidth(c.Width, l.label)
+	if c.PlotCells > 0 && c.PlotCells < l.plot {
+		l.plot = c.PlotCells
+		l.label = c.Width - 1 - l.plot
+	}
 	l.cols = c.pool(Samples(l.plot, c.Mode))
 	return l
 }

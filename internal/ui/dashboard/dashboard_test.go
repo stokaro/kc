@@ -544,3 +544,21 @@ func TestBlocksToggle(t *testing.T) {
 		t.Error("block mode still draws braille")
 	}
 }
+
+// TestChartsShareTheCellGrid: the CPU and memory charts have labels of
+// different widths, yet their plots start at the same column, so one
+// cursor cell is one time in both.
+func TestChartsShareTheCellGrid(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: measured()}
+	m := open(t, f, true, web, 80, 24)
+	var axes []int
+	for _, l := range screen(t, m, 80, 24) {
+		if i := strings.IndexRune(l, '└'); i >= 0 {
+			axes = append(axes, len([]rune(l[:i])))
+		}
+	}
+	if len(axes) != 2 || axes[0] != axes[1] {
+		t.Fatalf("time axes start at columns %v, want two at the same column", axes)
+	}
+}
