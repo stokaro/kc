@@ -56,6 +56,11 @@ func findingLines(p models.FindingPreview, width int) []string {
 			add(fmt.Sprintf("   and %d more", more))
 		}
 	}
+	if p.Partial != "" && p.Unavailable == "" {
+		add("")
+		add(" Partial, not counted")
+		wrap("   ", p.Partial)
+	}
 	add("")
 	add(" In the list: Enter lists the objects, F3 shows the calculation")
 	if p.Inputs > 0 {

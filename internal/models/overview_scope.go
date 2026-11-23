@@ -1,8 +1,9 @@
 package models
 
-// The overview reads one cluster-wide cache, but most rules filter it to
-// the folder's namespace scope. These findings do not: they cover the whole
-// cluster in every scope (ADR 0171). The value says what they cover, for F3.
+// Most overview rules filter what they read to the folder's namespace
+// scope. These findings do not: they cover the whole cluster in every scope
+// (ADR 0171), and are n/a when the user may not read that (ADR 0182). The
+// value says what they cover, for F3.
 var overviewClusterScopes = map[string]string{
 	"capacity/cpu":           "cluster: every node and every pod on it, in all namespaces",
 	"capacity/memory":        "cluster: every node and every pod on it, in all namespaces",

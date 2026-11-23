@@ -27,9 +27,16 @@ type fakeOverviewConn struct {
 	watches    int
 	keepAlives int
 	missing    map[schema.GroupVersionResource]string
+	onlyIn     map[schema.GroupVersionResource]string
 }
 
-func (c *fakeOverviewConn) Reader() crclient.Reader { return c.reader }
+func (c *fakeOverviewConn) Reader(schema.GroupVersionResource) crclient.Reader { return c.reader }
+
+func (c *fakeOverviewConn) OnlyNamespace(gvr schema.GroupVersionResource) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.onlyIn[gvr]
+}
 
 func (c *fakeOverviewConn) Watch(_ context.Context, onEvent func()) func() {
 	c.mu.Lock()

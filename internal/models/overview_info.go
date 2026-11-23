@@ -58,7 +58,7 @@ type overviewPodUsage struct {
 // summarizeNodes returns the load of every node, or nil when nodes or pods
 // cannot be read.
 func summarizeNodes(rc *ruleContext) []overviewNodeSummary {
-	if rc.in.missingReason(ovNodesGVR, ovPodsGVR) != "" {
+	if rc.in.clusterWideReason(ovNodesGVR, ovPodsGVR) != "" {
 		return nil
 	}
 	loads := nodeLoads(rc)
@@ -167,9 +167,14 @@ type InfoSummary struct {
 	Node string
 	// Workload is the workload the summary is about, if any.
 	Workload *InfoWorkload
-	// UsageAt is when CPU and memory usage were measured; zero when not.
-	UsageAt time.Time
-	Bars    []InfoBar
+	// UsageAt is when metrics-server measured the CPU and memory usage
+	// (the metrics' own timestamp), UsageWindow the window it measured
+	// over, UsageReadAt when kc read it. UsageAt is zero when the metrics
+	// carry no timestamp, UsageReadAt when no usage was read.
+	UsageAt     time.Time
+	UsageWindow time.Duration
+	UsageReadAt time.Time
+	Bars        []InfoBar
 	// Top lists the pods with the most memory usage, at most TopN.
 	Top []InfoConsumer
 	// TopNote says why Top is empty.
@@ -236,7 +241,7 @@ func infoSummary(report *overviewReport, err error, cfgIn appconfig.OverviewConf
 		}
 		return out
 	}
-	out.UsageAt = report.usageAt
+	out.UsageAt, out.UsageWindow, out.UsageReadAt = report.usageAt, report.usageWindow, report.usageReadAt
 	out.BarsTitle, out.TopTitle = infoTitles(report.info.namespace, node)
 	var sum overviewNodeSummary
 	var cpus, mems []capacityAmounts
@@ -341,7 +346,7 @@ func capacityBar(cfg appconfig.OverviewConfig, label string, a capacityAmounts, 
 	if a.hasPodUse {
 		bar.Percent, bar.Usage, bar.Flag, bar.Base = j.podPct, true, j.pod.flag, "allocatable"
 		bar.Health = j.pod.sev.RowHealth()
-		bar.Detail = fmt.Sprintf("pods %s/%s %s allocatable, %s%s", format(a.podUse), format(a.alloc), unit, percentText(j.podPct), j.pod.suffix())
+		bar.Detail = fmt.Sprintf("pods %s/%s %s allocatable, %s%s%s", format(a.podUse), format(a.alloc), unit, percentText(j.podPct), j.pod.suffix(), a.podCoverage())
 		bar.DetailHealth = bar.Health
 		bar.More = []string{nodeLine, fmt.Sprintf("req %s%s, %s", percentText(j.reqPct), j.req.suffix(), limLine)}
 		bar.MoreHealth = []RowHealth{nodeHealth, max(j.req.sev, j.lim.sev).RowHealth()}

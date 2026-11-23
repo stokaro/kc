@@ -83,6 +83,10 @@ type overviewFinding struct {
 	severity overviewSeverity
 	// unavailable says why the value cannot be computed; the row is dim.
 	unavailable string
+	// partial says which of a row's sources cannot be read while the value
+	// is computed from the others (ADR 0182); partialGVRs names them.
+	partial     string
+	partialGVRs []schema.GroupVersionResource
 	explain     string     // how the value is computed (F3)
 	kubectl     [][]string // kubectl arguments that show the inputs (F3)
 	// supplies says what each kubectl command gives the calculation; it is
@@ -99,9 +103,12 @@ type overviewFinding struct {
 
 // overviewReport is the result of one recompute.
 type overviewReport struct {
-	at       time.Time
-	usageAt  time.Time // when the node usage was measured; zero when unknown
-	findings []overviewFinding
+	at      time.Time
+	usageAt time.Time // when the usage was measured; zero when unknown
+	// usageWindow and usageReadAt go with usageAt; see overviewMeasured.
+	usageWindow time.Duration
+	usageReadAt time.Time
+	findings    []overviewFinding
 	// nodes, pods and workloads feed the Info panel mode.
 	nodes     []overviewNodeSummary
 	pods      []overviewPodUsage
@@ -140,7 +147,7 @@ func computeOverviewWith(in *overviewInput, cfg appconfig.OverviewConfig, now ti
 		m = &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", clusterPodsReason: "not measured", statsReason: "not measured"}
 	}
 	rc := ruleContext{in: in, cfg: cfg, now: now, m: m, life: life}
-	report := &overviewReport{at: now, usageAt: m.usageAt}
+	report := &overviewReport{at: now, usageAt: m.usageAt, usageWindow: m.usageWindow, usageReadAt: m.usageReadAt}
 	for _, rule := range overviewRules {
 		report.findings = append(report.findings, rule(&rc))
 	}
@@ -256,6 +263,36 @@ func countFinding(rc *ruleContext, f overviewFinding, needs []schema.GroupVersio
 	return f
 }
 
+// partialCountFinding is countFinding for a row whose kinds each add
+// targets of their own, such as Deployments, StatefulSets and DaemonSets:
+// it counts the kinds that can be read and says which cannot. needs are
+// required as in countFinding; the row is n/a only when no kind of anyOf
+// can be read.
+func partialCountFinding(rc *ruleContext, f overviewFinding, needs, anyOf []schema.GroupVersionResource, targets func() []overviewTarget) overviewFinding {
+	var reasons []string
+	var missing, readable []schema.GroupVersionResource
+	for _, gvr := range anyOf {
+		if reason := rc.in.missingReason(gvr); reason != "" {
+			reasons = append(reasons, reason)
+			missing = append(missing, gvr)
+		} else {
+			readable = append(readable, gvr)
+		}
+	}
+	if len(missing) == len(anyOf) {
+		return countFinding(rc, f, append(slices.Clone(needs), anyOf...), targets)
+	}
+	f = countFinding(rc, f, append(slices.Clone(needs), readable...), targets)
+	if len(missing) > 0 && f.unavailable == "" {
+		// No object of the readable kinds is no "nothing to check": the
+		// kinds that cannot be read may hold some (ADR 0172).
+		stillApplicable(&f)
+		f.partial, f.partialGVRs = strings.Join(reasons, "; "), missing
+		f.value += " (partial)"
+	}
+	return f
+}
+
 func sortTargets(ts []overviewTarget) []overviewTarget {
 	sort.SliceStable(ts, func(i, j int) bool {
 		if ts[i].severity != ts[j].severity {
@@ -341,6 +378,8 @@ func nodeLoads(rc *ruleContext) []*nodeLoad {
 	}
 	for _, l := range loads {
 		name := l.node.Name
+		l.cpu.podsMeasured, l.cpu.podsEligible = measured[name], int(l.pods)
+		l.mem.podsMeasured, l.mem.podsEligible = measured[name], int(l.pods)
 		switch {
 		case podsReason != "":
 			l.cpu.podReason, l.mem.podReason = podsReason, podsReason
@@ -452,7 +491,7 @@ nodes, the worst first, each with its own figures and state.`, resource, rc.cfg.
 			"the capacity and allocatable of each node",
 		},
 	}
-	if reason := rc.in.missingReason(ovNodesGVR, ovPodsGVR); reason != "" {
+	if reason := rc.in.clusterWideReason(ovNodesGVR, ovPodsGVR); reason != "" {
 		f.unavailable, f.value, f.state = reason, "n/a", severityUnknown.String()
 		return f
 	}
@@ -533,7 +572,7 @@ reaches podsWarnPercent (%d%%). Enter lists the nodes, the fullest first.`, rc.c
 			"the allocatable pods of each node",
 		},
 	}
-	if reason := rc.in.missingReason(ovNodesGVR, ovPodsGVR); reason != "" {
+	if reason := rc.in.clusterWideReason(ovNodesGVR, ovPodsGVR); reason != "" {
 		f.unavailable, f.value, f.state = reason, "n/a", severityUnknown.String()
 		return f
 	}
@@ -865,8 +904,8 @@ desiredNumberScheduled. None available fails the row.`,
 			kubectlGet("deployments,statefulsets,daemonsets", rc.nsArgs()...),
 		},
 	}
-	needs := []schema.GroupVersionResource{ovDeploymentsGVR, ovStatefulSetsGVR, ovDaemonSetsGVR}
-	return countFinding(rc, f, needs, func() []overviewTarget {
+	kinds := []schema.GroupVersionResource{ovDeploymentsGVR, ovStatefulSetsGVR, ovDaemonSetsGVR}
+	return partialCountFinding(rc, f, nil, kinds, func() []overviewTarget {
 		var out []overviewTarget
 		for i := range rc.in.deployments {
 			d := &rc.in.deployments[i]
@@ -919,8 +958,8 @@ False (for example ProgressDeadlineExceeded), which fails the row.`,
 		},
 	}
 	f.kubectl[0] = append(f.kubectl[0], rc.nsArgs()...)
-	needs := []schema.GroupVersionResource{ovDeploymentsGVR, ovStatefulSetsGVR, ovDaemonSetsGVR}
-	return countFinding(rc, f, needs, func() []overviewTarget {
+	kinds := []schema.GroupVersionResource{ovDeploymentsGVR, ovStatefulSetsGVR, ovDaemonSetsGVR}
+	return partialCountFinding(rc, f, nil, kinds, func() []overviewTarget {
 		var out []overviewTarget
 		for i := range rc.in.deployments {
 			d := &rc.in.deployments[i]
@@ -1223,8 +1262,8 @@ takes them down without warning.`,
 			"the PodDisruptionBudgets whose selectors may cover them",
 		},
 	}
-	needs := []schema.GroupVersionResource{ovDeploymentsGVR, ovStatefulSetsGVR, ovPDBsGVR}
-	return countFinding(rc, f, needs, func() []overviewTarget {
+	kinds := []schema.GroupVersionResource{ovDeploymentsGVR, ovStatefulSetsGVR}
+	return partialCountFinding(rc, f, []schema.GroupVersionResource{ovPDBsGVR}, kinds, func() []overviewTarget {
 		var out []overviewTarget
 		for i := range rc.in.deployments {
 			d := &rc.in.deployments[i]

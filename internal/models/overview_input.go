@@ -16,8 +16,9 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// The resources the overview reads. Every one comes from the cache of the
-// overview's cluster; none is listed from the API server directly.
+// The resources the overview reads. Every one comes from an overview cache
+// (cluster-wide, or limited to the namespace when the user may not list it
+// in all namespaces, ADR 0182); none is listed from the API server directly.
 var (
 	ovNodesGVR        = schema.GroupVersionResource{Version: "v1", Resource: "nodes"}
 	ovPodsGVR         = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
@@ -104,8 +105,9 @@ var overviewKinds = []overviewKind{
 }
 
 // overviewInput is what one recompute reads from the cache. Pods are always
-// listed across all namespaces: the capacity of a node depends on every pod
-// on it. Everything else is listed in the overview's namespace scope.
+// listed across all namespaces the cache covers: the capacity of a node
+// depends on every pod on it. Everything else is listed in the overview's
+// namespace scope.
 type overviewInput struct {
 	namespace    string // AllNamespaces or one namespace
 	nodes        []corev1.Node
@@ -127,6 +129,9 @@ type overviewInput struct {
 	// missing holds the resources that could not be read, with the reason.
 	// Rows that need them are shown dim with that reason.
 	missing map[schema.GroupVersionResource]string
+	// onlyIn holds the namespaced resources that are read in one namespace
+	// only, because the user may not list them in all namespaces.
+	onlyIn map[schema.GroupVersionResource]string
 }
 
 // inScope reports whether an object in namespace belongs to the overview's
@@ -145,18 +150,46 @@ func (in *overviewInput) missingReason(gvrs ...schema.GroupVersionResource) stri
 	return ""
 }
 
+// clusterWideReason is missingReason for a rule that needs every object of
+// gvrs in the cluster: a resource read in one namespace only does not do.
+func (in *overviewInput) clusterWideReason(gvrs ...schema.GroupVersionResource) string {
+	if reason := in.missingReason(gvrs...); reason != "" {
+		return reason
+	}
+	for _, gvr := range gvrs {
+		if ns, ok := in.onlyIn[gvr]; ok {
+			return fmt.Sprintf("%s: %s%s; this needs every one in all namespaces", kubectlResource(gvr), overviewOnlyIn, ns)
+		}
+	}
+	return ""
+}
+
 // loadOverviewInput lists every overview kind from r. unavailable returns a
 // reason for a kind whose informer cannot serve it (not synced, not served);
 // those kinds are not listed. The lists share the cache's objects, so the
 // rules must not modify them.
 func loadOverviewInput(ctx context.Context, r crclient.Reader, namespace string, unavailable func(schema.GroupVersionResource) string) *overviewInput {
-	in := &overviewInput{namespace: namespace, missing: make(map[schema.GroupVersionResource]string)}
+	return loadOverviewInputFrom(ctx, func(schema.GroupVersionResource) crclient.Reader { return r }, namespace, unavailable)
+}
+
+// loadOverviewInputFrom is loadOverviewInput with a reader per kind.
+func loadOverviewInputFrom(ctx context.Context, readerFor func(schema.GroupVersionResource) crclient.Reader, namespace string, unavailable func(schema.GroupVersionResource) string) *overviewInput {
+	in := &overviewInput{
+		namespace: namespace,
+		missing:   make(map[schema.GroupVersionResource]string),
+		onlyIn:    make(map[schema.GroupVersionResource]string),
+	}
 	for _, k := range overviewKinds {
 		if unavailable != nil {
 			if reason := unavailable(k.gvr); reason != "" {
 				in.missing[k.gvr] = reason
 				continue
 			}
+		}
+		r := readerFor(k.gvr)
+		if r == nil {
+			in.missing[k.gvr] = "not watched"
+			continue
 		}
 		list := k.newList()
 		opts := []crclient.ListOption{crclient.UnsafeDisableDeepCopy}
