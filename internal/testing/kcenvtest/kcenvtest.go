@@ -9,6 +9,12 @@
 //   - neither: envtest is tried; if it cannot start, tests that need it skip.
 //
 // Setting both is an error.
+//
+// Every control plane started here is tuned for a loaded machine (issue
+// #232): longer start and stop timeouts, an
+// API server that does not wait for open watches when it stops, and at most
+// MaxPerTestControlPlanes per-test control planes running at once in one
+// test binary.
 package kcenvtest
 
 import (
@@ -20,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -35,7 +42,37 @@ const (
 	// pkg/internal/testing/process/bin_path_finder.go.
 	assetsEnv        = "KUBEBUILDER_ASSETS"
 	defaultAssetsDir = "/usr/local/kubebuilder/bin"
+
+	// startTimeoutEnv and stopTimeoutEnv are envtest's own overrides
+	// (pkg/envtest/server.go). When one is set, envtest reads it and Tune
+	// leaves that timeout alone.
+	startTimeoutEnv = "KUBEBUILDER_CONTROLPLANE_START_TIMEOUT"
+	stopTimeoutEnv  = "KUBEBUILDER_CONTROLPLANE_STOP_TIMEOUT"
+
+	// StartTimeout bounds each start attempt of etcd and kube-apiserver.
+	// envtest's default of 20s is too short when a full parallel suite
+	// boots a dozen control planes at once. Start returns as soon as the
+	// process is ready, so the bound costs nothing on a quiet machine.
+	StartTimeout = 90 * time.Second
+	// StopTimeout bounds the wait after SIGTERM before envtest kills a
+	// process and reports a timeout.
+	StopTimeout = 60 * time.Second
+	// WatchDrainGrace is passed to kube-apiserver as
+	// --shutdown-watch-termination-grace-period. Without it the server
+	// waits for open watches until its own 60s shutdown timeout, longer
+	// than envtest's 20s stop timeout, so an informer still running at stop
+	// time made Stop fail with "timeout waiting for process kube-apiserver
+	// to stop". With it, a stop with live watches takes well under a second.
+	WatchDrainGrace = "1s"
+
+	// MaxPerTestControlPlanes caps the control planes Start runs at the
+	// same time in one test binary. A test that called Start more often
+	// than this would wait for itself, so no test may.
+	MaxPerTestControlPlanes = 2
 )
+
+// perTestSlots holds one token per running control plane started by Start.
+var perTestSlots = make(chan struct{}, MaxPerTestControlPlanes)
 
 // Mode says whether envtest must, may or must not start.
 type Mode int
@@ -110,7 +147,25 @@ var unavailable string
 // for os.Exit. In Required mode a startup failure returns 1 without running
 // any test. In Auto mode tests run with *cfg nil and Require skips them.
 func Main(m *testing.M, cfg **rest.Config) int {
-	return runMain(m, &envtest.Environment{}, os.LookupEnv, os.Stderr, cfg)
+	return runMain(m, Tune(&envtest.Environment{}, os.LookupEnv), os.LookupEnv, os.Stderr, cfg)
+}
+
+// Tune applies the settings for loaded machines to env and returns it.
+// envtest's own timeout variables, read through lookup, and fields already
+// set on env take precedence.
+func Tune(env *envtest.Environment, lookup func(string) (string, bool)) *envtest.Environment {
+	if _, ok := lookup(startTimeoutEnv); !ok && env.ControlPlaneStartTimeout == 0 {
+		env.ControlPlaneStartTimeout = StartTimeout
+	}
+	if _, ok := lookup(stopTimeoutEnv); !ok && env.ControlPlaneStopTimeout == 0 {
+		env.ControlPlaneStopTimeout = StopTimeout
+	}
+	const drainFlag = "shutdown-watch-termination-grace-period"
+	args := env.ControlPlane.GetAPIServer().Configure()
+	if args.Get(drainFlag).Get(nil) == nil {
+		args.Set(drainFlag, WatchDrainGrace)
+	}
+	return env
 }
 
 func runMain(m interface{ Run() int }, env controlPlane, lookup func(string) (string, bool), stderr io.Writer, cfg **rest.Config) int {
@@ -161,12 +216,24 @@ func Require(t testing.TB, cfg *rest.Config) {
 
 // Start starts a control plane for one test and stops it in t.Cleanup.
 // In Required mode a startup failure fails t; otherwise it skips t.
+//
+// Start waits while MaxPerTestControlPlanes control planes from other tests
+// of the binary are running. Prefer the package control plane from Main;
+// start one per test only when the test changes cluster-wide state, such as
+// the served API types, that other tests must not see.
 func Start(t testing.TB) *rest.Config {
 	t.Helper()
-	return startForTest(t, &envtest.Environment{}, os.LookupEnv)
+	return StartEnv(t, &envtest.Environment{})
 }
 
-func startForTest(t testing.TB, env controlPlane, lookup func(string) (string, bool)) *rest.Config {
+// StartEnv is Start for a caller that configures env itself, for example
+// with CRDs to install.
+func StartEnv(t testing.TB, env *envtest.Environment) *rest.Config {
+	t.Helper()
+	return startForTest(t, Tune(env, os.LookupEnv), os.LookupEnv, perTestSlots)
+}
+
+func startForTest(t testing.TB, env controlPlane, lookup func(string) (string, bool), slots chan struct{}) *rest.Config {
 	t.Helper()
 	mode, err := ModeFromEnv(lookup)
 	if err != nil {
@@ -177,8 +244,10 @@ func startForTest(t testing.TB, env controlPlane, lookup func(string) (string, b
 		t.Skip(SkipEnv + " is set")
 		return nil
 	}
+	slots <- struct{}{}
 	cfg, err := start(env, lookup)
 	if err != nil {
+		<-slots
 		if mode == Required {
 			t.Fatalf("%s is set and envtest cannot start: %v", RequireEnv, err)
 			return nil
@@ -187,6 +256,7 @@ func startForTest(t testing.TB, env controlPlane, lookup func(string) (string, b
 		return nil
 	}
 	t.Cleanup(func() {
+		defer func() { <-slots }()
 		if err := env.Stop(); err != nil {
 			t.Errorf("stop envtest: %v", err)
 		}
@@ -201,15 +271,34 @@ func start(env controlPlane, lookup func(string) (string, bool)) (*rest.Config, 
 	if missing {
 		return nil, fmt.Errorf("required binaries are missing (%s)", report)
 	}
-	cfg, err := env.Start()
-	if err != nil {
-		return nil, fmt.Errorf("start control plane (%s): %w", report, err)
+	for attempt := 1; ; attempt++ {
+		cfg, err := env.Start()
+		if err == nil {
+			if cfg == nil {
+				_ = env.Stop()
+				return nil, errors.New("start control plane: no config returned")
+			}
+			return cfg, nil
+		}
+		// envtest.Environment.Start leaves etcd and kube-apiserver running
+		// when a step after starting them fails.
+		_ = env.Stop()
+		if attempt == startAttempts || !strings.Contains(err.Error(), defaultNamespaceErr) {
+			return nil, fmt.Errorf("start control plane (%s): %w", report, err)
+		}
 	}
-	if cfg == nil {
-		return nil, errors.New("start control plane: no config returned")
-	}
-	return cfg, nil
 }
+
+const (
+	// defaultNamespaceErr is how envtest reports that the "default"
+	// namespace did not appear within a fixed 5s after kube-apiserver
+	// became ready (waitForDefaultNamespace in pkg/envtest/server.go,
+	// controller-runtime v0.25.3). The wait is not configurable and fails
+	// on a loaded machine while the server itself is fine, so start
+	// tries again with a fresh control plane.
+	defaultNamespaceErr = "default namespace didn't register within deadline"
+	startAttempts       = 3
+)
 
 // checkAssets resolves etcd and kube-apiserver the way envtest does and
 // describes each one. missing is true when either is absent or not

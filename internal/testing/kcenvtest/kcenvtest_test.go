@@ -7,10 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
 func envMap(kv ...string) func(string) (string, bool) {
@@ -118,6 +121,7 @@ func TestCheckAssets(t *testing.T) {
 type fakePlane struct {
 	cfg      *rest.Config
 	err      error
+	errs     []error // returned by the first starts, before err
 	started  int
 	stopped  int
 	stopErrs error
@@ -125,6 +129,11 @@ type fakePlane struct {
 
 func (f *fakePlane) Start() (*rest.Config, error) {
 	f.started++
+	if len(f.errs) > 0 {
+		err := f.errs[0]
+		f.errs = f.errs[1:]
+		return nil, err
+	}
 	return f.cfg, f.err
 }
 
@@ -144,6 +153,7 @@ func TestRunMain(t *testing.T) {
 	// Not parallel: runMain writes the package-level unavailable reason.
 	assets := assetsDir(t)
 	ok := &rest.Config{Host: "https://127.0.0.1:1"}
+	nsLate := fmt.Errorf("%s: context deadline exceeded", defaultNamespaceErr)
 	tests := []struct {
 		name        string
 		env         []string
@@ -157,10 +167,12 @@ func TestRunMain(t *testing.T) {
 		wantNoInErr string
 	}{
 		{name: "auto started", env: []string{assetsEnv, assets}, plane: &fakePlane{cfg: ok}, wantRuns: 1, wantStarts: 1, wantStops: 1, wantCfg: true},
-		{name: "auto failure runs tests", env: []string{assetsEnv, assets}, plane: &fakePlane{err: errors.New("etcd exited")}, wantRuns: 1, wantStarts: 1, wantStderr: "etcd exited"},
+		{name: "auto failure runs tests", env: []string{assetsEnv, assets}, plane: &fakePlane{err: errors.New("etcd exited")}, wantRuns: 1, wantStarts: 1, wantStops: 1, wantStderr: "etcd exited"},
 		{name: "required started", env: []string{RequireEnv, "1", assetsEnv, assets}, plane: &fakePlane{cfg: ok}, wantRuns: 1, wantStarts: 1, wantStops: 1, wantCfg: true},
-		{name: "required failure", env: []string{RequireEnv, "1", assetsEnv, assets}, plane: &fakePlane{err: errors.New("etcd exited")}, wantCode: 1, wantStarts: 1, wantStderr: "etcd exited"},
-		{name: "required nil config", env: []string{RequireEnv, "1", assetsEnv, assets}, plane: &fakePlane{}, wantCode: 1, wantStarts: 1, wantStderr: "no config"},
+		{name: "required failure", env: []string{RequireEnv, "1", assetsEnv, assets}, plane: &fakePlane{err: errors.New("etcd exited")}, wantCode: 1, wantStarts: 1, wantStops: 1, wantStderr: "etcd exited"},
+		{name: "default namespace late retries", env: []string{RequireEnv, "1", assetsEnv, assets}, plane: &fakePlane{cfg: ok, errs: []error{nsLate, nsLate}}, wantRuns: 1, wantStarts: 3, wantStops: 3, wantCfg: true},
+		{name: "default namespace late gives up", env: []string{RequireEnv, "1", assetsEnv, assets}, plane: &fakePlane{err: nsLate}, wantCode: 1, wantStarts: startAttempts, wantStops: startAttempts, wantStderr: defaultNamespaceErr},
+		{name: "required nil config", env: []string{RequireEnv, "1", assetsEnv, assets}, plane: &fakePlane{}, wantCode: 1, wantStarts: 1, wantStops: 1, wantStderr: "no config"},
 		{name: "required missing binaries", env: []string{RequireEnv, "1", assetsEnv, "/nonexistent/kc"}, plane: &fakePlane{cfg: ok}, wantCode: 1, wantStderr: "/nonexistent/kc/etcd missing"},
 		{name: "skip", env: []string{SkipEnv, "1"}, plane: &fakePlane{cfg: ok}, wantRuns: 1},
 		{name: "conflict", env: []string{SkipEnv, "1", RequireEnv, "1"}, plane: &fakePlane{cfg: ok}, wantCode: 2, wantStderr: "both set"},
@@ -234,7 +246,7 @@ func TestStartForTest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := &recorder{TB: t}
-			cfg := startForTest(r, tt.plane, envMap(tt.env...))
+			cfg := startForTest(r, tt.plane, envMap(tt.env...), make(chan struct{}, 1))
 			if (cfg != nil) != tt.wantCfg {
 				t.Errorf("cfg set = %v, want %v", cfg != nil, tt.wantCfg)
 			}
@@ -252,6 +264,85 @@ func TestStartForTest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// With two slots, a third start waits until a running control plane is
+// stopped; a start that fails gives its slot back at once.
+func TestStartForTestCapsRunningControlPlanes(t *testing.T) {
+	t.Parallel()
+	assets := assetsDir(t)
+	lookup := envMap(assetsEnv, assets)
+	ok := &rest.Config{Host: "https://127.0.0.1:1"}
+	slots := make(chan struct{}, 2)
+
+	failed := &recorder{TB: t}
+	if cfg := startForTest(failed, &fakePlane{err: errors.New("etcd exited")}, lookup, slots); cfg != nil || failed.skip == "" {
+		t.Fatalf("failing start: cfg %v, skip %q; want a skip", cfg, failed.skip)
+	}
+	first, second := &recorder{TB: t}, &recorder{TB: t}
+	for _, r := range []*recorder{first, second} {
+		if cfg := startForTest(r, &fakePlane{cfg: ok}, lookup, slots); cfg == nil {
+			t.Fatalf("start: fatal %q, skip %q", r.fatal, r.skip)
+		}
+	}
+
+	third := &recorder{TB: t}
+	done := make(chan *rest.Config, 1)
+	go func() { done <- startForTest(third, &fakePlane{cfg: ok}, lookup, slots) }()
+	select {
+	case <-done:
+		t.Fatal("a third control plane started while two were running")
+	case <-time.After(200 * time.Millisecond):
+	}
+	for _, f := range first.cleanups {
+		f()
+	}
+	select {
+	case cfg := <-done:
+		if cfg == nil {
+			t.Fatalf("third start: fatal %q, skip %q", third.fatal, third.skip)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the third start still waits after the first control plane stopped")
+	}
+	for _, r := range []*recorder{second, third} {
+		for _, f := range r.cleanups {
+			f()
+		}
+	}
+	if n := len(slots); n != 0 {
+		t.Fatalf("%d slots still held after every cleanup", n)
+	}
+}
+
+func TestTune(t *testing.T) {
+	t.Parallel()
+	const flag = "shutdown-watch-termination-grace-period"
+	t.Run("defaults", func(t *testing.T) {
+		t.Parallel()
+		env := Tune(&envtest.Environment{}, envMap())
+		if env.ControlPlaneStartTimeout != StartTimeout || env.ControlPlaneStopTimeout != StopTimeout {
+			t.Errorf("timeouts = %v/%v, want %v/%v", env.ControlPlaneStartTimeout, env.ControlPlaneStopTimeout, StartTimeout, StopTimeout)
+		}
+		if got := env.ControlPlane.GetAPIServer().Configure().Get(flag).Get(nil); !slices.Equal(got, []string{WatchDrainGrace}) {
+			t.Errorf("--%s = %v, want %s", flag, got, WatchDrainGrace)
+		}
+	})
+	t.Run("caller and environment win", func(t *testing.T) {
+		t.Parallel()
+		env := &envtest.Environment{ControlPlaneStopTimeout: time.Second}
+		env.ControlPlane.GetAPIServer().Configure().Set(flag, "5s")
+		Tune(env, envMap(startTimeoutEnv, "3s"))
+		if env.ControlPlaneStartTimeout != 0 {
+			t.Errorf("start timeout = %v, want 0 so envtest reads %s", env.ControlPlaneStartTimeout, startTimeoutEnv)
+		}
+		if env.ControlPlaneStopTimeout != time.Second {
+			t.Errorf("stop timeout = %v, want the caller's 1s", env.ControlPlaneStopTimeout)
+		}
+		if got := env.ControlPlane.GetAPIServer().Configure().Get(flag).Get(nil); !slices.Equal(got, []string{"5s"}) {
+			t.Errorf("--%s = %v, want the caller's 5s", flag, got)
+		}
+	})
 }
 
 const childEnv = "KCENVTEST_CHILD"
