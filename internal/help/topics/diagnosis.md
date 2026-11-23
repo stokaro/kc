@@ -1,8 +1,9 @@
 # Diagnosis
 
 `/diagnosis` is a row inside a Service, a Pod, a Deployment, ReplicaSet,
-StatefulSet, DaemonSet or Job, and inside a namespaced custom resource
-that has an entry in the `health:` configuration. It collects what the
+StatefulSet, DaemonSet or Job, inside a Flux Kustomization or
+HelmRelease and an Argo CD Application, and inside a namespaced custom
+resource that has an entry in the `health:` configuration. It collects what the
 object, its pods, their containers, claims and events say about a
 problem, with the evidence for each finding. Use it when a row is red
 and you want to know why without reading five describes.
@@ -99,6 +100,37 @@ A pod with `spec.schedulingGates` is reported as waiting for its gates
 - `F3` on a cited object shows its YAML.
 - `F3` on a `log` row opens the logs viewer for that container.
 - `M-j`, `M-b` and `M-d` work on cited objects.
+
+## Flux and Argo CD
+
+In a Flux Kustomization or HelmRelease the summary shows the path, prune
+setting, inventory size, the applied and attempted revisions, the Ready
+condition with reason and time, the source with the revision it offers,
+and the object that manages this one. Findings say when:
+
+- reconciliation is suspended,
+- the status is for an older generation of the spec (`stale-status`),
+- Ready is not True, or Stalled is True, with the controller's message,
+- a newer revision was attempted and not applied,
+- the source is missing, not ready, not readable, or offers a revision
+  other than the applied one,
+- a `spec.dependsOn` target is missing or not ready.
+
+The source and the dependencies that are ready are listed at the end;
+Enter opens them.
+
+In an Argo CD Application the summary shows the sources, sync status
+and revision with the time Argo CD compared them, health, and the count
+of resources out of sync. Findings report OutOfSync, unhealthy, a failed
+last sync and the Application's conditions. OutOfSync is Argo CD's own
+comparison, shown with its time.
+
+kc does not fetch sources or render manifests, so it never says "in
+sync" by itself. A Ready condition means the last apply succeeded, not
+that the live objects match Git. To compare one object with its desired
+state, render it yourself (`kustomize build`, `helm template`), open
+the file in a local-files panel (`M-l`) and press `C-x C-d` with the
+live object in the other panel ([Compare objects](compare-objects.md)).
 
 ## Limits
 

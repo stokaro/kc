@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/stokaro/kc/internal/manifestdiff"
@@ -49,10 +50,7 @@ func (a *App) handleCtrlXKey(press tea.KeyPressMsg) tea.Cmd {
 
 // selectedManifestSource returns the object under the cursor of panel.
 func selectedManifestSource(ctx context.Context, panel *Panel) (models.ManifestSource, bool) {
-	if panel == nil {
-		return nil, false
-	}
-	item, ok := panel.SelectedNavItem(ctx)
+	item, ok := selectedItem(ctx, panel)
 	if !ok {
 		return nil, false
 	}
@@ -60,17 +58,25 @@ func selectedManifestSource(ctx context.Context, panel *Panel) (models.ManifestS
 	return src, ok
 }
 
+func selectedItem(ctx context.Context, panel *Panel) (models.Item, bool) {
+	if panel == nil {
+		return nil, false
+	}
+	return panel.SelectedNavItem(ctx)
+}
+
 // compareSelectedObjects opens a viewer with the diff of the objects under
 // the cursors of the two panels. The manifests are read and compared in a
 // command, so the UI stays responsive while the cache syncs.
 func (a *App) compareSelectedObjects() tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	left, okLeft := selectedManifestSource(ctx, a.leftPanel)
-	right, okRight := selectedManifestSource(ctx, a.rightPanel)
+	leftItem, okLeft := selectedItem(ctx, a.leftPanel)
+	rightItem, okRight := selectedItem(ctx, a.rightPanel)
 	cancel()
-	if !okLeft || !okRight {
+	left, right, ok := compareSides(leftItem, rightItem)
+	if !okLeft || !okRight || !ok {
 		if a.toastLogger != nil {
-			return a.toastLogger.Errorf("Compare: put the cursor on an object in each panel")
+			return a.toastLogger.Errorf("Compare: put the cursor on an object in each panel, or on a local file and an object")
 		}
 		return nil
 	}
@@ -115,13 +121,32 @@ func (a *App) readComparison(view *DiffViewer, seq int, left, right models.Manif
 		if err != nil {
 			return compareResultMsg{view: view, seq: seq, err: err}
 		}
+		// Against a desired-state file, name the live revision too.
+		if _, ok := left.(*fileManifest); ok {
+			r.Revision = liveRevision(r)
+		}
+		if _, ok := right.(*fileManifest); ok {
+			l.Revision = liveRevision(l)
+		}
 		snap := &compareSnapshot{left: l, right: r}
 		res, err := manifestdiff.Compare(snap.left, snap.right, opts)
 		return compareResultMsg{view: view, seq: seq, snap: snap, opts: opts, result: res, err: err}
 	}
 }
 
+func liveRevision(s manifestdiff.Side) string {
+	rv, _, _ := unstructured.NestedString(s.Object, "metadata", "resourceVersion")
+	return "resourceVersion " + rv
+}
+
 func readSide(ctx context.Context, src models.ManifestSource, fallbackCtx string) (manifestdiff.Side, error) {
+	if f, ok := src.(*fileManifest); ok {
+		obj, rev, err := readFileManifest(f.path, f.GVR(), f.Namespace(), f.Name())
+		if err != nil {
+			return manifestdiff.Side{}, err
+		}
+		return manifestdiff.Side{Context: f.ContextName(), GVR: f.GVR(), Namespace: f.Namespace(), Name: f.Name(), Revision: rev.String(), Object: obj.Object}, nil
+	}
 	obj, err := src.Manifest(ctx)
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):

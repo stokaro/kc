@@ -9,7 +9,8 @@ does this Deployment need to start".
 ## How it works
 
 - `M-j` opens `<object>/owners`: the owner references of the object,
-  the controller first, with the cursor on it.
+  the controller first, with the cursor on it, then the GitOps object
+  that applied it (see below).
 - `M-b` opens `<object>/used-by`: the objects that use it, read from
   the watch cache. Pods that use a ConfigMap, Secret, claim or
   ServiceAccount, with the controllers that run them (ReplicaSet,
@@ -35,6 +36,29 @@ A dim row cannot be opened; the reason says why:
   name)` for an owner that was deleted and created again,
 - `unknown kind` when the cluster does not serve the type,
 - `forbidden` when you may not read that type there.
+
+## GitOps managers
+
+Owners also lists the Flux Kustomization, Flux HelmRelease or Argo CD
+Application that the object's metadata names: the labels
+`kustomize.toolkit.fluxcd.io/name` and `/namespace`,
+`helm.toolkit.fluxcd.io/name` and `/namespace`, the annotation
+`argocd.argoproj.io/tracking-id` or the label
+`argocd.argoproj.io/instance`. Labels can be copied, so kc checks the
+claim against the manager's own record and says what it found:
+
+- `listed in its inventory`: the Kustomization's `status.inventory`
+  lists this object,
+- `listed in its status.resources`: the same for an Argo CD Application,
+- `label only: ...`: the record does not list it, there is no record,
+  or the manager keeps none (a HelmRelease).
+
+A dim row says `not found`, `forbidden`, `not served by the cluster`
+(Flux or Argo CD is not installed), `ambiguous` (an Argo CD Application
+name in several namespaces, when the tracking id does not record one),
+or that a tracking id names another object. `app.kubernetes.io/instance`
+alone is not a claim: Helm and many charts set it too. Open the manager
+and its `/diagnosis` for the source and revision.
 
 A `(not listed)` row in used-by means kc may not list a type it needs,
 so the result is incomplete. It is not an empty answer.

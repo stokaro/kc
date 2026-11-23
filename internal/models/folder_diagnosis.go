@@ -24,7 +24,7 @@ import (
 // builtinObjectRows are rows models itself adds inside objects, next to
 // the rows registered with RegisterObjectRows.
 func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
-	diagnosis := gvr == serviceGVR || hasWorkloadDiagnosis(gvr)
+	diagnosis := gvr == serviceGVR || hasWorkloadDiagnosis(gvr) || hasGitOpsDiagnosis(gvr)
 	if !diagnosis && !hasTimeline(gvr) {
 		return nil, false
 	}
@@ -49,8 +49,11 @@ func diagnosisRow(deps Deps, gvr schema.GroupVersionResource, namespace, name st
 		return newDiagnosisFolder(deps, gvr, namespace, name, path)
 	})
 	item.RowItem.details = "Explain the conditions, failing containers, events and claims of this object"
-	if gvr == serviceGVR {
+	switch {
+	case gvr == serviceGVR:
 		item.RowItem.details = "Check the selector, pods, EndpointSlices and target ports of this Service"
+	case hasGitOpsDiagnosis(gvr):
+		item.RowItem.details = "Check the source, revisions, conditions and dependencies of this GitOps object"
 	}
 	return item
 }
@@ -86,6 +89,8 @@ func diagnosisWatches(gvr schema.GroupVersionResource, namespace string, self re
 		return relatedWatch{gvr: g, namespace: namespace}
 	}
 	switch {
+	case hasGitOpsDiagnosis(gvr):
+		return gitopsDiagnosisWatches(gvr, namespace, self), true
 	case gvr == serviceGVR:
 		return []relatedWatch{self, in(podGVR), in(endpointSlicesGVR)}, true
 	case gvr == podGVR:
@@ -121,6 +126,9 @@ const serviceDiagnosisNote = "Configuration only: a consistent Service does not 
 // renders it: summary rows, each finding with the sources it cites, then
 // the backends of a Service.
 func (f *RelatedObjectsFolder) diagnosisRows(ctx context.Context) ([]table.Row, error) {
+	if hasGitOpsDiagnosis(f.gvr) {
+		return f.gitopsDiagnosisRows(ctx)
+	}
 	if f.gvr != serviceGVR {
 		return f.workloadDiagnosisRows(ctx)
 	}

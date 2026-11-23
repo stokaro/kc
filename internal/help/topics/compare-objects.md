@@ -7,6 +7,17 @@ see why two Deployments behave differently, or what differs between the
 same ConfigMap in staging and production (put the panels on two
 contexts).
 
+One side can be a local file instead: put one panel on a local folder
+(`M-l`) with the cursor on a YAML or JSON file, such as the output of
+`kustomize build` or `helm template`, and the other on the live object.
+kc picks the file's document for that object (same API group, a kind of
+that resource, same name, and the same namespace or none) and compares
+it. A file without such a document, or with several, gives an error
+that says so. The header names the file with its SHA-256 and
+modification time, and the live object with its `resourceVersion`.
+API server defaults are not applied to the file, so fields the server
+filled in show as differences.
+
 ## How to read it
 
 The diff starts with a header:
@@ -42,8 +53,8 @@ change in the cluster.
 
 ## Keys
 
-- `C-x C-d` opens the diff. Without an object under each cursor, kc
-  says "put the cursor on an object in each panel".
+- `C-x C-d` opens the diff. Without an object under each cursor (or a
+  local file and an object), kc says so.
 - "Compare objects" in the Command menu (`F9`) does the same.
 - `n`, `Space` or `Enter` go to the next change; `p` or `Backspace` to
   the previous one.
