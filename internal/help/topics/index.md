@@ -36,6 +36,7 @@ dialog or view opens its page; this index lists them all. See
 - [Diagnosis](diagnosis.md)
 - [Deployment rollout](rollout.md)
 - [Object timeline](timeline.md)
+- [Object events](object-events.md)
 - [Owners, used by and requires](related.md)
 - [Container filesystem](container-fs.md)
 - [Local files](local-files.md)

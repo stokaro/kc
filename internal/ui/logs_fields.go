@@ -65,6 +65,9 @@ func (v *LogsViewer) SetOnFields(fn func() tea.Cmd) { v.onFields = fn }
 // viewer.Widget.FocusLine): in the context view the line under the focus,
 // else the shown record on that line.
 func (v *LogsViewer) focusRecord() (logview.Seq, bool) {
+	if seq, ok := v.pointedRecord(); ok {
+		return seq, true
+	}
 	line, ok := v.inner.FocusLine()
 	if !ok {
 		return 0, false

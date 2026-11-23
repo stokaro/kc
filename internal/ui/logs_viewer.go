@@ -131,6 +131,8 @@ type LogsViewer struct {
 	history   []logsViewState
 	// context, when set, is shown in place of the filtered lines.
 	context *logsContext
+	// marks and the pointer (see logs_marks.go).
+	marks logsMarks
 	// correlated is the field=value a Follow action filters by.
 	correlated string
 	// note is a message for the status line until the next key.
@@ -218,6 +220,8 @@ func (v *LogsViewer) SetLogOptions(opts LogOptions) tea.Cmd {
 	// A reopened stream starts with no records; the view mode and the
 	// filter stay.
 	v.log.Reset()
+	// The marks name records of the stream that was replaced.
+	v.marks = logsMarks{}
 	v.inner.SetLines(nil)
 	v.inner.ScrollToEnd()
 	v.autoFollow = true
@@ -253,6 +257,9 @@ func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd, handled := v.handleLogViewKey(key); handled {
 			return v, cmd
 		}
+		if cmd, handled := v.handleMarkKey(key); handled {
+			return v, cmd
+		}
 	}
 	if cmd, handled := v.bar.handle(msg, v.inner, v.width, v.height); handled {
 		return v, cmd
@@ -274,12 +281,15 @@ func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd, handled := v.inner.Update(m); handled {
 			v.autoFollow = v.inner.AtEnd()
 			v.lostPlace = false
+			// Moving the view by hand leaves the line kc pointed at.
+			v.marks.clearPointer()
 			return v, cmd
 		}
 	case tea.MouseWheelMsg:
 		if cmd, handled := v.inner.Update(m); handled {
 			v.autoFollow = v.inner.AtEnd()
 			v.lostPlace = false
+			v.marks.clearPointer()
 			return v, cmd
 		}
 	default:
@@ -336,6 +346,7 @@ func (v *LogsViewer) View() tea.View {
 	if v.height <= 0 || v.width <= 0 {
 		return tea.NewView("")
 	}
+	v.syncPointer()
 	return tea.NewView(renderViewerWithBar(v.inner, &v.bar, v.width, v.height))
 }
 

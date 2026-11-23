@@ -38,6 +38,9 @@ func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
 		if gvr == relDeploymentsGVR && namespace != "" {
 			rows = append(rows, rolloutRow(deps, namespace, name, path))
 		}
+		if hasObjectEvents(gvr, namespace) {
+			rows = append(rows, eventsRow(deps, gvr, namespace, name, path))
+		}
 		if hasTimeline(gvr) {
 			rows = append(rows, timelineRow(deps, gvr, namespace, name, path))
 		}

@@ -99,6 +99,7 @@ var folderHelpPages = map[string]help.ID{
 	"overviewFindingsFolder":    help.Attention, // or quiet checks, by path
 	"RelatedObjectsFolder":      help.Related,   // or diagnosis, by kind
 	"TimelineFolder":            help.Timeline,
+	"ObjectEventsFolder":        help.ObjectEvents,
 	"HelmReleasesFolder":        help.Helm,
 	"HelmReleaseFolder":         help.Helm,
 	"HelmHistoryFolder":         help.Helm,

@@ -70,6 +70,22 @@ ends with `[kc] line truncated: ...`.
   the cursor; `M-m` again shows every source. The other sources keep
   streaming and their lines are kept, so they come back. The status
   line shows `solo: pod/container`. `M-s` is what stops a source.
+- `e` goes to the next warning or error, `E` to the previous one: a
+  shown record whose JSON level field (`level`, `severity` and the
+  other level keys) says warn, error, fatal or panic. Text lines have
+  no level; kc does not guess one from the words in them. Without a
+  highlighted line the search starts at the top of the view (`e`) or
+  its bottom (`E`).
+- `m` marks the line in focus, or unmarks it; up to 100 lines. `u`
+  goes to the next marked line, `U` to the previous one. `c` copies the
+  marked lines in log order, each with its `[pod/container]` source in
+  a merged log, as they arrived (with the kubelet timestamp when the
+  stream has timestamps). A mark stays on its record when the filter,
+  the view or Solo change; a marked line dropped to stay within the
+  limits loses its mark, and kc says how many went. The status line
+  counts the marks.
+- The line a jump or a mark went to is highlighted, and the field and
+  mark keys act on it until you scroll.
 - `M-a` copies the shown lines, `M-A` the original records that pass
   the filter, unchanged. Both copy only the kept lines and say when
   older lines were dropped.

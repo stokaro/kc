@@ -45,6 +45,9 @@ type Frame struct {
 // Widget renders highlighted text with scrolling support.
 type Widget struct {
 	metadata Metadata
+	// pointer is a line shown highlighted, the line a caller points the
+	// user at; -1 for none (see SetPointer).
+	pointer int
 
 	width  int
 	height int
@@ -103,6 +106,7 @@ func New(theme string) *Widget {
 		theme:            theme,
 		searchMatchIndex: make(map[int][]int),
 		activeMatch:      -1,
+		pointer:          -1,
 	}
 }
 
@@ -892,6 +896,8 @@ func (w *Widget) visibleLines() []string {
 			matches := w.lineMatches(lineIdx)
 			if from, to, ok := w.selectionRange(lineIdx); ok {
 				matches = withSelection(matches, from, to)
+			} else if lineIdx == w.pointer {
+				matches = withSelection(matches, 0, 1<<30)
 			}
 			if w.wrapMode {
 				result[i] = renderWrappedLine(segment[i], matches)
@@ -932,6 +938,10 @@ func (w *Widget) lineMatches(lineIdx int) []displayMatch {
 	}
 	return matches
 }
+
+// SetPointer highlights line as the selection does, or no line for a
+// negative one. The caller keeps it in step with the text.
+func (w *Widget) SetPointer(line int) { w.pointer = line }
 
 // FocusLine returns the line the user points at: the active search match,
 // else the last line while the view follows the end, else the top line of
