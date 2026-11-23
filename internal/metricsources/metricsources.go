@@ -222,15 +222,25 @@ func NoBackendCheck(contextName string) Check {
 
 // Text renders checks as aligned lines: state, name, detail.
 func Text(checks []Check) []string {
-	stateW, nameW := 0, 0
-	for _, c := range checks {
-		stateW, nameW = max(stateW, len(c.State.String())), max(nameW, len(c.Name))
-	}
+	stateW, nameW := columnWidths(checks)
 	out := make([]string, 0, len(checks))
 	for _, c := range checks {
 		out = append(out, fmt.Sprintf("%-*s  %-*s  %s", stateW, c.State, nameW, c.Name, c.Detail))
 	}
 	return out
+}
+
+// DetailColumn is the column where Text starts the details of checks.
+func DetailColumn(checks []Check) int {
+	stateW, nameW := columnWidths(checks)
+	return stateW + 2 + nameW + 2
+}
+
+func columnWidths(checks []Check) (stateW, nameW int) {
+	for _, c := range checks {
+		stateW, nameW = max(stateW, len(c.State.String())), max(nameW, len(c.Name))
+	}
+	return stateW, nameW
 }
 
 // Request is one report: the context, the namespace scope ("" for all),
