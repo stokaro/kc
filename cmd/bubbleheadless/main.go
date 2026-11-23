@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -129,6 +130,29 @@ func newSession(cols, rows int) (*session, error) {
 	return s, nil
 }
 
+// terminalVars name the terminal kc runs in. The emulator here is none of
+// those terminals and draws no images, so the child must not see them:
+// with them, kc's charts.graphics: auto would send Kitty graphics and
+// draw placeholders in place of the text charts.
+var terminalVars = []string{
+	"TERM_PROGRAM", "TERM_PROGRAM_VERSION", "LC_TERMINAL", "LC_TERMINAL_VERSION",
+	"KITTY_WINDOW_ID", "TMUX", "TMUX_PANE",
+}
+
+// childEnv is the environment of the command: environ without the
+// variables of the outer terminal, with the emulator's size and TERM.
+func childEnv(environ []string, w, h int) []string {
+	env := make([]string, 0, len(environ)+3)
+	for _, kv := range environ {
+		name, _, _ := strings.Cut(kv, "=")
+		if name == "TERM" || name == "COLUMNS" || name == "LINES" || slices.Contains(terminalVars, name) {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, fmt.Sprintf("COLUMNS=%d", w), fmt.Sprintf("LINES=%d", h), "TERM=xterm-256color")
+}
+
 func (s *session) startCommand(command []string) error {
 	if len(command) == 0 {
 		return errors.New("missing command to run")
@@ -136,7 +160,7 @@ func (s *session) startCommand(command []string) error {
 
 	// #nosec G204 -- the driver runs the command line it was started with.
 	cmd := exec.Command(command[0], command[1:]...)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COLUMNS=%d", s.emuWidth()), fmt.Sprintf("LINES=%d", s.emuHeight()), "TERM=xterm-256color")
+	cmd.Env = childEnv(os.Environ(), s.emuWidth(), s.emuHeight())
 	if wd, err := os.Getwd(); err == nil {
 		cmd.Dir = wd
 	}
