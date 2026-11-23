@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // TestOverviewEventLinksToTheInvolvedObject maps involved objects with the
@@ -20,7 +21,7 @@ func TestOverviewEventLinksToTheInvolvedObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	deps := Deps{Cl: cl, Ctx: ctx}
 	tests := []struct {
 		name        string

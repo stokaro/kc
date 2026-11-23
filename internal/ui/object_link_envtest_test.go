@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 type testLink struct {
@@ -48,7 +49,7 @@ func runLinkCmds(t *testing.T, app *App, cmd tea.Cmd) []string {
 
 func TestOpenLinkedObjectInOtherPanelEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	const ns = "link-target"
+	ns := kctesting.UniqueName("link-target")
 	t.Cleanup(createNamespace(t, cl, ns))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()

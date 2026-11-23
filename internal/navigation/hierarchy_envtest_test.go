@@ -56,7 +56,9 @@ func hierarchyDeps(cl *kccluster.Cluster, ctx context.Context, name string) mode
 
 func TestHierarchyEnvtest(t *testing.T) {
 	t.Parallel()
-	cfg := kcenvtest.Start(t)
+	kcenvtest.Require(t, testCfg)
+	cfg := testCfg
+	ns := kctesting.UniqueName("testns")
 
 	// Seed objects via a typed client
 	scheme := runtime.NewScheme()
@@ -67,18 +69,19 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 	ctx := t.Context()
 	// Namespace testns
-	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: ns}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 	// ConfigMap and Secret in testns
-	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: "testns", Data: map[string]string{"a": "A", "b": "B"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: ns, Data: map[string]string{"a": "A", "b": "B"}}); err != nil {
 		t.Fatalf("create cm1: %v", err)
 	}
-	if err := cli.Create(ctx, &corev1.Secret{Name: "sec1", Namespace: "testns", Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}}); err != nil {
+	if err := cli.Create(ctx, &corev1.Secret{Name: "sec1", Namespace: ns, Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}}); err != nil {
 		t.Fatalf("create sec1: %v", err)
 	}
-	// Node n1 (cluster-scoped)
-	if err := cli.Create(ctx, &corev1.Node{Name: "n1"}); err != nil {
+	// A node (cluster-scoped)
+	node := kctesting.UniqueName("n1")
+	if err := cli.Create(ctx, &corev1.Node{Name: node}); err != nil {
 		t.Fatalf("create node: %v", err)
 	}
 
@@ -87,7 +90,8 @@ func TestHierarchyEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
 
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
@@ -117,13 +121,13 @@ func TestHierarchyEnvtest(t *testing.T) {
 	foundTestns := false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
-		if len(cells) > 0 && cells[0] == "/testns" {
+		if len(cells) > 0 && cells[0] == "/"+ns {
 			foundTestns = true
 			break
 		}
 	}
 	if !foundTestns {
-		t.Fatalf("namespaces: /testns not found")
+		t.Fatalf("namespaces: /%s not found", ns)
 	}
 
 	// 2b) Context root behaves like cluster root for this context
@@ -155,7 +159,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 
 	// 3) Enter groups for testns
-	grp := models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"})
+	grp := models.NewNamespacedResourcesFolder(deps, ns, []string{"namespaces", ns})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return grp.Len(ctx) > 0 })
 	count = grp.Len(ctx)
 	rows = grp.Lines(ctx, 0, count)
@@ -177,7 +181,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 
 	// 4) Enter objects: configmaps
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-	objs := models.NewNamespacedObjectsFolder(deps, gvrCM, "testns", []string{"namespaces", "testns", gvrCM.Resource}, nil)
+	objs := models.NewNamespacedObjectsFolder(deps, gvrCM, ns, []string{"namespaces", ns, gvrCM.Resource}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len(ctx) > 0 })
 	count = objs.Len(ctx)
 	rows = objs.Lines(ctx, 0, count)
@@ -194,7 +198,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 
 	// 5) Enter cm1 keys
-	keys := models.NewConfigMapKeysFolder(deps, []string{"namespaces", "testns", "configmaps", "cm1"}, "testns", "cm1")
+	keys := models.NewConfigMapKeysFolder(deps, []string{"namespaces", ns, "configmaps", "cm1"}, ns, "cm1")
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len(ctx) >= 2 })
 	count = keys.Len(ctx)
 	rows = keys.Lines(ctx, 0, count)
@@ -223,13 +227,13 @@ func TestHierarchyEnvtest(t *testing.T) {
 	foundN1 := false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
-		if len(cells) > 0 && cells[0] == "/n1" {
+		if len(cells) > 0 && cells[0] == "/"+node {
 			foundN1 = true
 			break
 		}
 	}
 	if !foundN1 {
-		t.Fatalf("nodes: n1 not found")
+		t.Fatalf("nodes: %s not found", node)
 	}
 }
 
@@ -237,7 +241,9 @@ func TestHierarchyEnvtest(t *testing.T) {
 // /namespaces, then a namespace, then a group and into concrete objects below.
 func TestContextNamespaceWalk(t *testing.T) {
 	t.Parallel()
-	cfg := kcenvtest.Start(t)
+	kcenvtest.Require(t, testCfg)
+	cfg := testCfg
+	ns := kctesting.UniqueName("testns")
 
 	// Seed: ns testns, cm1 (a,b)
 	scheme := runtime.NewScheme()
@@ -247,10 +253,10 @@ func TestContextNamespaceWalk(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: ns}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
-	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: "testns", Data: map[string]string{"a": "A", "b": "B"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: ns, Data: map[string]string{"a": "A", "b": "B"}}); err != nil {
 		t.Fatalf("create cm1: %v", err)
 	}
 
@@ -258,7 +264,8 @@ func TestContextNamespaceWalk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	// Context root
@@ -291,7 +298,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 	rows = nsFolder.Lines(ctx, 0, count)
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
-		if len(cells) > 0 && cells[0] == "/testns" {
+		if len(cells) > 0 && cells[0] == "/"+ns {
 			if e, ok := r.(models.Enterable); ok {
 				f, err := e.Enter()
 				if err == nil {
@@ -302,7 +309,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 		}
 	}
 	if grp == nil {
-		t.Fatalf("enter groups for testns failed")
+		t.Fatalf("enter groups for %s failed", ns)
 	}
 	// Enter configmaps group; verify proper "/" prefix and core group displayed as "v1"
 	var objs models.Folder
@@ -366,7 +373,9 @@ func TestContextNamespaceWalk(t *testing.T) {
 // restores the previous selection IDs (namespace, then "/namespaces").
 func TestStartupSelectionRestore(t *testing.T) {
 	t.Parallel()
-	cfg := kcenvtest.Start(t)
+	kcenvtest.Require(t, testCfg)
+	cfg := testCfg
+	ns := kctesting.UniqueName("testns")
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -375,7 +384,7 @@ func TestStartupSelectionRestore(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: ns}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 
@@ -383,7 +392,8 @@ func TestStartupSelectionRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	root := models.NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
@@ -391,15 +401,15 @@ func TestStartupSelectionRestore(t *testing.T) {
 	// Simulate app startup sequence
 	nav.SetSelectionID("namespaces")
 	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}, models.NamespaceResourceVerbs()))
-	nav.SetSelectionID("testns")
-	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
+	nav.SetSelectionID(ns)
+	nav.Push(models.NewNamespacedResourcesFolder(deps, ns, []string{"namespaces", ns}))
 
-	// Back to namespaces, selection should be "testns"
+	// Back to namespaces, selection should be ns
 	if cur := nav.Back(); cur == nil || pathString(cur) != "namespaces" {
 		t.Fatalf("expected namespaces after first back, got %v", cur)
 	}
-	if sel := nav.CurrentSelectionID(); sel != "testns" {
-		t.Fatalf("expected selection 'testns', got %q", sel)
+	if sel := nav.CurrentSelectionID(); sel != ns {
+		t.Fatalf("expected selection %q, got %q", ns, sel)
 	}
 	// Back to context root, selection should be "/namespaces"
 	if cur := nav.Back(); cur == nil || pathString(cur) != "contexts/"+deps.CtxName {
@@ -413,7 +423,9 @@ func TestStartupSelectionRestore(t *testing.T) {
 // TestClusterStartupSelectionRestore mirrors startup selection restore at cluster root (/).
 func TestClusterStartupSelectionRestore(t *testing.T) {
 	t.Parallel()
-	cfg := kcenvtest.Start(t)
+	kcenvtest.Require(t, testCfg)
+	cfg := testCfg
+	ns := kctesting.UniqueName("testns")
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -422,7 +434,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: ns}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
 
@@ -430,7 +442,8 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	root := models.NewRootFolder(deps, "default")
@@ -438,15 +451,15 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 	// Simulate app startup sequence
 	nav.SetSelectionID("namespaces")
 	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}, models.NamespaceResourceVerbs()))
-	nav.SetSelectionID("testns")
-	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
+	nav.SetSelectionID(ns)
+	nav.Push(models.NewNamespacedResourcesFolder(deps, ns, []string{"namespaces", ns}))
 
 	// Back to namespaces
 	if cur := nav.Back(); cur == nil || pathString(cur) != "namespaces" {
 		t.Fatalf("expected namespaces, got %v", cur)
 	}
-	if sel := nav.CurrentSelectionID(); sel != "testns" {
-		t.Fatalf("expected 'testns', got %q", sel)
+	if sel := nav.CurrentSelectionID(); sel != ns {
+		t.Fatalf("expected %q, got %q", ns, sel)
 	}
 	// Back to root
 	if cur := nav.Back(); cur == nil || pathString(cur) != "/" {
@@ -461,7 +474,9 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 // and another back restores group selection.
 func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	t.Parallel()
-	cfg := kcenvtest.Start(t)
+	kcenvtest.Require(t, testCfg)
+	cfg := testCfg
+	ns := kctesting.UniqueName("testns")
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
@@ -470,10 +485,10 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 		t.Fatalf("new client: %v", err)
 	}
 	ctx := t.Context()
-	if err := cli.Create(ctx, &corev1.Namespace{Name: "testns"}); err != nil {
+	if err := cli.Create(ctx, &corev1.Namespace{Name: ns}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
-	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: "testns", Data: map[string]string{"a": "A"}}); err != nil {
+	if err := cli.Create(ctx, &corev1.ConfigMap{Name: "cm1", Namespace: ns, Data: map[string]string{"a": "A"}}); err != nil {
 		t.Fatalf("create cm1: %v", err)
 	}
 
@@ -481,7 +496,8 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	t.Cleanup(cl.Stop)
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	root := models.NewRootFolder(deps, "default")
@@ -489,8 +505,8 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	// Into namespaces -> testns -> groups
 	nav.SetSelectionID("namespaces")
 	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}, models.NamespaceResourceVerbs()))
-	nav.SetSelectionID("testns")
-	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
+	nav.SetSelectionID(ns)
+	nav.Push(models.NewNamespacedResourcesFolder(deps, ns, []string{"namespaces", ns}))
 	// Find configmaps group and enter objects
 	var objs models.Folder
 	var groupID string
@@ -541,15 +557,15 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	}
 	nav.Push(keys)
 	// Back to objects; selection should be cm1
-	if cur := nav.Back(); cur == nil || pathString(cur) != "namespaces/testns/configmaps" {
-		t.Fatalf("expected namespaces/testns/configmaps, got %s", pathString(cur))
+	if cur := nav.Back(); cur == nil || pathString(cur) != "namespaces/"+ns+"/configmaps" {
+		t.Fatalf("expected namespaces/%s/configmaps, got %s", ns, pathString(cur))
 	}
 	if sel := nav.CurrentSelectionID(); sel != "cm1" {
 		t.Fatalf("expected selection 'cm1', got %q", sel)
 	}
 	// Back to groups; selection should be groupID
-	if cur := nav.Back(); cur == nil || pathString(cur) != "namespaces/testns" {
-		t.Fatalf("expected namespaces/testns, got %s", pathString(cur))
+	if cur := nav.Back(); cur == nil || pathString(cur) != "namespaces/"+ns {
+		t.Fatalf("expected namespaces/%s, got %s", ns, pathString(cur))
 	}
 	if sel := nav.CurrentSelectionID(); sel != groupID {
 		t.Fatalf("expected selection %q, got %q", groupID, sel)

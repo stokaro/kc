@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/stokaro/kc/internal/explain"
+	"github.com/stokaro/kc/internal/testing/kcenvtest"
 )
 
 // fixtureCRD defines a kind named Deployment in another group, so the
@@ -66,12 +67,7 @@ func fixtureCRD() *apiextensionsv1.CustomResourceDefinition {
 // TestAgainstAPIServer reads the real /openapi/v3 of a kube-apiserver: a
 // built-in kind and a CRD with the same kind name must both resolve.
 func TestAgainstAPIServer(t *testing.T) {
-	env := &envtest.Environment{CRDs: []*apiextensionsv1.CustomResourceDefinition{fixtureCRD()}}
-	cfg, err := env.Start()
-	if err != nil {
-		t.Skipf("envtest unavailable: %v", err)
-	}
-	t.Cleanup(func() { _ = env.Stop() })
+	cfg := kcenvtest.StartEnv(t, &envtest.Environment{CRDs: []*apiextensionsv1.CustomResourceDefinition{fixtureCRD()}})
 	dc, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
 		t.Fatal(err)

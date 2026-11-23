@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 )
 
@@ -41,7 +42,7 @@ func TestCacheReturnsRows(t *testing.T) {
 		t.Fatalf("build client: %v", err)
 	}
 
-	ns := &corev1.Namespace{Name: "tablecache"}
+	ns := &corev1.Namespace{Name: kctesting.UniqueName("tablecache")}
 	if err := cl.Create(ctx, ns); err != nil {
 		t.Fatalf("create namespace: %v", err)
 	}

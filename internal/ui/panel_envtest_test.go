@@ -7,6 +7,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
@@ -18,7 +19,7 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 		t.Fatalf("cluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	cfg := appconfig.Default()
 	cfg.Resources.ShowNonEmptyOnly = false

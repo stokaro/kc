@@ -12,6 +12,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -33,7 +34,7 @@ func TestWorkloadDiagnosisEnvtest(t *testing.T) {
 		t.Fatalf("client: %v", err)
 	}
 	ctx := t.Context()
-	const ns = "wl-diagnosis"
+	ns := kctesting.UniqueName("wl-diagnosis")
 	mustCreate(t, cli, &corev1.Namespace{Name: ns})
 
 	labels := map[string]string{"app": "web"}

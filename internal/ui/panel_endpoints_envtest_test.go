@@ -48,7 +48,7 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	cfg := appconfig.Default()
 	cfg.Resources.ShowNonEmptyOnly = false
 	cfg.Resources.Columns = "normal"

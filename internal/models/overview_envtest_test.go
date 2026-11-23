@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // TestOverviewEngineOnARealCache runs the engine on a kc cluster's cache
@@ -25,19 +27,22 @@ func TestOverviewEngineOnARealCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	cli, err := crclient.New(testCfg, crclient.Options{Scheme: scheme.Scheme})
 	if err != nil {
 		t.Fatal(err)
 	}
+	c1, c2, open := kctesting.UniqueName("overview-cordoned-1"), kctesting.UniqueName("overview-cordoned-2"), kctesting.UniqueName("overview-open")
+	// t.Context() is canceled before cleanups run.
+	cleanupCtx := context.WithoutCancel(ctx)
 	cordoned := func(name string) *corev1.Node {
 		return &corev1.Node{Name: name, Spec: corev1.NodeSpec{Unschedulable: true}}
 	}
-	for _, n := range []*corev1.Node{cordoned("overview-cordoned-1"), {Name: "overview-open"}} {
+	for _, n := range []*corev1.Node{cordoned(c1), {Name: open}} {
 		if err := cli.Create(ctx, n); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = cli.Delete(ctx, n) })
+		t.Cleanup(func() { _ = cli.Delete(cleanupCtx, n) })
 	}
 
 	e := newOverviewEngine(Deps{Cl: cl, Ctx: ctx}, AllNamespaces)
@@ -75,18 +80,18 @@ func TestOverviewEngineOnARealCache(t *testing.T) {
 			return f.unavailable == ""
 		}
 	}
-	f := waitFor("the first cordoned node", has("overview-cordoned-1"))
-	if slices.Contains(targetKeys(f), "nodes:overview-open") {
+	f := waitFor("the first cordoned node", has(c1))
+	if slices.Contains(targetKeys(f), "nodes:"+open) {
 		t.Fatalf("a schedulable node is listed as cordoned: %v", targetKeys(f))
 	}
 
 	before := e.computeCount()
-	second := cordoned("overview-cordoned-2")
+	second := cordoned(c2)
 	if err := cli.Create(ctx, second); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = cli.Delete(ctx, second) })
-	waitFor("the node created after start", has("overview-cordoned-1", "overview-cordoned-2"))
+	t.Cleanup(func() { _ = cli.Delete(cleanupCtx, second) })
+	waitFor("the node created after start", has(c1, c2))
 	if e.computeCount() <= before {
 		t.Fatal("the report changed without a recompute")
 	}

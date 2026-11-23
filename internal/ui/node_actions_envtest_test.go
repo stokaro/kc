@@ -18,6 +18,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/nodeaction"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 func createEnvtestObject(t *testing.T, cl *kccluster.Cluster, obj crclient.Object) {
@@ -59,7 +60,7 @@ func liveNode(t *testing.T, cl *kccluster.Cluster, name string) *corev1.Node {
 // refuses with 429 until the drain is canceled.
 func TestNodeActionsEnvtest(t *testing.T) {
 	app, cl := setupAppWithCluster(t)
-	const ns = "node-actions"
+	ns := kctesting.UniqueName("node-actions")
 	t.Cleanup(createNamespace(t, cl, ns))
 	createEnvtestObject(t, cl, &corev1.Node{Name: "drain-a"})
 	createEnvtestObject(t, cl, &corev1.Node{Name: "drain-b"})

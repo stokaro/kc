@@ -22,6 +22,7 @@ import (
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/logmux"
 	"github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // heldOpener opens container streams that stay open until canceled.
@@ -198,7 +199,7 @@ func TestWorkloadLogsStartWithASelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	filter, err := logmux.ParseFilter("-api-2")
 	if err != nil {

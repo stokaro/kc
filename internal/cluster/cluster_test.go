@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 )
 
@@ -56,7 +57,7 @@ func TestNamespaceScopedClusterListsOneNamespace(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	go func() { _ = cl.Start(ctx) }()
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	createCM := func(ns, name string) {
 		t.Helper()

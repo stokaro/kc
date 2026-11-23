@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -26,10 +27,10 @@ func TestContainerItemsViewTheirOwnSpec(t *testing.T) {
 		t.Fatalf("cluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	t.Cleanup(cl.Stop)
 
-	ns := "pod-container-view"
+	ns := kctesting.UniqueName("pod-container-view")
 	createNamespace(t, cl, ns)
 	createPodWithEphemeralContainers(t, cl, ns, "web")
 

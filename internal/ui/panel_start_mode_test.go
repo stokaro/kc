@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -154,7 +155,7 @@ func TestStartTargetsKeepTheRightStartModeEnvtest(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			app, cl := setupAppWithCluster(t)
-			ns := "start-mode"
+			ns := kctesting.UniqueName("start-mode")
 			t.Cleanup(createNamespace(t, cl, ns))
 			t.Cleanup(createPod(t, cl, ns, "start-pod", nil))
 			waitForNamespaceReady(t, app, ns)

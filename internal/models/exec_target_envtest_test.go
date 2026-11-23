@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -22,10 +23,10 @@ func TestResolveExecTargetForPodRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	t.Cleanup(cl.Stop)
 
-	const ns = "exec-target"
+	ns := kctesting.UniqueName("exec-target")
 	createNamespace(t, cl, ns)
 	pod := &corev1.Pod{
 		Namespace:   ns,

@@ -25,14 +25,15 @@ func TestCompareObjectsReadsBothManifestsFast(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
-	createConfigMaps(t, testCfg, "cmp-objects", map[string]string{"left": "1", "right": "2"})
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+	ns := kctesting.UniqueName("cmp-objects")
+	createConfigMaps(t, testCfg, ns, map[string]string{"left": "1", "right": "2"})
 	deps := models.Deps{
 		Cl: cl, Ctx: ctx, CtxName: "envtest",
-		KubeConfig: clientcmdapi.Config{CurrentContext: "envtest", Contexts: map[string]*clientcmdapi.Context{"envtest": {Namespace: "cmp-objects"}}},
+		KubeConfig: clientcmdapi.Config{CurrentContext: "envtest", Contexts: map[string]*clientcmdapi.Context{"envtest": {Namespace: ns}}},
 		AppConfig:  appconfig.Default(),
 	}
-	folder := models.NewNamespacedObjectsFolder(deps, configMapsGVR, "cmp-objects", []string{"namespaces", "cmp-objects", "configmaps"}, nil)
+	folder := models.NewNamespacedObjectsFolder(deps, configMapsGVR, ns, []string{"namespaces", ns, "configmaps"}, nil)
 	t.Cleanup(folder.Close)
 	sources := make(map[string]models.ManifestSource)
 	kctesting.Eventually(t, 10*time.Second, 50*time.Millisecond, func() bool {

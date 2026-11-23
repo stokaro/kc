@@ -42,7 +42,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	panelCfg := appconfig.Default()
 	panelCfg.Resources.ShowNonEmptyOnly = false
@@ -257,7 +257,7 @@ func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 
 	ns := &corev1.Namespace{Name: "crd-ns"}
 	mustCreate(t, cl.GetClient(), ns)

@@ -9,6 +9,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	models "github.com/stokaro/kc/internal/models"
+	kctesting "github.com/stokaro/kc/internal/testing"
 	"github.com/stokaro/kc/internal/testing/kcenvtest"
 	"github.com/stokaro/kc/pkg/kubeconfig"
 )
@@ -20,7 +21,7 @@ func TestGoToNamespaceEmptyStaysClusterScope(t *testing.T) {
 		t.Fatalf("cluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	t.Cleanup(func() {
 		cl.Stop()
 	})
@@ -58,12 +59,12 @@ func TestGoToNamespaceExistingNavigatesPanels(t *testing.T) {
 		t.Fatalf("cluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	t.Cleanup(func() {
 		cl.Stop()
 	})
 
-	nsName := "autonav"
+	nsName := kctesting.UniqueName("autonav")
 	namespace := &corev1.Namespace{Name: nsName}
 	if err := cl.GetClient().Create(ctx, namespace); err != nil {
 		t.Fatalf("create namespace: %v", err)

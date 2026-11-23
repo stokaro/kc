@@ -28,7 +28,7 @@ func deleteEnv(t *testing.T, namespace string) (*kccluster.Cluster, crclient.Cli
 		t.Fatalf("cluster: %v", err)
 	}
 	ctx := t.Context()
-	go cl.Start(ctx)
+	kctesting.RunInBackground(t, "cluster", cl.Start)
 	t.Cleanup(cl.Stop)
 	c := cl.GetClient()
 	ns := &corev1.Namespace{Name: namespace}
@@ -82,7 +82,7 @@ func createConfigMap(t *testing.T, c crclient.Client, namespace, name string) *c
 // TestDeleteSparesReplacementEnvtest replaces the selected object between
 // confirmation and execution, as another client could while F8 is open.
 func TestDeleteSparesReplacementEnvtest(t *testing.T) {
-	const namespace, name = "delete-replaced", "victim"
+	namespace, name := kctesting.UniqueName("delete-replaced"), "victim"
 	cl, c := deleteEnv(t, namespace)
 	ctx := t.Context()
 	original := createConfigMap(t, c, namespace, name)
@@ -121,7 +121,7 @@ func TestDeleteSparesReplacementEnvtest(t *testing.T) {
 }
 
 func TestDeleteAlreadyGoneEnvtest(t *testing.T) {
-	const namespace, name = "delete-gone", "victim"
+	namespace, name := kctesting.UniqueName("delete-gone"), "victim"
 	cl, c := deleteEnv(t, namespace)
 	ctx := t.Context()
 	original := createConfigMap(t, c, namespace, name)
@@ -144,7 +144,7 @@ func TestDeleteAlreadyGoneEnvtest(t *testing.T) {
 // the App with no current cluster, as after a context switch: the delete
 // must still go to the cluster the row was read from.
 func TestConfirmedDeleteUsesOriginClusterEnvtest(t *testing.T) {
-	const namespace, name = "delete-origin", "victim"
+	namespace, name := kctesting.UniqueName("delete-origin"), "victim"
 	cl, c := deleteEnv(t, namespace)
 	ctx := t.Context()
 	original := createConfigMap(t, c, namespace, name)

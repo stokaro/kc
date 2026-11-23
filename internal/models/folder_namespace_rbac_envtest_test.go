@@ -63,7 +63,7 @@ func newNamespaceUserEnv(t *testing.T, user string, grantNamespaces ...string) *
 	if err != nil {
 		t.Fatalf("admin cluster: %v", err)
 	}
-	go func() { _ = admin.Start(ctx) }()
+	kctesting.RunInBackground(t, "admin", admin.Start)
 	t.Cleanup(admin.Stop)
 	for _, ns := range grantNamespaces {
 		createNamespace(t, admin, ns)
@@ -205,16 +205,17 @@ func waitObjectNames(t *testing.T, f *NamespacedObjectsFolder, want ...string) {
 }
 
 func TestNamespaceOnlyUserListsAndWatchesPods(t *testing.T) {
-	const user = "team-user"
-	e := newNamespaceUserEnv(t, user, "team-a", "team-b")
-	createNamespace(t, e.admin, "team-c") // not granted
-	createPod(t, e.admin, "team-a", "pod-a1")
-	createPod(t, e.admin, "team-b", "pod-b1")
-	createPod(t, e.admin, "team-c", "pod-c1")
+	user := kctesting.UniqueName("team-user")
+	teamA, teamB, teamC := kctesting.UniqueName("team-a"), kctesting.UniqueName("team-b"), kctesting.UniqueName("team-c")
+	e := newNamespaceUserEnv(t, user, teamA, teamB)
+	createNamespace(t, e.admin, teamC) // not granted
+	createPod(t, e.admin, teamA, "pod-a1")
+	createPod(t, e.admin, teamB, "pod-b1")
+	createPod(t, e.admin, teamC, "pod-c1")
 
 	// Two panels, two namespaces.
-	fa := NewNamespacedObjectsFolder(e.deps, podGVR, "team-a", []string{"pods"}, nil)
-	fb := NewNamespacedObjectsFolder(e.deps, podGVR, "team-b", []string{"pods"}, nil)
+	fa := NewNamespacedObjectsFolder(e.deps, podGVR, teamA, []string{"pods"}, nil)
+	fb := NewNamespacedObjectsFolder(e.deps, podGVR, teamB, []string{"pods"}, nil)
 	for _, f := range []*NamespacedObjectsFolder{fa, fb} {
 		if f.Deps.Cl == e.shared {
 			t.Fatalf("folder in %s uses the shared cluster, whose pod informer can never sync", f.Namespace())
@@ -234,9 +235,9 @@ func TestNamespaceOnlyUserListsAndWatchesPods(t *testing.T) {
 	waitObjectNames(t, fb, "pod-b1")
 
 	// Live updates arrive through the namespace watch.
-	createPod(t, e.admin, "team-a", "pod-a2")
+	createPod(t, e.admin, teamA, "pod-a2")
 	waitObjectNames(t, fa, "pod-a1", "pod-a2")
-	deletePod(t, e.admin, "team-a", "pod-a1")
+	deletePod(t, e.admin, teamA, "pod-a1")
 	waitObjectNames(t, fa, "pod-a2")
 	if got := objectNames(t, fb); !slices.Equal(got, []string{"pod-b1"}) {
 		t.Fatalf("team-b saw team-a's changes: %v", got)
@@ -254,13 +255,14 @@ func TestNamespaceOnlyUserListsAndWatchesPods(t *testing.T) {
 }
 
 func TestNamespaceOnlyUserRootCountsPermittedTypes(t *testing.T) {
-	const user = "root-user"
-	e := newNamespaceUserEnv(t, user, "root-a")
-	createPod(t, e.admin, "root-a", "pod-r1")
+	user := kctesting.UniqueName("root-user")
+	rootA := kctesting.UniqueName("root-a")
+	e := newNamespaceUserEnv(t, user, rootA)
+	createPod(t, e.admin, rootA, "pod-r1")
 
-	root := NewRootFolder(e.deps, "root-a")
+	root := NewRootFolder(e.deps, rootA)
 	t.Cleanup(root.Close)
-	podsID := "root-a//v1/pods"
+	podsID := rootA + "//v1/pods"
 	countOf := func() string {
 		rows := rowsByID(t, root, t.Context())
 		if cells, ok := rows[podsID]; ok && len(cells) > 2 {
@@ -270,7 +272,7 @@ func TestNamespaceOnlyUserRootCountsPermittedTypes(t *testing.T) {
 	}
 	kctesting.Eventually(t, 15*time.Second, 100*time.Millisecond, func() bool { return countOf() == "1" },
 		"root never counted 1 pod in root-a")
-	createPod(t, e.admin, "root-a", "pod-r2")
+	createPod(t, e.admin, rootA, "pod-r2")
 	kctesting.Eventually(t, 15*time.Second, 100*time.Millisecond, func() bool { return countOf() == "2" },
 		"root count did not follow a new pod in root-a")
 
