@@ -13,7 +13,13 @@ import (
 // summary. A reason is set when that source is not known; the rules that
 // need it are then dim with the reason in F3.
 type overviewMeasured struct {
-	usageAt     time.Time                   // when the node usage was polled
+	// usageAt is when metrics-server measured the usage: the newest
+	// sample of the node and of the cluster pod metrics, the older of the
+	// two. Zero when the metrics carry no timestamp. usageWindow is the
+	// window of that sample; usageReadAt is when kc read it.
+	usageAt     time.Time
+	usageWindow time.Duration
+	usageReadAt time.Time
 	nodes       map[string]usageValues      // node usage by node name
 	nodesReason string                      // why node usage is not known
 	pods        map[string][]containerUsage // container usage by pod key
@@ -47,8 +53,23 @@ func usageReason(snap *usageSnapshot, fresh bool) string {
 		return "metrics.k8s.io: " + snap.err.Error()
 	case !fresh:
 		return "loading"
+	case snap.stale():
+		return fmt.Sprintf("metrics-server's newest sample was %s old when read", shortDuration(snap.at.Sub(snap.sampled.newest)))
 	}
 	return ""
+}
+
+// stale reports whether the newest sample was already UsageStaleAfter old
+// when kc read it: the list succeeded, but metrics-server stopped
+// measuring.
+func (s *usageSnapshot) stale() bool {
+	return !s.sampled.newest.IsZero() && s.at.Sub(s.sampled.newest) >= UsageStaleAfter
+}
+
+// timed reports whether a snapshot's times belong in the age kc shows:
+// a usable snapshot, or a stale one, whose age is the point.
+func timed(snap *usageSnapshot, reason string) bool {
+	return snap != nil && (reason == "" || snap.stale() && snap.err == nil)
 }
 
 // measuredUsage reads the latest metrics-only snapshots of the overview's
@@ -66,7 +87,10 @@ func measuredUsage(deps Deps, namespace string, watcher any, notify func()) *ove
 	}
 	nodes, fresh := deps.Usage.metricsSnapshot(deps, usageNodes, "", watcher, notify)
 	if m.nodesReason = usageReason(nodes, fresh); m.nodesReason == "" {
-		m.nodes, m.usageAt = nodes.values, nodes.at
+		m.nodes = nodes.values
+	}
+	if timed(nodes, m.nodesReason) {
+		m.addUsageTime(nodes)
 	}
 	pods, fresh := deps.Usage.metricsSnapshot(deps, usagePods, namespace, watcher, notify)
 	if m.podsReason = usageReason(pods, fresh); m.podsReason == "" {
@@ -74,13 +98,35 @@ func measuredUsage(deps Deps, namespace string, watcher any, notify func()) *ove
 	}
 	if namespace == AllNamespaces {
 		m.clusterPods, m.clusterPodsReason = m.pods, m.podsReason
+		if timed(pods, m.podsReason) {
+			m.addUsageTime(pods)
+		}
 		return m
 	}
 	all, fresh := deps.Usage.metricsSnapshot(deps, usagePods, AllNamespaces, watcher, notify)
 	if m.clusterPodsReason = usageReason(all, fresh); m.clusterPodsReason == "" {
 		m.clusterPods = all.containers
 	}
+	if timed(all, m.clusterPodsReason) {
+		m.addUsageTime(all)
+	}
 	return m
+}
+
+// addUsageTime folds the times of a usable snapshot into m: the oldest
+// newest-sample and the oldest read win, so the age shown is never younger
+// than any part of the usage.
+func (m *overviewMeasured) addUsageTime(snap *usageSnapshot) {
+	if m.usageReadAt.IsZero() || snap.at.Before(m.usageReadAt) {
+		m.usageReadAt = snap.at
+	}
+	at := snap.sampled.newest
+	if at.IsZero() {
+		return
+	}
+	if m.usageAt.IsZero() || at.Before(m.usageAt) {
+		m.usageAt, m.usageWindow = at, snap.sampled.window
+	}
 }
 
 // containerLimitRule lists pods with a container whose usage of resource

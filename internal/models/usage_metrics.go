@@ -33,15 +33,56 @@ const (
 	usageForbiddenInterval = 5 * time.Minute
 )
 
+// UsageStaleAfter is the age from which a measurement counts as stale:
+// metrics-server measures every 15 seconds, so a sample this old means it
+// stopped measuring while its list still succeeds.
+const UsageStaleAfter = 2 * time.Minute
+
 // usageSnapshot is the result of one poll.
 type usageSnapshot struct {
-	at     time.Time
-	served bool  // metrics.k8s.io serves the resource
-	err    error // the metrics could not be read; cells show n/a
+	at     time.Time // when the poll finished: the read, not the measurement
+	served bool      // metrics.k8s.io serves the resource
+	err    error     // the metrics could not be read; cells show n/a
 	values map[string]usageValues
 	// containers holds the usage of each container of a pod, by pod key.
 	// The overview compares it with each container's limit.
 	containers map[string][]containerUsage
+	// sampled is when metrics-server measured the objects, from their
+	// timestamp and window; zero when the objects carry none.
+	sampled usageSampleTime
+}
+
+// usageSampleTime is when the objects of one PodMetrics or NodeMetrics list
+// were measured. metrics-server measures each object at its own time, over
+// its window; a successful list can return samples minutes old.
+type usageSampleTime struct {
+	newest, oldest time.Time
+	window         time.Duration // the window of the newest sample
+}
+
+// sampleTimes reads metadata timestamp and window of metrics objects.
+func sampleTimes(items []unstructured.Unstructured) usageSampleTime {
+	var st usageSampleTime
+	for i := range items {
+		ts, _, _ := unstructured.NestedString(items[i].Object, "timestamp")
+		at, err := time.Parse(time.RFC3339, ts)
+		if err != nil {
+			continue
+		}
+		if st.oldest.IsZero() || at.Before(st.oldest) {
+			st.oldest = at
+		}
+		if at.After(st.newest) {
+			st.newest = at
+			st.window = 0
+			if w, _, _ := unstructured.NestedString(items[i].Object, "window"); w != "" {
+				if d, err := time.ParseDuration(w); err == nil {
+					st.window = d
+				}
+			}
+		}
+	}
+	return st
 }
 
 // containerUsage is the measured usage of one container: CPU in millicores,
@@ -283,8 +324,9 @@ func fetchUsage(ctx context.Context, deps Deps, kind usageKind, namespace string
 	if kind == usagePods {
 		containers = buildContainerUsage(list.Items)
 	}
+	sampled := sampleTimes(list.Items)
 	if metricsOnly {
-		return &usageSnapshot{served: true, values: buildUsageValues(kind, list.Items, nil), containers: containers}
+		return &usageSnapshot{served: true, values: buildUsageValues(kind, list.Items, nil), containers: containers, sampled: sampled}
 	}
 	// Requests, limits and allocatable come from the shared cache. Without
 	// them usage still shows, and percentages say n/a.
@@ -294,7 +336,7 @@ func fetchUsage(ctx context.Context, deps Deps, kind usageKind, namespace string
 	} else if err != nil {
 		log.V(1).Info("usage: cannot read objects from the cache", "gvr", objectGVR.String(), "error", err.Error())
 	}
-	return &usageSnapshot{served: true, values: buildUsageValues(kind, list.Items, objects), containers: containers}
+	return &usageSnapshot{served: true, values: buildUsageValues(kind, list.Items, objects), containers: containers, sampled: sampled}
 }
 
 // metricsServed reports whether discovery lists gvr. It sends no request
