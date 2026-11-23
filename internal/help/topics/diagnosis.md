@@ -64,7 +64,10 @@ terminating pods get no readiness finding.
 ## Limits
 
 - Only API objects are read. A clean result does not prove that DNS,
-  the network, probes, nodes or the application work.
+  the network, probes, nodes or the application work. To check what
+  NetworkPolicies say about one client pod and one server pod, put them
+  under the cursors of the two panels and press `C-x n`
+  ([NetworkPolicy between two pods](network-policy.md)).
 - Pods are matched by controller owner UID (through the ReplicaSets of
   a Deployment), events by UID. A recreated object with the same name
   does not inherit the old one's pods or events.

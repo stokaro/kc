@@ -41,6 +41,7 @@ const (
 	CompareLists        ID = "compare-lists"
 	PinFreeze           ID = "pin-freeze"
 	InvestigationWindow ID = "investigation-window"
+	NetworkPolicy       ID = "network-policy"
 
 	// Special folders.
 	Overview    ID = "overview"

@@ -33,6 +33,7 @@ dialog or view opens its page; this index lists them all. See
 - [Needs attention](attention.md)
 - [Quiet checks](quiet-checks.md)
 - [Diagnosis](diagnosis.md)
+- [NetworkPolicy between two pods](network-policy.md)
 - [Object timeline](timeline.md)
 - [Owners, used by and requires](related.md)
 - [Container filesystem](container-fs.md)
