@@ -46,6 +46,10 @@ type Target struct {
 	// cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or
 	// CronJob. It wins over Node.
 	Workload *models.InfoWorkload
+	// PromHistory reads the past usage of Workload from a metrics backend. Nil
+	// when no backend is configured for the context, no workload is
+	// selected, or the row is a finding (Finding wins).
+	PromHistory *PromHistorySource
 	// Finding replaces the summary when the other panel's cursor is on an
 	// overview finding. Resolve builds it from the overview's latest report,
 	// so it is never older than the row it describes.
@@ -84,6 +88,7 @@ type Widget struct {
 	src     Summarizer
 	summary models.InfoSummary
 	history map[string]*history
+	prom    promHistoryState
 }
 
 // New returns an Info widget.
@@ -103,7 +108,7 @@ func (w *Widget) Init(ctx context.Context) tea.Cmd {
 		return nil
 	}
 	w.refresh(ctx)
-	return w.tick()
+	return tea.Batch(w.tick(), w.promHistoryCmd())
 }
 
 func (w *Widget) tick() tea.Cmd {
@@ -113,6 +118,13 @@ func (w *Widget) tick() tea.Cmd {
 
 // Update handles the widget's own ticks.
 func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
+	if m, ok := msg.(promHistoryMsg); ok {
+		if m.w != w {
+			return nil, false
+		}
+		w.takePromHistory(m)
+		return nil, true
+	}
 	t, ok := msg.(tickMsg)
 	if !ok || t.w != w {
 		return nil, false
@@ -121,7 +133,7 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	}
 	w.refresh(ctx)
-	return w.tick(), true
+	return tea.Batch(w.tick(), w.promHistoryCmd()), true
 }
 
 // SetFocus starts the widget when its panel enters Info mode and stops the
@@ -149,16 +161,18 @@ func (w *Widget) closeSource() {
 		w.src.Close()
 		w.src = nil
 	}
+	w.stopPromHistory()
 	w.target = Target{}
 }
 
 // OnSelectionChanged follows the other panel: a new scope or node shows at
 // once instead of on the next tick.
 func (w *Widget) OnSelectionChanged(ctx context.Context, _ panelcontent.Selection) tea.Cmd {
-	if w.active {
-		w.refresh(ctx)
+	if !w.active {
+		return nil
 	}
-	return nil
+	w.refresh(ctx)
+	return w.promHistoryCmd()
 }
 
 // refresh resolves the target, swaps the source when the scope changed and
@@ -257,11 +271,17 @@ func (w *Widget) lines(width, height int) []string {
 		}
 		add(" " + hint)
 		return clip(out, height)
-	case w.summary.Err != "":
-		add(" Overview unavailable: " + w.summary.Err)
-		return clip(out, height)
-	case w.summary.Loading:
-		add(" Loading...")
+	case w.summary.Err != "" || w.summary.Loading:
+		// The history comes from another source and still shows: a user
+		// without cluster-wide reads may read Prometheus.
+		if w.summary.Err != "" {
+			add(" Overview unavailable: " + w.summary.Err)
+		} else {
+			add(" Loading...")
+		}
+		for _, line := range w.promHistoryLines(width) {
+			add(line)
+		}
 		return clip(out, height)
 	}
 	scope := w.target.Label
@@ -282,6 +302,9 @@ func (w *Widget) lines(width, height int) []string {
 		for _, line := range barBlock(b, h, w.opts.Now(), width) {
 			add(line)
 		}
+	}
+	for _, line := range w.promHistoryLines(width) {
+		add(line)
 	}
 	add("")
 	top := w.summary.TopTitle
