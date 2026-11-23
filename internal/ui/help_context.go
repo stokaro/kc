@@ -234,8 +234,14 @@ func (a *App) showHelp(page help.ID) tea.Cmd {
 		a.invalidateView("help page")
 		return nil
 	}
-	// The screen as it is now, dialogs included, is the background.
+	// The panels are the background, without the dialogs: the help window
+	// covers the middle of a dialog, and the strips of it and its shadow
+	// left around the help read as stale pieces of the screen. Closing
+	// the help shows the dialog again.
 	bg := viewString(a.View())
+	if a.modalManager.IsModalVisible() {
+		bg, _ = a.renderMainView()
+	}
 	a.helpViewer.Reset(page)
 	modal.SetDimensions(a.width, a.height)
 	winW, winH := helpWindowSize(a.width, a.height)
