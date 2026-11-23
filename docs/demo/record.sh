@@ -675,7 +675,9 @@ scene_drain() {
 	# The left panel goes to the nodes; the right one keeps the pods, which
 	# go Pending while the only worker is drained.
 	shell_line "cd /nodes" $FIRST
-	wait_for "kc-demo-worker"
+	# Wait for a header only the node table has: the worker's name is on
+	# the screen before the nodes load, in the pods' Node column.
+	wait_for "Roles"
 	# The arrow keys, not a quick search: after C-s the first M-n presses
 	# answered "Select a node first" in the recordings. The worker sorts
 	# after the control plane.
