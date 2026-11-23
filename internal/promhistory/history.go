@@ -32,7 +32,9 @@ type History struct {
 	Step       time.Duration
 	// CPU is in cores, Memory in bytes. A step without a sample has no
 	// point (a gap, never a zero). Nil means the backend has no series
-	// for the target in the window.
+	// for the target in the window. Empty and not nil means it has one,
+	// but none of its samples is a finite number (NaN, an infinity, or
+	// no values at all): every step is a gap, never a zero.
 	CPU, Memory []Point
 	// Pods is how many pods the owner series tie to the target inside the
 	// window, replaced and deleted ones included; PodsKnown is false when
@@ -127,7 +129,8 @@ func (c *Client) Fetch(ctx context.Context, t Target, o Options) (History, error
 }
 
 // points returns the samples of the single series, NaN and infinities
-// dropped as gaps. Nil when there is no series.
+// dropped as gaps. Nil when there is no series; empty, not nil, when the
+// series has no finite sample.
 func points(ss []series) []Point {
 	if len(ss) == 0 {
 		return nil

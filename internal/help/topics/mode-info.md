@@ -68,7 +68,9 @@ sample so far; `stale, last 3m ago` means no recent sample.
 - The history is kept in memory while the panel is in Info mode, for
   this session only. It restarts when the base of a percentage changes.
 - With `metricsHistory.backends` set, Info also shows a workload's past
-  usage from Prometheus.
+  usage from Prometheus. `no series` means Prometheus returned none for
+  the metric; `no finite samples in this window` means it returned a
+  series whose values are all `NaN` or infinite. Neither is zero usage.
 
 ## See also
 
