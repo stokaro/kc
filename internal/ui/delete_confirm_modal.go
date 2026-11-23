@@ -20,7 +20,6 @@ type DeleteConfirmMsg struct {
 type DeleteConfirmModel struct {
 	width, height int
 	target        string
-	namespace     string
 	context       string
 	focus         int // 0=yes, 1=no
 	buttonRect    [2]buttonRect
@@ -41,9 +40,8 @@ func (m *DeleteConfirmModel) SetDimensions(w, h int) { m.width, m.height = w, h 
 
 // Configure sets the resource details displayed in the dialog. context is
 // the kubeconfig context the object was read from; empty hides the line.
-func (m *DeleteConfirmModel) Configure(target, namespace, context string) {
+func (m *DeleteConfirmModel) Configure(target, context string) {
 	m.target = target
-	m.namespace = namespace
 	m.context = context
 	m.focus = 1 // default to "No"
 }
@@ -113,9 +111,6 @@ func (m *DeleteConfirmModel) View() tea.View {
 		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
 		Width(innerWidth)
 	title := fmt.Sprintf("Delete %s?", m.target)
-	if m.namespace != "" {
-		title = fmt.Sprintf("Delete %s in namespace %q?", m.target, m.namespace)
-	}
 	titleView := bg.Bold(true).Align(lipgloss.Center).Render(title)
 	lines := []string{titleView}
 	if m.context != "" {

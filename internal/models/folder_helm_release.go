@@ -83,7 +83,7 @@ func helmReleaseFolderRows(deps Deps, reader *helmReader, h helm.History, found 
 	}
 	if revision == 0 {
 		histPath := append(slices.Clone(path), "history")
-		item := NewChildResourceItem("history", []string{"/history", fmt.Sprintf("%d stored revisions", len(h.Revisions))}, histPath, func() (Folder, error) {
+		item := NewChildResourceItem("history", []string{"/history", fmt.Sprintf("%d stored %s", len(h.Revisions), plural(len(h.Revisions), "revision", "revisions"))}, histPath, func() (Folder, error) {
 			return newHelmHistoryFolder(deps, reader, h.Namespace, h.Release, histPath), nil
 		})
 		rows = append(rows, item)
@@ -217,7 +217,7 @@ func helmHistoryRows(deps Deps, reader *helmReader, h helm.History, path []strin
 func newHelmResourcesEntry(deps Deps, rel *helm.Release, revision int, parent []string) *ChildResourceItem {
 	path := append(slices.Clone(parent), "resources")
 	objs, _ := helm.SplitManifest(rel.Manifest)
-	desc := fmt.Sprintf("%d objects of the manifest, linked to the live objects", len(objs))
+	desc := fmt.Sprintf("%d %s of the manifest, linked to the live objects", len(objs), plural(len(objs), "object", "objects"))
 	item := NewChildResourceItem("resources", []string{"/resources", desc}, path, func() (Folder, error) {
 		return newHelmResourcesFolder(deps, rel, revision, path), nil
 	})

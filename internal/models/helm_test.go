@@ -625,3 +625,27 @@ func TestHelmFolderCommands(t *testing.T) {
 		})
 	}
 }
+
+func TestHelmResourcesEntryCountsObjects(t *testing.T) {
+	t.Parallel()
+	one := "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n"
+	tests := []struct {
+		name     string
+		manifest string
+		want     string
+	}{
+		{name: "one", manifest: one, want: "1 object of the manifest"},
+		{name: "two", manifest: one + "---\n" + strings.ReplaceAll(one, "name: c", "name: d"), want: "2 objects of the manifest"},
+		{name: "none", manifest: "", want: "0 objects of the manifest"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rel := &helm.Release{Name: "web", Namespace: "a", Version: 1, Manifest: tc.manifest}
+			_, cells, _, _ := newHelmResourcesEntry(Deps{}, rel, 1, []string{"helm", "web"}).Columns()
+			if !strings.HasPrefix(cells[1], tc.want+",") {
+				t.Fatalf("description = %q, want it to start with %q", cells[1], tc.want)
+			}
+		})
+	}
+}

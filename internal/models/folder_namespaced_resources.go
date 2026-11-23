@@ -88,7 +88,7 @@ func namespacedResourceSpecs(f *ResourcesFolder, namespace string, parent []stri
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
 		ns := namespace
-		detail := fmt.Sprintf("%s (%s)", entry.info.Resource, gvLabel)
+		detail := resourceDetail(entry, entries)
 		style := nameStyle
 		if highlightFavorites && favSet[strings.ToLower(entry.info.Resource)] {
 			style = favoriteStyle
