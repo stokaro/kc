@@ -102,11 +102,11 @@ func testIngress(mut func(*networkingv1.Ingress)) *networkingv1.Ingress {
 	prefix := networkingv1.PathTypePrefix
 	ing := &networkingv1.Ingress{Namespace: "shop", Name: "web", Spec: networkingv1.IngressSpec{
 		IngressClassName: new("nginx"),
-		Rules: []networkingv1.IngressRule{{Host: "shop.example.com", IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{
+		Rules: []networkingv1.IngressRule{{Host: "shop.example.com", HTTP: &networkingv1.HTTPIngressRuleValue{
 			Paths: []networkingv1.HTTPIngressPath{{Path: "/", PathType: &prefix, Backend: networkingv1.IngressBackend{
 				Service: &networkingv1.IngressServiceBackend{Name: "web", Port: networkingv1.ServiceBackendPort{Number: 80}},
 			}}},
-		}}}},
+		}}},
 	}}
 	ing.Status.LoadBalancer.Ingress = []networkingv1.IngressLoadBalancerIngress{{IP: "10.0.0.1"}}
 	if mut != nil {
@@ -268,7 +268,7 @@ func testRoute(mut func(*httpRoute)) *httpRoute {
 	rt.Spec.ParentRefs = []gwParentRef{{Name: "edge", Namespace: new("infra")}}
 	rt.Spec.Rules = []gwRouteRule{{
 		Matches:     []gwRouteMatch{{Path: &gwPathMatch{Type: new("PathPrefix"), Value: new("/")}}},
-		BackendRefs: []gwBackendRef{{gwObjectRef: gwObjectRef{Name: "web"}, Port: new(int32(80))}},
+		BackendRefs: []gwBackendRef{{Name: "web", Port: new(int32(80))}},
 	}}
 	rt.Status.Parents = []gwRouteParentStatus{{
 		ParentRef:      gwParentRef{Name: "edge", Namespace: new("infra")},
@@ -317,7 +317,7 @@ func TestDiagnoseHTTPRoute(t *testing.T) {
 	t.Parallel()
 	crossNS := func(rt *httpRoute) {
 		rt.Spec.Rules[0].BackendRefs = append(rt.Spec.Rules[0].BackendRefs, gwBackendRef{
-			gwObjectRef: gwObjectRef{Name: "pay", Namespace: new("payments")}, Port: new(int32(80)), Weight: new(int32(10)),
+			Name: "pay", Namespace: new("payments"), Port: new(int32(80)), Weight: new(int32(10)),
 		})
 	}
 	cases := []struct {
@@ -462,7 +462,7 @@ func TestDiagnoseHTTPRouteEvidence(t *testing.T) {
 	look.grants = map[string][]referenceGrant{"payments": {grantFor("HTTPRoute", "shop", "Service")}}
 	d := diagnoseHTTPRoute(testRoute(func(rt *httpRoute) {
 		rt.Spec.Rules[0].BackendRefs = append(rt.Spec.Rules[0].BackendRefs, gwBackendRef{
-			gwObjectRef: gwObjectRef{Name: "pay", Namespace: new("payments")}, Port: new(int32(80)), Weight: new(int32(10)),
+			Name: "pay", Namespace: new("payments"), Port: new(int32(80)), Weight: new(int32(10)),
 		})
 		rt.Status.Parents[0].Conditions[0].Status = metav1.ConditionFalse
 		rt.Status.Parents[0].Conditions[0].Reason = "NoMatchingListenerHostname"

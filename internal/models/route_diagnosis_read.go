@@ -38,10 +38,10 @@ func hasRouteDiagnosis(gvr schema.GroupVersionResource) bool {
 // Gateways of its namespace (in the route's API version). Parents and
 // backends in other namespaces are read, not watched.
 func routeDiagnosisWatches(gvr schema.GroupVersionResource, namespace string, self relatedWatch) []relatedWatch {
-	watches := []relatedWatch{self, {relatedScopeKey: relatedScopeKey{gvr: serviceGVR, namespace: namespace}}}
+	watches := []relatedWatch{self, {gvr: serviceGVR, namespace: namespace}}
 	if isHTTPRouteGVR(gvr) {
 		gw := schema.GroupVersionResource{Group: gatewayGroup, Version: gvr.Version, Resource: "gateways"}
-		watches = append(watches, relatedWatch{relatedScopeKey: relatedScopeKey{gvr: gw, namespace: namespace}})
+		watches = append(watches, relatedWatch{gvr: gw, namespace: namespace})
 	}
 	return watches
 }

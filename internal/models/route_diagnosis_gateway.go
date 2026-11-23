@@ -36,10 +36,10 @@ type gwObjectRef struct {
 }
 
 type gwBackendRef struct {
-	gwObjectRef `json:",inline"`
-	Port        *int32     `json:"port,omitempty"`
-	Weight      *int32     `json:"weight,omitempty"`
-	Filters     []gwFilter `json:"filters,omitempty"`
+	gwObjectRef
+	Port    *int32     `json:"port,omitempty"`
+	Weight  *int32     `json:"weight,omitempty"`
+	Filters []gwFilter `json:"filters,omitempty"`
 }
 
 type gwFilter struct {
@@ -81,8 +81,7 @@ type gwRouteParentStatus struct {
 }
 
 type httpRoute struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata"`
 	Spec              struct {
 		ParentRefs []gwParentRef `json:"parentRefs,omitempty"`
 		Hostnames  []string      `json:"hostnames,omitempty"`
@@ -123,8 +122,7 @@ type gwRouteKind struct {
 }
 
 type gatewayObj struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata"`
 	Spec              struct {
 		GatewayClassName string       `json:"gatewayClassName"`
 		Listeners        []gwListener `json:"listeners"`
@@ -140,7 +138,7 @@ type gatewayObj struct {
 }
 
 type referenceGrant struct {
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata"`
 	Spec              struct {
 		From []gwGrantFrom `json:"from"`
 		To   []gwGrantTo   `json:"to"`
@@ -329,17 +327,28 @@ func listenerRefuses(rt *httpRoute, gw *gatewayObj, l gwListener, look httpRoute
 	if l.Protocol != "HTTP" && l.Protocol != "HTTPS" && (l.AllowedRoutes == nil || len(l.AllowedRoutes.Kinds) == 0) {
 		return "protocol " + l.Protocol + " does not carry HTTPRoutes", nil
 	}
-	if ar := l.AllowedRoutes; ar != nil && len(ar.Kinds) > 0 {
-		ok := false
-		for _, k := range ar.Kinds {
-			if deref(k.Group, gatewayGroup) == gatewayGroup && k.Kind == "HTTPRoute" {
-				ok = true
+	if ar := l.AllowedRoutes; ar != nil && len(ar.Kinds) > 0 && !slices.ContainsFunc(ar.Kinds, func(k gwRouteKind) bool {
+		return deref(k.Group, gatewayGroup) == gatewayGroup && k.Kind == "HTTPRoute"
+	}) {
+		return "allowedRoutes.kinds does not include HTTPRoute", nil
+	}
+	if why, err := namespaceRefuses(rt, gw, l, look); why != "" || err != nil {
+		return why, err
+	}
+	if l.Hostname != nil && *l.Hostname != "" && len(rt.Spec.Hostnames) > 0 {
+		for _, h := range rt.Spec.Hostnames {
+			if hostnamesIntersect(*l.Hostname, h) {
+				return "", nil
 			}
 		}
-		if !ok {
-			return "allowedRoutes.kinds does not include HTTPRoute", nil
-		}
+		return "hostname " + *l.Hostname + " matches none of the route's hostnames", nil
 	}
+	return "", nil
+}
+
+// namespaceRefuses applies allowedRoutes.namespaces to the route's
+// namespace.
+func namespaceRefuses(rt *httpRoute, gw *gatewayObj, l gwListener, look httpRouteLookups) (string, error) {
 	from := "Same"
 	var selector *metav1.LabelSelector
 	if ar := l.AllowedRoutes; ar != nil && ar.Namespaces != nil {
@@ -364,14 +373,6 @@ func listenerRefuses(rt *httpRoute, gw *gatewayObj, l gwListener, look httpRoute
 		if gw.Namespace != rt.Namespace {
 			return "allowedRoutes.namespaces.from is Same and the route is in " + rt.Namespace, nil
 		}
-	}
-	if l.Hostname != nil && *l.Hostname != "" && len(rt.Spec.Hostnames) > 0 {
-		for _, h := range rt.Spec.Hostnames {
-			if hostnamesIntersect(*l.Hostname, h) {
-				return "", nil
-			}
-		}
-		return "hostname " + *l.Hostname + " matches none of the route's hostnames", nil
 	}
 	return "", nil
 }
@@ -491,9 +492,7 @@ func (d *diagReport) addParentStatus(rt *httpRoute, i int, p gwParentRef, ns, co
 		parts = append(parts, conditionText(c, rt.Generation))
 	}
 	d.Summary = append(d.Summary, fmt.Sprintf("parent %d status (%s): %s", i+1, st.ControllerName, strings.Join(parts, ", ")))
-	for _, f := range conditionFindings(code+"/route", "Route on "+parentText(ns, p), st.Conditions, rt.Generation, []string{"Accepted", "ResolvedRefs"}, nil) {
-		d.Findings = append(d.Findings, f)
-	}
+	d.Findings = append(d.Findings, conditionFindings(code+"/route", "Route on "+parentText(ns, p), st.Conditions, rt.Generation, []string{"Accepted", "ResolvedRefs"}, nil)...)
 }
 
 // addListenerTLS checks the certificate Secrets of the listeners the
@@ -547,50 +546,53 @@ func (d *diagReport) addRules(rt *httpRoute, look httpRouteLookups, grants *gran
 			})
 		}
 		for j, b := range r.BackendRefs {
-			code := fmt.Sprintf("%d.%d", i+1, j+1)
-			via := fmt.Sprintf("%s backendRefs[%d]", rule, j)
-			group, kind := deref(b.Group, ""), deref(b.Kind, "Service")
-			ns := deref(b.Namespace, rt.Namespace)
-			d.addFilters(b.Filters, via, "rule/"+code)
-			if group != "" || kind != "Service" {
-				d.Findings = append(d.Findings, diagFinding{
-					Code: "unsupported-backend/" + code, Severity: diagInfo,
-					Title:  fmt.Sprintf("Backend %s %s/%s is not checked (%s)", kind, ns, b.Name, via),
-					Detail: "kc checks Service backends only; other backends are interpreted by the implementation.",
-				})
-				continue
-			}
-			if b.Port == nil {
-				d.Findings = append(d.Findings, diagFinding{
-					Code: "backend-no-port/" + code, Severity: diagError,
-					Title:  fmt.Sprintf("Backend Service %s/%s has no port (%s)", ns, b.Name, via),
-					Detail: "A Service backendRef needs a port; the controller reports ResolvedRefs=False for it.",
-				})
-				continue
-			}
-			if ns != rt.Namespace {
-				if f, ok := grants.missing("backend/"+code, "HTTPRoute", rt.Namespace, "", "Service", ns, b.Name, via); ok {
-					d.Findings = append(d.Findings, f)
-				}
-			}
-			weight := deref(b.Weight, 1)
-			c := backendCheck{code: code, via: via, namespace: ns, name: b.Name, port: *b.Port,
-				evidence: fmt.Sprintf("%s -> port %d, weight %d", rule, *b.Port, weight)}
-			f, link := c.run(idx, unreadable)
-			if f != nil {
-				d.Findings = append(d.Findings, *f)
-			}
-			if link != nil {
-				d.Backends = append(d.Backends, *link)
-			}
-			if weight == 0 {
-				d.Findings = append(d.Findings, diagFinding{
-					Code: "backend-weight-zero/" + code, Severity: diagInfo,
-					Title:  fmt.Sprintf("Backend Service %s/%s has weight 0 (%s)", ns, b.Name, via),
-					Detail: "A backend with weight 0 receives no requests.",
-				})
-			}
+			d.addBackendRef(rt, b, fmt.Sprintf("%d.%d", i+1, j+1), rule, fmt.Sprintf("%s backendRefs[%d]", rule, j), idx, unreadable, grants)
 		}
+	}
+}
+
+// addBackendRef checks one backendRef of a rule.
+func (d *diagReport) addBackendRef(rt *httpRoute, b gwBackendRef, code, rule, via string, idx *serviceIndex, unreadable map[string]bool, grants *grantIndex) {
+	group, kind := deref(b.Group, ""), deref(b.Kind, "Service")
+	ns := deref(b.Namespace, rt.Namespace)
+	d.addFilters(b.Filters, via, "rule/"+code)
+	if group != "" || kind != "Service" {
+		d.Findings = append(d.Findings, diagFinding{
+			Code: "unsupported-backend/" + code, Severity: diagInfo,
+			Title:  fmt.Sprintf("Backend %s %s/%s is not checked (%s)", kind, ns, b.Name, via),
+			Detail: "kc checks Service backends only; other backends are interpreted by the implementation.",
+		})
+		return
+	}
+	if b.Port == nil {
+		d.Findings = append(d.Findings, diagFinding{
+			Code: "backend-no-port/" + code, Severity: diagError,
+			Title:  fmt.Sprintf("Backend Service %s/%s has no port (%s)", ns, b.Name, via),
+			Detail: "A Service backendRef needs a port; the controller reports ResolvedRefs=False for it.",
+		})
+		return
+	}
+	if ns != rt.Namespace {
+		if f, ok := grants.missing("backend/"+code, "HTTPRoute", rt.Namespace, "", "Service", ns, b.Name, via); ok {
+			d.Findings = append(d.Findings, f)
+		}
+	}
+	weight := deref(b.Weight, 1)
+	c := backendCheck{code: code, via: via, namespace: ns, name: b.Name, port: *b.Port,
+		evidence: fmt.Sprintf("%s -> port %d, weight %d", rule, *b.Port, weight)}
+	f, link := c.run(idx, unreadable)
+	if f != nil {
+		d.Findings = append(d.Findings, *f)
+	}
+	if link != nil {
+		d.Backends = append(d.Backends, *link)
+	}
+	if weight == 0 {
+		d.Findings = append(d.Findings, diagFinding{
+			Code: "backend-weight-zero/" + code, Severity: diagInfo,
+			Title:  fmt.Sprintf("Backend Service %s/%s has weight 0 (%s)", ns, b.Name, via),
+			Detail: "A backend with weight 0 receives no requests.",
+		})
 	}
 }
 

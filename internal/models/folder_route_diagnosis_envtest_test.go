@@ -49,9 +49,9 @@ func TestIngressDiagnosisEnvtest(t *testing.T) {
 			{Hosts: []string{"shop.example.com"}, SecretName: "web-tls"},
 			{Hosts: []string{"shop.example.com"}, SecretName: "gone-tls"},
 		},
-		Rules: []networkingv1.IngressRule{{Host: "shop.example.com", IngressRuleValue: networkingv1.IngressRuleValue{HTTP: &networkingv1.HTTPIngressRuleValue{
+		Rules: []networkingv1.IngressRule{{Host: "shop.example.com", HTTP: &networkingv1.HTTPIngressRuleValue{
 			Paths: []networkingv1.HTTPIngressPath{path("/", "web"), path("/api", "api")},
-		}}}},
+		}}},
 	}})
 
 	cl, err := kccluster.New(testCfg)
