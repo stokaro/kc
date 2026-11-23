@@ -27,6 +27,8 @@ func topPods(n int) []models.InfoConsumer {
 func attentionBars() []models.InfoBar {
 	b := bars(25, 55)
 	b[1].AttentionText, b[1].Attention = "! lim", models.RowHealthNotReady
+	// As in a real summary: the line the mark names is in that state.
+	b[1].MoreHealth = []models.RowHealth{models.RowHealthOK, models.RowHealthNotReady}
 	return b
 }
 

@@ -36,6 +36,11 @@ const (
 	// readableBarCells is the shortest bar that keeps the attention marks
 	// on its line; below it the marks move to the next line.
 	readableBarCells = 10
+	// compactWidth is the pane width below which Info uses its compact
+	// layout: lines under a bar start two cells in, the lines under a bar
+	// that need no attention are left out, and a top pod's name goes on
+	// its own line when it does not fit after the numbers.
+	compactWidth = 48
 )
 
 // Summarizer is the data behind the widget: models.OverviewInfo.
@@ -432,8 +437,9 @@ func (w *Widget) content(width int) []infoLine {
 	if len(w.summary.Top) == 0 {
 		para("   ", w.summary.TopNote)
 	}
+	cols := consumerColumns(w.summary.Top)
 	for i, c := range w.summary.Top {
-		for _, line := range consumerLines(c, width) {
+		for _, line := range consumerLines(c, w.summary.TopNamespace, cols, width) {
 			out = append(out, infoLine{text: ansi.Truncate(line, width, ""), consumer: i})
 		}
 	}
@@ -473,7 +479,10 @@ func (w *Widget) topTitle() string {
 // consumerLines renders a top pod as "  2048Mi   120m  db/postgres-0".
 // A long name wraps under itself; in a very narrow pane the whole entry
 // wraps.
-func consumerLines(c models.InfoConsumer, width int) []string {
+func consumerLines(c models.InfoConsumer, namespace string, cols [2]int, width int) []string {
+	if width < compactWidth {
+		return compactConsumerLines(c, namespace, cols, width)
+	}
 	prefix := fmt.Sprintf("   %8s %6s  ", c.Memory, c.CPU)
 	name := c.Namespace + "/" + c.Name
 	n := width - len(prefix)
@@ -507,9 +516,9 @@ func wrapText(s string, width int) []string {
 }
 
 // detailIndent is the indent of the lines under a bar: under the bar
-// itself, or two cells in a pane too narrow for that.
+// itself, or two cells in a compact pane.
 func detailIndent(width int) string {
-	if width < labelWidth+1+16 {
+	if width < compactWidth {
 		return "  "
 	}
 	return strings.Repeat(" ", labelWidth+1)
@@ -541,6 +550,12 @@ func barBlock(b models.InfoBar, h *history, now time.Time, width, cells int) []s
 		if i < len(b.MoreHealth) {
 			health = b.MoreHealth[i]
 		}
+		// A compact pane keeps the lines that need attention and those that
+		// say why a value is n/a; the others wrap into a column of fragments
+		// that pushes the next bars out of view.
+		if width < compactWidth && health <= models.RowHealthOK && !strings.Contains(line, "n/a") {
+			continue
+		}
 		para(line, health)
 	}
 	if h == nil {
@@ -560,6 +575,11 @@ func barBlock(b models.InfoBar, h *history, now time.Time, width, cells int) []s
 	view, ok := s.render(now, width-len(indent)-1-2-len(windowMark))
 	if !ok {
 		return out
+	}
+	// "collecting, 1 sample" says only that a line is on its way; a
+	// compact pane leaves it out until there is a line to label.
+	if view.line == "" && width < compactWidth {
+		return append(out, "")
 	}
 	para(view.label, models.RowHealthUnknown)
 	if view.line != "" {
@@ -781,4 +801,36 @@ func (w *Widget) windowCoverage(h *history) string {
 		cpu, mem = h.cpu.coverage(start, to, now), h.mem.coverage(start, to, now)
 	}
 	return "window " + win.Label(loc) + ": " + coverageText(cpu, mem, loc)
+}
+
+// consumerColumns is the width of the memory and the CPU column of the
+// top pods: their widest value, so a narrow pane spends no cells on
+// padding.
+func consumerColumns(top []models.InfoConsumer) [2]int {
+	var cols [2]int
+	for _, c := range top {
+		cols[0] = max(cols[0], ansi.StringWidth(c.Memory))
+		cols[1] = max(cols[1], ansi.StringWidth(c.CPU))
+	}
+	return cols
+}
+
+// compactConsumerLines shows a top pod in a narrow pane: the numbers in
+// columns of cols cells with the name after them when it fits, else the
+// name on the lines under them. The namespace is left out when the title
+// names it.
+func compactConsumerLines(c models.InfoConsumer, namespace string, cols [2]int, width int) []string {
+	name := c.Name
+	if namespace == "" || c.Namespace != namespace {
+		name = c.Namespace + "/" + c.Name
+	}
+	prefix := fmt.Sprintf(" %*s %*s ", cols[0], c.Memory, cols[1], c.CPU)
+	if ansi.StringWidth(prefix)+ansi.StringWidth(name) <= width {
+		return []string{prefix + name}
+	}
+	out := []string{strings.TrimRight(prefix, " ")}
+	for _, part := range wrapText(name, width-3) {
+		out = append(out, "   "+part)
+	}
+	return out
 }

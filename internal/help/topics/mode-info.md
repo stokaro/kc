@@ -35,6 +35,14 @@ attention, a mark after the bar's percentage names it: `! lim` warns,
 `!! node` fails. Without pod usage the bar shows the requests.
 Percentages are truncated, as `kubectl describe node` prints them.
 
+In a narrow panel (under 48 columns, for example a 25% panel) Info is
+compact: the lines under a bar start two columns in, and a `node` or
+`req`/`lim` line shows only when it needs attention or says why a value
+is `n/a`. A mark after the bar still names it. The history shows once
+it has a line, without `collecting, 1 sample` first. Top pods leave out the
+namespace that the title names, and a long pod name goes under its
+numbers. Widen the panel (`M-w`) to see every line.
+
 The line under the scope dates the usage by metrics-server's own time:
 `usage measured 25s ago over 15s, read 3s ago`. A sample older than two
 minutes is marked stale and not used. `7 of 10 pods measured` means the
