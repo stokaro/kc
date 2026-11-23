@@ -35,6 +35,11 @@ func TestOverviewEventLinksToTheInvolvedObject(t *testing.T) {
 			want: ObjectRef{GVR: ovPodsGVR, Namespaced: true, Namespace: "a", Name: "web"},
 		},
 		{
+			name: "the reference keeps the involved object's UID",
+			ref:  corev1.ObjectReference{APIVersion: "v1", Kind: "Pod", Name: "web", UID: "old-uid"},
+			want: ObjectRef{GVR: ovPodsGVR, Namespaced: true, Namespace: "a", Name: "web", UID: "old-uid"},
+		},
+		{
 			name: "a deployment in its own namespace",
 			ref:  corev1.ObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Namespace: "b", Name: "api"},
 			want: ObjectRef{GVR: ovDeploymentsGVR, Namespaced: true, Namespace: "b", Name: "api"},
