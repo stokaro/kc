@@ -150,6 +150,53 @@ func TestFormView(t *testing.T) {
 	}
 }
 
+// An input value wider than the form scrolls inside its one line, with
+// the cursor in view, so the rows under it stay where the frame joins them.
+func TestFormViewLongInput(t *testing.T) {
+	t.Parallel()
+	long := "/tmp/" + strings.Repeat("a-very-long-directory-name/", 4) + "end"
+	for _, tc := range []struct {
+		name   string
+		cursor func(m *textinput.Model)
+		shows  string
+	}{
+		{name: "cursor at the end", cursor: func(m *textinput.Model) { m.CursorEnd() }, shows: "name/end"},
+		{name: "cursor at the start", cursor: func(m *textinput.Model) { m.CursorStart() }, shows: "/tmp/a-very"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := dialog.NewInput(dialog.Normal(), long)
+			tc.cursor(&in)
+			form := dialog.Form{Skin: dialog.Normal(), Items: []dialog.Item{
+				dialog.Text{Text: "to:"},
+				dialog.Input{Model: &in},
+				dialog.Rule{},
+				dialog.Text{Text: "below"},
+			}}
+			form.FocusFirst()
+			content, cursor, rules := form.View(40)
+			lines := strings.Split(content, "\n")
+			if len(lines) != form.Height() {
+				t.Fatalf("%d lines, want %d:\n%s", len(lines), form.Height(), ansi.Strip(content))
+			}
+			for i, l := range lines {
+				if w := ansi.StringWidth(l); w != 40 {
+					t.Fatalf("line %d is %d wide", i, w)
+				}
+			}
+			if field := ansi.Strip(lines[1]); !strings.Contains(field, tc.shows) {
+				t.Fatalf("input line %q does not show %q", field, tc.shows)
+			}
+			if len(rules) != 1 || rules[0] != 2 {
+				t.Fatalf("rules = %v, want [2]", rules)
+			}
+			if cursor == nil || cursor.Position.Y != 1 || cursor.Position.X < 1 || cursor.Position.X > 38 {
+				t.Fatalf("cursor = %+v, want inside the input line", cursor)
+			}
+		})
+	}
+}
+
 func press(code rune, mod tea.KeyMod) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: code, Mod: mod}
 }
