@@ -120,6 +120,9 @@ func (s *Store) read() (*Config, map[string]any, error) {
 	if err := cfg.Layout.Validate(); err != nil {
 		return nil, nil, &LoadError{Path: s.path, Err: err}
 	}
+	if err := cfg.Charts.Validate(); err != nil {
+		return nil, nil, &LoadError{Path: s.path, Err: err}
+	}
 	return cfg, raw, nil
 }
 

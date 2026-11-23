@@ -392,6 +392,7 @@ In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain
 - `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, measured pod and node usage, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
 - `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
 - `metricsHistory.window`, `metricsHistory.timeout`, `metricsHistory.backends` – past workload usage from Prometheus in the Info panel mode (off by default; see [Cluster Overview](#cluster-overview)). `C-x m` tests a backend and saves it for the current context; see [Metric sources](internal/help/topics/metric-sources.md). The dashboard (`C-x g`, `kc dashboard`) reads the same backend; see [Dashboard](internal/help/topics/dashboard.md).
+- `charts.graphics` – how the dashboard draws its charts: `auto` (the default) draws the plots as images in kitty and Ghostty, and under tmux with `allow-passthrough on`; `text` always draws braille or blocks; `kitty` always draws images. See [Dashboard](internal/help/topics/dashboard.md).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -720,6 +721,15 @@ metricsHistory:
   # Bound on one read of the history, all queries together.
   timeout: 15s
   backends: []
+
+# How the dashboard (C-x g) draws its charts. auto draws the plots as
+# images in terminals known to show Kitty graphics Unicode placeholders:
+# kitty (TERM=xterm-kitty or KITTY_WINDOW_ID) and Ghostty (TERM=xterm-ghostty
+# or TERM_PROGRAM=ghostty); under tmux only when the client is one of those
+# and allow-passthrough is on. text always draws braille or blocks, kitty
+# always draws images. b in the dashboard switches between them.
+charts:
+  graphics: auto
 ```
 
 ### Panel colors
