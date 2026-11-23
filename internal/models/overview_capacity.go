@@ -28,6 +28,19 @@ type capacityAmounts struct {
 	// pods has PodMetrics. hasNodeUse is false without NodeMetrics for it.
 	hasPodUse, hasNodeUse bool
 	podReason, nodeReason string // why the usage is not known
+	// podsMeasured of podsEligible running pods have PodMetrics. podUse
+	// is their sum, so with fewer measured it is a lower bound, not a
+	// complete figure.
+	podsMeasured, podsEligible int
+}
+
+// podCoverage is ", 7 of 10 pods measured" when pod usage is known for some
+// pods only, else "".
+func (a capacityAmounts) podCoverage() string {
+	if !a.hasPodUse || a.podsMeasured >= a.podsEligible {
+		return ""
+	}
+	return fmt.Sprintf(", %d of %d pods measured", a.podsMeasured, a.podsEligible)
 }
 
 // sumCapacity adds up the amounts of several nodes. A usage is known only
@@ -42,6 +55,8 @@ func sumCapacity(nodes []capacityAmounts) capacityAmounts {
 		sum.lim += n.lim
 		sum.alloc += n.alloc
 		sum.capacity += n.capacity
+		sum.podsMeasured += n.podsMeasured
+		sum.podsEligible += n.podsEligible
 		if !n.hasPodUse {
 			sum.hasPodUse = false
 			if sum.podReason == "" {
@@ -176,6 +191,9 @@ func (j capacityJudgement) overviewText(a capacityAmounts) string {
 	pods := "pods n/a"
 	if a.hasPodUse {
 		pods = "pods " + percentText(j.podPct)
+		if a.podsMeasured < a.podsEligible {
+			pods += fmt.Sprintf(" (%d/%d measured)", a.podsMeasured, a.podsEligible)
+		}
 	}
 	node := "node n/a"
 	switch {

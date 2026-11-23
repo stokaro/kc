@@ -209,9 +209,14 @@ func (w *Widget) historyKey() string {
 	return w.target.Key + "|" + w.target.Node
 }
 
-// record adds a sample when the usage was measured again.
+// record adds a sample when the usage was measured again. Without a
+// measurement time it dates the sample by the read.
 func (w *Widget) record() {
-	if w.summary.UsageAt.IsZero() {
+	at := w.summary.UsageAt
+	if at.IsZero() {
+		at = w.summary.UsageReadAt
+	}
+	if at.IsZero() {
 		return
 	}
 	cpu, mem, ok := usagePercents(w.summary)
@@ -223,7 +228,7 @@ func (w *Widget) record() {
 		h = &history{}
 		w.history[w.historyKey()] = h
 	}
-	h.add(w.summary.UsageAt, cpu, mem)
+	h.add(at, cpu, mem)
 }
 
 // usagePercents returns the CPU and memory bars when both show usage. A
@@ -287,11 +292,7 @@ func (w *Widget) lines(width, height int) []string {
 		scope = "node " + w.target.Node
 	}
 	add(" " + scope)
-	if at := w.summary.UsageAt; !at.IsZero() {
-		add(fmt.Sprintf(" usage measured %s ago", shortAge(w.opts.Now().Sub(at))))
-	} else {
-		add(" usage not measured")
-	}
+	add(" " + usageAge(w.summary, w.opts.Now()))
 	add("")
 	h := w.history[w.historyKey()]
 	if t := w.summary.BarsTitle; t != "" {
@@ -414,6 +415,31 @@ func renderBar(pct float64, width int) string {
 	}
 	b.WriteString(strings.Repeat("░", width-cells))
 	return b.String()
+}
+
+// usageAge says how old the usage is: when metrics-server measured it, over
+// which window, and when kc read it. The measurement can be much older than
+// the read, so the two are never merged into one age.
+func usageAge(s models.InfoSummary, now time.Time) string {
+	switch {
+	case !s.UsageAt.IsZero():
+		age := now.Sub(s.UsageAt)
+		read := ""
+		if !s.UsageReadAt.IsZero() {
+			read = fmt.Sprintf(", read %s ago", shortAge(now.Sub(s.UsageReadAt)))
+		}
+		if age >= models.UsageStaleAfter {
+			return styled(fmt.Sprintf("usage measured %s ago: stale, metrics-server returns old samples%s", shortAge(age), read), models.RowHealthNotReady)
+		}
+		over := ""
+		if s.UsageWindow > 0 {
+			over = " over " + shortAge(s.UsageWindow)
+		}
+		return fmt.Sprintf("usage measured %s ago%s%s", shortAge(age), over, read)
+	case !s.UsageReadAt.IsZero():
+		return fmt.Sprintf("usage read %s ago, measurement time not reported", shortAge(now.Sub(s.UsageReadAt)))
+	}
+	return "usage not measured"
 }
 
 func shortAge(d time.Duration) string {
