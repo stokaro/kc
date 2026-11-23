@@ -14,8 +14,8 @@ new pods from landing on a node, drain moves the running pods away.
   the dialog says `Nothing to do`.
 - Cordoned nodes are shown in red, like nodes that are not ready.
 
-Every action ends in the red confirmation dialog with the nodes, the
-notes and the equivalent kubectl command.
+Every action that changes a node ends in the red confirmation dialog
+with the nodes, the notes and the equivalent kubectl command.
 
 ## Drain options
 
@@ -31,11 +31,17 @@ notes and the equivalent kubectl command.
   lost.
 - Force: evicts pods without a controller; nothing recreates them.
 
-kc then reads the pods on the nodes and refuses at once, changing
-nothing, when kubectl would refuse them (for example "Pods with local
-storage"). Otherwise the red dialog shows what the drain does, how many
-pods it evicts and the `kubectl drain` command, and what the evictions
-touch:
+`Enter` makes kc read the pods on the nodes while the options stay
+open. When kubectl would refuse some of them (for example "Pods with
+local storage"), nothing changes: the options stay as you set them, and
+each refused pod is listed in red under the option that lets the drain
+evict or skip it, with the focus on the first such option. Tick it and
+press `Enter` again, or cancel. A pod that no option helps, such as one
+whose DaemonSet kc cannot read, is listed above the buttons.
+
+Otherwise the options close, and the red dialog shows what the drain
+does, how many pods it evicts and the `kubectl drain` command, and what
+the evictions touch:
 
 - the workloads, by the controller of the evicted pods;
 - each PodDisruptionBudget that covers them, with its status as read
@@ -72,7 +78,8 @@ shown as such. kc asks again every five seconds.
 
 - `M-n` or `Esc n` opens the menu; `Up`, `Down` and `Enter` choose.
 - In the drain options: `Up`, `Down` or `Tab` move between fields, type
-  to edit a number, `Space` toggles a check box, `Enter` drains.
+  to edit a number, `Space` toggles a check box, `Enter` checks the
+  pods and opens the red dialog.
 - `Esc` closes the menu or the options without a change.
 - In the progress dialog: `Esc` cancels the drain; the nodes stay
   cordoned. When it is done, `Enter` closes it.

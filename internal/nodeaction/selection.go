@@ -26,7 +26,18 @@ type PodNote struct {
 	// as the budget covering the pod when the drain was prepared. It is
 	// shown apart from the message, which is the API's own answer.
 	Evidence string
+	// Override is the kubectl drain flag that lets the drain evict or skip
+	// a pod it refuses, such as "--delete-emptydir-data"; empty when no
+	// flag helps.
+	Override string
 }
+
+// The kubectl drain flags a refused pod can name in PodNote.Override.
+const (
+	OverrideIgnoreDaemonSets   = "--ignore-daemonsets"
+	OverrideDeleteEmptyDirData = "--delete-emptydir-data"
+	OverrideForce              = "--force"
+)
 
 // String returns "namespace/name: message".
 func (n PodNote) String() string {
@@ -68,6 +79,11 @@ func SelectPods(pods []corev1.Pod, opts DrainOptions, dsExists DaemonSetExists) 
 		note := func(msg string) PodNote {
 			return PodNote{Namespace: pod.Namespace, Name: pod.Name, Message: msg}
 		}
+		refuse := func(msg, override string) {
+			n := note(msg)
+			n.Override = override
+			s.Blocked = append(s.Blocked, n)
+		}
 		finished := pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
 		controller := metav1.GetControllerOf(&pod)
 		var warning string
@@ -81,13 +97,13 @@ func SelectPods(pods []corev1.Pod, opts DrainOptions, dsExists DaemonSetExists) 
 			case !exists && opts.Force:
 				warning = "DaemonSet " + controller.Name + " not found"
 			case !exists:
-				s.Blocked = append(s.Blocked, note("DaemonSet "+controller.Name+" not found (use --force to override)"))
+				refuse("DaemonSet "+controller.Name+" not found (use --force to override)", OverrideForce)
 				continue
 			case opts.IgnoreDaemonSets:
 				s.Skipped = append(s.Skipped, note(daemonSetWarning))
 				continue
 			default:
-				s.Blocked = append(s.Blocked, note(daemonSetFatal))
+				refuse(daemonSetFatal, OverrideIgnoreDaemonSets)
 				continue
 			}
 		}
@@ -97,14 +113,14 @@ func SelectPods(pods []corev1.Pod, opts DrainOptions, dsExists DaemonSetExists) 
 		}
 		if hasEmptyDir(pod) && !finished {
 			if !opts.DeleteEmptyDirData {
-				s.Blocked = append(s.Blocked, note(localStorageFatal))
+				refuse(localStorageFatal, OverrideDeleteEmptyDirData)
 				continue
 			}
 			warning = localStorageNote
 		}
 		if controller == nil && !finished {
 			if !opts.Force {
-				s.Blocked = append(s.Blocked, note(unmanagedFatal))
+				refuse(unmanagedFatal, OverrideForce)
 				continue
 			}
 			warning = unmanagedWarning
