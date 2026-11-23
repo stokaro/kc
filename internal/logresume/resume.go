@@ -70,6 +70,11 @@ type Config struct {
 	// Start is the container instance the stream belongs to. When it is
 	// zero, the first Check result is used.
 	Start Instance
+	// Position, when not nil, is where a resumed stream continues: the
+	// first open asks for the lines after it, as a reconnect does. Run
+	// keeps it at the last delivered line, so a later Run with the same
+	// Position continues without repeating lines.
+	Position *Position
 	// FirstDelay, MaxDelay and MaxAttempts bound the retries: the delay
 	// doubles from FirstDelay up to MaxDelay, and after MaxAttempts failed
 	// attempts in a row Run gives up. Zero means the default.
@@ -97,6 +102,14 @@ func (c Config) maxAttempts() int {
 		return DefaultMaxAttempts
 	}
 	return c.MaxAttempts
+}
+
+// Position is the kubelet time of the last delivered line and the number
+// of delivered lines with exactly that time. The zero value is the start
+// of the stream.
+type Position struct {
+	Time time.Time
+	Seen int
 }
 
 // Resumable reports whether a stream with opts is resumed: a followed
@@ -139,7 +152,7 @@ func Run(ctx context.Context, cfg Config, sink Sink) error {
 
 // run is Run with the first stream already open when first is not nil.
 func run(ctx context.Context, cfg Config, sink Sink, first io.ReadCloser) error {
-	r := &resumer{cfg: cfg, sink: sink, start: cfg.Start}
+	r := newResumer(cfg, sink)
 	if first == nil {
 		var err error
 		if first, err = cfg.Open(ctx, r.options()); err != nil {
@@ -166,10 +179,8 @@ type resumer struct {
 	sink  Sink
 	start Instance
 
-	// cursor is the kubelet time of the last delivered line; seen counts
-	// the delivered lines with exactly that time.
-	cursor time.Time
-	seen   int
+	// pos is the last delivered line.
+	pos *Position
 	// After a reconnect, dedupe drops the lines up to the cursor, skip of
 	// them at the cursor itself, until a newer line arrives; confirm is
 	// set until the first line tells whether the new stream covers the
@@ -177,6 +188,17 @@ type resumer struct {
 	dedupe  bool
 	skip    int
 	confirm bool
+}
+
+func newResumer(cfg Config, sink Sink) *resumer {
+	r := &resumer{cfg: cfg, sink: sink, start: cfg.Start, pos: cfg.Position}
+	if r.pos == nil {
+		r.pos = &Position{}
+	}
+	if Resumable(cfg.Options) {
+		r.resumed()
+	}
+	return r
 }
 
 func (r *resumer) run(ctx context.Context, body io.ReadCloser) error {
@@ -257,7 +279,7 @@ func (r *resumer) reconnect(ctx context.Context, cause error, failures *int) (io
 			return nil, nil
 		}
 		if err == nil {
-			r.dedupe, r.skip, r.confirm = !r.cursor.IsZero(), r.seen, !r.cursor.IsZero()
+			r.resumed()
 			r.notice("reconnected")
 			r.state(StateStreaming)
 			return body, nil
@@ -270,6 +292,12 @@ func (r *resumer) reconnect(ctx context.Context, cause error, failures *int) (io
 		}
 		cause = err
 	}
+}
+
+// resumed sets up a stream that continues after pos: it drops the lines
+// up to pos and checks that the first new line follows on.
+func (r *resumer) resumed() {
+	r.dedupe, r.skip, r.confirm = !r.pos.Time.IsZero(), r.pos.Seen, !r.pos.Time.IsZero()
 }
 
 // delay is the wait before attempt n (from 1): FirstDelay doubled per
@@ -298,8 +326,8 @@ func (r *resumer) options() *corev1.PodLogOptions {
 		return opts
 	}
 	opts.Timestamps = true
-	if !r.cursor.IsZero() {
-		since := metav1.NewTime(r.cursor.Truncate(time.Second))
+	if !r.pos.Time.IsZero() {
+		since := metav1.NewTime(r.pos.Time.Truncate(time.Second))
 		opts.SinceTime = &since
 		opts.SinceSeconds = nil
 		opts.TailLines = nil
@@ -347,25 +375,25 @@ func (r *resumer) accept(line string) (string, bool) {
 	}
 	if r.confirm {
 		r.confirm = false
-		if ts.After(r.cursor) {
-			r.notice("lines after " + r.cursor.UTC().Format(time.RFC3339Nano) + " may be missing")
+		if ts.After(r.pos.Time) {
+			r.notice("lines after " + r.pos.Time.UTC().Format(time.RFC3339Nano) + " may be missing")
 		}
 	}
 	if r.dedupe {
 		switch {
-		case ts.Before(r.cursor):
+		case ts.Before(r.pos.Time):
 			return "", false
-		case ts.Equal(r.cursor) && r.skip > 0:
+		case ts.Equal(r.pos.Time) && r.skip > 0:
 			r.skip--
 			return "", false
-		case ts.After(r.cursor):
+		case ts.After(r.pos.Time):
 			r.dedupe = false
 		}
 	}
-	if ts.Equal(r.cursor) {
-		r.seen++
+	if ts.Equal(r.pos.Time) {
+		r.pos.Seen++
 	} else {
-		r.cursor, r.seen = ts, 1
+		*r.pos = Position{Time: ts, Seen: 1}
 	}
 	if r.cfg.Options.Timestamps {
 		return line, true

@@ -128,7 +128,7 @@ func panelLogsPod(root context.Context, cl *kccluster.Cluster, spec models.LogsS
 func openPanelAllContainers(root context.Context, cl *kccluster.Cluster, spec models.LogsSpec, maxRequests int, open logmux.Opener, containers []string) (logswidget.Stream, error) {
 	spec.Container = ""
 	ctx, cancel := context.WithCancel(root)
-	src, err := startWorkloadLogs(ctx, cl, models.WorkloadLogsSpec{Namespace: spec.Namespace, Pod: spec.Pod}, spec, maxRequests, open, false)
+	src, err := startWorkloadLogs(ctx, cl, models.WorkloadLogsSpec{Namespace: spec.Namespace, Pod: spec.Pod}, spec, maxRequests, open, false, nil)
 	if err != nil {
 		cancel()
 		return logswidget.Stream{}, err

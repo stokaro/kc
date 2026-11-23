@@ -564,6 +564,11 @@ func (w *Widget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panel
 		case !w.follow:
 			info.HeaderStatus = "paused, End follows"
 		}
+		// A merged stream (all containers) always shows which of its
+		// sources it follows.
+		if c, ok := w.body.(interface{ Coverage() string }); ok {
+			info.HeaderStatus = strings.TrimSuffix(c.Coverage()+", "+info.HeaderStatus, ", ")
+		}
 	case stateEnded:
 		info.HeaderStatus = "ended"
 	case stateFailed:

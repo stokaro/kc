@@ -51,6 +51,11 @@ func (v *LogsViewer) handleLogViewKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 			return v.onFilter(), true
 		}
 		return nil, true
+	case logsSourcesKey:
+		if v.onSources != nil {
+			return v.onSources(), true
+		}
+		return nil, false
 	case copyAllKey:
 		return viewerCopyRequest(v.inner.PlainText(), v.copyWhatNote("shown lines")), true
 	}
@@ -182,13 +187,17 @@ func (v *LogsViewer) logViewHints() []FooterHint {
 	if v.log.Mode() == logview.ModeRaw {
 		toggle = "Format"
 	}
-	return []FooterHint{
+	hints := []FooterHint{
 		{Key: "M-v", Label: toggle, Enabled: true},
 		{Key: "M-g", Label: "Filter", Enabled: v.onFilter != nil},
 		{Key: "M-a", Label: "Copy shown", Enabled: true},
 		{Key: "M-A", Label: "Copy orig", Enabled: true},
 		{Key: "M-c", Label: "Copy cmd", Enabled: v.bar.command != ""},
 	}
+	if v.onSources != nil {
+		hints = append(hints, FooterHint{Key: "M-s", Label: "Sources", Enabled: true})
+	}
+	return hints
 }
 
 // logsFilterModalName registers the filter dialog with the modal manager.

@@ -81,7 +81,10 @@ func resolveWorkloadPods(ctx context.Context, cl *kccluster.Cluster, spec models
 // logs (its Container is ignored; the mux sets it per target). The mux lives
 // on ctx; open opens one container stream. color selects the ANSI-colored
 // line prefix of the fullscreen viewer over the plain one of the Logs panel.
-func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.WorkloadLogsSpec, logs models.LogsSpec, maxRequests int, open logmux.Opener, color bool) (*workloadLogsSource, error) {
+//
+// sel, when not nil, overrides maxRequests and filters the sources (the
+// fullscreen viewer's M-s dialog).
+func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.WorkloadLogsSpec, logs models.LogsSpec, maxRequests int, open logmux.Opener, color bool, sel *logSelection) (*workloadLogsSource, error) {
 	log := ctrllog.FromContext(ctx).WithName("workloadLogs")
 	startCtx, cancel := context.WithTimeout(ctx, workloadLogsStartTimeout)
 	defer cancel()
@@ -108,12 +111,19 @@ func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.W
 	logOpts.Container = ""
 	// The follower is set before its handler is registered, so before the
 	// first target, and with it the first stream, exists.
+	var filter logmux.Filter
+	if sel != nil {
+		filter, maxRequests = sel.get()
+	}
 	var follower *logmux.Follower
 	mux := logmux.New(ctx, open, logmux.Options{
 		LogOptions: logOpts,
 		MaxStreams: maxRequests,
 		Check:      func(t logmux.Target) (logresume.Instance, bool) { return follower.Instance(t) },
 	})
+	if !filter.IsZero() {
+		mux.SetFilter(filter)
+	}
 	follower = logmux.NewFollower(mux, match)
 	reg, err := informer.AddEventHandler(follower)
 	if err != nil {
@@ -242,8 +252,10 @@ func (a *App) showWorkloadLogs(msg workloadLogsReadyMsg) tea.Cmd {
 	if a.cfg != nil {
 		logs = logsSpecWithDefaults(logs, a.cfg.Viewer.Logs)
 	}
+	// The selection outlives each merged stream: F2 restarts keep it.
+	sel := &logSelection{limit: maxRequests}
 	open := func(ls models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) {
-		src, err := startWorkloadLogs(parent, cl, spec, ls, maxRequests, openContainer, true)
+		src, err := startWorkloadLogs(parent, cl, spec, ls, maxRequests, openContainer, true, sel)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -256,8 +268,10 @@ func (a *App) showWorkloadLogs(msg workloadLogsReadyMsg) tea.Cmd {
 	logsViewer.SetStyledLines(true)
 	provider, selector := msg.provider, msg.selector
 	logsViewer.SetCommandBuilder(func(ls models.LogsSpec) string {
-		return provider.WorkloadLogsCommand(spec, ls, selector, maxRequests)
+		_, limit := sel.get()
+		return provider.WorkloadLogsCommand(spec, ls, selector, limit)
 	})
+	logsViewer.SetOnSources(func() tea.Cmd { return a.showLogsSourcesModal(logsViewer, sel) })
 	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
 	logsViewer.SetOnFilter(func() tea.Cmd { return a.showLogsFilterModal(logsViewer) })
