@@ -172,7 +172,7 @@ func (m *Model) eventsFrame(v *view, r rect) []string {
 	body := []string{
 		noteStyle().Render(laneLead(lead)) + m.laneLine(v, lane),
 		strings.Repeat(" ", lead) + m.laneLabels(v, lane, cells),
-		headStyle().Render(fit(eventHeader(inner), inner)),
+		headStyle().Render(fit(eventHeader(inner, counted(shown)), inner)),
 	}
 	if rows := r.h - 2 - eventsListAt; rows > 0 {
 		body = append(body, m.eventRows(v, shown, inner, rows)...)
@@ -234,7 +234,9 @@ func (m *Model) laneLabels(v *view, lane []rune, cells int) string {
 		unknown++
 	}
 	if n := m.earlierEvents(v); n > 0 && unknown == 0 {
-		put(0, "← "+plural(n, "Event")+" before the chart starts", markNormal)
+		// The chart may cover seconds of a range of minutes; the lane
+		// says where the others are rather than when the chart starts.
+		put(0, "← "+strings.Replace(plural(n, "Event"), " ", " earlier ", 1)+", listed below", markNormal)
 	}
 	for _, l := range m.markLabels(v, cells) {
 		n := len([]rune(l.text))
@@ -338,12 +340,27 @@ const (
 	colCount  = 6
 )
 
-func eventHeader(w int) string {
+// eventHeader names the columns of the Events list; Count only when an
+// Event of the list happened more than once.
+func eventHeader(w int, count bool) string {
 	h := pad("Time", colTime) + pad("Type", colType) + pad("Reason", colReason)
 	if w >= 100 {
 		h += pad("Object", colObject)
 	}
-	return h + lpad("Count", colCount) + "  Message"
+	if count {
+		h += lpad("Count", colCount) + "  "
+	}
+	return h + "Message"
+}
+
+// counted reports whether an Event of shown happened more than once.
+func counted(shown []models.UsageEvent) bool {
+	for _, e := range shown {
+		if e.Count > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // eventRows lists the shown Events in rows lines, scrolled to the
@@ -356,8 +373,9 @@ func (m *Model) eventRows(v *view, shown []models.UsageEvent, w, rows int) []str
 	if v.evSel >= rows {
 		first = v.evSel - rows + 1
 	}
+	count := counted(shown)
 	for i := first; i < len(shown) && len(lines) < rows; i++ {
-		row := m.eventRow(v, shown[i], w)
+		row := m.eventRow(v, shown[i], w, count)
 		if v.focus == widgetEvents && i == v.evSel {
 			row = curStyle().Render(fit(ansi.Strip(row), w))
 		}
@@ -384,7 +402,7 @@ func (m *Model) timeLayout(v *view) string {
 }
 
 // eventRow is one Event in the columns of eventHeader.
-func (m *Model) eventRow(v *view, e models.UsageEvent, w int) string {
+func (m *Model) eventRow(v *view, e models.UsageEvent, w int, count bool) string {
 	typ := string(eventMark(e)) + " "
 	st := noteStyle()
 	switch eventMark(e) {
@@ -395,16 +413,15 @@ func (m *Model) eventRow(v *view, e models.UsageEvent, w int) string {
 	default:
 		typ += "Normal"
 	}
-	count := ""
-	if e.Count > 1 {
-		count = strconv.Itoa(int(e.Count))
-	}
 	row := baseStyle().Render(pad(e.Last.In(m.loc()).Format(m.timeLayout(v)), colTime)) +
 		st.Render(pad(typ, colType)) + baseStyle().Render(pad(truncate(e.Reason, colReason-1), colReason))
 	if w >= 100 {
 		row += baseStyle().Render(pad(truncate(e.Kind+" "+e.Object.Name, colObject-1), colObject))
 	}
-	return row + baseStyle().Render(lpad(count, colCount)+"  ") + noteStyle().Render(firstLine(e.Message))
+	if count {
+		row += baseStyle().Render(lpad(strconv.Itoa(int(max(1, e.Count))), colCount) + "  ")
+	}
+	return row + noteStyle().Render(firstLine(e.Message))
 }
 
 // eventLogs is the logs request of l: the pod or workload of the

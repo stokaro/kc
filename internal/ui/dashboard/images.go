@@ -162,6 +162,13 @@ func (m *Model) syncImages() tea.Cmd {
 			continue
 		}
 		cw, ch := m.src.Images.CellSize(cols, rows)
+		// The cursor is text over the image: when only it moved, the
+		// terminal has the picture already and nothing is drawn.
+		rk := c.RasterKey(cw, ch)
+		if _, shown := m.src.Images.Shown(key, cols, rows); shown && m.rasterKeys[key] == rk {
+			continue
+		}
+		m.rasterKeys[key] = rk
 		cmds = append(cmds, m.src.Images.Show(key, c.Raster(cw, ch), cols, rows))
 	}
 	return tea.Batch(cmds...)

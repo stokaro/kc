@@ -201,3 +201,28 @@ func TestLiveViewSendsNewPixelsOnly(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// TestCursorMovesSendNoImage: the cursor is text over the placeholders,
+// so moving it sends no picture; new data does.
+func TestCursorMovesSendNoImage(t *testing.T) {
+	t.Parallel()
+	const w, h = 140, 40
+	m, _, _ := openWithImages(t, w, h)
+	// The first press pauses, which may redraw once; the moves after it
+	// stay inside the range.
+	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	gfxRun(t, m, cmd)
+	var out string
+	for _, k := range []rune{tea.KeyLeft, tea.KeyLeft, tea.KeyRight, tea.KeyLeft} {
+		cmd, _ := m.Update(tea.KeyPressMsg{Code: k})
+		out += gfxRun(t, m, cmd)
+	}
+	if n := strings.Count(out, "\x1b_G"); n != 0 {
+		t.Fatalf("cursor moves sent %d images", n)
+	}
+	// The cursor column is drawn as text inside the image's cells.
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, string(kittygfx.Placeholder)) {
+		t.Fatal("no placeholders under the cursor")
+	}
+}

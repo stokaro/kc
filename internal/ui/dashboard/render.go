@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -63,7 +64,7 @@ func layout(v *view, w, h int) map[widget]rect {
 	}
 	switch {
 	case w >= wideWidth:
-		lw := min(66, max(48, w*42/100))
+		lw := listWidth(v, w)
 		rw := w - lw
 		evH := min(14, max(minEventsHeight+1, body/3))
 		ch := (body - evH) / 2
@@ -164,6 +165,13 @@ func (m *Model) placeCharts(v *view, rects map[widget]rect) map[widget]chart.Cha
 	if v.cursor >= m.cells {
 		v.cursor = m.cells - 1
 	}
+	// A legend that needs a second line takes it from the plot.
+	for wd, c := range charts {
+		if n := len(legendLines(m.legend(v, wd, c), m.rects[wd].w-2)); n > 1 {
+			c.Height -= n - 1
+			charts[wd] = c
+		}
+	}
 	return charts
 }
 
@@ -225,8 +233,9 @@ func (m *Model) chartFrame(v *view, wd widget, c chart.Chart, r rect) []string {
 	if note := m.rangeNote(v); note != "" {
 		title += " · " + note
 	}
-	body := append([]string{m.legend(v, wd, c)}, c.Render()...)
-	m.placeImage(wd, c, body)
+	legend := legendLines(m.legend(v, wd, c), r.w-2)
+	body := slices.Concat(legend, c.Render())
+	m.placeImage(wd, c, body[len(legend)-1:])
 	return frame(title, m.sourceLabel(v, wd), v.focus == wd, r.w, r.h, body)
 }
 
