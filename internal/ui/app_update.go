@@ -550,6 +550,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		a.refreshPanelAfterEdit(msg.panelIndex)
 		return a, nil
+	case viewNameMsg:
+		return a, a.handleViewName(msg)
 	case RowFilterResultMsg:
 		if msg.Close {
 			a.hideModal()
@@ -1100,7 +1102,7 @@ func (a *App) handleCommandWatchTick(msg commandWatchTickMsg) (tea.Model, tea.Cm
 // (no more read errors, panel refreshes or discovery updates).
 func passesModal(msg tea.Msg) bool {
 	switch msg.(type) {
-	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg, RowFilterResultMsg:
+	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg, RowFilterResultMsg, viewNameMsg:
 		return true
 	case viewer.CopyRequestMsg:
 		// The app owns the clipboard; the viewer only asks.

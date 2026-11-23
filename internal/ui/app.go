@@ -36,6 +36,7 @@ import (
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/execctx"
 	"github.com/stokaro/kc/internal/explain"
+	"github.com/stokaro/kc/internal/hotlist"
 	models "github.com/stokaro/kc/internal/models"
 	navui "github.com/stokaro/kc/internal/navigation"
 	"github.com/stokaro/kc/internal/objectaction"
@@ -301,7 +302,7 @@ type App struct {
 	history     [2]*navui.History
 	jumpToken   [2]int
 	pendingJump *pendingJump
-	hotlist     []navui.Location
+	hotlist     []hotlist.Entry
 	hotlistPath string // empty until Init; tests set it
 	// panelNavs are the running NavigatePanel walks, one per panel.
 	panelNavs   [2]*panelNavigation
@@ -2086,15 +2087,10 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	if a.cfg != nil {
 		spec = logsSpecWithDefaults(spec, a.cfg.Viewer.Logs)
 	}
-	parent := a.ctx
+	parent, cl := a.ctx, a.cl
 	open := func(spec models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) {
 		ctx, cancel := context.WithCancel(parent)
-		opts := spec.PodLogOptions()
-		ctrllog.FromContext(ctx).WithName("logsViewer").Info("client stream logs",
-			"gvr", "v1/pods", "namespace", spec.Namespace, "pod", spec.Pod, "container", spec.Container,
-			"tailLines", spec.EffectiveTailLines(), "sinceSeconds", spec.SinceSeconds,
-			"timestamps", spec.Timestamps, "previous", spec.Previous, "follow", spec.Follow)
-		stream, err := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts).Stream(ctx)
+		stream, err := openResumingLogs(ctx, cl, clientset, spec, "logsViewer")
 		if err != nil {
 			cancel()
 			return nil, nil, err

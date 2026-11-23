@@ -356,6 +356,8 @@ func (v *LogsViewer) statusText() string {
 	switch {
 	case v.opening:
 		text += " (connecting)"
+	case isReconnecting(v.reader):
+		text += " (reconnecting)"
 	case v.err != nil:
 		text += " (failed)"
 	case v.done:
