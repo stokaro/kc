@@ -25,7 +25,7 @@ import (
 // builtinObjectRows are rows models itself adds inside objects, next to
 // the rows registered with RegisterObjectRows.
 func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
-	diagnosis := gvr == serviceGVR || gvr == hpaGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr) || hasGitOpsDiagnosis(gvr) || hasRouteDiagnosis(gvr)
+	diagnosis := hasDiagnosis(gvr)
 	if !diagnosis && !hasTimeline(gvr) {
 		return nil, false
 	}
@@ -47,6 +47,12 @@ func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
 		}
 		return rows
 	}, true
+}
+
+// hasDiagnosis reports whether namespaced objects of gvr have a
+// /diagnosis row.
+func hasDiagnosis(gvr schema.GroupVersionResource) bool {
+	return gvr == serviceGVR || gvr == hpaGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr) || hasGitOpsDiagnosis(gvr) || hasRouteDiagnosis(gvr)
 }
 
 // diagnosisRow is the /diagnosis row inside an object at path.

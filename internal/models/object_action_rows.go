@@ -34,6 +34,14 @@ func RegisterObjectRows(gvr schema.GroupVersionResource, fn ObjectRowsFunc) {
 	objectRowsMu.Unlock()
 }
 
+// hasRegisteredObjectRows reports whether RegisterObjectRows added rows
+// for gvr.
+func hasRegisteredObjectRows(gvr schema.GroupVersionResource) bool {
+	objectRowsMu.RLock()
+	defer objectRowsMu.RUnlock()
+	return len(objectRows[gvr]) > 0
+}
+
 func extraObjectRows(deps Deps, gvr schema.GroupVersionResource, namespace, name string, path []string) []table.Row {
 	objectRowsMu.RLock()
 	fns := append([]ObjectRowsFunc(nil), objectRows[gvr]...)
