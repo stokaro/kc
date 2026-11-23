@@ -15,7 +15,8 @@ import (
 type ScopeKind int
 
 const (
-	// ScopeNamespace sums the pods of one namespace.
+	// ScopeNamespace sums the pods of one namespace, or of every
+	// namespace when Namespace is empty.
 	ScopeNamespace ScopeKind = iota
 	// ScopeWorkload sums the pods the owner series tie to a workload.
 	ScopeWorkload
@@ -50,6 +51,9 @@ func (s Scope) String() string {
 	case ScopeNode:
 		return "node " + s.Name
 	default:
+		if s.Namespace == "" {
+			return "all namespaces"
+		}
 		return "namespace " + s.Namespace
 	}
 }
@@ -165,8 +169,10 @@ func buildUsageQueries(s selector, scope Scope, r Range) (usageQueries, error) {
 	expectedSet := ""
 	switch scope.Kind {
 	case ScopeNamespace:
-		where = []string{eq("namespace", scope.Namespace)}
-		running = "(kube_pod_status_phase" + s.with(eq("namespace", scope.Namespace), eq("phase", "Running")) + " == 1)"
+		if scope.Namespace != "" {
+			where = []string{eq("namespace", scope.Namespace)}
+			running = "(kube_pod_status_phase" + s.with(eq("namespace", scope.Namespace), eq("phase", "Running")) + " == 1)"
+		}
 		expectedSet = running
 	case ScopePod:
 		where = []string{eq("namespace", scope.Namespace), eq("pod", scope.Name)}

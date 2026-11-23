@@ -42,7 +42,8 @@ New files next to `Fetch`; `Fetch` and the Info block stay as they are.
    columns are capped at `MaxPoints` (480): a wider terminal does not ask
    the server for more points. Zooming is a narrower `start..end`, which
    gives a finer step down to 15 seconds.
-2. **`Client.Usage(ctx, Scope, Range)`.** Scopes: a namespace, a workload
+2. **`Client.Usage(ctx, Scope, Range)`.** Scopes: a namespace (or every
+   namespace when it is empty), a workload
    (the owner join of ADR 0197), a pod, and a node (pods that
    `kube_pod_info` places on it). One read is five range queries, at
    most three at a time:

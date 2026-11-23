@@ -169,6 +169,31 @@ func TestUsageQueriesAndCoverage(t *testing.T) {
 
 func formatUnix(t time.Time) string { return fmt.Sprint(t.Unix()) }
 
+// TestUsageEveryNamespace: an empty namespace sums the whole cluster, so
+// no selector may ask for namespace="" (which matches no container).
+func TestUsageEveryNamespace(t *testing.T) {
+	t.Parallel()
+	r := promhistory.RangeFor(now.Add(-time.Hour), now, 60)
+	b := &rangeBackend{t: t, rules: []rangeRule{{contains: "", body: emptyMatrix}}}
+	c := newRangeClient(t, b, map[string]string{"cluster": "eu"})
+	scope := promhistory.Scope{Kind: promhistory.ScopeNamespace}
+	if scope.String() != "all namespaces" {
+		t.Errorf("String = %q", scope.String())
+	}
+	if _, err := c.Usage(t.Context(), scope, r); err != nil {
+		t.Fatalf("Usage: %v", err)
+	}
+	qs := b.queries()
+	if len(qs) != 5 {
+		t.Fatalf("%d queries, want 5", len(qs))
+	}
+	for _, q := range qs {
+		if strings.Contains(q["query"], "namespace=") || !strings.Contains(q["query"], `cluster="eu"`) {
+			t.Errorf("query %s: want no namespace matcher and the configured label", q["query"])
+		}
+	}
+}
+
 func TestUsageCoverageStates(t *testing.T) {
 	t.Parallel()
 	r := promhistory.Range{Start: now.Add(-4 * time.Minute), End: now, Step: time.Minute}
