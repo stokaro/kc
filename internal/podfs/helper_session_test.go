@@ -63,6 +63,32 @@ func TestHelperSessionCheckTarget(t *testing.T) {
 	})
 }
 
+// rangeSession records the ranges it is asked for.
+type rangeSession struct {
+	recordingSession
+	ranges []string
+}
+
+func (s *rangeSession) ReadFileRange(_ context.Context, p string, offset, length int64) (io.ReadCloser, int64, error) {
+	s.ranges = append(s.ranges, p)
+	return io.NopCloser(strings.NewReader("")), offset + length, nil
+}
+
+func TestHelperSessionReadsRangesOfTheTarget(t *testing.T) {
+	inner := &rangeSession{}
+	s := &helperAwareSession{ExecSession: inner}
+	if _, _, err := s.ReadFileRange(t.Context(), "/var/log/big.log", 4096, 10); err != nil {
+		t.Fatal(err)
+	}
+	if len(inner.ranges) != 1 || inner.ranges[0] != "/proc/1/root/var/log/big.log" {
+		t.Fatalf("ranges = %v", inner.ranges)
+	}
+	plain := &helperAwareSession{ExecSession: &recordingSession{}}
+	if _, _, err := plain.ReadFileRange(t.Context(), "/f", 0, 1); err == nil {
+		t.Fatal("a session without range reads answered")
+	}
+}
+
 func TestCreateHelperAddsPtrace(t *testing.T) {
 	pod := &corev1.Pod{Name: "p", Namespace: "ns"}
 	client := fake.NewClientset(pod)
