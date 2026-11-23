@@ -123,6 +123,10 @@ type InfoBar struct {
 	// Usage is true when Percent is measured usage, which the sparkline
 	// records.
 	Usage bool
+	// Base names what a usage Percent is a share of ("allocatable",
+	// "limits", "requests"), for the history label. A history restarts
+	// when the base changes, since the percentages no longer compare.
+	Base string
 	// Detail is the first line under the bar: what Percent shows.
 	Detail string
 	// More holds further lines under Detail.
@@ -340,7 +344,7 @@ func capacityBar(cfg appconfig.OverviewConfig, label string, a capacityAmounts, 
 	}
 	limLine := fmt.Sprintf("lim %s%s", percentText(j.limPct), j.lim.suffix())
 	if a.hasPodUse {
-		bar.Percent, bar.Usage, bar.Flag = j.podPct, true, j.pod.flag
+		bar.Percent, bar.Usage, bar.Flag, bar.Base = j.podPct, true, j.pod.flag, "allocatable"
 		bar.Health = j.pod.sev.RowHealth()
 		bar.Detail = fmt.Sprintf("pods %s/%s %s allocatable, %s%s%s", format(a.podUse), format(a.alloc), unit, percentText(j.podPct), j.pod.suffix(), a.podCoverage())
 		bar.DetailHealth = bar.Health

@@ -25,6 +25,9 @@ const (
 	// usagePollInterval matches metrics-server's default resolution: polling
 	// faster returns the same numbers.
 	usagePollInterval = 15 * time.Second
+	// UsagePollInterval is usagePollInterval for the Info history, which
+	// spaces its samples by it.
+	UsagePollInterval = usagePollInterval
 	// usagePollTimeout bounds one poll: the metrics LIST and the cache read.
 	usagePollTimeout = 10 * time.Second
 	// usageForbiddenInterval spaces polls that the API server answered
