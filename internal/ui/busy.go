@@ -22,6 +22,10 @@ type busyDoneMsg struct {
 	msg   tea.Msg
 }
 
+// busyResultMsg carries the result of withBusy work back to Update, which
+// handles it in its main switch whatever dialog is open.
+type busyResultMsg busyDoneMsg
+
 // showToastMsg displays a transient notification for the given TTL.
 type showToastMsg struct {
 	text string
