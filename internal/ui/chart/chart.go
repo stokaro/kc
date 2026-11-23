@@ -23,7 +23,8 @@ type Point struct {
 type Mode int
 
 const (
-	// Braille draws two samples per cell with four dots of height each.
+	// Braille draws two samples per cell with four dots of height each
+	// at the edge of the area; the cells under it are solid blocks.
 	Braille Mode = iota
 	// Blocks draws one sample per cell with eight steps of height. It is
 	// the fallback for fonts without braille.
@@ -517,8 +518,13 @@ func brailleCell(l layout, row, x int) rune {
 			}
 		}
 	}
-	if bits == 0 {
+	switch bits {
+	case 0:
 		return ' '
+	case 0xff:
+		// A cell under the edge is solid: in most fonts a full braille
+		// cell is a grid of dots with gaps, which reads as a texture.
+		return '█'
 	}
 	return brailleBlank + bits
 }

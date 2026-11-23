@@ -1,6 +1,7 @@
 package chart_test
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"testing"
@@ -128,17 +129,28 @@ func TestRasterDashesReferenceLines(t *testing.T) {
 	}
 }
 
-func TestRasterLightensTheCursorCell(t *testing.T) {
+// TestCursorIsTextOverTheImage: the cursor changes neither the picture
+// nor its key, so moving it sends no image; its column is a text cell.
+func TestCursorIsTextOverTheImage(t *testing.T) {
 	t.Parallel()
 	c := rasterChart(steady(5, 0, 10))
-	plain := c.Raster(6, 10)
+	plain, key := c.Raster(6, 10), c.RasterKey(6, 10)
 	c.Cursor = 2
-	img := c.Raster(6, 10)
-	if got := img.RGBAAt(2*6, 0); got.R <= plain.RGBAAt(2*6, 0).R {
-		t.Errorf("cursor cell %v is not lighter than %v", got, plain.RGBAAt(2*6, 0))
+	if !bytes.Equal(c.Raster(6, 10).Pix, plain.Pix) || c.RasterKey(6, 10) != key {
+		t.Error("the cursor changed the picture")
 	}
-	if img.RGBAAt(3*6, 0) != plain.RGBAAt(3*6, 0) || img.RGBAAt(2*6-1, 0) != plain.RGBAAt(2*6-1, 0) {
-		t.Error("the cursor reaches beyond its cell")
+	for row, cells := range c.TextCells() {
+		if !cells[2] || cells[3] {
+			t.Errorf("row %d: text cells %v, want the cursor column only", row, cells)
+		}
+	}
+	// The data and the size do change the key.
+	if c.RasterKey(7, 10) == key {
+		t.Error("another cell size has the same key")
+	}
+	c.Points = c.Points[:len(c.Points)-1]
+	if c.RasterKey(6, 10) == key {
+		t.Error("other points have the same key")
 	}
 }
 
