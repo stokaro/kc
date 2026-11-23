@@ -14,7 +14,7 @@ A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, B
 
 - **Kubectl-compatible startup intents:** `kc get ...` and `kc logs ...` parse familiar CLI syntax and launch directly into the matching folders, multi-selecting objects and opening manifest/log viewers when requested (`docs/designs/cli-intents.md`).
 - **Hierarchy-first navigation:** resource groups → object folders → virtual subfolders (pod containers, ConfigMap/Secret keys, etc.). Every row is keyed by full `group/version/resource`.
-- **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices, with a Service diagnosis) via per-object child folders so related resources stay discoverable in the tree.
+- **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices, with a diagnosis of Services, workloads and pods) via per-object child folders so related resources stay discoverable in the tree.
 - **Helm releases:** `/helm` lists releases with their stored values, manifest, notes, hooks and revision history, and links each manifest object to the live object (read-only, no `helm` binary needed).
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **CPU and memory usage:** when the cluster serves `metrics.k8s.io` (metrics-server), pod lists show `CPU`, `MEM`, `%CPU/R` (of requests) and `%MEM/L` (of limits), and node lists show `CPU`, `%CPU`, `MEM` and `%MEM` (of allocatable). Wide mode adds `%CPU/L` and `%MEM/R` for pods and `CPU/A` and `MEM/A` for nodes. kc reads the metrics every 15 seconds, only while such a list is on screen and no dialog is open. `n/a` means no metrics for the object yet, no request or limit to compare with, or metrics kc may not read.
@@ -118,7 +118,7 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | `M-f`      | Filter the rows of an object list (see [Filtering Rows](#filtering-rows)). `Esc f` does the same. |
 | `C-z`      | Show only the rows in a fault state, or all rows again (object lists).         |
 | `M-p`      | Port forward the selected pod, container or service (see below). `Esc p` does the same. |
-| `C-\`      | Hotlist, as in mc: saved panel locations with their context and namespace. `Enter` goes to the highlighted entry, `Ins` adds the active panel's location, `Del` (or `F8`) removes the entry. Typing filters the list. Saved in `~/.kc/hotlist.yaml`. |
+| `C-\`      | Hotlist, as in mc: saved panel locations with their context and namespace. `Enter` goes to the highlighted entry, `Ins` adds the active panel's location, `F2` saves it as a named view (see [Saved Views](#saved-views)), `F4` stores the current settings in the highlighted view, `F6` renames, `Del` (or `F8`) removes the entry. Typing filters the list. Saved in `~/.kc/hotlist.yaml`. |
 | `M-y`      | Go back in the active panel's history of visited locations (`Esc y` does the same). |
 | `M-u`      | Go forward in that history (`Esc u`).                                           |
 | `M-H`      | List the active panel's history, newest first; `Enter` goes there (`Esc H`).   |
@@ -157,6 +157,8 @@ Rows in `/owners`, `/used-by` and `/requires` behave like the same object in its
 The Relation column says which field links the two objects: `volumes[cfg]`, `containers[app].envFrom`, `containers[app].env[A,B]`, `spec.nodeName`, `controller of pods/web-1-abc`. A related object that cannot be opened is dim with the reason: `not found`, `not found (an object with another UID has the name)` for an owner that was deleted and created again, `unknown kind`, or `forbidden` when you may not read that type there. When you may not list a type a used-by lookup reads, a `(not listed)` row says the result is incomplete, instead of an empty folder. kc asks the API server (SelfSubjectAccessReview) before it reads a type, so a type you may read only in some namespaces is read from that namespace, and a type you may not read starts no watch.
 
 Inside a Service, next to `/endpointslices`, `/diagnosis` checks the path from the Service to its backends. It lists a summary (type and IP families, selector, selected and ready pods, endpoint counts by ready, serving and terminating, address types, each port with its targetPort), then the findings, each followed by the objects it cites, then every backend with its evidence. Findings: no pod matches the selector (with the pods that share a selector key and their values), selected pods that are not ready (with the Ready condition and the waiting or failing containers), a named targetPort that does not resolve on some pods (checked per pod, with the protocol), selected pods with an IP that no EndpointSlice lists, endpoints whose pod is gone, replaced or no longer selected, and an IP family without a slice. ExternalName, headless, selectorless and `publishNotReadyAddresses` Services get an explanation instead of a failure. When pods or EndpointSlices cannot be read, the finding says the result is incomplete rather than reporting zero backends. The check reads only the API objects: a consistent Service does not prove that DNS, the network or the application work.
+
+Pods, Deployments, ReplicaSets, StatefulSets, DaemonSets and Jobs have a `/diagnosis` row inside them too. It explains what the object's status, its pods (matched by controller owner UID, through the ReplicaSets of a Deployment), their containers, the claims they use and the events about them show: a rollout that does not progress, a replica failure, unavailable replicas, a failed Job, an unschedulable pod with the scheduler's message, an image that cannot be pulled, a container that cannot start, an OOM kill, a crash loop or a restart in the last hour, a failed exit (also of an init container), and a claim the pod uses that is missing or not Bound. Each finding shows when it was observed and is followed by its sources: the object with the exact status field, and the newest events about that object or container. A container failure offers the current and previous log of that container of that pod, never another one. A `maybe` row is a possible explanation (a correlation by owner, not a confirmed cause) and a `next` row says what to inspect. Up to ten pods with problems are explained; the rest are counted. Pods, events or claims kc may not read are shown as unavailable, not as absent. Objects and events are matched by UID, so a recreated object with the same name does not inherit the pods or events of the one it replaced.
 
 `F4`, `F8` and `F3` on container logs are grayed out when a SelfSubjectAccessReview for the current context, impersonation and namespace says the action is denied (`F4` needs get and patch, as `kubectl edit` sends a patch). Answers are cached for 30 seconds. An unknown or failed review keeps the key enabled; the API server still decides every request.
 
@@ -230,6 +232,35 @@ A row whose cell is empty, `<none>` or `n/a` (no metrics) matches no column term
 The copied kubectl command (`M-c`) gets the label selector as `-l`, and a single `-n ns` in a list of all namespaces as `-n ns`. Terms kubectl has no flag for are listed after it, for example `kubectl get pods -A -l app=api  # kc also filters: -n prod,stage, cpu>500m, faults`.
 
 The active filter shows next to the scope in the bottom border (`Filter: !nginx, faults`); a click on it clears it. The filter belongs to the folder: it stays while you look at its objects and come back, and a new listing starts unfiltered. It applies to live updates, and the cursor stays on its row when the row is kept. Marked rows that the filter hides are unmarked.
+## Saved Views
+
+A saved view is a named hotlist entry that also restores how the list looks. `F2` in the hotlist (`C-\`) asks for a name, such as "payments failures", and saves the active panel's location with its settings:
+
+- the columns mode (normal or wide),
+- the sort (`objects.order` syntax, e.g. `-mem`),
+- "Group by namespace", for lists that span namespaces,
+- the row filter text and faults only.
+
+`Enter` on a view goes to its context, namespace scope and path, then applies the settings to that panel. Columns, sort and grouping become the panel's settings, as if set in the panel options. A view stores settings only, never listed objects or their state, so it always shows the cluster as it is now. Nothing changes a view while you browse: `F4` on a view replaces its location and settings with the active panel's, and `F6` renames it. Names are unique, in any case.
+
+kc does not guess when a view cannot be restored. A missing context is reported and the panel stays where it is; no context with a similar name is used. When the path stops early (a resource type or namespace that is gone), the panel stays at the last step it reached and the settings are not applied. A saved filter is parsed again: an invalid one is left out with a warning, and a term on a column the list does not have is kept, so it hides every row, and reported.
+
+In `~/.kc/hotlist.yaml` a view is an entry with `name` and `view` next to the location fields. Bookmarks have neither, so files from older kc versions load unchanged, and fields kc does not know are ignored:
+
+```yaml
+entries:
+- context: prod
+  namespace: payments
+  steps: ["payments//v1/pods"]
+  path: /pods
+  name: payments failures
+  view:
+    columns: wide
+    order: -restarts
+    filter: api restarts>3
+    faultsOnly: true
+```
+
 ### cd on the shell line
 
 As in mc, `cd` typed on the shell line below the panels moves the active panel instead of running in the shell:
