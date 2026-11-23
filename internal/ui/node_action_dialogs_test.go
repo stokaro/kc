@@ -211,7 +211,7 @@ func TestDrainProgressWrapsRefusals(t *testing.T) {
 	m.setProgress(nodeaction.Progress{Nodes: []nodeaction.NodeProgress{{
 		Node:    "worker-1",
 		Phase:   nodeaction.PhaseEvicting,
-		Blocked: []nodeaction.PodNote{{Namespace: "demo", Name: "web-0", Message: msg}},
+		Blocked: []nodeaction.PodNote{{Namespace: "demo", Name: "web-0", Message: msg, Evidence: "when planned: demo/web allows 0 now"}},
 	}}})
 	for _, maxW := range []int{56, 200} {
 		w, h := m.PreferredSize(maxW, 60)
@@ -225,8 +225,9 @@ func TestDrainProgressWrapsRefusals(t *testing.T) {
 		}
 		joined := strings.Join(strings.Fields(strings.Join(text, " ")), " ")
 		for _, want := range []string{
-			"Refused (usually by a PodDisruptionBudget), retried every " + nodeaction.DefaultRetryDelay.String() + ":",
+			"Refused by the API server, retried every " + nodeaction.DefaultRetryDelay.String() + ":",
 			"demo/web-0: " + msg,
+			"when planned: demo/web allows 0 now",
 			"Esc cancels; the nodes stay cordoned.",
 		} {
 			if !strings.Contains(joined, want) {
