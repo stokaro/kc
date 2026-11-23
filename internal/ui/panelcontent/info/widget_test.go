@@ -149,7 +149,7 @@ func TestWidgetViewAndHistory(t *testing.T) {
 	if strings.ContainsAny(view, "▁▂▃▄▅▆▇") {
 		t.Fatalf("a sparkline after one sample:\n%s", view)
 	}
-	if !strings.Contains(view, "% of allocatable: collecting, 1 sample so far") {
+	if !strings.Contains(view, "% of allocatable: collecting, 1 sample") {
 		t.Fatalf("one sample must say it is collecting:\n%s", view)
 	}
 	for i, line := range h.w.lines(60, 40) {
@@ -171,7 +171,7 @@ func TestWidgetViewAndHistory(t *testing.T) {
 		t.Fatalf("memory samples = %v, want 55 then 100", hist.mem.samples)
 	}
 	view = ansi.Strip(strings.Join(h.w.lines(60, 40), "\n"))
-	if !strings.Contains(view, "█\n        % of allocatable · 2 samples over 5s · 15m session") {
+	if !strings.Contains(view, "        history, % of allocatable · 2 samples over 5s\n        ▕") {
 		t.Fatalf("no labeled memory sparkline:\n%s", view)
 	}
 	if got := len(h.w.lines(60, 3)); got != 3 {
