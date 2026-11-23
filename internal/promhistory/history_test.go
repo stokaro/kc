@@ -210,6 +210,32 @@ func TestFetchWithoutSeries(t *testing.T) {
 	}
 }
 
+// TestFetchNonFiniteSeries checks that a series without a finite sample
+// is kept apart from no series: empty, not nil, and never zero.
+func TestFetchNonFiniteSeries(t *testing.T) {
+	t.Parallel()
+	b := &backend{
+		t: t, path: "/api/",
+		cpu:  matrix(at(10, "NaN"), at(5, "+Inf"), at(1, "-Inf")),
+		mem:  matrix(),
+		pods: vector("2"),
+	}
+	h, err := newClient(t, b, promBackend).Fetch(t.Context(), web, promhistory.Options{Window: time.Hour, Now: now})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if h.CPU == nil || len(h.CPU) != 0 || h.Memory == nil || len(h.Memory) != 0 {
+		t.Fatalf("CPU %#v, Memory %#v: want empty, not nil", h.CPU, h.Memory)
+	}
+	if h.Missing(h.CPU) != h.Steps() || h.NoOwners {
+		t.Errorf("missing %d of %d, noOwners %v", h.Missing(h.CPU), h.Steps(), h.NoOwners)
+	}
+	// The series exist, so the owner check that explains no series is not run.
+	if len(b.queries) != 3 {
+		t.Errorf("queries = %d, want 3", len(b.queries))
+	}
+}
+
 // selectorRE finds every vector selector of a query.
 var selectorRE = regexp.MustCompile(`([a-z_]+)\{([^}]*)\}`)
 

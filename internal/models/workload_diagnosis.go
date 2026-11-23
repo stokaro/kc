@@ -66,6 +66,10 @@ type workloadInput struct {
 	Claims         []corev1.PersistentVolumeClaim // of the namespace
 	ClaimsErr      error
 
+	// Scheduling is set for an unschedulable pod: what kc's node checks
+	// read.
+	Scheduling *schedulingInput
+
 	health healthVerdict // of a type with a health config entry
 }
 
@@ -110,7 +114,7 @@ func diagnoseWorkload(in workloadInput) (diagReport, error) {
 		d.Summary = append(d.Summary, "pods: "+podCountSummary(pods))
 	}
 	problems := in.podProblems(pods)
-	if len(problems) > 0 {
+	if slices.ContainsFunc(problems, func(f diagFinding) bool { return f.Severity >= diagWarning }) {
 		for i := range status {
 			if status[i].Severity >= diagWarning {
 				status[i].Hint = "The pod problems below may explain this; kc relates them by owner and does not confirm the cause."
@@ -118,6 +122,9 @@ func diagnoseWorkload(in workloadInput) (diagReport, error) {
 		}
 	}
 	d.Findings = append(append(d.Findings, status...), problems...)
+	if in.Scheduling != nil {
+		d.Findings = append(d.Findings, explainScheduling(*in.Scheduling)...)
+	}
 	if len(d.Findings) == 0 {
 		d.Findings = append(d.Findings, diagFinding{
 			Code: "no-problem", Severity: diagInfo, Observed: in.Now,
@@ -410,13 +417,15 @@ func (in *workloadInput) podFindings(pod *corev1.Pod) []diagFinding {
 	for _, s := range pod.Status.InitContainerStatuses {
 		if f, ok := in.containerFinding(pod, s, true); ok {
 			out = append(out, f)
-			explained[s.Name] = true
+			explained[s.Name] = f.Severity >= diagWarning
 		}
 	}
 	for _, s := range pod.Status.ContainerStatuses {
 		if f, ok := in.containerFinding(pod, s, false); ok {
 			out = append(out, f)
-			explained[s.Name] = true
+			// An info row (an old OOM kill) is history: it does not
+			// explain that the container is not ready now.
+			explained[s.Name] = f.Severity >= diagWarning
 		}
 	}
 	out = append(out, in.readinessFindings(pod, explained)...)
@@ -427,19 +436,49 @@ func (in *workloadInput) podLink(pod *corev1.Pod, evidence string) diagLink {
 	return diagLink{GVR: podGVR, Namespace: pod.Namespace, Name: pod.Name, Evidence: evidence}
 }
 
+// schedulingFinding reports a pod the scheduler has not placed: the
+// scheduler's condition and events are the reported outcome. A gated pod
+// is waiting for a controller, not failing.
 func (in *workloadInput) schedulingFinding(pod *corev1.Pod) (diagFinding, bool) {
+	if schedulingStateOf(pod) == schedGated {
+		return in.gatedFinding(pod), true
+	}
 	c := podCondition(pod, corev1.PodScheduled)
 	if c == nil || c.Status != corev1.ConditionFalse || podTerminal(pod) {
 		return diagFinding{}, false
 	}
 	links := []diagLink{in.podLink(pod, fmt.Sprintf("status.conditions[PodScheduled]=False %s, uid %s", c.Reason, pod.UID))}
+	next := "Open the /diagnosis of pod " + pod.Name + " for kc's node checks: selectors, affinity, taints, bound volumes and requests against allocatable."
+	if in.GVR == podGVR {
+		next = "The scheduler's message is the decision. kc's node checks below explain the constraints kc can read."
+	}
 	return diagFinding{
 		Code: "unschedulable/" + pod.Name, Severity: diagError, Observed: c.LastTransitionTime.Time,
 		Title:  fmt.Sprintf("Pod %s cannot be scheduled: %s", pod.Name, c.Reason),
 		Detail: c.Message,
 		Links:  append(links, in.eventLinks(pod.Namespace, pod.UID, "", true)...),
-		Next:   "Read the scheduler message: check the node selector, affinity, taints and tolerations, and the free capacity of the nodes.",
+		Next:   next,
 	}, true
+}
+
+// gatedFinding reports a pod whose spec.schedulingGates keep the
+// scheduler from considering it.
+func (in *workloadInput) gatedFinding(pod *corev1.Pod) diagFinding {
+	gates := make([]string, 0, len(pod.Spec.SchedulingGates))
+	for _, g := range pod.Spec.SchedulingGates {
+		gates = append(gates, g.Name)
+	}
+	observed := in.Now
+	if c := podCondition(pod, corev1.PodScheduled); c != nil && !c.LastTransitionTime.IsZero() {
+		observed = c.LastTransitionTime.Time
+	}
+	return diagFinding{
+		Code: "gated/" + pod.Name, Severity: diagWarning, Observed: observed,
+		Title:  fmt.Sprintf("Pod %s waits for scheduling gates: %s", pod.Name, strings.Join(gates, ", ")),
+		Detail: "The scheduler does not consider a pod while spec.schedulingGates is not empty; the controller that added a gate removes it.",
+		Links:  []diagLink{in.podLink(pod, "spec.schedulingGates="+strings.Join(gates, ","))},
+		Next:   "Find the controller that owns the gate (its name usually says which). kc runs no node checks for a gated pod.",
+	}
 }
 
 // containerFinding reports the worst state of one container: an image it
@@ -455,9 +494,7 @@ func (in *workloadInput) containerFinding(pod *corev1.Pod, s corev1.ContainerSta
 			return in.waitingFinding(c, "config", "cannot be started", "Check the ConfigMaps, Secrets and volumes the container refers to (/requires lists them)."), true
 		}
 	}
-	if t := terminatedOOM(s); t != nil {
-		f := in.terminatedFinding(c, "oom", t, fmt.Sprintf("was OOMKilled (%d restarts)", s.RestartCount))
-		f.Next = c.next("The container used more memory than its limit" + memoryLimit(pod, s.Name, init) + "; read the previous log and compare the usage with the limit.")
+	if f, ok := in.oomFinding(c); ok {
 		return f, true
 	}
 	if last := s.LastTerminationState.Terminated; last != nil && (crashLooping(s) || in.Now.Sub(last.FinishedAt.Time) <= restartWindow) {
@@ -564,18 +601,61 @@ func crashLooping(s corev1.ContainerStatus) bool {
 	return s.State.Waiting != nil && s.State.Waiting.Reason == "CrashLoopBackOff"
 }
 
-// terminatedOOM returns the OOMKilled termination of the container, now or
-// as its last state.
-func terminatedOOM(s corev1.ContainerStatus) *corev1.ContainerStateTerminated {
-	for _, t := range []*corev1.ContainerStateTerminated{s.State.Terminated, s.LastTerminationState.Terminated} {
-		if t != nil && t.Reason == "OOMKilled" {
-			return t
-		}
+const reasonOOMKilled = "OOMKilled"
+
+// oomFinding reports an OOM kill of the container. A container that is
+// terminated by it now, or crash loops after it, fails: an error. One
+// that was killed less than restartWindow ago and runs again is a
+// warning. An older kill of a container that runs now is history: it is
+// kept as info, with its time, because it says the memory sizing was
+// once too small, but it is not a current failure.
+func (in *workloadInput) oomFinding(c containerRef) (diagFinding, bool) {
+	s := c.status
+	if t := s.State.Terminated; t != nil && t.Reason == reasonOOMKilled {
+		f := in.terminatedFinding(c, "oom", t, fmt.Sprintf("was OOMKilled (%d restarts)", s.RestartCount))
+		f.Next = c.next(oomNext(c))
+		return f, true
 	}
-	return nil
+	t := s.LastTerminationState.Terminated
+	if t == nil || t.Reason != reasonOOMKilled {
+		return diagFinding{}, false
+	}
+	if crashLooping(s) {
+		f := in.terminatedFinding(c, "oom", t, fmt.Sprintf("was OOMKilled (%d restarts)", s.RestartCount))
+		f.Next = c.next(oomNext(c))
+		return f, true
+	}
+	ago := in.Now.Sub(t.FinishedAt.Time)
+	if t.FinishedAt.IsZero() || ago <= restartWindow {
+		f := in.terminatedFinding(c, "oom", t, fmt.Sprintf("was OOMKilled %s ago and runs again (%d restarts)", shortDuration(ago), s.RestartCount))
+		if t.FinishedAt.IsZero() {
+			f.Title = fmt.Sprintf("%s was OOMKilled at an unknown time and runs again (%d restarts) (%s)", c.label(), s.RestartCount, reasonOOMKilled)
+		}
+		f.Severity = diagWarning
+		f.Next = c.next(oomNext(c))
+		return f, true
+	}
+	f := in.terminatedFinding(c, "oom", t, fmt.Sprintf("was OOMKilled %s ago and has run since (%d restarts)", shortDuration(ago), s.RestartCount))
+	f.Severity = diagInfo
+	f.Next = c.next("History, not a current failure: the container has run for more than " + shortDuration(restartWindow) +
+		" since. " + oomNext(c))
+	return f, true
 }
 
-func memoryLimit(pod *corev1.Pod, container string, init bool) string {
+// oomNext says what an OOM kill implies, from the limit the container
+// has. Without a container memory limit, the kill came from a pod-level
+// limit or from memory pressure on the node, not from exceeding a limit
+// of the container.
+func oomNext(c containerRef) string {
+	if q, ok := memoryLimit(c.pod, c.status.Name, c.init); ok {
+		return "The container reached its memory limit (limits.memory " + q + "); read the previous log and compare the usage with the limit."
+	}
+	return "The container has no limits.memory, so the kill came from a pod-level memory limit or from memory pressure on the node; " +
+		"check the pod's resources and the node's memory, and read the previous log."
+}
+
+// memoryLimit returns the container's limits.memory, if it has one.
+func memoryLimit(pod *corev1.Pod, container string, init bool) (string, bool) {
 	containers := pod.Spec.Containers
 	if init {
 		containers = pod.Spec.InitContainers
@@ -585,10 +665,10 @@ func memoryLimit(pod *corev1.Pod, container string, init bool) string {
 			continue
 		}
 		if q, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
-			return " (limits.memory " + q.String() + ")"
+			return q.String(), true
 		}
 	}
-	return ""
+	return "", false
 }
 
 // claimFindings checks the claims the pod's volumes name, and only those:

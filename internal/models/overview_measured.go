@@ -24,6 +24,10 @@ type overviewMeasured struct {
 	nodesReason string                      // why node usage is not known
 	pods        map[string][]containerUsage // container usage by pod key
 	podsReason  string                      // why pod usage is not known
+	// podsTiming dates pods, the PodMetrics of the scope: workload usage
+	// is summed from them, so it is dated by them and not by usageAt,
+	// which also folds in the node and cluster pod polls.
+	podsTiming podsTiming
 	// clusterPods is the pod usage of every namespace, which the capacity
 	// rows and the Info mode sum per node. It is pods itself in an
 	// all-namespaces scope, and nil while it is not known.
@@ -96,6 +100,9 @@ func measuredUsage(deps Deps, namespace string, watcher any, notify func()) *ove
 	if m.podsReason = usageReason(pods, fresh); m.podsReason == "" {
 		m.pods = pods.containers
 	}
+	if timed(pods, m.podsReason) {
+		m.podsTiming = newPodsTiming(pods)
+	}
 	if namespace == AllNamespaces {
 		m.clusterPods, m.clusterPodsReason = m.pods, m.podsReason
 		if timed(pods, m.podsReason) {
@@ -111,6 +118,29 @@ func measuredUsage(deps Deps, namespace string, watcher any, notify func()) *ove
 		m.addUsageTime(all)
 	}
 	return m
+}
+
+// podsTiming is when the pod usage of one PodMetrics list was measured:
+// each pod's own timestamp, the newest sample and its window, and when kc
+// read the list.
+type podsTiming struct {
+	sampled map[string]time.Time // by pod key; a pod without a timestamp is absent
+	newest  time.Time
+	window  time.Duration
+	readAt  time.Time
+}
+
+func newPodsTiming(snap *usageSnapshot) podsTiming {
+	t := podsTiming{newest: snap.sampled.newest, window: snap.sampled.window, readAt: snap.at}
+	for key, v := range snap.values {
+		if !v.sampled.IsZero() {
+			if t.sampled == nil {
+				t.sampled = make(map[string]time.Time, len(snap.values))
+			}
+			t.sampled[key] = v.sampled
+		}
+	}
+	return t
 }
 
 // addUsageTime folds the times of a usable snapshot into m: the oldest

@@ -26,7 +26,8 @@ back; the filter, the search and follow mode stay.
 The status line shows the stream options (`tail 200, since 1h,
 timestamps`), the view (`formatted, 12 of 40 lines`), the filter, and
 the stream state: `(connecting)`, `(reconnecting)`, `(ended)` or
-`(failed)`. A merged log starts with its coverage, for example
+`(failed)`. `(reconnecting)` shows only while a retry is pending; a
+stream that gave up or was refused shows `(failed)`. A merged log starts with its coverage, for example
 `incomplete: 50 streaming, 20 waiting (limit 50)`.
 
 The last line shows the `kubectl logs` command that prints the same
@@ -37,7 +38,10 @@ When a followed stream breaks while the container still runs, kc
 reconnects and goes on after the last line it showed, without repeating
 it. It tries eight times over about two minutes and does not retry a
 refusal such as forbidden or not found. `[kc] lines after <time> may be
-missing` marks a gap the kubelet could not fill.
+missing` marks a gap the kubelet could not fill. Before each attempt kc
+checks the container again: when it restarted, stopped or its pod was
+replaced during the wait, `[kc] not reconnecting: ...` says why and the
+stream ends, so the next instance's lines never continue the old one.
 
 The viewer keeps the most recent lines only, up to `viewer.logs.maxLines`
 (100000) and about `viewer.logs.maxMemoryMiB` MiB (64). When either limit

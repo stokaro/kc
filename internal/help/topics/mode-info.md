@@ -38,7 +38,9 @@ Percentages are truncated, as `kubectl describe node` prints them.
 The line under the scope dates the usage by metrics-server's own time:
 `usage measured 25s ago over 15s, read 3s ago`. A sample older than two
 minutes is marked stale and not used. `7 of 10 pods measured` means the
-sum is a lower bound.
+sum is a lower bound. For a workload the time is the oldest sample of
+its own pods, so it does not depend on the node metrics or on other
+namespaces.
 
 ## How to read the history
 
@@ -59,16 +61,23 @@ sample so far; `stale, last 3m ago` means no recent sample.
 
 ## Limits
 
-- Needs list and watch on nodes and pods in all namespaces; kc asks
-  first and otherwise starts nothing and says so.
+- The capacity bars need list and watch on nodes and pods in all
+  namespaces. In a namespace scope, pods readable in that namespace are
+  enough for the workload and pod usage; the capacity bars then say what
+  they cannot read. kc asks first and starts nothing it cannot read.
+- `C-x m` shows which metric sources the context has
+  ([Metric sources](metric-sources.md)).
 - The history is kept in memory while the panel is in Info mode, for
   this session only. It restarts when the base of a percentage changes.
 - With `metricsHistory.backends` set, Info also shows a workload's past
-  usage from Prometheus.
+  usage from Prometheus. `no series` means Prometheus returned none for
+  the metric; `no finite samples in this window` means it returned a
+  series whose values are all `NaN` or infinite. Neither is zero usage.
 
 ## See also
 
 - [Overview](overview.md)
 - [Investigation window](investigation-window.md)
+- [Metric sources](metric-sources.md)
 - [Pin and freeze](pin-freeze.md)
 - [Panel mode](panel-mode.md)

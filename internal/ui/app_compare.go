@@ -36,6 +36,8 @@ func (a *App) handleCtrlXKey(press tea.KeyPressMsg) tea.Cmd {
 		return a.compareLists()
 	case compareContextKey:
 		return a.compareListWithContext()
+	case metricSourcesKey:
+		return a.showMetricSources()
 	case compareWholeListsKey:
 		return a.compareWholeLists()
 	case netpolKey:
