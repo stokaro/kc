@@ -128,6 +128,30 @@ func TestShellCdMovesActivePanel(t *testing.T) {
 	}
 }
 
+// A cd lands in the panel history, so M-, after it returns to where the
+// panel was and the history window lists it.
+func TestShellCdIsRecordedInHistory(t *testing.T) {
+	root := newLateFolder()
+	web := newLateFolder("web")
+	web.add(plainRow("logs", "logs"))
+	root.add(enterRow("web", "web", web))
+	a := cdApp(t, root)
+	a.recordHistory(0)
+
+	typeOnShellLine(a, "cd web")
+	a.handleKeyMsg(tea.KeyPressMsg{Code: tea.KeyEnter}, nil)
+	if got := a.leftPanel.GetCurrentPath(); got != "/web" {
+		t.Fatalf("panel path = %s, want /web", got)
+	}
+	entries, cur := a.panelHistory(0).Entries()
+	if len(entries) != 2 || cur != 1 {
+		t.Fatalf("history has %d entries at %d after cd, want 2 at 1: %v", len(entries), cur, entries)
+	}
+	if got := entries[1].Path; got != "/web" {
+		t.Errorf("history entry after cd = %q, want /web", got)
+	}
+}
+
 func TestShellLineOtherCommandsReachTheShell(t *testing.T) {
 	a := cdApp(t, newLateFolder())
 	typeOnShellLine(a, "ls -l")
