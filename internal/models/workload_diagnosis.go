@@ -18,9 +18,6 @@ import (
 )
 
 const (
-	// maxDiagnosedPods bounds the pods whose problems one diagnosis lists,
-	// so a DaemonSet on a large cluster stays readable.
-	maxDiagnosedPods = 10
 	// maxEventsPerFinding bounds the events a finding cites, newest first.
 	maxEventsPerFinding = 3
 	// restartWindow is how recent a restart must be to count as a problem.
@@ -72,6 +69,10 @@ type workloadInput struct {
 	// Storage is set for a pod's own diagnosis and a claim's: the classes,
 	// volumes, drivers and attachments its claims name.
 	Storage *storageInput
+
+	// Chain is set for a custom resource: the namespace's controllers it
+	// may own on the way to its pods.
+	Chain *chainInput
 
 	health healthVerdict // of a type with a health config entry
 }
@@ -192,6 +193,13 @@ func workloadStatusFindings(in workloadInput) ([]diagFinding, map[types.UID]bool
 	default:
 		if a := in.adapter(); a != nil {
 			out = in.healthFindings(a, in.health)
+		}
+		if in.Chain != nil {
+			uids, edges := walkChain(in.Object.GetUID(), *in.Chain)
+			for uid := range uids {
+				owners[uid] = true
+			}
+			out = append(out, chainFindings(*in.Chain, edges, in.Object.GetNamespace())...)
 		}
 	}
 	return out, owners, err
@@ -378,32 +386,19 @@ func (in *workloadInput) ownPods(owners map[types.UID]bool) ([]corev1.Pod, []dia
 	return pods, nil, nil
 }
 
-// podProblems returns the findings of the first maxDiagnosedPods pods that
-// have any, and one more finding that counts the pods left out.
+// podProblems runs the pod checks on every pod, groups equal symptoms and
+// returns the maxSymptomGroups most severe groups, then one finding that
+// names the rest. Ranking comes before the bound, so a severe symptom of a
+// pod late in name order is not crowded out by a common minor one.
 func (in *workloadInput) podProblems(pods []corev1.Pod) []diagFinding {
-	var (
-		out     []diagFinding
-		shown   int
-		skipped int
-	)
-	for i := range pods {
-		fs := in.podFindings(&pods[i])
-		if len(fs) == 0 {
-			continue
+	groups, _ := in.groupSymptoms(pods)
+	out := make([]diagFinding, 0, min(len(groups), maxSymptomGroups)+2)
+	for i, g := range groups {
+		if i == maxSymptomGroups {
+			out = append(out, hiddenSymptoms(groups[i:]))
+			break
 		}
-		if shown == maxDiagnosedPods {
-			skipped++
-			continue
-		}
-		shown++
-		out = append(out, fs...)
-	}
-	if skipped > 0 {
-		out = append(out, diagFinding{
-			Code: "more-pods", Severity: diagInfo,
-			Title:  fmt.Sprintf("%d more pods have problems; only the first %d are explained", skipped, maxDiagnosedPods),
-			Detail: "Open the workload's pods to see the rest.",
-		})
+		out = append(out, g.render())
 	}
 	if in.EventsErr != nil && len(out) > 0 {
 		out = append(out, unavailableSource("events-unknown", "Events", "what the cluster reported about these objects", in.EventsErr, ovEventsGVR, in.Object.GetNamespace()))

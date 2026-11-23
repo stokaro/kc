@@ -71,6 +71,7 @@ func (f *PodContainersFolder) buildRows(ctx context.Context) ([]table.Row, error
 	logItem.SetViewCommand(logItem.WorkloadLogsCommand(spec, spec.LogsSpec(), "", f.Deps.AppConfig.Viewer.Logs.EffectiveMaxRequests()))
 	rows = append(rows, logItem)
 	rows = append(rows, diagnosisRow(f.Deps, podGVR, f.Namespace, f.Pod, f.Path()))
+	rows = append(rows, eventsRow(f.Deps, podGVR, f.Namespace, f.Pod, f.Path()))
 	rows = append(rows, timelineRow(f.Deps, podGVR, f.Namespace, f.Pod, f.Path()))
 	return rows, nil
 }

@@ -568,6 +568,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, func() tea.Msg { return msg.msg }
 	case explainLoadedMsg:
 		return a, a.handleExplainLoaded(msg)
+	case netpolLoadedMsg:
+		return a, a.handleNetpolLoaded(msg)
 	case configSavedMsg:
 		return a, a.handleConfigSaved(msg)
 	case showToastMsg:

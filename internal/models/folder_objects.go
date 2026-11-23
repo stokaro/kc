@@ -41,6 +41,10 @@ type ObjectsFolder struct {
 	ageTimer           *time.Timer
 	Filter             func(*tablecache.Row) bool
 	FilterUnstructured func(*unstructured.Unstructured) bool
+	// FilterObject keeps a row by its full object from the shared cache,
+	// for a filter on a field the server table does not carry. A row
+	// whose object is not in the cache is hidden.
+	FilterObject func(*unstructured.Unstructured) bool
 
 	// kubectlArgs and kubectlNote refine KubectlCommand for filtered folders.
 	kubectlArgs []string
@@ -75,6 +79,11 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
 		cc.loadObjects(ctx, o.Deps, o.namespace)
 		objs := loadRowObjects(ctx, o.Deps, o.gvr, o.namespace)
+		if o.FilterObject != nil && objs == nil {
+			// Without the objects every row would be hidden, which reads
+			// as "none".
+			return nil, fmt.Errorf("%s: the objects to filter by could not be read", o.gvr.Resource)
+		}
 		return o.rowsFromRowListWithObjects(o.withUsageColumns(rl), columnsMode, order, cc, objs), nil
 	} else if err != nil && apierrors.IsForbidden(err) {
 		return nil, err
@@ -183,6 +192,11 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 		if o.Filter != nil && !o.Filter(rr) {
 			continue
 		}
+		if o.FilterObject != nil {
+			if u := objs.object(rr.ObjectMeta.Namespace, rowName(rr)); u == nil || !o.FilterObject(u) {
+				continue
+			}
+		}
 		name := rowName(rr)
 		ns, id := o.objectNamespaceAndID(namespaced, rr.ObjectMeta.Namespace, name)
 		cells := buildCells(rr.Cells, vis, hasChild)
@@ -246,6 +260,9 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 	metas := make([]tablecache.Row, 0, len(list.Items))
 	for i := range list.Items {
 		if o.FilterUnstructured != nil && !o.FilterUnstructured(&list.Items[i]) {
+			continue
+		}
+		if o.FilterObject != nil && !o.FilterObject(&list.Items[i]) {
 			continue
 		}
 		var r tablecache.Row

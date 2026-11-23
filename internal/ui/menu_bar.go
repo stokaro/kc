@@ -152,6 +152,7 @@ func (a *App) commandMenuItems() []menubar.Item {
 		{Label: "Compare lis&ts", Shortcut: "C-x d", Run: a.compareLists},
 		{Label: "Compar&e whole lists", Shortcut: "C-x a", Run: a.compareWholeLists},
 		{Label: "Compare with conte&xt...", Shortcut: "C-x c", Run: a.compareListWithContext},
+		{Label: "Network&Policy between pods", Shortcut: "C-x n", Run: a.explainNetworkPolicy},
 		{Label: "Compare whole list with co&ntext...", Run: a.compareWholeListWithContext},
 		a.windowMenuItem(),
 		a.metricSourcesMenuItem(),
