@@ -145,59 +145,126 @@ func TestHelmFoldersEnvtest(t *testing.T) {
 	}
 }
 
-func TestHelmFoldersPartialAccessEnvtest(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
-	admin := startTestCluster(t, testCfg)
-	ns := kctesting.UniqueName("helm-partial")
-	nsUser := kctesting.UniqueName("helm-ns-user")
-	createNamespace(t, admin, ns)
-	createHelmSecret(t, admin.GetClient(), helmFixture(ns, "web", 1, "deployed"), false)
-
-	// One user may read Secrets only in ns; the other may not read them.
+// grantSecretsInNamespace lets user list and watch Secrets in namespace.
+func grantSecretsInNamespace(t *testing.T, admin *kccluster.Cluster, namespace, user string) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	role := &rbacv1.Role{
-		Namespace: ns, Name: "secret-reader",
+		Namespace: namespace, Name: "secret-reader",
 		Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get", "list", "watch"}}},
 	}
 	if err := admin.GetClient().Create(ctx, role); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatal(err)
 	}
 	binding := &rbacv1.RoleBinding{
-		Namespace: ns, Name: "secret-reader",
+		Namespace: namespace, Name: "secret-reader",
 		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: role.Name},
-		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: nsUser}},
+		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: user}},
 	}
 	if err := admin.GetClient().Create(ctx, binding); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatal(err)
 	}
+}
+
+// A user who may read Secrets in one namespace only browses that
+// namespace's releases through a namespace cache, sees new revisions, gets
+// an explicit denial elsewhere, and gives the cache back on Close.
+func TestHelmFoldersNamespaceOnlyEnvtest(t *testing.T) {
+	user := kctesting.UniqueName("helm-ns-user")
+	granted, other := kctesting.UniqueName("helm-granted"), kctesting.UniqueName("helm-other")
+	e := newNamespaceUserEnv(t, user, granted, other)
+	grantSecretsInNamespace(t, e.admin, granted, user)
+	createHelmSecret(t, e.admin.GetClient(), helmFixture(granted, "web", 1, "deployed"), false)
+	createHelmSecret(t, e.admin.GetClient(), helmFixture(other, "db", 1, "deployed"), false)
+	if ok, err := e.shared.CanListWatchAllNamespaces(t.Context(), secretsGVR); err != nil || ok {
+		t.Fatalf("user may list Secrets cluster-wide (%v, %v); the test needs namespace-only access", ok, err)
+	}
+
+	f := NewHelmReleasesFolder(e.deps, granted, []string{"helm"})
+	eventuallyRows(t, f, "namespace-only release list", func(r map[string][]string) bool {
+		return len(r[granted+"/web"]) > 2 && r[granted+"/web"][2] == "1"
+	})
+	if got := e.openHolds(); len(got) != 1 {
+		t.Fatalf("open holds = %v, want the namespace cache of %s", got, granted)
+	}
+
+	// New revisions arrive through the namespace watch.
+	createHelmSecret(t, e.admin.GetClient(), helmFixture(granted, "web", 2, "deployed"), false)
+	eventuallyRows(t, f, "release list after upgrade", func(r map[string][]string) bool {
+		return len(r[granted+"/web"]) > 2 && r[granted+"/web"][2] == "2"
+	})
+
+	// The release folder below shares the reader and its cache.
+	item, _ := f.ItemByID(t.Context(), granted+"/web")
+	rel, err := item.(Enterable).Enter()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventuallyRows(t, rel, "release folder", func(r map[string][]string) bool {
+		return r["values"] != nil && r["history"] != nil
+	})
+	if got := e.openHolds(); len(got) != 1 {
+		t.Fatalf("open holds with the release folder open = %v", got)
+	}
+	rel.(*HelmReleaseFolder).Close()
+	f.Close()
+	if got := e.openHolds(); len(got) != 0 {
+		t.Fatalf("holds left after Close: %v", got)
+	}
 
 	cases := []struct {
 		name string
-		user string
+		ns   string
 		want string
 	}{
-		{name: "Secrets only in the namespace", user: nsUser, want: "in " + ns + " but not in all namespaces"},
-		{name: "no Secrets at all", user: kctesting.UniqueName("helm-no-secrets"), want: "listing Secrets is forbidden"},
+		{name: "namespace without Secret access", ns: other, want: "Secrets in " + other + " is forbidden"},
+		{name: "all namespaces", ns: AllNamespaces, want: "in all namespaces is forbidden"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := rest.CopyConfig(testCfg)
-			cfg.Impersonate.UserName = tc.user
-			cl := startTestCluster(t, cfg)
-			deps := Deps{Cl: cl, Ctx: t.Context(), CtxName: "envtest", AppConfig: appconfig.Default()}
-			f := NewHelmReleasesFolder(deps, ns, []string{"helm"})
+			f := NewHelmReleasesFolder(e.deps, tc.ns, []string{"helm"})
 			t.Cleanup(f.Close)
-			eventuallyRows(t, f, "denied notice", func(r map[string][]string) bool {
+			rows := eventuallyRows(t, f, "denied notice", func(r map[string][]string) bool {
 				return r["__helm_denied__"] != nil
 			})
+			if len(rows) != 2 { // back row and the notice; never an empty list
+				t.Errorf("rows = %v", rows)
+			}
 			item, _ := f.ItemByID(t.Context(), "__helm_denied__")
 			_, body, _, _, _, _ := item.(Viewable).ViewContent()
-			if !strings.Contains(body, tc.want) || !strings.Contains(body, "list -a -n "+ns) {
-				t.Errorf("notice = %q, want %q and the helm command", body, tc.want)
+			if !strings.Contains(body, tc.want) || !strings.Contains(body, "API server:") {
+				t.Errorf("notice = %q, want %q and the API server's answer", body, tc.want)
 			}
 		})
+	}
+	if got := e.openHolds(); len(got) != 0 {
+		t.Fatalf("a denied scope holds a cache: %v", got)
+	}
+}
+
+// A user without any Secret access gets the denial, not an empty list.
+func TestHelmFoldersNoAccessEnvtest(t *testing.T) {
+	if testCfg == nil {
+		t.Skip("envtest not available")
+	}
+	admin := startTestCluster(t, testCfg)
+	ns := kctesting.UniqueName("helm-denied")
+	createNamespace(t, admin, ns)
+	createHelmSecret(t, admin.GetClient(), helmFixture(ns, "web", 1, "deployed"), false)
+
+	cfg := rest.CopyConfig(testCfg)
+	cfg.Impersonate.UserName = kctesting.UniqueName("helm-no-secrets")
+	cl := startTestCluster(t, cfg)
+	deps := Deps{Cl: cl, Ctx: t.Context(), CtxName: "envtest", AppConfig: appconfig.Default()}
+	f := NewHelmReleasesFolder(deps, ns, []string{"helm"})
+	t.Cleanup(f.Close)
+	eventuallyRows(t, f, "denied notice", func(r map[string][]string) bool {
+		return r["__helm_denied__"] != nil
+	})
+	item, _ := f.ItemByID(t.Context(), "__helm_denied__")
+	_, body, _, _, _, _ := item.(Viewable).ViewContent()
+	if !strings.Contains(body, "Secrets in "+ns+" is forbidden") || !strings.Contains(body, "list -a -n "+ns) {
+		t.Errorf("notice = %q, want the denial and the helm command", body)
 	}
 }
