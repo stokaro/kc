@@ -128,6 +128,8 @@ Startup scope flags work as in kubectl, before or after the subcommand:
 | `M-A`      | In the logs viewer: copy the original records that pass the filter, unchanged.  |
 | `M-v`      | In the logs viewer: switch between the formatted and the raw view.              |
 | `M-g`      | In the logs viewer: open the filter dialog.                                     |
+| `M-d`      | In the logs viewer: the fields of the line in focus (exact filters, follow a request, copy, trace URL, context). |
+| `M-z`      | In the logs viewer: return to the filter and the line before the last `M-d` action. |
 | `M-s`      | In a merged logs viewer: open the sources dialog (states, source filter, stream limit, retry). |
 | `M-l`      | Open a local directory in the active panel, or leave it again. `Esc l` does the same. |
 | `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel; on an overview finding, all of its input commands). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
@@ -177,13 +179,16 @@ The logs viewer and the Logs panel keep the most recent lines they read: up to `
 | `"conn refused"`    | lines that contain the quoted text                                      |
 | `/5\d\d/`           | lines that match the regular expression (RE2)                           |
 | `level=error,warn`  | JSON lines whose field equals one of the values, in any case            |
+| `id=="a,b C"`       | JSON lines whose field is exactly the quoted value: case, commas and every character count (`\"` and `\\` inside) |
 | `msg~^GET`          | JSON lines whose field matches the regular expression                   |
 | `!term`             | drops the lines that match `term`                                       |
 | `.msg .http.status` | shows only these fields of JSON lines (a line without them is shown whole) |
 
-Field names are paths: `http.status`, `items[0].name`, `["key with spaces"]`; `http.status` also finds a literal `http.status` key. Field terms never match a text line. Filtering only changes what is shown: the stream is not reopened, and clearing the filter brings every line back. An invalid term is reported in the dialog. `M-a` copies the shown lines, `M-A` the original records.
+Field names are paths: `http.status`, `items[0].name`, `["key with spaces"]`; `http.status` also finds a literal `http.status` key, while a quoted `["a.b"]` is always the one key. Field terms never match a text line. Filtering only changes what is shown: the stream is not reopened, and clearing the filter brings every line back. An invalid term is reported in the dialog. `M-a` copies the shown lines, `M-A` the original records.
 
 In a merged log (all pods of a workload, all containers of a pod) the colored `[pod/container]` prefix is the source of the line: it stays in front in both views, the JSON after it is formatted, and `M-A` copies the records without it.
+
+`M-d` opens the fields of the line in focus: the active search match (`F7`, `n`), else the last line while the view follows, else the top line. It lists every JSON field with its value, starting on the first `viewer.logs.correlationFields` field the line has (`trace_id`, `traceId`, `request_id`, ...). On a field, `Enter` adds an exact `field=="value"` filter term, `-` an exclude term, `f` follows the request: the filter becomes that one term, and the status line names what it searches (the kept lines, their time span with `--timestamps`, and the sources of a merged log, never older history). `c` copies the value, and `t` copies the trace URL from `viewer.logs.traceURL` with `{trace}` replaced by the value, escaped for a URL. `x` shows 10 lines before and after the line from all sources, `s` from its own container only: `>` marks the line, `*` other lines that pass the filter, the rest are context; the context view stays while new lines arrive. `M-z` returns to the filter and the line before the last of these actions; a line dropped meanwhile is reported. A text line has no fields, but `x` and `s` work.
 
 ## Field documentation
 
@@ -436,6 +441,8 @@ Read-only mode refuses `M-n` before the menu opens.
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `viewer.logs.tail`, `viewer.logs.since`, `viewer.logs.timestamps` – the options a logs viewer and a Logs panel open with. `F2` in the viewer or the panel changes them there; `C-s` saves them as the defaults.
 - `viewer.logs.maxRequests` – how many log streams a merged log (all pods of a workload, all containers of a pod, in a viewer or a Logs panel) runs at once (default 50, like stern); further streams wait for a free slot. `M-s` in a merged viewer changes it for that view.
+- `viewer.logs.correlationFields` – the JSON fields `M-d` starts on and follows a request by, first one found (default `trace_id`, `traceId`, `traceID`, `request_id`, `requestId`, `requestID`); a name is a top-level key or a dotted path to a nested one.
+- `viewer.logs.traceURL` – URL template for `M-d` `t`, for example `https://tempo.example/trace/{trace}`; empty (the default) means no trace link.
 - `viewer.logs.maxLines`, `viewer.logs.maxMemoryMiB` – how many lines, and about how much memory, one logs viewer or Logs panel keeps (defaults 100000 and 64); older lines are dropped, see [JSON logs](#json-logs).
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
@@ -511,6 +518,11 @@ viewer:
     # in MiB; older lines are dropped and the footer counts them.
     maxLines: 100000
     maxMemoryMiB: 64
+    # JSON fields that M-d "Follow request" filters by, first one found.
+    correlationFields: [trace_id, traceId, traceID, request_id, requestId, requestID]
+    # URL template for the trace of a line; {trace} is the field value.
+    # Empty: no trace link. Example: https://tempo.example/trace/{trace}
+    traceURL: ""
 
 panel:
   scrolling:

@@ -37,7 +37,19 @@ type LogsViewerConfig struct {
 	// or Logs panel keeps, in MiB; older lines are dropped. Zero or less
 	// means DefaultLogsMaxMemoryMiB.
 	MaxMemoryMiB int `json:"maxMemoryMiB"`
+	// CorrelationFields are the JSON fields, in order, that "follow the
+	// request" in the logs viewer looks for in the selected line: the
+	// first one the line has is filtered by its exact value. Names are
+	// top-level keys or dotted paths.
+	CorrelationFields []string `json:"correlationFields"`
+	// TraceURL is a URL template for the trace of the selected line; kc
+	// replaces {trace} with the value of the first correlation field,
+	// escaped as a URL component, and copies the URL. Empty disables it.
+	TraceURL string `json:"traceURL"`
 }
+
+// DefaultLogsCorrelationFields are the default correlation fields.
+var DefaultLogsCorrelationFields = []string{"trace_id", "traceId", "traceID", "request_id", "requestId", "requestID"}
 
 // Defaults of viewer.logs.maxLines and viewer.logs.maxMemoryMiB.
 const (
@@ -541,6 +553,8 @@ func Default() *Config {
 				MaxRequests:  DefaultLogsMaxRequests,
 				MaxLines:     DefaultLogsMaxLines,
 				MaxMemoryMiB: DefaultLogsMaxMemoryMiB,
+				// A copy, so a loaded file cannot change the defaults.
+				CorrelationFields: append([]string(nil), DefaultLogsCorrelationFields...),
 			},
 		},
 		Panel: PanelConfig{
