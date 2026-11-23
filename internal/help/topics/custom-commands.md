@@ -62,8 +62,8 @@ or `C-x C-<letter>`. kc refuses keys without a modifier, single
 `C-<letter>` keys, `F1` to `F10`, and the keys kc uses itself:
 
 - `M-a`, `M-A`, `M-b`, `M-c`, `M-d`, `M-e`, `M-f`, `M-g`, `M-H`, `M-i`,
-  `M-j`, `M-k`, `M-l`, `M-n`, `M-o`, `M-p`, `M-r`, `M-s`, `M-t`, `M-u`,
-  `M-v`, `M-w`, `M-x`, `M-y`, `M-z`;
+  `M-j`, `M-k`, `M-l`, `M-m`, `M-n`, `M-o`, `M-p`, `M-r`, `M-s`, `M-t`,
+  `M-u`, `M-v`, `M-w`, `M-x`, `M-y`, `M-z`;
 - `C-x a`, `C-x c`, `C-x d`, `C-x f`, `C-x m`, `C-x p`, `C-x w`, `C-x C-d`.
 
 Bad and duplicate hotkeys are reported on the command line at startup

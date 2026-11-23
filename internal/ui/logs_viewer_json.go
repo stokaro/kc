@@ -64,6 +64,8 @@ func (v *LogsViewer) handleLogViewKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	case logsBackKey:
 		v.back()
 		return nil, true
+	case logsSoloKey:
+		return v.toggleSolo(), true
 	case copyAllKey:
 		return viewerCopyRequest(v.inner.PlainText(), v.copyWhatNote("shown lines")), true
 	}
@@ -193,7 +195,7 @@ func (v *LogsViewer) SetOnFilter(fn func() tea.Cmd) { v.onFilter = fn }
 // "formatted, 12 of 40 lines, filter: level=error".
 func (v *LogsViewer) logViewStatus() string {
 	text := v.log.Mode().String()
-	if v.log.Query().Filters() {
+	if _, solo := v.log.Solo(); solo || v.log.Query().Filters() {
 		text += fmt.Sprintf(", %d of %d lines", v.log.Shown(), v.log.Len())
 	} else {
 		text += fmt.Sprintf(", %d lines", v.log.Len())
@@ -206,6 +208,9 @@ func (v *LogsViewer) logViewStatus() string {
 	}
 	if q := v.log.Query().String(); q != "" {
 		text += ", filter: " + q
+	}
+	if s := v.soloStatus(); s != "" {
+		text += ", " + s
 	}
 	return text
 }
@@ -225,6 +230,14 @@ func (v *LogsViewer) logViewHints() []FooterHint {
 	}
 	if v.onSources != nil {
 		hints = append(hints, FooterHint{Key: "M-s", Label: "Sources", Enabled: true})
+	}
+	if v.merged {
+		_, solo := v.log.Solo()
+		label := "Solo"
+		if solo {
+			label = "All src"
+		}
+		hints = append(hints, FooterHint{Key: "M-m", Label: label, Enabled: true})
 	}
 	if v.onFields != nil {
 		hints = append(hints,

@@ -44,6 +44,13 @@ start of the window instead of its tail, and the header shows the window.
 - `Up`, `Down`, `PgUp`, `PgDn`, `Home` scroll; scrolling up pauses
   following.
 - `End` goes to the newest line and follows again.
+- `F3` (Expand; File menu: Expand logs) shows this session in the
+  full-screen [logs viewer](logs-viewer.md): the lines the panel keeps,
+  then every new line, from the same stream. Nothing is read again.
+  Closing the viewer leaves the panel streaming where it was. When the
+  panel moves to another pod or its options change, the viewer says so
+  and stops following. The viewer has the filter, fields, search and
+  `M-m` Solo; the stream options stay in the panel (`F2`).
 - `F2` opens the options: panel mode and width, theme, line mode,
   Container, Tail lines, Since, Timestamps and Previous. `M-F1` or
   `M-F2` opens the same dialog.
@@ -56,7 +63,10 @@ start of the window instead of its tail, and the header shows the window.
   not have them. "All containers" stays.
 - JSON formatting, the log filter (`M-g`), the fields view (`M-d`) and
   the raw toggle (`M-v`) are only in the full-screen logs viewer. Press
-  `Enter` or `F3` on a `logs` row for it.
+  `F3` in the panel to expand its session, or `Enter` or `F3` on a
+  `logs` row for a viewer with its own stream.
+- An expanded viewer that falls more than 8192 lines behind the stream
+  skips the oldest of them and says `[kc] N lines skipped`.
 - The user menu is not on `F2` in this mode; `F9` shows it disabled.
 
 ## See also
