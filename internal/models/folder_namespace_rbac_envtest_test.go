@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -164,6 +165,33 @@ func grantPodsInNamespace(t *testing.T, cl *kccluster.Cluster, namespace, user s
 	if err := cl.GetClient().Create(ctx, binding); err != nil {
 		t.Fatalf("create rolebinding in %s: %v", namespace, err)
 	}
+	waitPodAccess(t, cl, namespace, user)
+}
+
+// waitPodAccess waits until the API server's authorizer lets user list and
+// watch pods in namespace. The RBAC authorizer reads roles and bindings
+// from its own informers, so a binding is not in force the moment its
+// create returns. kc caches access answers per cluster, so a denial read
+// in that gap would stick for the whole test.
+func waitPodAccess(t *testing.T, cl *kccluster.Cluster, namespace, user string) {
+	t.Helper()
+	allowed := func(verb string) bool {
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		sar := &authorizationv1.SubjectAccessReview{Spec: authorizationv1.SubjectAccessReviewSpec{
+			User: user,
+			ResourceAttributes: &authorizationv1.ResourceAttributes{
+				Namespace: namespace, Verb: verb, Resource: "pods",
+			},
+		}}
+		if err := cl.GetClient().Create(ctx, sar); err != nil {
+			return false
+		}
+		return sar.Status.Allowed
+	}
+	kctesting.Eventually(t, 30*time.Second, 50*time.Millisecond, func() bool {
+		return allowed("list") && allowed("watch")
+	}, "rolebinding for "+user+" in "+namespace+" not in force")
 }
 
 func deletePod(t *testing.T, cl *kccluster.Cluster, namespace, name string) {
