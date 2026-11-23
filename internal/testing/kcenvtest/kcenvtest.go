@@ -10,8 +10,8 @@
 //
 // Setting both is an error.
 //
-// Every control plane started here is tuned for a loaded machine (issue
-// #232): longer start and stop timeouts, an
+// Every control plane started here is tuned for a loaded machine (see
+// docs/adr/0244-envtest-under-load.md): longer start and stop timeouts, an
 // API server that does not wait for open watches when it stops, and at most
 // MaxPerTestControlPlanes per-test control planes running at once in one
 // test binary.
