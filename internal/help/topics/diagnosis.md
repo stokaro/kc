@@ -54,6 +54,45 @@ another controller sets it. A pod that became unready less than
 `overview.startupGrace` ago is `starting`; completed, failed and
 terminating pods get no readiness finding.
 
+## A pod that cannot be scheduled
+
+The `PodScheduled=False` condition, its message and the scheduler's
+events (`FailedScheduling`) stay the first finding: they are the
+scheduler's decision. In the pod's own `/diagnosis`, kc then runs its
+own read-only checks against every node, in the order of the default
+scheduler's filters, and counts each node under the first check that
+rejects it:
+
+- a cordoned node (`spec.unschedulable`) without a toleration for it,
+- a `NoSchedule` or `NoExecute` taint the pod does not tolerate,
+- `spec.nodeSelector` and the required node affinity,
+- the node affinity of the PersistentVolumes of bound claims,
+- the pod's effective requests (the larger of the init containers and
+  the app containers, plus overhead) plus the requests of the pods bound
+  to the node, against the node's allocatable, and the pod count.
+
+`sched/nodes` sums it up, for example `kc's node checks: 0 of 12 nodes
+pass (9 no match for spec.nodeSelector ..., 3 insufficient cpu)`; one
+finding per reason follows, citing up to five nodes with the evidence
+(`taint gpu=true:NoSchedule not tolerated`, `allocatable cpu 4,
+requested by 7 bound pods 3500m, this pod 1`). Capacity uses requests,
+never measured usage. When nodes pass every check kc runs, the scheduler
+rejected them for a reason kc does not check, and the `sched/unevaluated`
+finding lists those: pod affinity and anti-affinity, topology spread,
+host ports, dynamic resource claims, the topology of unbound claims,
+another scheduler, preemption, volume count limits and pods the
+scheduler has assumed but not yet bound.
+
+If kc may not list nodes, the pods of all namespaces or a volume, the
+check is `incomplete`, never "no node fits". The pods of all namespaces
+are read only when the pod requests resources. These reads come from the
+shared cache and do not refresh the folder on their own; `C-r` reads
+them again. A workload's diagnosis names the pending pod and points to
+its `/diagnosis` for the node checks.
+
+A pod with `spec.schedulingGates` is reported as waiting for its gates
+(a warning), not as unschedulable, and gets no node checks.
+
 ## Keys
 
 - `Enter` on a cited object opens its own folder; `/..` comes back.
