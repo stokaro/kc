@@ -2001,7 +2001,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 		}
 		return nil
 	}
-	a.showTextViewer(panel, item, title, body, lang, mime, filename)
+	a.showTextViewer(panel, item, viewerBody{title, body, lang, mime, filename}, viewable.ViewContent)
 	return nil
 }
 
@@ -2016,17 +2016,31 @@ func (a *App) viewerEditCallback(panel *Panel, item models.Item) func() tea.Cmd 
 	return nil
 }
 
-func (a *App) showTextViewer(panel *Panel, item models.Item, title, body, lang, mime, filename string) {
+// viewerBody is what a text viewer shows.
+type viewerBody struct {
+	title, body, lang, mime, filename string
+}
+
+// viewerReread reads the content of a viewer again for C-r.
+type viewerReread = func() (title, body, lang, mime, filename string, err error)
+
+// showTextViewer shows text in the F3 viewer; reread, when set, reads it
+// again for C-r.
+func (a *App) showTextViewer(panel *Panel, item models.Item, text viewerBody, reread viewerReread) {
+	title, filename := text.title, text.filename
 	if filename == "" {
 		filename = title
 	}
-	view := NewTextViewer(title, body, lang, mime, filename, a.viewerTheme(), a.viewerEditCallback(panel, item), nil, func() tea.Cmd {
+	view := NewTextViewer(title, text.body, text.lang, text.mime, filename, a.viewerTheme(), a.viewerEditCallback(panel, item), nil, func() tea.Cmd {
 		a.hideModal()
 		return nil
 	})
 	view.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	view.SetCommand(itemViewCommand(item))
 	view.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(view) })
+	if reread != nil {
+		view.SetReread(reread)
+	}
 	a.showViewerModal(a.modalTitleFromItem(item, title), view, nil)
 }
 
@@ -2041,7 +2055,7 @@ func (a *App) openFileView(panel *Panel, item models.Item, paged models.PagedVie
 		return nil
 	}
 	if view.Source == nil {
-		a.showTextViewer(panel, item, view.Title, view.Body, "", "", view.Filename)
+		a.showTextViewer(panel, item, viewerBody{title: view.Title, body: view.Body, filename: view.Filename}, wholeFileReread(a.ctx, paged))
 		return nil
 	}
 	var pv *PagedViewer
@@ -2053,9 +2067,27 @@ func (a *App) openFileView(panel *Panel, item models.Item, paged models.PagedVie
 	pv.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	pv.SetCommand(itemViewCommand(item))
 	pv.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(pv) })
+	pv.SetReopen(paged.OpenFileView)
 	a.showViewerModal(a.modalTitleFromItem(item, view.Title), pv, pv.Close)
 	pv.SetDimensions(a.width, max(1, a.height-1))
 	return pv.Init()
+}
+
+// wholeFileReread reads a file that F3 showed whole again, with the same
+// size limit as the first read. A file that grew past the limit is not
+// read whole; F3 opens it again in pages.
+func wholeFileReread(ctx context.Context, paged models.PagedViewable) viewerReread {
+	return func() (title, body, lang, mime, filename string, err error) {
+		view, err := paged.OpenFileView(ctx)
+		if err != nil {
+			return "", "", "", "", "", err
+		}
+		if view.Source != nil {
+			_ = view.Source.Close()
+			return "", "", "", "", "", fmt.Errorf("%s is now too large to show whole; F3 opens it again in pages", view.Filename)
+		}
+		return view.Title, view.Body, "", "", view.Filename, nil
+	}
 }
 
 // showViewerModal shows content in the fullscreen viewer modal. onClose,

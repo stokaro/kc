@@ -159,6 +159,11 @@ func (e *overviewEngine) snapshot() (*overviewReport, error) {
 	return e.report, e.err
 }
 
+// reread asks for a recompute on the next tick, at most overviewInterval
+// away, instead of after the next event or overviewRefreshEvery. The
+// recompute reads the shared cache.
+func (e *overviewEngine) reread() { e.dirty.Store(true) }
+
 // subscribe calls fn after every recompute until the returned cancel.
 func (e *overviewEngine) subscribe(fn func()) func() {
 	e.mu.Lock()

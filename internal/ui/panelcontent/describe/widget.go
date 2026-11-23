@@ -44,6 +44,9 @@ func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		if apply {
 			w.show(res)
 		}
+		if res.Reread {
+			cmd = tea.Batch(cmd, panelcontent.RereadDone(res.Err, ""))
+		}
 		return cmd, true
 	}
 	return w.viewer.Update(msg)
@@ -86,7 +89,7 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	if breadcrumb != "" {
 		info.Breadcrumb = breadcrumb
 	}
-	if w.loader.Loading() {
+	if w.loader.Loading() || w.loader.Rereading() {
 		info.HeaderStatus = panelcontent.LoadingStatus
 	}
 	current, total := w.viewer.Position()
@@ -114,6 +117,15 @@ func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Select
 // Refresh reloads the output when the object changed in the shared cache.
 func (w *Widget) Refresh(context.Context) tea.Cmd {
 	return w.loader.Refresh()
+}
+
+// Reread describes the object again at once (C-r), even when its
+// resourceVersion did not change: the events in the output may have.
+func (w *Widget) Reread(context.Context) tea.Cmd {
+	if w.loader.Key() == "" {
+		return panelcontent.RereadDone(nil, panelcontent.NothingToReread)
+	}
+	return w.loader.Reread()
 }
 
 func (w *Widget) load(ctx context.Context) tea.Cmd {

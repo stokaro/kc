@@ -301,6 +301,26 @@ func (w *Widget) restart(force bool) tea.Cmd {
 	return w.opts.After(w.opts.Debounce, func(time.Time) tea.Msg { return debounceMsg{w: w, gen: gen} })
 }
 
+// Reread (C-r) keeps the stream and the lines it kept. A live stream has
+// nothing to read again, and a resumed one reconnects by itself; reopening
+// an ended or failed stream would replace the kept lines with the tail of
+// a new one, so C-r only says what the stream does. Choosing the mode
+// again reopens an ended stream, as before.
+func (w *Widget) Reread(context.Context) tea.Cmd {
+	var note string
+	switch {
+	case w.state == stateIdle:
+		note = panelcontent.NothingToReread
+	case reconnecting(w.body):
+		note = "Logs reconnect by themselves; the shown lines stay"
+	case w.Streaming():
+		note = "Logs are live; the shown lines stay"
+	default:
+		note = "The log stream ended; choose Logs again to reopen it"
+	}
+	return panelcontent.RereadDone(nil, note)
+}
+
 // Spec returns what is streamed, with the container resolved once the
 // stream has opened. It is empty while the hint is shown.
 func (w *Widget) Spec() models.LogsSpec {

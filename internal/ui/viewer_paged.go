@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"context"
 
 	tea "charm.land/bubbletea/v2"
@@ -19,6 +20,53 @@ type PagedViewer struct {
 	width, height              int
 	onEdit, onOptions, onClose func() tea.Cmd
 	bar                        viewerCommandBar
+	// ctx bounds a reopen for C-r; reopen opens the file again, nil when
+	// C-r rereads the open source.
+	ctx    context.Context
+	reopen func(context.Context) (models.FileView, error)
+}
+
+// pagedRereadMsg carries the file C-r opened again for a paged viewer.
+type pagedRereadMsg struct {
+	v    *PagedViewer
+	view models.FileView
+	err  error
+}
+
+// SetReopen lets C-r open the file again, so a file an editor replaced
+// shows its new content; models.PagedViewable.OpenFileView is one.
+func (v *PagedViewer) SetReopen(reopen func(context.Context) (models.FileView, error)) {
+	v.reopen = reopen
+}
+
+// reread reads the file again (C-r): it opens it again off the UI
+// goroutine when it can, else it rereads the open source at once.
+func (v *PagedViewer) reread() tea.Cmd {
+	if v.reopen == nil {
+		return tea.Batch(v.inner.Reread(nil), func() tea.Msg { return pagedRereadMsg{v: v} })
+	}
+	reopen, ctx := v.reopen, v.ctx
+	return func() tea.Msg {
+		view, err := reopen(ctx)
+		return pagedRereadMsg{v: v, view: view, err: err}
+	}
+}
+
+// applyReread shows the reopened file and returns the reads it needs. A
+// failed reopen keeps the open file. A file that is now small enough to
+// read whole stays in pages until F3 opens it again.
+func (v *PagedViewer) applyReread(msg pagedRereadMsg) (tea.Cmd, error) {
+	if msg.err != nil {
+		return nil, msg.err
+	}
+	if v.reopen == nil {
+		return nil, nil // the open source was reread already
+	}
+	src := msg.view.Source
+	if src == nil {
+		src = newMemorySource([]byte(msg.view.Body))
+	}
+	return v.inner.Reread(src), nil
 }
 
 // NewPagedViewer shows view.Source. Reads run under a child of ctx; Close
@@ -26,7 +74,7 @@ type PagedViewer struct {
 func NewPagedViewer(ctx context.Context, view models.FileView, theme string, onEdit, onClose func() tea.Cmd) *PagedViewer {
 	inner := viewer.NewPaged(ctx, view.Source, view.Size, viewer.Metadata{Title: view.Title, Filename: view.Filename}, pagedfile.Options{})
 	inner.SetTheme(theme)
-	v := &PagedViewer{inner: inner, onEdit: onEdit, onClose: onClose}
+	v := &PagedViewer{inner: inner, onEdit: onEdit, onClose: onClose, ctx: ctx}
 	inner.SetCallbacks(onEdit, nil, onClose)
 	return v
 }
@@ -50,6 +98,9 @@ func (v *PagedViewer) SetDimensions(w, h int) {
 }
 
 func (v *PagedViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == rereadKey && !v.inner.SearchMode() {
+		return v, v.reread()
+	}
 	if key, ok := msg.(tea.KeyMsg); ok && key.String() == copyAllKey && !v.inner.SearchMode() {
 		// Copying a file of any size whole would hold it in memory.
 		cmd, _ := v.bar.handle(copyResultMsg{text: "The file is too large to copy whole; F5 saves it", error: true}, pagedBarTarget{}, v.width, v.height)
@@ -98,6 +149,7 @@ func (v *PagedViewer) FooterHints() []FooterHint {
 		{Key: "F7", Label: "Search", Enabled: true},
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
 		{Key: "n", Label: "Next", Enabled: v.inner.HasSearchMatches()},
+		{Key: "C-r", Label: "Reread", Enabled: true},
 		{Key: "M-c", Label: "Copy cmd", Enabled: v.bar.command != ""},
 	}
 }
@@ -136,3 +188,21 @@ func (v *PagedViewer) HandleModalEscape(key tea.KeyMsg) (bool, tea.Cmd) {
 	}
 	return false, nil
 }
+
+// memorySource is a file read whole, served as a paged source.
+type memorySource struct{ r *bytes.Reader }
+
+func newMemorySource(data []byte) *memorySource { return &memorySource{r: bytes.NewReader(data)} }
+
+func (s *memorySource) ReadAt(ctx context.Context, p []byte, off int64) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return s.r.ReadAt(p, off)
+}
+
+func (s *memorySource) Size() (int64, bool) { return s.r.Size(), true }
+
+func (s *memorySource) Close() error { return nil }
+
+var _ pagedfile.Source = (*memorySource)(nil)

@@ -5,6 +5,7 @@ package info
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -205,6 +206,31 @@ func (w *Widget) OnSelectionChanged(ctx context.Context, _ panelcontent.Selectio
 	}
 	w.refresh(ctx)
 	return w.promHistoryCmd()
+}
+
+// rereader is a Summarizer that can recompute its summary on request;
+// models.OverviewInfo is one.
+type rereader interface {
+	Reread()
+}
+
+// Reread reads the summary now (C-r) instead of on the next tick, asks the
+// source to recompute, and starts the tick period over. The recomputed
+// summary shows within a tick.
+func (w *Widget) Reread(ctx context.Context) tea.Cmd {
+	if !w.active {
+		return nil
+	}
+	w.refresh(ctx)
+	if r, ok := w.src.(rereader); ok {
+		r.Reread()
+	}
+	w.gen++ // the pending tick is stale; the new one starts the period over
+	var err error
+	if w.summary.Err != "" {
+		err = errors.New(w.summary.Err)
+	}
+	return tea.Batch(w.tick(), w.promHistoryCmd(), panelcontent.RereadDone(err, ""))
 }
 
 // refresh resolves the target, swaps the source when the scope changed and
