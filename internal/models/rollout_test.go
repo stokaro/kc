@@ -33,7 +33,7 @@ func rolloutDeployment(image string) *appsv1.Deployment {
 	}
 }
 
-func rolloutRS(name string, uid types.UID, owner types.UID, revision, image string, replicas int32, created time.Time) appsv1.ReplicaSet {
+func rolloutRS(name string, uid, owner types.UID, revision, image string, replicas int32, created time.Time) appsv1.ReplicaSet {
 	return appsv1.ReplicaSet{
 		Namespace: "shop", Name: name, UID: uid, OwnerReferences: controlledBy("Deployment", "web", owner),
 		Annotations:       map[string]string{"deployment.kubernetes.io/revision": revision},
@@ -46,7 +46,7 @@ func rolloutRS(name string, uid types.UID, owner types.UID, revision, image stri
 	}
 }
 
-func rolloutPod(name string, rsName string, rsUID types.UID, ready bool, waiting string) corev1.Pod {
+func rolloutPod(name, rsName string, rsUID types.UID, ready bool, waiting string) corev1.Pod {
 	cs := corev1.ContainerStatus{Name: "app", Ready: ready}
 	if waiting != "" {
 		cs.State.Waiting = &corev1.ContainerStateWaiting{Reason: waiting}
