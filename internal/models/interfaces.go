@@ -145,6 +145,16 @@ type Folder interface {
 	ItemByID(context.Context, string) (Item, bool)
 }
 
+// Rereader is a folder the user can ask to read again (C-r, mc's Reread).
+// Refresh only marks the rows dirty; Reread also drops what the folder keeps
+// between reads and events do not keep current: the API discovery of a list
+// of resource types, a list or watch given up after a forbidden answer, the
+// spacing between two list loads, the overview's last report. A folder fed
+// by the shared cache reads the cache again and starts no new watch.
+type Rereader interface {
+	Reread(ctx context.Context)
+}
+
 // Enterable identifies rows that can return a child folder when Enter is pressed.
 type Enterable interface {
 	Item

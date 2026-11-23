@@ -73,7 +73,7 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 			return a.showViewOptionsModalForPanel(a.panelByIndex(idx))
 		}},
 		{Label: "&Columns normal/wide", Shortcut: "C-w", Disabled: !list, Run: a.panelKey(idx, ctrlKey('w'))},
-		{Label: "&Reread", Shortcut: "C-r", Disabled: !list, Run: a.panelKey(idx, ctrlKey('r'))},
+		{Label: "&Reread", Shortcut: "C-r", Disabled: !visible || panel == nil, Run: a.onPanel(idx, func() tea.Cmd { return a.rereadPanel(idx) })},
 		{Label: "&Sort by next column", Shortcut: "M-o", Disabled: !list, Run: a.onPanel(idx, func() tea.Cmd {
 			a.changeObjectSort(nextSortOrder)
 			return nil

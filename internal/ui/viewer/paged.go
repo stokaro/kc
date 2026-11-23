@@ -30,6 +30,7 @@ type PagedMsg interface {
 
 type pagedBlockMsg struct {
 	w    *PagedWidget
+	gen  int // srcGen of the read; a reread drops older reads
 	idx  int64
 	data []byte
 	size int64
@@ -45,6 +46,7 @@ type pagedSearchMsg struct {
 
 type pagedScanMsg struct {
 	w     *PagedWidget
+	gen   int
 	index []pagedfile.Counter
 	total int64
 	err   error
@@ -96,8 +98,11 @@ type PagedWidget struct {
 
 	pending map[int64]bool
 	failed  map[int64]error
-	ops     []pagedOp
-	binary  bool
+	// srcGen changes with every Reread; block reads and line counts of
+	// an older generation are dropped.
+	srcGen int
+	ops    []pagedOp
+	binary bool
 
 	scanning     bool
 	scanned      bool
@@ -147,6 +152,50 @@ func NewPaged(ctx context.Context, src pagedfile.Source, size int64, meta Metada
 
 // Start reads the blocks of the first page.
 func (w *PagedWidget) Start() tea.Cmd { return w.follow() }
+
+// Reread shows the file again (C-r): it drops the cached blocks, the size
+// and the line count, and reads the blocks of the page again. src, when
+// not nil, replaces the source (a file reopened because an editor may
+// have replaced it); the old one is closed. The position stays, moved up
+// to the last page when the file got shorter. A running search stops; the
+// query stays for n and N.
+func (w *PagedWidget) Reread(src pagedfile.Source) tea.Cmd {
+	if w.closed {
+		if src != nil {
+			_ = src.Close()
+		}
+		return nil
+	}
+	if src != nil && src != w.src {
+		_ = w.src.Close()
+		w.src = src
+	}
+	size, _ := w.src.Size()
+	counted := w.scanned
+	w.srcGen++
+	w.doc = pagedfile.NewDocument(size, w.opts)
+	clear(w.pending)
+	clear(w.failed)
+	w.ops = nil
+	w.binary = false
+	w.scanning, w.scanned = false, false
+	w.stopSearch()
+	w.hasActive = false
+	w.push(func(w *PagedWidget) []int64 {
+		top, missing := w.clampTop(min(w.top, w.doc.Size()))
+		if missing != nil {
+			return missing
+		}
+		w.top = top
+		return nil
+	})
+	cmd := w.follow()
+	if counted {
+		// The line numbers followed the count; count the new file again.
+		cmd = tea.Batch(cmd, w.scan())
+	}
+	return cmd
+}
 
 // Close cancels pending reads and a running search and closes the source.
 func (w *PagedWidget) Close() {
@@ -258,6 +307,9 @@ func (w *PagedWidget) handleOwn(msg tea.Msg) tea.Cmd {
 	}
 	switch m := msg.(type) {
 	case pagedBlockMsg:
+		if m.gen != w.srcGen {
+			return nil
+		}
 		delete(w.pending, m.idx)
 		if m.err != nil {
 			w.failed[m.idx] = m.err
@@ -276,6 +328,9 @@ func (w *PagedWidget) handleOwn(msg tea.Msg) tea.Cmd {
 		w.stopSearch()
 		return w.searchDone(m.match, m.err)
 	case pagedScanMsg:
+		if m.gen != w.srcGen {
+			return nil
+		}
 		w.scanning = false
 		if m.err == nil {
 			w.scanned = true
@@ -370,10 +425,10 @@ func (w *PagedWidget) scan() tea.Cmd {
 	w.scanning = true
 	progress := new(atomic.Int64)
 	w.scanProgress = progress
-	src, opts := w.src, w.opts
+	src, opts, gen := w.src, w.opts, w.srcGen
 	cmd, _ := w.spawn(func(ctx context.Context) tea.Msg {
 		index, total, err := pagedfile.Scan(ctx, src, opts, progress)
-		return pagedScanMsg{w: w, index: index, total: total, err: err}
+		return pagedScanMsg{w: w, gen: gen, index: index, total: total, err: err}
 	})
 	return tea.Batch(cmd, w.tick())
 }
@@ -451,7 +506,7 @@ func (w *PagedWidget) read(blocks []int64) tea.Cmd {
 }
 
 func (w *PagedWidget) readBlock(b int64) func(context.Context) tea.Msg {
-	src, bs := w.src, w.doc.BlockSize()
+	src, bs, gen := w.src, w.doc.BlockSize(), w.srcGen
 	return func(ctx context.Context) tea.Msg {
 		buf := make([]byte, bs)
 		n := 0
@@ -468,7 +523,7 @@ func (w *PagedWidget) readBlock(b int64) func(context.Context) tea.Msg {
 			err = nil
 		}
 		size, _ := src.Size()
-		return pagedBlockMsg{w: w, idx: b, data: buf[:n], size: size, err: err}
+		return pagedBlockMsg{w: w, gen: gen, idx: b, data: buf[:n], size: size, err: err}
 	}
 }
 
