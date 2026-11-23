@@ -212,6 +212,9 @@ func (v *LogsViewer) logViewStatus() string {
 	if s := v.soloStatus(); s != "" {
 		text += ", " + s
 	}
+	if m := v.marksStatus(); m != "" {
+		text += ", " + m
+	}
 	return text
 }
 
@@ -239,6 +242,10 @@ func (v *LogsViewer) logViewHints() []FooterHint {
 		}
 		hints = append(hints, FooterHint{Key: "M-m", Label: label, Enabled: true})
 	}
+	hints = append(hints,
+		FooterHint{Key: "m", Label: "Mark", Enabled: v.context == nil},
+		FooterHint{Key: "u", Label: "Next mark", Enabled: len(v.marks.set) > 0},
+		FooterHint{Key: "e", Label: "Next issue", Enabled: v.context == nil})
 	if v.onFields != nil {
 		hints = append(hints,
 			FooterHint{Key: "M-d", Label: "Fields", Enabled: true},
