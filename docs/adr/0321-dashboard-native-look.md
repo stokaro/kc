@@ -87,11 +87,15 @@ The screen of a namespace on a kind cluster, a minute after opening:
    or the investigation window. The bottom row is the F-key bar, drawn
    by the code that draws the panels' bar, with the actions available
    now: `F1` Help, `F2` Range, `F3` Pause or Live, `F4` Expand or
-   Restore, `F5` Window, `F6` Blocks or Braille, `F7` Logs, `F9` PullDn,
+   Restore, `F5` Window, `F6` Images, Braille or Blocks (the next
+   drawing), `F7` Logs, `F9` PullDn,
    `F10` Close. Every widget sits in a frame on kc's blue with its title
    in the top border and a note in the bottom border. The focused
    widget's title is drawn like a panel's cursor row (black on cyan).
-   Only the plot area of a chart is black.
+   Only the plot area of a chart is black. Where the terminal shows
+   images (ADR 0320), the image fills that plot area; the frame, the
+   legend, the value labels, the time axis, the "no data" band and the
+   arrows of a line above the scale stay text.
 2. **A target list for navigation.** The left column (at 120 columns
    and more; below that, under the charts) lists what the target is made
    of: the workloads of a namespace or of all namespaces (pods without a

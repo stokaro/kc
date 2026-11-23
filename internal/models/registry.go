@@ -29,13 +29,31 @@ func RegisterChild(gvr schema.GroupVersionResource, ctor ChildConstructor) {
 	childMu.Unlock()
 }
 
-// ChildFor returns a registered constructor for the given GVR when available.
+// ChildFor returns the constructor of the folder an object of gvr opens on
+// Enter: a registered one, or, for a type without one that has a
+// /diagnosis or rows from RegisterObjectRows, a folder with just those
+// rows (and /events and /timeline). Without it Enter would open the YAML
+// and the rows would be unreachable.
 func ChildFor(gvr schema.GroupVersionResource) (ChildConstructor, bool) {
 	loadChildren()
 	childMu.RLock()
 	ctor, ok := childMap[gvr]
 	childMu.RUnlock()
-	return ctor, ok
+	if ok {
+		return ctor, true
+	}
+	if hasDiagnosis(gvr) || hasRegisteredObjectRows(gvr) {
+		return objectRowsChild(gvr), true
+	}
+	return nil, false
+}
+
+// objectRowsChild builds the folder of an object of gvr that has no child
+// types, only the rows models adds inside objects.
+func objectRowsChild(gvr schema.GroupVersionResource) ChildConstructor {
+	return func(deps Deps, ns, name string, basePath []string) Folder {
+		return NewChildResourceTypesFolder(deps, gvr, ns, name, nil, basePath)
+	}
 }
 
 func builtinChildren() map[schema.GroupVersionResource]ChildConstructor {
@@ -59,9 +77,10 @@ func builtinChildren() map[schema.GroupVersionResource]ChildConstructor {
 		return NewChildResourceTypesFolder(deps,
 			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
 			ns, name,
+			// A Deployment owns ReplicaSets only; ReplicationControllers
+			// are the older, unrelated controller.
 			[]schema.GroupVersionResource{
 				{Group: "apps", Version: "v1", Resource: "replicasets"},
-				{Group: "", Version: "v1", Resource: "replicationcontrollers"},
 			},
 			basePath,
 		)

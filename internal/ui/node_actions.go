@@ -42,6 +42,9 @@ type (
 		target nodeTarget
 		opts   nodeaction.DrainOptions
 		ok     bool
+		// form is the options dialog; it stays open while kc reads the
+		// pods.
+		form *drainOptionsModel
 	}
 	nodeCordonPreparedMsg struct {
 		action *nodeaction.CordonAction
@@ -50,6 +53,7 @@ type (
 	nodeDrainPreparedMsg struct {
 		action *nodeaction.DrainAction
 		err    error
+		form   *drainOptionsModel
 	}
 	nodeConfirmResultMsg struct {
 		ok     bool
@@ -162,7 +166,6 @@ func (a *App) openNodeActions() (tea.Cmd, bool) {
 	return nil, true
 }
 
-//nolint:gocyclo // the node action message switch, one short case per message type
 func (a *App) handleNodeActionMsg(msg nodeActionMsg) tea.Cmd {
 	switch m := msg.(type) {
 	case nodeMenuChosenMsg:
@@ -174,11 +177,12 @@ func (a *App) handleNodeActionMsg(msg nodeActionMsg) tea.Cmd {
 			return a.showDrainOptions(m.target)
 		}
 	case nodeDrainOptionsMsg:
-		a.hideModalName(nodeOptionsModal)
 		if !m.ok {
+			a.hideModalName(nodeOptionsModal)
 			return nil
 		}
-		return a.prepareDrain(m.target, m.opts)
+		a.invalidateView("drain options checking")
+		return a.prepareDrain(m.target, m.opts, m.form)
 	case nodeCordonPreparedMsg:
 		if m.err != nil {
 			return a.nodeActionError(m.err)
@@ -190,10 +194,7 @@ func (a *App) handleNodeActionMsg(msg nodeActionMsg) tea.Cmd {
 		}
 		return a.showNodeConfirm(&nodeConfirmModel{cordon: m.action}, m.action.Confirmation(), m.action.Command())
 	case nodeDrainPreparedMsg:
-		if m.err != nil {
-			return a.nodeActionError(m.err)
-		}
-		return a.showNodeConfirm(&nodeConfirmModel{drain: m.action}, m.action.Confirmation(), m.action.Command())
+		return a.drainPrepared(m)
 	case nodeConfirmResultMsg:
 		a.hideModalName(nodeConfirmModal)
 		switch {
@@ -265,13 +266,37 @@ func (a *App) showDrainOptions(target nodeTarget) tea.Cmd {
 	return nil
 }
 
-func (a *App) prepareDrain(target nodeTarget, opts nodeaction.DrainOptions) tea.Cmd {
-	return a.withBusy("Drain", 300*time.Millisecond, func() tea.Msg {
+// prepareDrain reads the pods while the options stay open. It does not use
+// withBusy: the options say that kc reads the pods, and a busyDoneMsg does
+// not pass an open dialog, so the result would never arrive.
+func (a *App) prepareDrain(target nodeTarget, opts nodeaction.DrainOptions, form *drainOptionsModel) tea.Cmd {
+	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(a.ctx, nodePrepareTimeout)
 		defer cancel()
 		action, err := nodeaction.PrepareDrain(ctx, target.env, target.nodes, opts)
-		return nodeDrainPreparedMsg{action: action, err: err}
-	})
+		return nodeDrainPreparedMsg{action: action, err: err, form: form}
+	}
+}
+
+// drainPrepared moves on from the drain options. A refusal or an error
+// keeps the options open and shows the problem there; a prepared drain
+// closes them and opens the red dialog. When the options were closed
+// while kc read the pods, the result is dropped.
+func (a *App) drainPrepared(m nodeDrainPreparedMsg) tea.Cmd {
+	modal := a.modalManager.modals[nodeOptionsModal]
+	if m.form == nil || modal == nil || !modal.IsVisible() || modal.content != m.form {
+		return nil
+	}
+	if m.err != nil {
+		m.form.checked(m.err)
+		// The pods listed under the options make the form taller.
+		w, h := m.form.PreferredSize(a.width, a.height)
+		a.configureModalWindow(modal, m.form, a.activePanel, "", w+2, h+2)
+		a.invalidateView("drain refused")
+		return nil
+	}
+	a.hideModalName(nodeOptionsModal)
+	return a.showNodeConfirm(&nodeConfirmModel{drain: m.action}, m.action.Confirmation(), m.action.Command())
 }
 
 // showNodeConfirm opens the red dialog. models.Confirmation has no command

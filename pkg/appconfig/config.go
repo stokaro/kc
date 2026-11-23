@@ -263,6 +263,8 @@ type Config struct {
 	// MetricsHistory reads past workload usage from Prometheus; off by
 	// default.
 	MetricsHistory MetricsHistoryConfig `json:"metricsHistory"`
+	// Charts is how the dashboard draws its charts.
+	Charts ChartsConfig `json:"charts"`
 }
 
 // OverviewConfig holds the thresholds of the /overview folder. A zero or
@@ -683,6 +685,7 @@ func Default() *Config {
 		Overview:       DefaultOverview(),
 		Timeline:       DefaultTimeline(),
 		MetricsHistory: DefaultMetricsHistory(),
+		Charts:         DefaultCharts(),
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
@@ -737,6 +740,7 @@ func shellEnv() string {
 // read from a file to the values kc uses.
 func normalizeLoaded(cfg *Config) {
 	cfg.Layout.normalize()
+	cfg.Charts.normalize()
 	if cfg.Viewer.Theme == "" {
 		cfg.Viewer.Theme = "dracula"
 	}

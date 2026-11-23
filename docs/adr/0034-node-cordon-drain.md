@@ -125,7 +125,11 @@ evictions) go to the API server and log an INFO line first.
   kubectl's defaults, so it does the same as kc.
 - `PrepareDrain` refuses up front, before anything changes, when a node
   has a pod the rules refuse; kubectl cordons first and fails after. The
-  error names the first pod and the flag that would allow it.
+  error lists every refused pod with the flag that would allow it
+  (`PodNote.Override`). The options dialog stays open while kc reads the
+  pods, and on a refusal it lists each pod under the check box of that
+  flag, so the choices made so far are kept. (Until #323 the dialog
+  closed and only the first pod reached the status line.)
 - Uncordon removes `spec.unschedulable` (merge patch with `null`), as
   kubectl uncordon does; cordon sets it to `true`. Both name the value,
   so a repeat changes nothing. Nodes already in the target state are not

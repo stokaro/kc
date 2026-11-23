@@ -124,10 +124,10 @@ func (a *App) openDashboard(scope string, target dashboard.Target) tea.Cmd {
 	}
 	d.open = true
 	a.dash.window = a.window
-	d.model.Update(dashboardSize(a.width, a.height))
+	sized, _ := d.model.Update(dashboardSize(a.width, a.height))
 	ctrllog.FromContext(a.ctx).WithName("dashboard").Info("dashboard opened", "context", key.ContextName, "scope", scope, "target", target.Key())
 	a.invalidateView("dashboard open")
-	return d.model.Start()
+	return tea.Batch(sized, d.model.Start())
 }
 
 // restores reports whether reopening for target brings the last
@@ -148,6 +148,7 @@ func (a *App) dashboardSources(key kccluster.Key, engine *gatedInfo, scope strin
 		Loc:       time.Local,
 		Window:    func() investigation.Window { return a.window },
 		SetWindow: func(w investigation.Window) { a.window = w },
+		Images:    a.chartImages(),
 	}
 	if a.cfg == nil {
 		return src
@@ -235,8 +236,8 @@ func (a *App) updateDashboard(msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 	case tea.WindowSizeMsg:
-		d.model.Update(dashboardSize(msg.Width, msg.Height))
-		return nil, false
+		cmd, _ := d.model.Update(dashboardSize(msg.Width, msg.Height))
+		return cmd, false
 	case tea.MouseMsg:
 	default:
 		return nil, false
@@ -291,13 +292,13 @@ func (a *App) dashboardResult(cmd tea.Cmd, act dashboard.Action) tea.Cmd {
 	case act.Note != "":
 		cmds = append(cmds, a.ShowToast(act.Note, linkToastTTL))
 	case act.Logs != nil:
-		a.closeDashboard()
+		cmds = append(cmds, a.closeDashboard())
 		cmds = append(cmds, a.openDashboardLogs(*act.Logs, act.Window))
 	case act.Open != nil:
-		a.closeDashboard()
+		cmds = append(cmds, a.closeDashboard())
 		cmds = append(cmds, a.openDashboardObject(*act.Open), a.revisionNote(act.Event))
 	case act.Close:
-		a.closeDashboard()
+		cmds = append(cmds, a.closeDashboard())
 	}
 	return tea.Batch(cmds...)
 }
@@ -365,17 +366,22 @@ func (a *App) openDashboardObject(ref models.ObjectRef) tea.Cmd {
 }
 
 // closeDashboard returns to the panels, which the dashboard never
-// changed. The engine stops; the model stays for C-x g.
-func (a *App) closeDashboard() {
+// changed. The engine stops; the model stays for C-x g. The returned
+// command deletes the chart images from the terminal.
+func (a *App) closeDashboard() tea.Cmd {
 	d := a.dash
 	if d == nil || !d.open {
-		return
+		return nil
 	}
 	d.open = false
 	d.model.Stop()
 	d.engine.Close()
 	d.engine = nil
 	a.invalidateView("dashboard close")
+	if seq := a.releaseChartImages(); seq != "" {
+		return tea.Raw(seq)
+	}
+	return nil
 }
 
 func (a *App) renderDashboard() tea.View {

@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/stokaro/kc/internal/ui/chart"
 	"github.com/stokaro/kc/internal/ui/menubar"
 )
 
@@ -29,10 +28,7 @@ func (m *Model) FunctionKeys() []FunctionKey {
 	if v.paused {
 		pause = "Live"
 	}
-	mode := "Blocks"
-	if m.mode == chart.Blocks {
-		mode = "Braille"
-	}
+	mode := map[string]string{drawImages: "Images", drawBraille: "Braille", drawBlocks: "Blocks"}[m.nextDrawName()]
 	expand := "Expand"
 	if v.expanded {
 		expand = "Restore"
@@ -92,13 +88,24 @@ func (m *Model) Menus(run func(key string) tea.Cmd) []menubar.Menu {
 		ranges = append(ranges, it)
 	}
 	ranges = append(ranges, menubar.Separator(), item("Zoom &in", "+", "+"), item("Zoom &out", "-", "-"))
-	blocks := item("&Blocks, for fonts without braille", "b", "b")
-	blocks.Checked = m.mode == chart.Blocks
 	view := menubar.Menu{Title: "&View", Items: []menubar.Item{
 		item("&Next widget", "Tab", "tab"),
 		item("&Expand or restore the widget", "F4", "f4"),
-		blocks,
+		menubar.Separator(),
 	}}
+	draws := []struct{ label, name string }{
+		{"Charts as &images", drawImages},
+		{"Charts in b&raille", drawBraille},
+		{"Charts in &blocks, for fonts without braille", drawBlocks},
+	}
+	for _, d := range draws {
+		if d.name == drawImages && m.src.Images == nil {
+			continue
+		}
+		it := item(d.label, "", drawKey+d.name)
+		it.Checked = m.drawName() == d.name
+		view.Items = append(view.Items, it)
+	}
 	help := menubar.Menu{Title: "&Help", Items: []menubar.Item{item("&Dashboard", "F1", "f1")}}
 	return []menubar.Menu{dash, {Title: "&Range", Items: ranges}, view, help}
 }

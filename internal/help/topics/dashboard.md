@@ -129,7 +129,7 @@ snapshot of the cluster at another time.
 - `o`: Show the selected row or the object of the selected Event, else the target, in the other panel, and leave the dashboard. An Event about a kind kc cannot open shows the Event. For a rollout step kc says where its revisions are: the Deployment's `/rollout`, else the object's `/timeline` if kc recorded it.
 - `l`, `F7`: Show the logs around the selected Event, or around the cursor: the investigation window becomes five minutes either side, the object goes to the other panel, and this panel turns to Logs mode.
 - `w`, `F5`: Make the shown range the investigation window.
-- `b`, `F6`: Draw with blocks instead of braille, for fonts without braille, and back.
+- `b`, `F6`: Switch the drawing: images where the terminal shows them (see below), then braille, then blocks (for fonts without braille), then images again. The View menu picks one by name.
 - `r`: Read Prometheus again now.
 - `F1`: This page.
 - `F9`: The menus: Dashboard, Range, View and Help.
@@ -144,6 +144,35 @@ open its dashboard, click a menu title or a function key.
 
 `C-x g` on the same row reopens the last dashboard with its range, its
 pause and the drilldown. The session history is kept until kc exits.
+
+## Charts as images
+
+In iTerm2 3.7 or later, kitty and Ghostty the plots are drawn as images
+(the Kitty graphics protocol): the usage as a filled area, the requests,
+limits and allocatable as dashed lines, the cursor cell lighter. The
+frames, the legends, the value labels and the time axis stay text, and
+so do the "no data" band, the arrows of a line above the scale, menus,
+`F1` and dialogs drawn over the charts. The images show the
+same samples as the text charts, only smoother.
+
+`charts.graphics` in `~/.kc/config.yaml` decides:
+
+- `auto` (the default): images when the terminal says it is one of
+  those: `LC_TERMINAL=iTerm2` or `TERM_PROGRAM=iTerm.app` with a version
+  of 3.7 or later, `TERM=xterm-kitty` or `KITTY_WINDOW_ID`,
+  `TERM=xterm-ghostty` or `TERM_PROGRAM=ghostty`. kc does not query the
+  terminal for this, so nothing can end up in your input.
+- `text`: always braille or blocks.
+- `kitty`: always images, for a terminal kc does not recognize.
+
+Under tmux (3.3 or later) images need `set -g allow-passthrough on`, and
+the terminal outside tmux must be one of those above; kc asks tmux for
+both. Over SSH, `TERM=xterm-kitty` and iTerm2's `LC_TERMINAL` (sent with
+the other `LC_*` variables) carry the answer to the remote kc.
+
+If the charts show question marks, boxes or empty space instead of the
+images, the terminal does not support Unicode placeholders: press `b`
+or `F6` for text, or set `charts.graphics: text`.
 
 ## Limits
 

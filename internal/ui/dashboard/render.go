@@ -226,6 +226,7 @@ func (m *Model) chartFrame(v *view, wd widget, c chart.Chart, r rect) []string {
 		title += " · " + note
 	}
 	body := append([]string{m.legend(v, wd, c)}, c.Render()...)
+	m.placeImage(wd, c, body)
 	return frame(title, m.sourceLabel(v, wd), v.focus == wd, r.w, r.h, body)
 }
 
