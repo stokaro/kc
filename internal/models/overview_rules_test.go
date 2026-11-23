@@ -529,20 +529,20 @@ func TestOverviewCapacity(t *testing.T) {
 		t.Fatalf("cpu value = %q", cpu.value)
 	}
 	// n1: requests 3/4 = 75%, limits 6/4 = 150%: overcommitted.
-	if cpu.state != "overcommitted" || cpu.severity != severityWarning {
+	if cpu.state != "lim overcommitted, 1 of 2 nodes" || cpu.severity != severityWarning {
 		t.Fatalf("cpu state = %q %v, want overcommitted warning", cpu.state, cpu.severity)
 	}
 	if got := targetKeys(cpu); !slices.Equal(got, []string{"nodes:n1", "nodes:n2"}) {
 		t.Fatalf("cpu targets = %v, the most loaded first", got)
 	}
-	if !strings.Contains(cpu.targets[0].value, "req 75% lim 150% of alloc, node n/a overcommitted") {
+	if !strings.Contains(cpu.targets[0].value, "req 75% lim 150% of alloc, node n/a lim overcommitted") {
 		t.Fatalf("n1 value = %q", cpu.targets[0].value)
 	}
 
 	mem := mustFinding(t, r, "capacity/memory")
 	// requests 1+1+1 Gi = 3 of 16 Gi; limits 4+6 = 10 of 16, but all on
 	// n1 with 8 Gi: the row is overcommitted while the sum looks fine.
-	if mem.value != "pods n/a req 18% lim 62% of alloc, node n/a" || mem.state != "overcommitted" {
+	if mem.value != "pods n/a req 18% lim 62% of alloc, node n/a" || mem.state != "lim overcommitted, 1 of 2 nodes" {
 		t.Fatalf("memory = %q %q", mem.value, mem.state)
 	}
 
@@ -595,7 +595,7 @@ func TestOverviewThresholdsFromConfig(t *testing.T) {
 
 	cfg := appconfig.OverviewConfig{RequestsWarnPercent: 70, RestartThreshold: 2, QuotaWarnPercent: 50, Window: metav1.Duration{Duration: 30 * time.Minute}}
 	strict := reportFor(t, AllNamespaces, cfg, objs...)
-	if got := mustFinding(t, strict, "capacity/cpu").state; got != "high" {
+	if got := mustFinding(t, strict, "capacity/cpu").state; got != "req high" {
 		t.Fatalf("cpu 75%% with warn 70 = %q, want high", got)
 	}
 	// Threshold 2 matches, but the 30m window excludes the restart 50m ago.
