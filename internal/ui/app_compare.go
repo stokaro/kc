@@ -40,6 +40,8 @@ func (a *App) handleCtrlXKey(press tea.KeyPressMsg) tea.Cmd {
 		return a.showMetricSources()
 	case compareWholeListsKey:
 		return a.compareWholeLists()
+	case netpolKey:
+		return a.explainNetworkPolicy()
 	}
 	if cmd, ok := a.handlePinChord(press.String()); ok {
 		return cmd

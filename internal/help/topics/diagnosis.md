@@ -194,7 +194,10 @@ are listed only for a pod on a node with a CSI volume.
 - Only API objects are read. A clean result does not prove that DNS,
   the network, probes, nodes or the application work. A routing
   diagnosis does not test DNS, TLS handshakes or reachability, and does
-  not read controller-specific annotations or policies.
+  not read controller-specific annotations or policies. To check what
+  NetworkPolicies say about one client pod and one server pod, put them
+  under the cursors of the two panels and press `C-x n`
+  ([NetworkPolicy between two pods](network-policy.md)).
 - Pods are matched by controller owner UID (through the ReplicaSets of
   a Deployment), events by UID. For a custom resource kc follows
   controller references through the Deployments, ReplicaSets,
