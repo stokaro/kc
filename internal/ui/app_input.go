@@ -214,7 +214,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		case "1":
 			a.escPressed = false
 			if caps.HasHelp {
-				return a, a.showHelp() // Esc 1 = F1
+				return a, a.showPanelHelp(panel) // Esc 1 = F1
 			}
 			return a, nil
 		case "2":
