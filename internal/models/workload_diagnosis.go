@@ -69,6 +69,9 @@ type workloadInput struct {
 	// Scheduling is set for an unschedulable pod: what kc's node checks
 	// read.
 	Scheduling *schedulingInput
+	// Storage is set for a pod's own diagnosis and a claim's: the classes,
+	// volumes, drivers and attachments its claims name.
+	Storage *storageInput
 
 	health healthVerdict // of a type with a health config entry
 }
@@ -427,7 +430,9 @@ func (in *workloadInput) podFindings(pod *corev1.Pod) []diagFinding {
 		}
 	}
 	out = append(out, in.readinessFindings(pod, explained)...)
-	return append(out, in.claimFindings(pod)...)
+	out = append(out, in.claimFindings(pod)...)
+	out = append(out, in.storageFindings(pod)...)
+	return append(out, in.volumeEventFindings(pod)...)
 }
 
 func (in *workloadInput) podLink(pod *corev1.Pod, evidence string) diagLink {
@@ -667,7 +672,9 @@ func (in *workloadInput) claimFinding(pod *corev1.Pod, claim, field string) (dia
 		}, true
 	}
 	pvc := &in.Claims[idx]
-	if pvc.Status.Phase == corev1.ClaimBound {
+	if pvc.Status.Phase == corev1.ClaimBound || in.Storage != nil {
+		// With the storage input, storageFindings explains the claim
+		// stage by stage instead.
 		return diagFinding{}, false
 	}
 	phase := string(pvc.Status.Phase)
