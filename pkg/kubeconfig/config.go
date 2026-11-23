@@ -177,6 +177,11 @@ func (m *Manager) addFromEnv(log logr.Logger, envVar, homeDir string, seen map[s
 		}
 
 		if err := m.addKubeconfig(normalized, seen); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// kubectl skips a file of the list that does not exist.
+				log.Info("skipping missing kubeconfig from KUBECONFIG", "path", normalized)
+				continue
+			}
 			return fmt.Errorf("loading kubeconfig from KUBECONFIG %q: %w", normalized, err)
 		}
 		log.Info("added kubeconfig from env", "path", normalized)

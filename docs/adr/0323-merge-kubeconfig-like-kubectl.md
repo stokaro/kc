@@ -42,6 +42,9 @@ comes whole from the first file that has it.
   in the environment instead.
 - A context name defined in several files of `$KUBECONFIG` is listed
   once, from the first file.
+- A file of `$KUBECONFIG` that does not exist is skipped, as kubectl
+  skips it, and logged once at INFO. A file that exists but does not
+  parse still stops kc.
 - Without `$KUBECONFIG`, kc still reads `~/.kube/config` and the other
   files under `~/.kube`, each on its own, as kubectl would with
   `--kubeconfig` naming that file.

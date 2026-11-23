@@ -137,3 +137,39 @@ func TestLoadingRules(t *testing.T) {
 		t.Error("IsList")
 	}
 }
+
+// A file of $KUBECONFIG that does not exist is skipped, as kubectl skips
+// it; the others still merge. A file that exists but does not parse still
+// stops discovery.
+func TestDiscoverSkipsMissingKubeconfigEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	a, b := splitConfigs(t, dir)
+	missing := filepath.Join(dir, "missing.yaml")
+	sep := string(os.PathListSeparator)
+	t.Setenv("HOME", dir)
+	t.Setenv("KUBECONFIG", a+sep+missing+sep+b)
+
+	m := NewManager()
+	if err := m.DiscoverKubeconfigs(); err != nil {
+		t.Fatalf("a missing file stopped discovery: %v", err)
+	}
+	if n := len(m.GetKubeconfigs()); n != 2 {
+		t.Fatalf("%d kubeconfigs loaded, want 2", n)
+	}
+	mirror := m.GetContextByName("mirror")
+	if mirror == nil || mirror.LoadPath() != a+sep+b {
+		t.Fatalf("mirror = %+v, want it to load %s", mirror, a+sep+b)
+	}
+	if _, err := m.CreateClientConfig(mirror); err != nil {
+		t.Errorf("mirror: %v", err)
+	}
+
+	bad := filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(bad, []byte("contexts: ["), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBECONFIG", a+sep+bad)
+	if err := NewManager().DiscoverKubeconfigs(); err == nil {
+		t.Error("a kubeconfig that does not parse was skipped")
+	}
+}
