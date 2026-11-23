@@ -27,6 +27,9 @@ The diff starts with a header:
 - `# view:` is `configuration` or `raw`.
 - `# omitted:` lists the fields kc left out of either side.
 
+A header line wider than the screen wraps at its commas; the rest lines
+up under the value. The diff lines below do not wrap.
+
 Then follows a normal `diff -u`: lines starting with `-` are only on
 the left, lines with `+` only on the right, with three lines of context
 around each change. `No differences in the configuration view.` means
