@@ -302,8 +302,8 @@ func (w *Widget) record() {
 	if at.IsZero() {
 		return
 	}
-	cpu, mem, ok := usagePercents(w.summary)
-	if !ok {
+	cpu, mem := usagePercents(w.summary)
+	if cpu == nil && mem == nil {
 		return
 	}
 	h := w.history[w.historyKey()]
@@ -314,22 +314,22 @@ func (w *Widget) record() {
 	h.add(at, cpu, mem)
 }
 
-// usagePercents returns the CPU and memory bars when both show usage. A
-// measurement that is not available adds no sample, never a zero.
-func usagePercents(s models.InfoSummary) (cpu, mem usageSample, ok bool) {
-	var gotCPU, gotMem bool
+// usagePercents returns the CPU and the memory bar that show usage, each
+// nil when its bar does not. A measurement that is not available adds no
+// sample, never a zero, and does not keep the other one out.
+func usagePercents(s models.InfoSummary) (cpu, mem *usageSample) {
 	for _, b := range s.Bars {
 		if !b.Known || !b.Usage {
 			continue
 		}
 		switch b.Label {
 		case "CPU":
-			cpu, gotCPU = usageSample{percent: b.Percent, base: b.Base}, true
+			cpu = &usageSample{percent: b.Percent, base: b.Base}
 		case "Memory":
-			mem, gotMem = usageSample{percent: b.Percent, base: b.Base}, true
+			mem = &usageSample{percent: b.Percent, base: b.Base}
 		}
 	}
-	return cpu, mem, gotCPU && gotMem
+	return cpu, mem
 }
 
 // View renders the visible part of the bars, sparklines and top pods.

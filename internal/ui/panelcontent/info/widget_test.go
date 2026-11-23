@@ -213,8 +213,9 @@ func TestWidgetRendersCapacityRows(t *testing.T) {
 			t.Fatalf("the memory bar carries the limits' word: %q", s)
 		}
 	}
-	if h.w.history[h.w.historyKey()] != nil {
-		t.Fatal("a CPU bar of requests was recorded as usage")
+	// Memory shows usage and is recorded; the CPU bar of requests is not.
+	if hist := h.w.history[h.w.historyKey()]; hist == nil || len(hist.cpu.samples) != 0 || len(hist.mem.samples) != 1 {
+		t.Fatalf("history = %+v, want one memory sample and no CPU sample", hist)
 	}
 }
 
