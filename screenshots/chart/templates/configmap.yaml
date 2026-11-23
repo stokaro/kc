@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-banner
+  labels:
+    app.kubernetes.io/name: banner
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  message: {{ .Values.message | quote }}
+  color: {{ .Values.color | quote }}

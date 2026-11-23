@@ -39,6 +39,9 @@ go.work.sum
 !internal/ui/skin/builtin/*.yaml
 # Demo objects for docs/demo/record.sh.
 !docs/demo/seed.yaml
+# Demo objects and the Helm chart for screenshots/capture.sh.
+!screenshots/seed.yaml
+!screenshots/chart/**/*.yaml
 
 # Editor/IDE
 # .idea/
