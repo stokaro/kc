@@ -18,7 +18,7 @@ import (
 )
 
 func cfgVolume(name string) corev1.PodSpec {
-	return corev1.PodSpec{Volumes: []corev1.Volume{{Name: "c", ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: name}}}}}
+	return corev1.PodSpec{Volumes: []corev1.Volume{{Name: "c", ConfigMap: &corev1.ConfigMapVolumeSource{Name: name}}}}
 }
 
 func usersOf(t *testing.T, r RelatedReader) []string {
@@ -48,7 +48,7 @@ func TestUsedByPodTemplates(t *testing.T) {
 		relCronJobsGVR: {&batchv1.CronJob{Namespace: "shop", Name: "nightly", UID: "cj-uid", Spec: batchv1.CronJobSpec{
 			JobTemplate: batchv1.JobTemplateSpec{Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: cfgVolume("cfg")}}}}}},
 		replicaSetGVRForTest(): {&appsv1.ReplicaSet{Namespace: "shop", Name: "web-1", UID: "rs1", OwnerReferences: appsControllerRef("Deployment", "web", "web-uid")}},
-		podGVR: {&corev1.Pod{Namespace: "shop", Name: "web-1-a", OwnerReferences: appsControllerRef("ReplicaSet", "web-1", "rs1"), Spec: cfgVolume("cfg")}},
+		podGVR:                 {&corev1.Pod{Namespace: "shop", Name: "web-1-a", OwnerReferences: appsControllerRef("ReplicaSet", "web-1", "rs1"), Spec: cfgVolume("cfg")}},
 	}
 	got := usersOf(t, newFakeReader(t, objs))
 	want := []string{
@@ -115,7 +115,7 @@ func TestWalkChain(t *testing.T) {
 			chainObj(relDeploymentsGVR, "Deployment", "loop-b", "lb", "Deployment", "loop-a", "la"),
 		},
 		relReplicaSetsGVR: {chainObj(relReplicaSetsGVR, "ReplicaSet", "db-1", "rs", "Deployment", "db", "dep")},
-	}, Errs: map[schema.GroupVersionResource]error{}}
+	}, Errs: make(map[schema.GroupVersionResource]error)}
 	owners, edges := walkChain("cr", in)
 	for _, uid := range []types.UID{"cr", "dep", "rs"} {
 		if !owners[uid] {

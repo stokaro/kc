@@ -61,7 +61,7 @@ func walkChain(root types.UID, in chainInput) (map[types.UID]bool, []chainEdge) 
 	var edges []chainEdge
 	frontier := map[types.UID]bool{root: true}
 	for depth := 1; depth <= maxChainDepth && len(frontier) > 0; depth++ {
-		next := map[types.UID]bool{}
+		next := make(map[types.UID]bool)
 		for _, gvr := range chainGVRs {
 			for i := range in.Objects[gvr] {
 				obj := &in.Objects[gvr][i]
