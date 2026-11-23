@@ -66,6 +66,20 @@ type history struct {
 	cpu, mem series
 }
 
+// first is the time of the oldest kept sample, zero when there is none.
+func (h *history) first() time.Time {
+	if h == nil {
+		return time.Time{}
+	}
+	var out time.Time
+	for _, s := range []*series{&h.cpu, &h.mem} {
+		if len(s.samples) > 0 && (out.IsZero() || s.samples[0].at.Before(out)) {
+			out = s.samples[0].at
+		}
+	}
+	return out
+}
+
 func (h *history) add(at time.Time, cpu, mem usageSample) {
 	if !at.After(h.last) {
 		return

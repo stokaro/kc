@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -240,7 +241,9 @@ func logsCommand(deps Deps, spec LogsSpec) string {
 	if tail := spec.EffectiveTailLines(); tail > 0 {
 		args = append(args, fmt.Sprintf("--tail=%d", tail))
 	}
-	if since := FormatLogsSince(spec.SinceSeconds); since != "" {
+	if !spec.SinceTime.IsZero() {
+		args = append(args, "--since-time="+spec.SinceTime.UTC().Format(time.RFC3339))
+	} else if since := FormatLogsSince(spec.SinceSeconds); since != "" {
 		args = append(args, "--since="+since)
 	}
 	if spec.Timestamps {

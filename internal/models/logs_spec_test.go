@@ -2,6 +2,7 @@ package models
 
 import (
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -65,6 +66,21 @@ func TestLogsSpecOptionsAndCommandAgree(t *testing.T) {
 				t.Errorf("PodLogOptions = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+// An investigation window's start wins over the since window, in the
+// request and in the printed command.
+func TestLogsSpecSinceTime(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 11, 23, 10, 0, 0, 0, time.FixedZone("CET", 3600))
+	spec := LogsSpec{Namespace: "web", Pod: "p", Container: "app", TailLines: -1, SinceSeconds: 60, SinceTime: start}
+	if got, want := logsCommand(Deps{}, spec), "kubectl logs p -n web -c app --since-time=2026-11-23T09:00:00Z"; got != want {
+		t.Fatalf("command = %q, want %q", got, want)
+	}
+	opts := spec.PodLogOptions()
+	if opts.SinceTime == nil || !opts.SinceTime.Time.Equal(start) || opts.SinceSeconds != nil {
+		t.Fatalf("PodLogOptions = %+v", opts)
 	}
 }
 
