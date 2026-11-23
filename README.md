@@ -161,6 +161,8 @@ Inside a Service, next to `/endpointslices`, `/diagnosis` checks the path from t
 
 Pods, Deployments, ReplicaSets, StatefulSets, DaemonSets and Jobs have a `/diagnosis` row inside them too. It explains what the object's status, its pods (matched by controller owner UID, through the ReplicaSets of a Deployment), their containers, the claims they use and the events about them show: a rollout that does not progress, a replica failure, unavailable replicas, a failed Job, an unschedulable pod with the scheduler's message, an image that cannot be pulled, a container that cannot start, an OOM kill, a crash loop or a restart in the last hour, a failed exit (also of an init container), and a claim the pod uses that is missing or not Bound. Each finding shows when it was observed and is followed by its sources: the object with the exact status field, and the newest events about that object or container. A container failure offers the current and previous log of that container of that pod, never another one. A `maybe` row is a possible explanation (a correlation by owner, not a confirmed cause) and a `next` row says what to inspect. Up to ten pods with problems are explained; the rest are counted. Pods, events or claims kc may not read are shown as unavailable, not as absent. Objects and events are matched by UID, so a recreated object with the same name does not inherit the pods or events of the one it replaced.
 
+Objects with a child folder, and pods, also have a `/timeline` row (not Secrets or Events). Entering it starts recording that object from the shared cache, without extra watches: the first entry is the object as kc saw it, then every revision kc observes, newest first, with what changed (images, replicas, ready and available counts, phase, conditions, restarts, generation, a requested deletion). `F3` on an entry shows its manifest diff against the previous recorded revision; a status-only change shows the status diff, and a change of both has a second `status` row. Notifications that repeat a resourceVersion or change only `managedFields` are counted, not recorded. A deletion and a recreation with a new UID are separate entries, and the new object is never compared with the old one. The recording keeps running when you leave the folder, until `stop recording`, until more than `timeline.maxObjects` objects are recorded (the oldest stops) or until kc exits; it is kept in memory only, within `timeline.maxEntries` and `timeline.maxBytes` per object. The first rows say when recording started, which entries are kept and how many were evicted, and a gap entry marks where changes may be missing (the cache lost the final state of a deletion, or the watch stopped). Only observed revisions are known: changes between two notifications, or before recording started, are not. For Deployments, StatefulSets and DaemonSets the timeline also lists the ReplicaSets or ControllerRevisions their controller kept, as older evidence.
+
 `F4`, `F8` and `F3` on container logs are grayed out when a SelfSubjectAccessReview for the current context, impersonation and namespace says the action is denied (`F4` needs get and patch, as `kubectl edit` sends a patch). Answers are cached for 30 seconds. An unknown or failed review keeps the key enabled; the API server still decides every request.
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
@@ -591,6 +593,16 @@ portForward:
 # Columns per resource type, keyed by group/version/resource (v1/pods for
 # the core group). See "Custom Columns" above.
 columns: {}
+
+# Object timelines (/timeline inside an object): kc records the revisions
+# it observes from the shared cache while a recording runs.
+timeline:
+  # Revisions kept per object; the oldest are evicted first.
+  maxEntries: 100
+  # Bytes of revisions (as JSON) kept per object.
+  maxBytes: 4194304
+  # Objects recorded at once; one more stops the oldest recording.
+  maxObjects: 10
 
 overview:
   # How far back warning events and container restarts count.

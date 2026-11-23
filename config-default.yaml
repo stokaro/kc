@@ -107,6 +107,16 @@ portForward:
 #       wide: true
 columns: {}
 
+# Object timelines (/timeline inside an object): kc records the revisions
+# it observes from the shared cache while a recording runs.
+timeline:
+  # Revisions kept per object; the oldest are evicted first.
+  maxEntries: 100
+  # Bytes of revisions (as JSON) kept per object.
+  maxBytes: 4194304
+  # Objects recorded at once; one more stops the oldest recording.
+  maxObjects: 10
+
 overview:
   # How far back warning events and container restarts count.
   window: 1h

@@ -240,6 +240,8 @@ type Config struct {
 	// by group/version/resource (see ColumnsKey). Empty by default.
 	Columns  map[string][]CustomColumn `json:"columns,omitempty"`
 	Overview OverviewConfig            `json:"overview"`
+	// Timeline bounds the object timelines (/timeline inside an object).
+	Timeline TimelineConfig `json:"timeline"`
 	// ReadOnly opens contexts in read-only mode; see ReadOnlyConfig.
 	ReadOnly ReadOnlyConfig `json:"readOnly"`
 }
@@ -294,6 +296,40 @@ type OverviewConfig struct {
 	// CertificateExpiryDays flags a cert-manager Certificate whose
 	// status.notAfter is less than this many days away.
 	CertificateExpiryDays int `json:"certificateExpiryDays"`
+}
+
+// TimelineConfig bounds the revisions kc keeps while it records objects. A
+// zero or negative value means the default; Normalized fills it in.
+type TimelineConfig struct {
+	// MaxEntries is how many revisions one object's timeline keeps; the
+	// oldest are evicted first.
+	MaxEntries int `json:"maxEntries"`
+	// MaxBytes bounds the revisions of one object by their JSON size.
+	MaxBytes int `json:"maxBytes"`
+	// MaxObjects is how many objects kc records at once; starting one more
+	// stops the oldest recording.
+	MaxObjects int `json:"maxObjects"`
+}
+
+// DefaultTimeline returns the default timeline bounds.
+func DefaultTimeline() TimelineConfig {
+	return TimelineConfig{MaxEntries: 100, MaxBytes: 4 << 20, MaxObjects: 10}
+}
+
+// Normalized returns t with every unset or invalid value replaced by its
+// default.
+func (t TimelineConfig) Normalized() TimelineConfig {
+	d := DefaultTimeline()
+	if t.MaxEntries <= 0 {
+		t.MaxEntries = d.MaxEntries
+	}
+	if t.MaxBytes <= 0 {
+		t.MaxBytes = d.MaxBytes
+	}
+	if t.MaxObjects <= 0 {
+		t.MaxObjects = d.MaxObjects
+	}
+	return t
 }
 
 // DefaultOverview returns the default overview thresholds.
@@ -575,6 +611,7 @@ func Default() *Config {
 		},
 		PortForward: PortForwardConfig{Address: DefaultPortForwardAddress},
 		Overview:    DefaultOverview(),
+		Timeline:    DefaultTimeline(),
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
