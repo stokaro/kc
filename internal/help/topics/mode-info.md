@@ -38,7 +38,9 @@ Percentages are truncated, as `kubectl describe node` prints them.
 The line under the scope dates the usage by metrics-server's own time:
 `usage measured 25s ago over 15s, read 3s ago`. A sample older than two
 minutes is marked stale and not used. `7 of 10 pods measured` means the
-sum is a lower bound.
+sum is a lower bound. For a workload the time is the oldest sample of
+its own pods, so it does not depend on the node metrics or on other
+namespaces.
 
 ## How to read the history
 

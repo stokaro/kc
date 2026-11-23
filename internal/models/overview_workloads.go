@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -54,6 +56,18 @@ type overviewWorkloadSummary struct {
 	// container without that limit (and no pod-level limit): the limit sum
 	// is then not a ceiling.
 	cpuUnlimited, memUnlimited bool
+	// usageAt is the oldest timestamp of the PodMetrics summed into the
+	// use: the use is never dated later than any part of it. Zero when no
+	// measured pod carries a timestamp.
+	usageAt time.Time
+}
+
+// dateBy folds the sample time of one measured pod into s; a zero time
+// (a pod without a timestamp) changes nothing.
+func (s *overviewWorkloadSummary) dateBy(at time.Time) {
+	if !at.IsZero() && (s.usageAt.IsZero() || at.Before(s.usageAt)) {
+		s.usageAt = at
+	}
 }
 
 // workloadIndex resolves the controllers of a pod from the overview's
@@ -194,6 +208,7 @@ func summarizeWorkloads(rc *ruleContext) (map[InfoWorkload]*overviewWorkloadSumm
 				s.measured++
 				s.cpuUse += cpuUse
 				s.memUse += memUse
+				s.dateBy(rc.m.podsTiming.sampled[key])
 			}
 			s.cpuReq += req.Cpu().MilliValue()
 			s.memReq += req.Memory().Value()
