@@ -106,8 +106,15 @@ func diagnosisWatches(gvr schema.GroupVersionResource, namespace string, self re
 		return []relatedWatch{self, in(podGVR), in(ovEventsGVR)}, true
 	case gvr == relDeploymentsGVR:
 		return []relatedWatch{self, in(relReplicaSetsGVR), in(podGVR), in(ovEventsGVR), in(pvcGVR)}, true
-	case hasWorkloadDiagnosis(gvr):
+	case slices.Contains(workloadDiagnosisGVRs, gvr):
 		return []relatedWatch{self, in(podGVR), in(ovEventsGVR), in(pvcGVR)}, true
+	case hasWorkloadDiagnosis(gvr):
+		// A custom resource: also the controllers it may own pods through.
+		ws := []relatedWatch{self, in(podGVR), in(ovEventsGVR), in(pvcGVR)}
+		for _, g := range chainGVRs {
+			ws = append(ws, in(g))
+		}
+		return ws, true
 	}
 	return nil, false
 }
@@ -181,6 +188,10 @@ func (f *RelatedObjectsFolder) workloadDiagnosisRows(ctx context.Context) ([]tab
 	}
 	if f.gvr == relDeploymentsGVR {
 		in.ReplicaSets, in.ReplicaSetsErr = listTyped[appsv1.ReplicaSet](ctx, f.reader, relReplicaSetsGVR, f.namespace)
+	}
+	if !slices.Contains(workloadDiagnosisGVRs, f.gvr) {
+		chain := readChain(ctx, f.reader, f.namespace)
+		in.Chain = &chain
 	}
 	in.Events, in.EventsErr = listTyped[corev1.Event](ctx, f.reader, ovEventsGVR, f.namespace)
 	in.Claims, in.ClaimsErr = listTyped[corev1.PersistentVolumeClaim](ctx, f.reader, pvcGVR, f.namespace)

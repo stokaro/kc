@@ -196,7 +196,11 @@ are listed only for a pod on a node with a CSI volume.
   diagnosis does not test DNS, TLS handshakes or reachability, and does
   not read controller-specific annotations or policies.
 - Pods are matched by controller owner UID (through the ReplicaSets of
-  a Deployment), events by UID. A recreated object with the same name
+  a Deployment), events by UID. For a custom resource kc follows
+  controller references through the Deployments, ReplicaSets,
+  StatefulSets, DaemonSets and Jobs of its namespace, at most four
+  hops; a type you may not list makes the chain partial, and the
+  diagnosis says so. A recreated object with the same name
   does not inherit the old one's pods or events.
 - Ten symptom groups are expanded, each citing up to 20 pods; the rest
   are listed with one pod each.
