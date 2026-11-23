@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,6 +64,8 @@ type usageValues struct {
 	cpu, mem       int64
 	cpuReq, memReq int64
 	cpuLim, memLim int64
+	// sampled is the metrics object's own timestamp; zero when it has none.
+	sampled time.Time
 }
 
 var podUsageColumns = []usageColumn{
@@ -115,6 +118,11 @@ func formatPercent(used, total int64) string {
 	return fmt.Sprint(int64(math.Round(float64(used) * 100 / float64(total))))
 }
 
+// stale reports whether the sample was UsageStaleAfter old when read at.
+func (v usageValues) stale(read time.Time) bool {
+	return !v.sampled.IsZero() && read.Sub(v.sampled) >= UsageStaleAfter
+}
+
 // usageObjectKey returns the snapshot key of an object.
 func usageObjectKey(namespace, name string) string {
 	if namespace == "" {
@@ -165,7 +173,9 @@ func mergeUsageColumns(rl *tablecache.RowList, kind usageKind, namespace string,
 			switch {
 			case !fresh:
 				cells = append(cells, "")
-			case snap.err != nil || !ok:
+			case snap.err != nil || !ok || vals.stale(snap.at):
+				// A sample metrics-server stopped refreshing is not
+				// current usage, even though the list succeeded.
 				cells = append(cells, usageNA)
 			default:
 				cells = append(cells, c.cell(vals))
@@ -334,6 +344,11 @@ func buildUsageValues(kind usageKind, metrics, objects []unstructured.Unstructur
 			v.cpu, v.mem = nodeMetricsUsage(m)
 		} else {
 			v.cpu, v.mem = podMetricsUsage(m)
+		}
+		if ts, _, _ := unstructured.NestedString(m.Object, "timestamp"); ts != "" {
+			if at, err := time.Parse(time.RFC3339, ts); err == nil {
+				v.sampled = at
+			}
 		}
 		out[key] = v
 	}

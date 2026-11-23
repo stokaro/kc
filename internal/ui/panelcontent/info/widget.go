@@ -262,9 +262,14 @@ func (w *Widget) historyKey() string {
 	return w.target.Key + "|" + w.target.Node
 }
 
-// record adds a sample when the usage was measured again.
+// record adds a sample when the usage was measured again. Without a
+// measurement time it dates the sample by the read.
 func (w *Widget) record() {
-	if w.summary.UsageAt.IsZero() {
+	at := w.summary.UsageAt
+	if at.IsZero() {
+		at = w.summary.UsageReadAt
+	}
+	if at.IsZero() {
 		return
 	}
 	cpu, mem, ok := usagePercents(w.summary)
@@ -276,7 +281,7 @@ func (w *Widget) record() {
 		h = &history{}
 		w.history[w.historyKey()] = h
 	}
-	h.add(w.summary.UsageAt, cpu, mem)
+	h.add(at, cpu, mem)
 }
 
 // usagePercents returns the CPU and memory bars when both show usage. A
@@ -372,7 +377,10 @@ func (w *Widget) content(width int) []infoLine {
 		return out
 	}
 	para(" ", w.scopeText())
-	add(w.usageText())
+	text, health := w.usageText()
+	for _, part := range wrapText(text, width-1) {
+		add(" " + styled(part, health))
+	}
 	add("")
 	h := w.history[w.historyKey()]
 	if t := w.summary.BarsTitle; t != "" {
@@ -412,12 +420,14 @@ func (w *Widget) scopeText() string {
 	return w.target.Label
 }
 
-// usageText says how old the usage measurement is.
-func (w *Widget) usageText() string {
-	if at := w.summary.UsageAt; !at.IsZero() {
-		return fmt.Sprintf(" usage measured %s ago", shortAge(w.opts.Now().Sub(at)))
+// usageText is usageAge as plain text with its state, so it wraps like
+// the other lines and keeps its color on every line.
+func (w *Widget) usageText() (string, models.RowHealth) {
+	s := usageAge(w.summary, w.opts.Now())
+	if plain := ansi.Strip(s); plain != s {
+		return plain, models.RowHealthNotReady
 	}
-	return " usage not measured"
+	return s, models.RowHealthUnknown
 }
 
 // topTitle heads the top pods.
@@ -614,6 +624,31 @@ func renderBar(pct float64, width int) string {
 	}
 	b.WriteString(strings.Repeat("░", width-cells))
 	return b.String()
+}
+
+// usageAge says how old the usage is: when metrics-server measured it, over
+// which window, and when kc read it. The measurement can be much older than
+// the read, so the two are never merged into one age.
+func usageAge(s models.InfoSummary, now time.Time) string {
+	switch {
+	case !s.UsageAt.IsZero():
+		age := now.Sub(s.UsageAt)
+		read := ""
+		if !s.UsageReadAt.IsZero() {
+			read = fmt.Sprintf(", read %s ago", shortAge(now.Sub(s.UsageReadAt)))
+		}
+		if age >= models.UsageStaleAfter {
+			return styled(fmt.Sprintf("usage measured %s ago: stale, metrics-server returns old samples%s", shortAge(age), read), models.RowHealthNotReady)
+		}
+		over := ""
+		if s.UsageWindow > 0 {
+			over = " over " + shortAge(s.UsageWindow)
+		}
+		return fmt.Sprintf("usage measured %s ago%s%s", shortAge(age), over, read)
+	case !s.UsageReadAt.IsZero():
+		return fmt.Sprintf("usage read %s ago, measurement time not reported", shortAge(now.Sub(s.UsageReadAt)))
+	}
+	return "usage not measured"
 }
 
 func shortAge(d time.Duration) string {
