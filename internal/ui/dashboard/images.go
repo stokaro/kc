@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -105,6 +106,36 @@ func (m *Model) drawAs(mode chart.Mode, pixels bool) tea.Cmd {
 	return nil
 }
 
+// resizeSettle is how long the size must stay put before the charts are
+// drawn as images again. A drag sends a resize per step; the text charts
+// show until it stops.
+const resizeSettle = 300 * time.Millisecond
+
+// settledMsg ends the settling of resize number seq of dashboard id.
+type settledMsg struct{ id, seq int }
+
+// resized handles a change of the screen size. With images on, it deletes
+// them, so no placement of the old size stays, clears the screen, and
+// holds new images back until the size settles; meanwhile the plots are
+// text.
+func (m *Model) resized() tea.Cmd {
+	if !m.images() {
+		return nil
+	}
+	m.resizes++
+	m.settling = true
+	id, seq := m.id, m.resizes
+	tick := m.src.Tick
+	if tick == nil {
+		tick = tea.Tick
+	}
+	return tea.Batch(
+		raw(m.src.Images.Release()),
+		tea.ClearScreen,
+		tick(resizeSettle, func(time.Time) tea.Msg { return settledMsg{id: id, seq: seq} }),
+	)
+}
+
 func raw(seq string) tea.Cmd {
 	if seq == "" {
 		return nil
@@ -115,7 +146,7 @@ func raw(seq string) tea.Cmd {
 // syncImages rasterizes the charts of the frame the screen will show and
 // returns the transmits of the pictures the terminal does not have.
 func (m *Model) syncImages() tea.Cmd {
-	if !m.images() || m.w < 20 || m.h < 6 {
+	if !m.images() || m.settling || m.w < 20 || m.h < 6 {
 		return nil
 	}
 	v := m.top()

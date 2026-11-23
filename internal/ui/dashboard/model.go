@@ -135,7 +135,11 @@ type Model struct {
 	mode  chart.Mode
 	// pixels draws the plots as images while Sources.Images is set.
 	pixels bool
-	seq    int
+	// resizes counts the size changes; settling is set from a change
+	// until resizeSettle passes without another one (see resized).
+	resizes  int
+	settling bool
+	seq      int
 	// rects is where the last frame put each widget, for the mouse.
 	rects map[widget]rect
 	// cells is the plot width of the charts in the last frame.
@@ -178,7 +182,7 @@ type usageMsg struct {
 // that arrives when no dashboard is open.
 func IsMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case TickMsg, usageMsg:
+	case TickMsg, usageMsg, settledMsg:
 		return true
 	}
 	return kittygfx.IsMsg(msg)
@@ -340,10 +344,13 @@ func (m *Model) refresh() {
 // also sends the pictures of the next frame the terminal does not have.
 func (m *Model) Update(msg tea.Msg) (tea.Cmd, Action) {
 	if kittygfx.IsMsg(msg) {
-		if m.src.Images != nil {
-			m.src.Images.Handle(msg)
+		// A transmit coming back sends nothing: the live range moves
+		// with the clock, so a new raster would differ and go out again,
+		// and its return would start the next one, without end.
+		if m.src.Images != nil && m.src.Images.Handle(msg) {
+			return m.syncImages(), Action{}
 		}
-		return m.syncImages(), Action{}
+		return nil, Action{}
 	}
 	cmd, act := m.update(msg)
 	if act.Close || act.Open != nil || act.Logs != nil {
@@ -356,12 +363,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, Action) {
 func (m *Model) update(msg tea.Msg) (tea.Cmd, Action) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		changed := m.w != 0 && (m.w != msg.Width || m.h != msg.Height)
 		m.w, m.h = msg.Width, msg.Height
-		if m.images() {
-			// A new font size comes with a resize.
-			return tea.Batch(m.maybeRead(), kittygfx.QueryCellSize()), Action{}
+		if changed {
+			return tea.Batch(m.maybeRead(), m.resized()), Action{}
 		}
 		return m.maybeRead(), Action{}
+	case settledMsg:
+		if msg.id != m.id || msg.seq != m.resizes || !m.settling {
+			return nil, Action{}
+		}
+		m.settling = false
+		if m.images() {
+			// A new font size comes with a resize.
+			return kittygfx.QueryCellSize(), Action{}
+		}
+		return nil, Action{}
 	case TickMsg:
 		if msg.id != m.id {
 			return nil, Action{}

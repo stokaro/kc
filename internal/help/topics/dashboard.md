@@ -153,7 +153,9 @@ limits and allocatable as dashed lines, the cursor cell lighter. The
 frames, the legends, the value labels and the time axis stay text, and
 so do the "no data" band, the arrows of a line above the scale, menus,
 `F1` and dialogs drawn over the charts. The images show the
-same samples as the text charts, only smoother.
+same samples as the text charts, only smoother. While you resize the
+window the plots are text; the images come back a moment after the size
+stops changing.
 
 `charts.graphics` in `~/.kc/config.yaml` decides:
 
