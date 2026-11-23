@@ -83,7 +83,7 @@ func helmReleaseFolderRows(deps Deps, reader *helmReader, h helm.History, found 
 	}
 	if revision == 0 {
 		histPath := append(slices.Clone(path), "history")
-		item := NewChildResourceItem("history", []string{"/history", fmt.Sprintf("%d stored revisions", len(h.Revisions))}, histPath, func() (Folder, error) {
+		item := NewChildResourceItem("history", []string{"/history", fmt.Sprintf("%d stored %s", len(h.Revisions), plural(len(h.Revisions), "revision", "revisions"))}, histPath, func() (Folder, error) {
 			return newHelmHistoryFolder(deps, reader, h.Namespace, h.Release, histPath), nil
 		})
 		rows = append(rows, item)
