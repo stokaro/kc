@@ -101,13 +101,13 @@ func TestGapIsNotZero(t *testing.T) {
 	pts[0].V = 4
 	c := chart.Chart{Start: t0, End: t0.Add(10 * time.Minute), Points: pts, Mode: chart.Blocks, Width: 12, Height: 3, Cursor: -1, Format: func(v float64) string { return "" }}
 	lines := plain(c.Render())
-	zero, zeroAxis := plotColumn(lines, 0, 2)
-	gap, gapAxis := plotColumn(lines, 0, 4)
-	if zero != " ▁" || zeroAxis != '─' {
-		t.Errorf("zero column %q axis %q, want the lowest eighth", zero, zeroAxis)
+	zero, _ := plotColumn(lines, 0, 2)
+	gap, _ := plotColumn(lines, 0, 4)
+	if zero != " ▁" {
+		t.Errorf("zero column %q, want the lowest eighth", zero)
 	}
-	if gap != "  " || gapAxis != '·' {
-		t.Errorf("gap column %q axis %q, want blank and a dot", gap, gapAxis)
+	if gap != "  " {
+		t.Errorf("gap column %q, want blank", gap)
 	}
 	if c.Cell(4).OK {
 		t.Error("Cell reports a value for the gap")
@@ -131,9 +131,20 @@ func TestPeakSurvivesPooling(t *testing.T) {
 	if cv := c.Cell(5); !cv.OK || cv.V != 10 {
 		t.Errorf("cell of the spike = %+v, want 10", cv)
 	}
-	top := []rune(lines[0])[1+5]
-	if top == ' ' {
-		t.Errorf("top row %q: the spike does not reach it", lines[0])
+	// The spike's column is the tallest: its first drawn row is above
+	// that of every other column.
+	first := func(x int) int {
+		for row, l := range lines[:len(lines)-1] {
+			if r := []rune(l)[1+x]; r != ' ' && r != '⠀' {
+				return row
+			}
+		}
+		return len(lines)
+	}
+	for x := range 10 {
+		if x != 5 && first(x) <= first(5) {
+			t.Errorf("column %d reaches row %d, the spike row %d:\n%s", x, first(x), first(5), strings.Join(lines, "\n"))
+		}
 	}
 }
 
@@ -143,18 +154,25 @@ func TestHoldBridgesSlowSamples(t *testing.T) {
 	pts := every(15*time.Second, 21, func(int) float64 { return 1 })
 	pts = append(pts[:8], pts[12:]...) // 60s without samples
 	c := chart.Chart{Start: t0, End: t0.Add(5 * time.Minute), Points: pts, Hold: 37500 * time.Millisecond, Mode: chart.Blocks, Width: 61, Height: 3, Cursor: -1, Format: func(float64) string { return "" }}
-	axis := []rune(plain(c.Render())[2])[1:]
-	gaps := strings.Count(string(axis), "·")
-	// Samples at 105s and 180s: cells from 142.5s on are gaps until 180s.
-	if gaps == 0 || gaps > 8 {
-		t.Errorf("axis %q: %d gap cells, want the 60s hole only", string(axis), gaps)
+	gapsIn := func(c chart.Chart, from, to int) int {
+		n := 0
+		for x := from; x < to; x++ {
+			if !c.Cell(x).OK {
+				n++
+			}
+		}
+		return n
 	}
-	if strings.Contains(string(axis[:20]), "·") || strings.Contains(string(axis[40:]), "·") {
-		t.Errorf("axis %q: regular 15s samples show gaps", string(axis))
+	// Samples at 105s and 180s: cells from 142.5s on are gaps until 180s.
+	if gaps := gapsIn(c, 0, 60); gaps == 0 || gaps > 8 {
+		t.Errorf("%d gap cells, want the 60s hole only", gaps)
+	}
+	if gapsIn(c, 0, 20) > 0 || gapsIn(c, 40, 60) > 0 {
+		t.Error("regular 15s samples show gaps")
 	}
 	c.Hold = 0
-	if axis := plain(c.Render())[2]; strings.Count(axis, "·") < 30 {
-		t.Errorf("without Hold the cells between samples must be gaps: %q", axis)
+	if gaps := gapsIn(c, 0, 60); gaps < 30 {
+		t.Errorf("without Hold the cells between samples must be gaps: %d", gaps)
 	}
 }
 
@@ -162,7 +180,7 @@ func TestReferenceLine(t *testing.T) {
 	t.Parallel()
 	c := chart.Chart{
 		Start: t0, End: t0.Add(10 * time.Minute), Mode: chart.Blocks, Width: 11, Height: 5, Cursor: -1,
-		Points: every(time.Minute, 10, func(int) float64 { return 1 }),
+		Points: every(time.Minute, 10, func(int) float64 { return 2 }),
 		Refs:   []chart.Ref{{V: 4}}, Format: func(float64) string { return "" },
 	}
 	lines := plain(c.Render())
@@ -179,8 +197,8 @@ func TestReferenceLine(t *testing.T) {
 
 func TestBrailleTwoSamplesPerCell(t *testing.T) {
 	t.Parallel()
-	// Left sample full, right sample empty: the cell has only the left
-	// dot column.
+	// Left sample at half the scale (usage keeps headroom), right sample
+	// empty: the cell has only the left dot column.
 	c := chart.Chart{
 		Start: t0, End: t0.Add(4 * time.Minute), Mode: chart.Braille, Width: 3, Height: 2, Cursor: -1,
 		Points: []chart.Point{{At: t0, V: 1}, {At: t0.Add(2 * time.Minute), V: 1}, {At: t0.Add(3 * time.Minute), V: 0}},
@@ -190,8 +208,8 @@ func TestBrailleTwoSamplesPerCell(t *testing.T) {
 		t.Fatalf("samples = %d, want 4 for 2 cells", got)
 	}
 	row := []rune(plain(c.Render())[0])
-	if row[1] != '⡇' || row[2] != '⣇' {
-		t.Errorf("row %q, want ⡇ (left only, right a gap) and ⣇ (left full, right zero)", string(row))
+	if row[1] != '⡄' || row[2] != '⣄' {
+		t.Errorf("row %q, want ⡄ (left only, right a gap) and ⣄ (left half, right zero)", string(row))
 	}
 }
 
@@ -273,5 +291,47 @@ func TestRefFollowsItsPoints(t *testing.T) {
 	}
 	if _, ok := c.RefAt(1, 0); ok {
 		t.Error("RefAt of a missing line reports a value")
+	}
+}
+
+// TestScaleFitsUsage: a request far above the usage does not flatten it;
+// it shows as arrows on the top row and OffScale says so.
+func TestScaleFitsUsage(t *testing.T) {
+	t.Parallel()
+	c := chart.Chart{
+		Start: t0, End: t0.Add(10 * time.Minute), Mode: chart.Blocks, Width: 11, Height: 5, Cursor: -1,
+		Points: every(time.Minute, 10, func(int) float64 { return 0.002 }),
+		Refs:   []chart.Ref{{V: 0.04}, {V: 0.005}},
+	}
+	lines := plain(c.Render())
+	if !strings.HasPrefix(lines[0], "0.005") {
+		t.Errorf("top label of %q, want the scale to fit the usage and the near line", lines[0])
+	}
+	if !strings.Contains(lines[0], "↑") {
+		t.Errorf("row 0 %q has no arrow for the line above the scale", lines[0])
+	}
+	if !c.OffScale(0) || c.OffScale(1) {
+		t.Errorf("OffScale = %v, %v; want the far line only", c.OffScale(0), c.OffScale(1))
+	}
+	c.Points = nil
+	if lines := plain(c.Render()); !strings.HasPrefix(lines[0], "0.05") {
+		t.Errorf("without usage the lines set the scale: %q", lines[0])
+	}
+}
+
+// TestGapRunSaysNoData: a wide run of cells without samples is labeled.
+func TestGapRunSaysNoData(t *testing.T) {
+	t.Parallel()
+	c := chart.Chart{
+		Start: t0, End: t0.Add(30 * time.Minute), Mode: chart.Blocks, Width: 31, Height: 5, Cursor: -1,
+		Points: every(time.Minute, 5, func(int) float64 { return 1 }),
+		Format: func(float64) string { return "" },
+	}
+	lines := plain(c.Render())
+	if !strings.Contains(lines[2], "no data") {
+		t.Errorf("middle row %q does not say no data", lines[2])
+	}
+	if strings.Contains(lines[2][:8], "no data") {
+		t.Errorf("the label sits on samples: %q", lines[2])
 	}
 }
