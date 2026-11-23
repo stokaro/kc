@@ -24,7 +24,10 @@ func workloadInfoSummary(report *overviewReport, err error, cfgIn appconfig.Over
 		}
 		return out
 	}
-	out.UsageAt, out.UsageWindow, out.UsageReadAt = report.usageAt, report.usageWindow, report.usageReadAt
+	// Dated by the PodMetrics of the scope that the use is summed from,
+	// not by the node and cluster polls the capacity rows use.
+	pt := report.podsTiming
+	out.UsageAt, out.UsageWindow, out.UsageReadAt = pt.newest, pt.window, pt.readAt
 	out.BarsTitle, out.TopTitle = "Pods of "+w.String(), "Top pods of "+w.String()+" by memory"
 	note := ""
 	switch {
@@ -44,6 +47,9 @@ func workloadInfoSummary(report *overviewReport, err error, cfgIn appconfig.Over
 		return out
 	}
 
+	if !s.usageAt.IsZero() {
+		out.UsageAt = s.usageAt
+	}
 	usageNote := fmt.Sprintf("%d of %d pods measured", s.measured, s.pods)
 	if f, ok := report.finding("risks/pods-memory-limit"); ok && f.unavailable != "" {
 		usageNote = f.unavailable

@@ -37,6 +37,9 @@ type Env struct {
 	Kubectl func(args ...string) string
 	// Pods lists the pods on a node. Drain needs it; cordon does not.
 	Pods PodLister
+	// Budgets lists a namespace's PodDisruptionBudgets for the drain's
+	// impact preview. Without it the preview names no budgets.
+	Budgets BudgetLister
 }
 
 func (e Env) kubectl(args ...string) string {

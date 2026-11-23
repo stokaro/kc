@@ -22,6 +22,10 @@ type PodNote struct {
 	Namespace string
 	Name      string
 	Message   string
+	// Evidence is what kc read earlier that may explain the message, such
+	// as the budget covering the pod when the drain was prepared. It is
+	// shown apart from the message, which is the API's own answer.
+	Evidence string
 }
 
 // String returns "namespace/name: message".
