@@ -68,7 +68,10 @@ sample so far; `stale, last 3m ago` means no recent sample.
 - `C-x m` shows which metric sources the context has
   ([Metric sources](metric-sources.md)).
 - The history is kept in memory while the panel is in Info mode, for
-  this session only. It restarts when the base of a percentage changes.
+  this session only. CPU and memory are recorded apart: a bar without
+  a percentage (no requests or limits) has no history line, and the
+  other keeps its own. A history restarts when the base of its
+  percentage changes.
 - With `metricsHistory.backends` set, Info also shows a workload's past
   usage from Prometheus. `no series` means Prometheus returned none for
   the metric; `no finite samples in this window` means it returned a

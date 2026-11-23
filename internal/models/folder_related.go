@@ -237,6 +237,9 @@ func (f *RelatedObjectsFolder) Close() {
 func (f *RelatedObjectsFolder) KubectlCommand() string {
 	switch f.kind {
 	case RelatedDiagnosis:
+		if hasRouteDiagnosis(f.gvr) {
+			return kubectlCommand(f.Deps, "describe", kubectlResource(f.gvr), f.name, "-n", f.namespace) + "  # and its backend services"
+		}
 		if f.gvr != serviceGVR {
 			return kubectlCommand(f.Deps, "describe", kubectlResource(f.gvr), f.name, "-n", f.namespace) + "  # and its pods, events and claims"
 		}

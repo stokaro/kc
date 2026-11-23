@@ -103,8 +103,13 @@ func (a *App) fileMenuItems() []menubar.Item {
 	idx := a.activePanel
 	caps := a.capabilitiesForPanel(a.activePanelRef())
 	list := a.panelListActive(idx)
+	view := "&View"
+	if p := a.activePanelRef(); p != nil && p.Mode() == PanelModeLogs {
+		// F3 in a Logs panel shows its session full screen.
+		view = "&Expand logs"
+	}
 	return []menubar.Item{
-		{Label: "&View", Shortcut: "F3", Disabled: !caps.CanView, Run: a.panelAction(PanelActionView)},
+		{Label: view, Shortcut: "F3", Disabled: !caps.CanView, Run: a.panelAction(PanelActionView)},
 		{Label: "&Edit", Shortcut: "F4", Disabled: !caps.CanEdit, Run: a.panelAction(PanelActionEdit)},
 		{Label: "&Copy", Shortcut: "F5", Disabled: !caps.CanCopy, Run: a.panelAction(PanelActionCopy)},
 		{Label: "Create &namespace", Shortcut: "F7", Disabled: !caps.CanCreateNS, Run: a.panelAction(PanelActionCreateNamespace)},
