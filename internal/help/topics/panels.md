@@ -40,7 +40,9 @@ the copy button at its right copies it.
 - `C-s` (or `M-s`) starts quick search: type to jump to the first row
   whose name starts with the text. `C-s` again finds the next match,
   `Backspace` removes a character, `Esc` ends it, and any other key ends
-  it and does its usual job.
+  it and does its usual job (`M-n` acts on the found node). Text typed
+  while the list is still loading is kept and applied when the rows
+  arrive.
 - `M-o` sorts by the next column, `M-r` reverses the sort. The sorted
   column title ends in an up or down arrow.
 - `M-f` filters rows; `C-z` keeps only rows in a fault state.

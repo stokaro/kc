@@ -43,7 +43,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		handled := p.QuickSearchKey(press)
 		a.invalidateView("quick search")
 		if handled {
-			return a, nil
+			// The search moved the cursor; report it before the next key
+			// reads the selection, as a cursor key does.
+			return a, p.quickSearchSelectionChanged()
 		}
 	}
 	if ctrlX {
