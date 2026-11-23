@@ -290,13 +290,20 @@ func TestReadOnlyDangerousCommands(t *testing.T) {
 		app, _ := readOnlyTestApp(t, false)
 		app.cfg.Commands = []appconfig.CommandConfig{restart, top}
 		if got := menu(app); len(got) != 1 || got[0] != "Top Nodes" {
-			t.Fatalf("F9 menu = %v, want only Top Nodes", got)
+			t.Fatalf("F2 user menu = %v, want only Top Nodes", got)
 		}
 		app.cfg.Commands = []appconfig.CommandConfig{restart}
 		if app.hasApplicableCommands(app.leftPanel) {
-			t.Fatal("F9 enabled with only a dangerous command")
+			t.Fatal("F2 enabled with only a dangerous command")
+		}
+		// The menu bar lists no custom command itself; its Command >
+		// User menu entry opens F2 and is dim when F2 is.
+		app.activePanel = 0
+		if entry := app.commandMenuItems()[0]; entry.Label != "&User menu" || !entry.Disabled {
+			t.Fatalf("F9 Command entry %q disabled=%v, want a dim User menu", entry.Label, entry.Disabled)
 		}
 		wantRefusal(t, app.refuseCommand(restart), `command "Restart"`)
+		wantRefusal(t, app.runCommandHotkey(0), `command "Restart"`)
 		wantRefusal(t, app.startNamespaceCommand(1, restart, "ns"), `command "Restart"`)
 		if app.refuseCommand(top) != nil {
 			t.Fatal("a command not marked dangerous was refused")
@@ -306,7 +313,12 @@ func TestReadOnlyDangerousCommands(t *testing.T) {
 		app, _ := readOnlyTestApp(t, true)
 		app.cfg.Commands = []appconfig.CommandConfig{restart, top}
 		if got := menu(app); len(got) != 2 {
-			t.Fatalf("F9 menu = %v, want both commands", got)
+			t.Fatalf("F2 user menu = %v, want both commands", got)
+		}
+		app.cfg.Commands = []appconfig.CommandConfig{restart}
+		app.activePanel = 0
+		if entry := app.commandMenuItems()[0]; entry.Disabled {
+			t.Fatal("F9 Command > User menu is dim in a writable context")
 		}
 		if app.refuseCommand(restart) != nil {
 			t.Fatal("writable context refused a dangerous command")

@@ -2,8 +2,9 @@
 
 `F2` opens the user menu, as in mc. It starts with kc's built-in actions
 for the selected object (Object Actions, such as the CronJob actions),
-then the custom commands you define in `~/.kc/config.yaml`. The same
-commands are in the Command menu (`F9`). A command runs in a terminal in
+then the custom commands you define in `~/.kc/config.yaml`. The Command
+menu of the menu bar (`F9`) opens the same menu with "User menu". A
+command runs in a terminal in
 the other panel, with `KUBECONFIG` set to kc's context and the selected
 item's namespace, so `kubectl` needs no extra flags. Until you define
 your own, kc ships `Top Nodes` and `Top Pods`.
@@ -48,17 +49,25 @@ commands:
   be combined with `type: namespace` or `watchInterval`, which rerun on
   their own.
 - `dangerous: true` marks a command that changes the cluster. Read-only
-  mode hides and refuses it. kc cannot tell what a shell command does,
+  mode hides it from the user menu and refuses its hotkey; `F2` is dim
+  when nothing else applies. kc cannot tell what a shell command does,
   so a command without the flag runs in read-only mode too.
 
 ## Hotkeys
 
-`hotkey` runs the command without the menu, where the cursor is: `M-1`
-(`Esc 1` works too), `C-M-<key>`, `F11` to `F24`, or a chord such as
-`C-x 1` or `C-x C-<letter>`. kc refuses keys without a modifier, single
-`C-<letter>` keys, `F1` to `F10`, and keys kc uses itself (`M-c`,
-`C-x C-d`, `C-x w` and others). Bad and duplicate hotkeys are reported
-on the command line at startup and ignored.
+`hotkey` runs the command without the menu, where the cursor is:
+`M-<key>` (`Esc <letter>` works for `M-<letter>`; `Esc <digit>` stays a
+function key), `C-M-<key>`, `F11` to `F24`, or a chord such as `C-x 1`
+or `C-x C-<letter>`. kc refuses keys without a modifier, single
+`C-<letter>` keys, `F1` to `F10`, and the keys kc uses itself:
+
+- `M-a`, `M-A`, `M-b`, `M-c`, `M-d`, `M-e`, `M-f`, `M-g`, `M-H`, `M-i`,
+  `M-j`, `M-k`, `M-l`, `M-n`, `M-o`, `M-p`, `M-r`, `M-s`, `M-t`, `M-u`,
+  `M-v`, `M-w`, `M-x`, `M-y`, `M-z`;
+- `C-x c`, `C-x d`, `C-x f`, `C-x p`, `C-x w`, `C-x C-d`.
+
+Bad and duplicate hotkeys are reported on the command line at startup
+and ignored.
 
 ## Keys
 

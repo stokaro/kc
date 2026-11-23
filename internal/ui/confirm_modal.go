@@ -137,8 +137,8 @@ func (a *App) showClusterActionConfirm(action models.ClusterAction, panelIdx int
 
 func (a *App) showConfirmation(c models.Confirmation, pending *pendingConfirmation) tea.Cmd {
 	model := NewConfirmModel(c)
-	// A confirmed action changes the cluster by definition.
-	if a.accessPolicy().ReadOnly {
+	// A confirmed action changes the cluster unless it says it is local.
+	if !c.Local && a.accessPolicy().ReadOnly {
 		return a.readOnlyRefusal(confirmationName(c))
 	}
 	modal := NewModal("Confirm", model)
@@ -160,7 +160,7 @@ func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
 	if !msg.ok || pending == nil {
 		return nil
 	}
-	if a.accessPolicy().ReadOnly {
+	if !pending.local() && a.accessPolicy().ReadOnly {
 		// The context became read-only while the dialog was open.
 		return a.readOnlyRefusal(pending.name())
 	}
@@ -196,6 +196,11 @@ func confirmationName(c models.Confirmation) string {
 }
 
 // name names the pending action, for the read-only refusal.
+// local reports whether the pending action changes only kc's own state.
+func (p *pendingConfirmation) local() bool {
+	return p.row != nil && p.row.Confirmation().Local
+}
+
 func (p *pendingConfirmation) name() string {
 	switch {
 	case p.row != nil:

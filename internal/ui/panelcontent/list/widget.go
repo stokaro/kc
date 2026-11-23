@@ -749,16 +749,16 @@ func (w *Widget) handleKey(ctx context.Context, m tea.KeyMsg) (tea.Cmd, bool) {
 	case "ctrl+t", "insert":
 		w.toggleSelection()
 	case "ctrl+a":
-		w.selectAll()
+		w.selectAll(ctx)
 	case "ctrl+v":
 		w.tableViewEnabled = !w.tableViewEnabled
 		w.refresh()
 	case "ctrl+w":
 		return w.ToggleColumnsMode(ctx), true
 	case "*":
-		w.invertSelection()
+		w.invertSelection(ctx)
 	case "+", "-":
-		return w.showGlobPatternDialog(key), true
+		return requestMarkGroup(key == "+"), true
 	default:
 		return nil, false
 	}
@@ -932,18 +932,6 @@ func (w *Widget) toggleSelection() {
 	}
 }
 
-func (w *Widget) selectAll() {
-	for i := range w.items {
-		w.items[i].Selected = true
-	}
-}
-
-func (w *Widget) invertSelection() {
-	for i := range w.items {
-		w.items[i].Selected = !w.items[i].Selected
-	}
-}
-
 func (w *Widget) moveUp() {
 	if w.selected > 0 {
 		w.selected--
@@ -1024,7 +1012,10 @@ func (w *Widget) enterItem(ctx context.Context) tea.Cmd {
 	}
 	enterable, ok := row.(models.Enterable)
 	if !ok {
-		return nil
+		// A leaf row opens like F3 does, as mc's Enter opens a file: a
+		// logs row streams its log, a key or file shows its content. The
+		// panel does nothing where F3 is not offered.
+		return w.invoke(ctx, panelcontent.ActionView)
 	}
 	next, err := enterable.Enter()
 	if err != nil || next == nil {
@@ -1036,10 +1027,6 @@ func (w *Widget) enterItem(ctx context.Context) tea.Cmd {
 
 func (w *Widget) refresh() {
 	w.ClearPositionMemory()
-}
-
-func (w *Widget) showGlobPatternDialog(string) tea.Cmd {
-	return nil
 }
 
 // Namespace reports the active namespace when the backing folder exposes one.

@@ -1,11 +1,11 @@
 # Logs Viewer
 
 The logs viewer streams a container log full screen and keeps following
-it. `F3` on the `logs` row of a container opens it; `logs (previous)`
-shows the instance before the last restart. `F3` on the `logs` row of a
-Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, or on the
-`logs (all containers)` row of a pod, opens a merged log of every pod
-and container behind it.
+it. `Enter` or `F3` on the `logs` row of a container opens it;
+`logs (previous)` shows the instance before the last restart. `Enter` or
+`F3` on the `logs` row of a Deployment, StatefulSet, DaemonSet,
+ReplicaSet or Job, or on the `logs (all containers)` row of a pod, opens
+a merged log of every pod and container behind it.
 
 Use it to read a log while it grows, to narrow it down to the lines that
 matter, and to copy what you found.

@@ -15,7 +15,7 @@ cannot delete or edit anything while you browse.
 
 - `F4` edit (a local file still opens in the editor).
 - `F7` create namespace and `F8` delete.
-- Port forwards (`M-p`) and node actions (`M-n`).
+- New port forwards (`M-p`) and node actions (`M-n`).
 - Shell and attach in a container (`M-x`, `M-t`), and the node shell.
 - Copies into a container (`F5` from a local panel).
 - The pod filesystem debug helper for a container without a shell.
@@ -24,7 +24,10 @@ cannot delete or edit anything while you browse.
   user menu and refused when started.
 
 Reading stays allowed: lists, viewers, logs, describe, browsing files in
-a container, compare and the overview.
+a container, compare and the overview. So does what changes only kc
+itself on your machine: `F8` in `/port-forwards` stops a forward, local
+files open in the editor, and copies from a container go to a local
+directory.
 
 ## How to turn it on
 

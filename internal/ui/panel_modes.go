@@ -52,3 +52,24 @@ func NextPanelMode(current PanelViewMode) PanelViewMode {
 func PanelModeOrder() []PanelViewMode {
 	return append([]PanelViewMode(nil), panelModeOrder...)
 }
+
+// modeLabel is the name of a mode in the panel border, the panel options
+// and the menu bar.
+func modeLabel(mode PanelViewMode) string {
+	switch mode {
+	case PanelModeList:
+		return "List"
+	case PanelModeDescribe:
+		return "Describe"
+	case PanelModeManifest:
+		return "Manifest"
+	case PanelModeLogs:
+		return "Logs"
+	case PanelModeInfo:
+		return "Info"
+	case PanelModeCommand:
+		return "Command"
+	default:
+		return "Unknown"
+	}
+}

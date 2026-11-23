@@ -8,7 +8,8 @@ type PanelSelectionChangedMsg struct {
 	Selection panelcontent.Selection
 }
 
-// PanelModeSelectedMsg is emitted when the panel mode chooser confirms a selection.
+// PanelModeSelectedMsg switches a panel to a mode. The panel options send
+// it when their "Panel mode" row is applied.
 type PanelModeSelectedMsg struct {
 	PanelIndex int
 	Mode       PanelViewMode

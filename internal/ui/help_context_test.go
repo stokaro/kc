@@ -97,11 +97,6 @@ func registeredModalNames(t *testing.T) map[string]bool {
 				}
 				names[s] = true
 			case *ast.CallExpr:
-				if fn, ok := arg.Fun.(*ast.Ident); ok && fn.Name == "panelModeModalKey" {
-					names[panelModeModalKey(0)] = true
-					names[panelModeModalKey(1)] = true
-					return true
-				}
 				t.Fatalf("Register with a computed name at %v; add it to registeredModalNames", call.Pos())
 			default:
 				t.Fatalf("Register with an unexpected name expression at %v", call.Pos())

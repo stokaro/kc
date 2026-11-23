@@ -531,7 +531,6 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		"ctrl+o", // Toggle fullscreen
 		// Selection keys
 		"ctrl+t", "insert", // Toggle selection
-		"*",      // Invert selection
 		"ctrl+a", // Select all
 		"ctrl+w",
 		// Function keys (F10 handled separately for fullscreen vs panel mode)
@@ -562,8 +561,9 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		return true
 	}
 
-	// Special handling for + and - keys (glob patterns)
-	if key == "+" || key == "-" {
+	// Select group, unselect group and invert marks, as in mc: they go
+	// to the shell line while it holds typed text.
+	if key == "+" || key == "-" || key == "*" {
 		// Only route to panels if terminal is empty
 		if a.terminal != nil && a.terminal.HasInput() {
 			return false // Route to terminal if user is typing

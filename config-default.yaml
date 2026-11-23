@@ -35,6 +35,10 @@ panel:
   scrolling:
     horizontal:
       step: 4
+  table:
+    # Object tables: scroll pans across all columns, fit squeezes them into
+    # the panel width.
+    mode: scroll
   width:
     leftPercent: 50
     rightPercent: 50
@@ -72,6 +76,15 @@ objects:
   # Lists across namespaces: group the rows by namespace and sort inside each
   # one (true), or sort all rows by the sort column as one list (false)
   groupByNamespace: true
+
+terminal:
+  # The shell line (and C-o) follows the context and namespace of the active
+  # panel from its next command on; false leaves its environment alone.
+  follow: true
+  # How the shell's KUBECONFIG reaches that context: overlay puts a small
+  # file before your own kubeconfig files, copy writes a full copy of the
+  # file that defines the context.
+  mode: overlay
 
 nodeShell:
   # Off by default. "Start a node shell..." inside a node creates a

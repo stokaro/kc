@@ -176,19 +176,6 @@ func TestResourceSelectorWheel(t *testing.T) {
 	}
 }
 
-func TestPanelModeModelWheel(t *testing.T) {
-	modes := []PanelViewMode{PanelModeList, PanelModeManifest}
-	m := NewPanelModeModel(0, modes, PanelModeList)
-	spin(t, m, repeat(wheelDown, 3)...)
-	if m.cursor != 1 {
-		t.Fatalf("cursor %d, want the last mode", m.cursor)
-	}
-	spin(t, m, repeat(wheelUp, 3)...)
-	if m.cursor != 0 {
-		t.Fatalf("cursor %d, want the first mode", m.cursor)
-	}
-}
-
 func TestObjectOptionsWheel(t *testing.T) {
 	m := NewObjectOptionsModel("scroll", "normal", "name")
 	spin(t, m, repeat(wheelDown, 4)...)

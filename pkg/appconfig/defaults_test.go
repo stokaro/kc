@@ -1,175 +1,119 @@
-package appconfig
+package appconfig_test
 
 import (
+	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	yaml "sigs.k8s.io/yaml"
+
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
-// TestConfigDefaultsYAMLMatchesCode reads config-default.yaml from the repo root
-// and compares it with the in-code defaults returned by Default().
-func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
-	// Locate repo root by walking up from this file's dir until we find config-default.yaml
-	wd, _ := os.Getwd()
-	dir := wd
-	var path string
-	for range 6 { // up to 6 levels
-		p := filepath.Join(dir, "..", "..", "config-default.yaml")
-		if _, err := os.Stat(p); err == nil {
-			path = p
-			break
-		}
-		dir = filepath.Dir(dir)
-	}
-	if path == "" {
-		t.Skip("config-default.yaml not found; skipping defaults sync test")
-		return
-	}
+// defaultsNotInSample are fields of Default() that config-default.yaml
+// leaves out on purpose.
+var defaultsNotInSample = map[string]string{
+	"resources.columns": "an older spelling of objects.columns that kc still writes; the sample shows objects.columns",
+}
 
-	data, err := os.ReadFile(path)
+// TestConfigDefaultsYAMLMatchesCode reads config-default.yaml from the repo
+// root and compares every field, as written, with Default(). A key missing
+// from the file fails here instead of being filled in by the loader, so a
+// new setting cannot reach Default() without its sample line.
+func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
+	// The default shell command is named after $SHELL; the sample spells
+	// the variable.
+	t.Setenv("SHELL", "$SHELL")
+	data, err := os.ReadFile("../../config-default.yaml")
 	if err != nil {
 		t.Fatalf("read defaults yaml: %v", err)
 	}
-
-	fromYAML := &Config{}
-	if err := yaml.Unmarshal(data, fromYAML); err != nil {
+	var fromYAML appconfig.Config
+	if err := yaml.UnmarshalStrict(data, &fromYAML); err != nil {
 		t.Fatalf("unmarshal defaults yaml: %v", err)
 	}
+	var diffs []string
+	diffConfig("", reflect.ValueOf(fromYAML), reflect.ValueOf(*appconfig.Default()), &diffs)
+	for _, d := range diffs {
+		t.Error(d)
+	}
+}
 
-	fromCode := Default()
+// diffConfig appends the JSON paths where got (the sample) and want (the
+// code) differ. Empty and nil collections are equal.
+func diffConfig(path string, got, want reflect.Value, out *[]string) {
+	if _, skip := defaultsNotInSample[strings.TrimPrefix(path, ".")]; skip {
+		return
+	}
+	switch got.Kind() {
+	case reflect.Struct:
+		if !hasExportedFields(got.Type()) {
+			if !reflect.DeepEqual(got.Interface(), want.Interface()) {
+				*out = append(*out, fmt.Sprintf("%s: yaml %v, code %v", path, got.Interface(), want.Interface()))
+			}
+			return
+		}
+		for i := range got.NumField() {
+			f := got.Type().Field(i)
+			if !f.IsExported() {
+				continue
+			}
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if name == "" {
+				name = f.Name
+			}
+			diffConfig(path+"."+name, got.Field(i), want.Field(i), out)
+		}
+	case reflect.Pointer:
+		if got.IsNil() || want.IsNil() {
+			if got.IsNil() != want.IsNil() {
+				*out = append(*out, fmt.Sprintf("%s: yaml %v, code %v", path, got, want))
+			}
+			return
+		}
+		diffConfig(path, got.Elem(), want.Elem(), out)
+	case reflect.Slice, reflect.Map:
+		if got.Len() == 0 && want.Len() == 0 {
+			return
+		}
+		if got.Kind() == reflect.Map || got.Len() != want.Len() {
+			if !reflect.DeepEqual(got.Interface(), want.Interface()) {
+				*out = append(*out, fmt.Sprintf("%s: yaml %v, code %v", path, got.Interface(), want.Interface()))
+			}
+			return
+		}
+		for i := range got.Len() {
+			diffConfig(fmt.Sprintf("%s[%d]", path, i), got.Index(i), want.Index(i), out)
+		}
+	default:
+		if !reflect.DeepEqual(got.Interface(), want.Interface()) {
+			*out = append(*out, fmt.Sprintf("%s: yaml %v, code %v (missing or different in config-default.yaml)", path, got.Interface(), want.Interface()))
+		}
+	}
+}
 
-	// Normalize: fill zero durations with expected defaults to keep comparison simple
-	norm := func(c *Config) *Config {
-		out := *c
-		if out.Viewer.Theme == "" {
-			out.Viewer.Theme = "dracula"
+func hasExportedFields(t reflect.Type) bool {
+	for f := range t.Fields() {
+		if f.IsExported() {
+			return true
 		}
-		out.Viewer.Mode = strings.ToLower(out.Viewer.Mode)
-		if out.Viewer.Mode != ViewerModeWrap {
-			out.Viewer.Mode = ViewerModeScroll
-		}
-		if out.Panel.Scrolling.Horizontal.Step == 0 {
-			out.Panel.Scrolling.Horizontal.Step = 4
-		}
-		normalizePanelWidth(&out.Panel.Width)
-		if out.Input.Mouse.DoubleClickTimeout.Duration == 0 {
-			out.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: Default().Input.Mouse.DoubleClickTimeout.Duration}
-		}
-		if out.Input.EscTimeout.Duration == 0 {
-			out.Input.EscTimeout = metav1.Duration{Duration: Default().Input.EscTimeout.Duration}
-		}
-		if out.Kubernetes.Clusters.TTL.Duration == 0 {
-			out.Kubernetes.Clusters.TTL = metav1.Duration{Duration: Default().Kubernetes.Clusters.TTL.Duration}
-		}
-		if out.Kubernetes.Discovery.Refresh.Duration == 0 {
-			out.Kubernetes.Discovery.Refresh = metav1.Duration{Duration: Default().Kubernetes.Discovery.Refresh.Duration}
-		}
-		if out.Resources.Order == "" {
-			out.Resources.Order = fromCode.Resources.Order
-		}
-		if len(out.Resources.Favorites) == 0 {
-			out.Resources.Favorites = nil
-		}
-		if out.Resources.PeekInterval.Duration == 0 {
-			out.Resources.PeekInterval = metav1.Duration{Duration: Default().Resources.PeekInterval.Duration}
-		}
-		return &out
 	}
+	return false
+}
 
-	a := norm(fromYAML)
-	b := norm(fromCode)
-
-	// Field-by-field comparison with clearer failure messages
-	if a.Viewer.Theme != b.Viewer.Theme {
-		t.Fatalf("viewer.theme mismatch: yaml=%q code=%q", a.Viewer.Theme, b.Viewer.Theme)
+// The comparison must see a field the sample leaves out; otherwise the test
+// above passes for the wrong reason.
+func TestDiffConfigSeesAMissingKey(t *testing.T) {
+	var sample appconfig.Config
+	if err := yaml.Unmarshal([]byte("terminal:\n  mode: overlay\n"), &sample); err != nil {
+		t.Fatal(err)
 	}
-	if a.Viewer.Mode != b.Viewer.Mode {
-		t.Fatalf("viewer.mode mismatch: yaml=%q code=%q", a.Viewer.Mode, b.Viewer.Mode)
-	}
-	if !reflect.DeepEqual(a.Viewer.Logs, b.Viewer.Logs) {
-		t.Fatalf("viewer.logs mismatch: yaml=%+v code=%+v", a.Viewer.Logs, b.Viewer.Logs)
-	}
-	if a.Panel.Scrolling.Horizontal.Step != b.Panel.Scrolling.Horizontal.Step {
-		t.Fatalf("panel.scrolling.horizontal.step mismatch: yaml=%d code=%d", a.Panel.Scrolling.Horizontal.Step, b.Panel.Scrolling.Horizontal.Step)
-	}
-	if a.Panel.Width.LeftPercent != b.Panel.Width.LeftPercent {
-		t.Fatalf("panel.width.leftPercent mismatch: yaml=%d code=%d", a.Panel.Width.LeftPercent, b.Panel.Width.LeftPercent)
-	}
-	if a.Panel.Width.RightPercent != b.Panel.Width.RightPercent {
-		t.Fatalf("panel.width.rightPercent mismatch: yaml=%d code=%d", a.Panel.Width.RightPercent, b.Panel.Width.RightPercent)
-	}
-	if a.Input.Mouse.DoubleClickTimeout.Duration != b.Input.Mouse.DoubleClickTimeout.Duration {
-		t.Fatalf("input.mouse.doubleClickTimeout mismatch: yaml=%v code=%v", a.Input.Mouse.DoubleClickTimeout.Duration, b.Input.Mouse.DoubleClickTimeout.Duration)
-	}
-	if a.Input.EscTimeout.Duration != b.Input.EscTimeout.Duration {
-		t.Fatalf("input.escTimeout mismatch: yaml=%v code=%v", a.Input.EscTimeout.Duration, b.Input.EscTimeout.Duration)
-	}
-	if a.Kubernetes.Clusters.TTL.Duration != b.Kubernetes.Clusters.TTL.Duration {
-		t.Fatalf("kubernetes.clusters.ttl mismatch: yaml=%v code=%v", a.Kubernetes.Clusters.TTL.Duration, b.Kubernetes.Clusters.TTL.Duration)
-	}
-	if a.Kubernetes.Discovery.Refresh.Duration != b.Kubernetes.Discovery.Refresh.Duration {
-		t.Fatalf("kubernetes.discovery.refresh mismatch: yaml=%v code=%v", a.Kubernetes.Discovery.Refresh.Duration, b.Kubernetes.Discovery.Refresh.Duration)
-	}
-	if bool(a.Resources.ShowNonEmptyOnly) != bool(b.Resources.ShowNonEmptyOnly) {
-		t.Fatalf("resources.showNonEmptyOnly mismatch: yaml=%v code=%v", a.Resources.ShowNonEmptyOnly, b.Resources.ShowNonEmptyOnly)
-	}
-	if a.Resources.Order != b.Resources.Order {
-		t.Fatalf("resources.order mismatch: yaml=%q code=%q", a.Resources.Order, b.Resources.Order)
-	}
-	if !reflect.DeepEqual(a.Resources.Favorites, b.Resources.Favorites) {
-		t.Fatalf("resources.favorites mismatch: yaml=%v code=%v", a.Resources.Favorites, b.Resources.Favorites)
-	}
-	if a.Resources.PeekInterval.Duration != b.Resources.PeekInterval.Duration {
-		t.Fatalf("resources.peekInterval mismatch: yaml=%v code=%v", a.Resources.PeekInterval.Duration, b.Resources.PeekInterval.Duration)
-	}
-	if a.Panel.Skin != b.Panel.Skin {
-		t.Fatalf("panel.skin mismatch: yaml=%q code=%q", a.Panel.Skin, b.Panel.Skin)
-	}
-	if len(a.Contexts) != 0 || len(b.Contexts) != 0 {
-		t.Fatalf("contexts must be empty by default: yaml=%v code=%v", a.Contexts, b.Contexts)
-	}
-	if !reflect.DeepEqual(a.NodeShell, b.NodeShell) {
-		t.Fatalf("nodeShell mismatch: yaml=%+v code=%+v", a.NodeShell, b.NodeShell)
-	}
-	// No custom columns by default; the sample may spell that as {}.
-	if len(a.Columns) != 0 || len(b.Columns) != 0 {
-		t.Fatalf("columns mismatch: yaml=%v code=%v, want none", a.Columns, b.Columns)
-	}
-	if len(a.Health) != 0 || len(b.Health) != 0 {
-		t.Fatalf("health mismatch: yaml=%v code=%v, want none", a.Health, b.Health)
-	}
-	// Compare the YAML as written: a key missing from the file must fail
-	// here, not be filled in by Normalized.
-	if !reflect.DeepEqual(fromYAML.Overview, fromCode.Overview) {
-		t.Fatalf("overview mismatch: yaml=%+v code=%+v", fromYAML.Overview, fromCode.Overview)
-	}
-	if a.ReadOnly.Enabled != b.ReadOnly.Enabled {
-		t.Fatalf("readOnly.enabled mismatch: yaml=%v code=%v", a.ReadOnly.Enabled, b.ReadOnly.Enabled)
-	}
-	if len(a.ReadOnly.Contexts) != 0 || len(b.ReadOnly.Contexts) != 0 {
-		t.Fatalf("readOnly.contexts must be empty by default: yaml=%v code=%v", a.ReadOnly.Contexts, b.ReadOnly.Contexts)
-	}
-	// Compare as written, like overview: no backend by default.
-	if !reflect.DeepEqual(fromYAML.MetricsHistory, fromCode.MetricsHistory) {
-		t.Fatalf("metricsHistory mismatch: yaml=%+v code=%+v", fromYAML.MetricsHistory, fromCode.MetricsHistory)
-	}
-	if len(a.Commands) != len(b.Commands) {
-		t.Fatalf("commands count mismatch: yaml=%d code=%d", len(a.Commands), len(b.Commands))
-	}
-	for i := range b.Commands {
-		if a.Commands[i].Dangerous != b.Commands[i].Dangerous {
-			t.Fatalf("commands[%d].dangerous mismatch: yaml=%v code=%v", i, a.Commands[i].Dangerous, b.Commands[i].Dangerous)
-		}
-	}
-	for i := range a.Commands {
-		ya, co := a.Commands[i], b.Commands[i]
-		if ya.Hotkey != co.Hotkey || !reflect.DeepEqual(ya.Prompts, co.Prompts) || ya.Confirm != co.Confirm {
-			t.Fatalf("commands[%d] hotkey/prompts/confirm mismatch: yaml=%+v code=%+v", i, ya, co)
-		}
+	want := appconfig.Config{Terminal: appconfig.TerminalConfig{Follow: true, Mode: appconfig.TerminalModeOverlay}}
+	var diffs []string
+	diffConfig("", reflect.ValueOf(sample), reflect.ValueOf(want), &diffs)
+	if len(diffs) != 1 || !strings.HasPrefix(diffs[0], ".terminal.follow:") {
+		t.Fatalf("diffs = %q, want one for terminal.follow", diffs)
 	}
 }
