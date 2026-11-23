@@ -140,7 +140,7 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 	cols := make([]table.Column, len(vis))
 	for i := range vis {
 		c := rl.Columns[vis[i]]
-		cols[i] = table.Column{Title: c.Name}
+		cols[i] = serverTableColumn(c)
 	}
 	// The name column sorts by the object name. It is found by its
 	// format, not its place: the Event table starts with Last Seen.
@@ -513,6 +513,16 @@ func (o *ObjectsFolder) SortMark() (SortMark, bool) {
 		}
 	}
 	return SortMark{}, false
+}
+
+// serverTableColumn returns the panel column of a server table column. A
+// Message column (Events, many custom resources) is free text: it takes the
+// rest of the line and gives up width before the columns that name things.
+func serverTableColumn(c metav1.TableColumnDefinition) table.Column {
+	if strings.EqualFold(c.Name, "Message") {
+		return table.Column{Title: c.Name, Fill: true, MinWidth: reasonMinWidth}
+	}
+	return table.Column{Title: c.Name}
 }
 
 func visibleColumns(cols []metav1.TableColumnDefinition, mode string) []int {

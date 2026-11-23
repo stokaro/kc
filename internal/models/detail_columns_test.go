@@ -10,55 +10,72 @@ import (
 	table "github.com/stokaro/kc/internal/table"
 )
 
-// At half of a 120-column terminal a panel has about 58 columns. The
-// detail column of /diagnosis, the related folders and /timeline gets the
-// width the other columns give up: long names, resources and namespaces
-// are cut first, and the line fits without panning.
+// The detail column of /diagnosis, the related folders and /timeline is
+// free text. It takes the rest of the line and gives up width first, so the
+// columns that name the object keep their natural width; only below the
+// detail column's floor (reasonMinWidth) do they narrow, and the line still
+// fits without panning. At half of a 200-column terminal a panel has about
+// 98 columns, at half of a 120-column one about 58.
 func TestDetailColumnGetsTheRemainingWidth(t *testing.T) {
 	t.Parallel()
-	const width = 58
 	evidence := "Back-off pulling image registry.example.com/shop/checkout:v2.4.1 for container app"
 	change := "status.conditions[Ready] False -> True; status.readyReplicas 2 -> 3"
 	tests := []struct {
-		name   string
-		cols   []table.Column
-		cells  []string
+		name  string
+		width int
+		cols  []table.Column
+		cells []string
+		// whole cells must show in full; detail must show from its start.
+		whole  []string
 		detail string
-		// keep is how much of the detail must show, from its start.
-		keep int
 	}{
 		{
-			name:   "diagnosis",
+			name:   "diagnosis, wide pane",
+			width:  98,
 			cols:   relatedColumns("Evidence"),
 			cells:  []string{"checkout-7d9c8b6f5-x2x4q", "pods", "payments-production", evidence},
-			detail: evidence, keep: 28,
+			whole:  []string{"checkout-7d9c8b6f5-x2x4q", "pods", "payments-production", "Evidence"},
+			detail: evidence[:40],
+		},
+		{
+			name:   "diagnosis, narrow pane",
+			width:  58,
+			cols:   relatedColumns("Evidence"),
+			cells:  []string{"checkout-7d9c8b6f5-x2x4q", "pods", "payments-production", evidence},
+			whole:  []string{"pods", "Evidence"},
+			detail: evidence[:reasonMinWidth-1],
 		},
 		{
 			name:   "timeline",
+			width:  58,
 			cols:   timelineColumns(),
 			cells:  []string{"2026-11-23T10:15:00Z", "spec+metadata+status", "123456789012", change},
-			detail: change, keep: 20,
+			whole:  []string{"2026-11-23T10:15:00Z", "Change"},
+			detail: change[:reasonMinWidth-1],
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			rows := []table.Row{table.SimpleRow{ID: "a", Cells: tc.cells}}
-			bt := table.NewBigTable(tc.cols, table.NewSliceList(rows), width, 6)
+			bt := table.NewBigTable(tc.cols, table.NewSliceList(rows), tc.width, 6)
 			bt.Refresh(t.Context())
 			view := ansi.Strip(bt.View().Content)
 			for i, l := range strings.Split(view, "\n") {
-				if w := ansi.StringWidth(l); w > width {
-					t.Errorf("line %d is %d cells wide, want at most %d: %q", i, w, width, l)
+				if w := ansi.StringWidth(l); w > tc.width {
+					t.Errorf("line %d is %d cells wide, want at most %d: %q", i, w, tc.width, l)
 				}
 			}
-			if want := tc.detail[:tc.keep]; !strings.Contains(view, want) {
-				t.Errorf("the detail column shows less than %q:\n%s", want, view)
-			}
-			for i, c := range tc.cols {
-				if last := i == len(tc.cols)-1; last != (c.MinWidth == 0) && i != 0 {
-					t.Errorf("column %q MinWidth %d: only the detail column may keep its width", c.Title, c.MinWidth)
+			for _, w := range tc.whole {
+				if !strings.Contains(view, w) {
+					t.Errorf("view misses %q:\n%s", w, view)
 				}
+			}
+			if !strings.Contains(view, tc.detail) {
+				t.Errorf("the detail column shows less than %q:\n%s", tc.detail, view)
+			}
+			if last := tc.cols[len(tc.cols)-1]; !last.Fill {
+				t.Errorf("detail column %q is not a Fill column", last.Title)
 			}
 		})
 	}

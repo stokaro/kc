@@ -59,7 +59,7 @@ func NewExplainFolder(deps Deps, spec ExplainSpec, root *explain.Node, err error
 
 func newExplainFolder(deps Deps, spec ExplainSpec, node *explain.Node, err error, fieldPath []string) *ExplainFolder {
 	f := &ExplainFolder{spec: spec, node: node, err: err, fieldPath: append([]string(nil), fieldPath...)}
-	cols := []table.Column{{Title: " Name"}, {Title: "Type"}, {Title: "Required"}, {Title: "Description"}}
+	cols := []table.Column{{Title: " Name"}, {Title: "Type"}, {Title: "Required"}, {Title: "Description", Fill: true, MinWidth: reasonMinWidth}}
 	f.BaseFolder = NewBaseFolder(deps, cols, f.breadcrumb())
 	f.SetPopulate(f.buildRows)
 	return f

@@ -48,12 +48,12 @@ func newTimelineFolder(deps Deps, gvr schema.GroupVersionResource, namespace, na
 	return f
 }
 
-// timelineColumns are the timeline's columns. The change never shrinks;
-// Kind and ResourceVersion give up width first in a narrow pane, so the
-// change gets the rest of the line. The observed time is not cut. The
-// bottom status line shows the whole change.
+// timelineColumns are the timeline's columns. The change is free text: it
+// takes the rest of the line and, in a narrow pane, gives up width first,
+// down to reasonMinWidth; then Kind and ResourceVersion narrow. The
+// observed time is not cut. The bottom status line shows the whole change.
 func timelineColumns() []table.Column {
-	return []table.Column{{Title: " Observed"}, {Title: "Kind", MinWidth: 6}, {Title: "ResourceVersion", MinWidth: 6}, {Title: "Change"}}
+	return []table.Column{{Title: " Observed"}, {Title: "Kind", MinWidth: 6}, {Title: "ResourceVersion", MinWidth: 6}, {Title: "Change", Fill: true, MinWidth: reasonMinWidth}}
 }
 
 // Close stops following the recording; the recording keeps running.

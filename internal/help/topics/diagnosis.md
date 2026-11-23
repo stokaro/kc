@@ -36,9 +36,10 @@ hidden behind a warning many pods share. The ten highest-ranked symptoms
 are expanded; `more-symptoms` lists the rest, each with a link to its
 first pod. Findings about unreadable sources stay.
 
-In a narrow panel the name, resource and namespace columns are cut first
-and the evidence gets the rest of the line. The bottom status line shows
-the full text of the row under the cursor.
+The evidence gets the rest of the line. In a narrow panel it is cut
+first, down to 16 columns, and only then the name, resource and namespace
+columns. The bottom status line shows the full text of the row under the
+cursor.
 
 In a Service, the summary shows the type and IP families, selector,
 selected and ready pods, endpoint counts and each port with its
