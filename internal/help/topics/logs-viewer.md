@@ -27,8 +27,12 @@ The status line shows the stream options (`tail 200, since 1h,
 timestamps`), the view (`formatted, 12 of 40 lines`), the filter, and
 the stream state: `(connecting)`, `(reconnecting)`, `(ended)` or
 `(failed)`. `(reconnecting)` shows only while a retry is pending; a
-stream that gave up or was refused shows `(failed)`. A merged log starts with its coverage, for example
-`incomplete: 50 streaming, 20 waiting (limit 50)`.
+stream that gave up or was refused shows `(failed)`. A merged log starts
+with its coverage, for example
+`incomplete: 50 streaming, 20 waiting (limit 50)`. While a search is
+applied the status line shows the search (`/timeout (2/7)`) and, after
+`|`, what the search must not hide: missing sources, a stream that is
+not streaming, and dropped lines. A narrow line cuts the search first.
 
 The last line shows the `kubectl logs` command that prints the same
 stream. A merged log shows it with `-l <selector> --all-containers
@@ -62,6 +66,10 @@ ends with `[kc] line truncated: ...`.
 - `M-d` opens the [fields of a line](logs-fields.md); `M-z` returns to
   the filter and the line before the last field action.
 - `M-s` opens the [log sources](logs-sources.md) of a merged log.
+- `M-m` (Solo) in a merged log shows only the source of the line under
+  the cursor; `M-m` again shows every source. The other sources keep
+  streaming and their lines are kept, so they come back. The status
+  line shows `solo: pod/container`. `M-s` is what stops a source.
 - `M-a` copies the shown lines, `M-A` the original records that pass
   the filter, unchanged. Both copy only the kept lines and say when
   older lines were dropped.

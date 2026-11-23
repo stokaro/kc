@@ -25,7 +25,7 @@ import (
 // builtinObjectRows are rows models itself adds inside objects, next to
 // the rows registered with RegisterObjectRows.
 func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
-	diagnosis := gvr == serviceGVR || gvr == hpaGVR || hasWorkloadDiagnosis(gvr) || hasRouteDiagnosis(gvr)
+	diagnosis := gvr == serviceGVR || gvr == hpaGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr) || hasRouteDiagnosis(gvr)
 	if !diagnosis && !hasTimeline(gvr) {
 		return nil, false
 	}
@@ -55,6 +55,8 @@ func diagnosisRow(deps Deps, gvr schema.GroupVersionResource, namespace, name st
 		item.RowItem.details = "Check the selector, pods, EndpointSlices and target ports of this Service"
 	case gvr == hpaGVR:
 		item.RowItem.details = "Explain the replica bounds, conditions, metrics and behavior of this autoscaler"
+	case gvr == pvcGVR:
+		item.RowItem.details = "Explain provisioning, binding, attachment and mount events of this claim"
 	case hasRouteDiagnosis(gvr):
 		item.RowItem.details = "Check the class or parents, rules, backend Services and TLS references of this route"
 	}
@@ -102,6 +104,10 @@ func diagnosisWatches(gvr schema.GroupVersionResource, namespace string, self re
 		return []relatedWatch{self, in(ovEventsGVR)}, true
 	case gvr == podGVR:
 		return []relatedWatch{self, in(ovEventsGVR), in(pvcGVR)}, true
+	case gvr == pvcGVR:
+		// Classes, volumes and attachments are read on each refresh, not
+		// watched: the claim's status and events follow their changes.
+		return []relatedWatch{self, in(podGVR), in(ovEventsGVR)}, true
 	case gvr == relDeploymentsGVR:
 		return []relatedWatch{self, in(relReplicaSetsGVR), in(podGVR), in(ovEventsGVR), in(pvcGVR)}, true
 	case hasWorkloadDiagnosis(gvr):
@@ -139,6 +145,8 @@ func (f *RelatedObjectsFolder) diagnosisRows(ctx context.Context) ([]table.Row, 
 	switch f.gvr {
 	case hpaGVR:
 		return f.hpaDiagnosisRows(ctx)
+	case pvcGVR:
+		return f.claimDiagnosisRows(ctx)
 	case serviceGVR:
 	default:
 		return f.workloadDiagnosisRows(ctx)
@@ -184,6 +192,7 @@ func (f *RelatedObjectsFolder) workloadDiagnosisRows(ctx context.Context) ([]tab
 	in.Claims, in.ClaimsErr = listTyped[corev1.PersistentVolumeClaim](ctx, f.reader, pvcGVR, f.namespace)
 	if f.gvr == podGVR {
 		in.Scheduling = f.readScheduling(ctx, obj, in)
+		in.Storage = f.podStorage(ctx, obj, in)
 	}
 	d, err := diagnoseWorkload(in)
 	if err != nil {
