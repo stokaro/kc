@@ -20,14 +20,20 @@ all of them). `Esc` or `F10` returns to the panels as you left them.
   red. A row with a problem has a second line, for example
   `⚠ CrashLoopBackOff · 7 restarts`, `1 container OOMKilled`, `Pending` or
   `not ready`. The first row, `.. up to …`, goes back to the parent.
-  When the workloads leave room, the pods of the selected one are
-  listed under them. The bottom border counts the pods and the ready
-  ones.
+  Names keep their full width: a narrow list drops the Restarts
+  column, then CPU, before it shortens a name. When the workloads leave
+  room, the pods of the selected one are listed under them, and then
+  the containers of the selected pod or workload: ready or not, the
+  restarts, what each does now (`running since 10:02:11`, `waiting:
+  CrashLoopBackOff`) and why it last stopped (`last stopped 09:58:40:
+  OOMKilled, exit 137`). The bottom border counts the pods and the
+  ready ones.
 - **CPU, cores** and **Memory**: the usage as a filled area, with the
   request and the limit as dashed lines, and the allocatable for a node
   or all namespaces. The line above each chart says in words what they
   are now: `Now: █ usage 0.4  ┄ request 1 (40% used)  ┄ limit 2`.
-  `over the request` is yellow, `near the limit` red.
+  `over the request` is yellow, `near the limit` red. A narrow chart
+  writes this line on two lines rather than cut it.
 - **Events**: the Kubernetes Events of the target in the range (see
   below).
 
@@ -43,13 +49,21 @@ The focused frame has its title highlighted. `Tab` moves the focus.
   steps up where it changed: with Prometheus it comes from
   kube-state-metrics, else from what this session sampled. The limit is
   not drawn where a container had no limit: the sum is then no ceiling,
-  and the cursor says `limit missing on some pods`. Today's values are
+  and the line says `limit missing on some pods` (`on some containers`
+  for a pod). Today's values are
   never drawn over the past.
 - `no data` on a gray band marks the time where nothing was measured.
   A chart never draws a zero for missing data.
 - While the dashboard has collected less than the range, the chart
   starts at the first sample and the title says so: `2m of 15m
-  collected so far`.
+  collected so far`. A workload or pod opened from the list starts with
+  the samples its namespace or workload already collected.
+- With the cursor on, the line above the chart is about the cursor
+  cell: `usage 0.4 (highest)` is the peak of the samples in the cell,
+  `usage none` means nothing ran, and `usage no sample` that nothing
+  was measured then.
+- In text, the area under the usage is solid. Its top edge is drawn in
+  eighths of a block, or in braille (two samples per cell) after `b`.
 - `no request or limit history: …` means Prometheus has no
   kube-state-metrics container series for the range (or the read
   failed, with the reason). The usage still shows; the lines do not.
@@ -70,12 +84,13 @@ repeated Event marks its first and last time.
 The API server keeps Events about an hour by default; the bottom border
 says since when. Before that time the lane says `no Events kept before
 09:10`: kc does not know what happened then, which is not the same as
-nothing. `← 3 Events before the chart starts` means the range has
+nothing. `← 3 earlier Events, listed below` means the range has
 Events before the first sample of a chart that is still filling; the
 list shows them.
 
 The list has the time, type, reason, object, count and message, newest
-first. With the cursor on a chart it holds the Events of the cursor
+first. The Count column shows only when an Event of the list happened
+more than once. With the cursor on a chart it holds the Events of the cursor
 cell.
 
 ## Where the lines come from
@@ -129,7 +144,7 @@ snapshot of the cluster at another time.
 - `o`: Show the selected row or the object of the selected Event, else the target, in the other panel, and leave the dashboard. An Event about a kind kc cannot open shows the Event. For a rollout step kc says where its revisions are: the Deployment's `/rollout`, else the object's `/timeline` if kc recorded it.
 - `l`, `F7`: Show the logs around the selected Event, or around the cursor: the investigation window becomes five minutes either side, the object goes to the other panel, and this panel turns to Logs mode.
 - `w`, `F5`: Make the shown range the investigation window.
-- `b`, `F6`: Switch the drawing: images where the terminal shows them (see below), then braille, then blocks (for fonts without braille), then images again. The View menu picks one by name.
+- `b`, `F6`: Switch the drawing: images where the terminal shows them (see below), then blocks, then braille (two samples per cell at the edge of the area), then images again. The View menu picks one by name.
 - `r`: Read Prometheus again now.
 - `F1`: This page.
 - `F9`: The menus: Dashboard, Range, View and Help.
@@ -149,9 +164,10 @@ pause and the drilldown. The session history is kept until kc exits.
 
 In iTerm2 3.7 or later, kitty and Ghostty the plots are drawn as images
 (the Kitty graphics protocol): the usage as a filled area, the requests,
-limits and allocatable as dashed lines, the cursor cell lighter. The
-frames, the legends, the value labels and the time axis stay text, and
-so do the "no data" band, the arrows of a line above the scale, menus,
+limits and allocatable as dashed lines. The frames, the legends, the
+value labels and the time axis stay text, and so do the cursor column
+(moving it sends no new image), the "no data" band, the arrows of a line
+above the scale, menus,
 `F1` and dialogs drawn over the charts. The images show the
 same samples as the text charts, only smoother. While you resize the
 window the plots are text; the images come back a moment after the size
@@ -164,7 +180,7 @@ stops changing.
   of 3.7 or later, `TERM=xterm-kitty` or `KITTY_WINDOW_ID`,
   `TERM=xterm-ghostty` or `TERM_PROGRAM=ghostty`. kc does not query the
   terminal for this, so nothing can end up in your input.
-- `text`: always braille or blocks.
+- `text`: always blocks or braille.
 - `kitty`: always images, for a terminal kc does not recognize.
 
 Under tmux (3.3 or later) images need `set -g allow-passthrough on`, and
