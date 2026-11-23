@@ -9,9 +9,13 @@ In `/port-forwards`, `F8` stops the selected port forward instead.
 
 ## How it works
 
-The dialog asks `Delete pods/web-1 in namespace "shop"?` and shows the
-kubeconfig context under the title, so you see which cluster you are
-about to change. `No` has the focus.
+The dialog asks `Delete pod shop/web-1?` and shows the kubeconfig
+context under the title, so you see which cluster you are about to
+change. It names the object as kubectl's output does: the kind, with
+its API group unless it is a core kind (`deployment.apps shop/web`),
+then namespace/name. The dialog is red, as every dialog that changes
+the cluster is. `No` has the focus, so Enter right away keeps the
+object; `y` and `n` answer directly.
 
 When the dialog opens, kc records the object's UID and the cluster the
 row was read from. The delete request carries the UID as a

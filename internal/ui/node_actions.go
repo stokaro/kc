@@ -266,16 +266,15 @@ func (a *App) showDrainOptions(target nodeTarget) tea.Cmd {
 	return nil
 }
 
-// prepareDrain reads the pods while the options stay open. It does not use
-// withBusy: the options say that kc reads the pods, and a busyDoneMsg does
-// not pass an open dialog, so the result would never arrive.
+// prepareDrain reads the pods while the options stay open; the result
+// reaches the App past the open dialog (see busyResultMsg).
 func (a *App) prepareDrain(target nodeTarget, opts nodeaction.DrainOptions, form *drainOptionsModel) tea.Cmd {
-	return func() tea.Msg {
+	return a.withBusy("Drain", 300*time.Millisecond, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(a.ctx, nodePrepareTimeout)
 		defer cancel()
 		action, err := nodeaction.PrepareDrain(ctx, target.env, target.nodes, opts)
 		return nodeDrainPreparedMsg{action: action, err: err, form: form}
-	}
+	})
 }
 
 // drainPrepared moves on from the drain options. A refusal or an error

@@ -378,6 +378,31 @@ type resourceEntry struct {
 
 type ResourceInfo = kccluster.ResourceInfo
 
+// resourceDetail is the status line text of the row of entry. A resource
+// name that another group in all also serves is listed twice with the
+// same Name, so the text says which row is which. It stays short enough
+// for the status line of a half-width panel.
+func resourceDetail(entry resourceEntry, all []resourceEntry) string {
+	gv := groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version)
+	detail := fmt.Sprintf("%s (%s)", entry.info.Resource, gv)
+	var others []string
+	for _, o := range all {
+		if o.info.Resource == entry.info.Resource && o.gvr.Group != entry.gvr.Group {
+			others = append(others, groupVersionString(o.info.GVK.Group, o.info.GVK.Version))
+		}
+	}
+	if len(others) == 0 {
+		return detail
+	}
+	if isEventGVR(entry.gvr) {
+		if entry.gvr.Group == "" {
+			return detail + ": core Events, what kubectl get events lists"
+		}
+		return detail + ": the same Events, newer API"
+	}
+	return fmt.Sprintf("%s; another type of this name is in %s", detail, strings.Join(others, ", "))
+}
+
 type resourceGroupSpec struct {
 	id        string
 	cells     []string

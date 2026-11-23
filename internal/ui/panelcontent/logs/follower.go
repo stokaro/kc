@@ -175,13 +175,14 @@ func (w *Widget) Follow() (Session, error) {
 // its stream: another target, other options, or another panel mode.
 const followerStopped = "[kc] the Logs panel stopped this stream; reopen the logs to follow it again"
 
-// keptLines are the log lines the panel shows, none while it waits for
-// the first one.
+// keptLines are the log lines the panel shows, as they were read rather
+// than formatted, so the viewer parses them itself; none while the panel
+// waits for the first one.
 func (w *Widget) keptLines() []string {
 	if !w.hasLines {
 		return nil
 	}
-	return w.viewer.RawLines()
+	return append([]string(nil), w.raw...)
 }
 
 // feedFollowers passes lines to the open followers and forgets the closed

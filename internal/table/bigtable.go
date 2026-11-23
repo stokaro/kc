@@ -92,21 +92,11 @@ func (m *BigTable) SetStyles(s Styles) { m.styles = s }
 // NewBigTable constructs a table with the given columns, data provider and
 // initial size (content width and height). Titles are plain text; runes count as one cell each (sort marks such as "↓").
 func NewBigTable(cols []Column, list List, w, h int) BigTable {
-	desired := make([]int, len(cols))
-	for i := range cols {
-		if cols[i].Width <= 0 {
-			cols[i].Width = 14
-		}
-		desired[i] = cols[i].Width
-	}
-
 	bt := BigTable{
 		mode:      ModeScroll,
 		w:         max(20, w),
 		h:         max(6, h),
-		cols:      append([]Column(nil), cols...),
 		list:      list,
-		desired:   desired,
 		selected:  make(map[string]struct{}),
 		top:       0,
 		cursor:    0,
@@ -118,7 +108,29 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 		hStep:     4,
 		focused:   true,
 	}
+	bt.setColumns(cols)
 	return bt
+}
+
+// SetColumns replaces the columns and keeps the rows' state: the cursor
+// stays on the same row at the same place in the window, and marked rows
+// stay marked. The horizontal scroll goes back to the first column, since
+// the old offset belongs to the old columns.
+func (m *BigTable) SetColumns(ctx context.Context, cols []Column) {
+	m.setColumns(cols)
+	m.xOff = 0
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) setColumns(cols []Column) {
+	m.cols = append([]Column(nil), cols...)
+	m.desired = make([]int, len(m.cols))
+	for i := range m.cols {
+		if m.cols[i].Width <= 0 {
+			m.cols[i].Width = 14
+		}
+		m.desired[i] = m.cols[i].Width
+	}
 }
 
 // SetHorizontalStep sets the number of characters to pan left/right in

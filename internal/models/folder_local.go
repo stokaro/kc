@@ -181,6 +181,10 @@ type LocalFileItem struct {
 // LocalPath returns the absolute path of the entry.
 func (f *LocalFileItem) LocalPath() string { return f.path }
 
+// ViewCommand is the shell command that prints what F3 shows, for the
+// viewer's Command line: a local file has no kubectl command.
+func (f *LocalFileItem) ViewCommand() string { return "cat " + shellQuote(f.path) }
+
 // ViewContent reads the file for the viewer (F3). It refuses a directory, a
 // special file and a binary file with an error that says why.
 //

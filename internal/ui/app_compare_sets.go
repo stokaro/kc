@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -197,10 +198,10 @@ func (a *App) compareWithContextPicker(whole bool) tea.Cmd {
 		return nil
 	}
 	contexts := a.kubeMgr.GetContexts()
-	if len(contexts) < 2 {
+	choices := otherContextChoices(contexts, a.currentCtx)
+	if len(choices) == 0 {
 		return a.ShowToast("Compare with context: kubeconfig has no other context", 3*time.Second)
 	}
-	choices := contextChoices(contexts, a.currentCtx)
 	picker := NewScopePickerModel(choices, "", func(c scopeChoice) tea.Cmd {
 		a.hideModalName("compare_context_picker")
 		var i int
@@ -216,12 +217,25 @@ func (a *App) compareWithContextPicker(whole bool) tea.Cmd {
 	for _, c := range choices {
 		width = max(width, len([]rune(c.Label))+len([]rune(c.Note))+6)
 	}
-	modal := NewModal("Compare "+side.set.Label()+" with", picker)
+	// The title stays short so it fits the frame; the list it compares is
+	// the one the active panel shows.
+	modal := NewModal("Compare with context", picker)
 	a.modalManager.Register("compare_context_picker", modal)
-	a.configureModalWindow(modal, picker, a.activePanel, "", min(max(width, len([]rune(side.set.Label()))+14), 90), min(len(choices)+3, 20))
+	a.configureModalWindow(modal, picker, a.activePanel, "", min(width, 90), min(len(choices)+3, 20))
 	a.modalManager.Show("compare_context_picker")
 	a.invalidateView("compare context picker")
 	return nil
+}
+
+// otherContextChoices lists the contexts of the compare with a context:
+// all but the current one, whose list read twice is always equal. A
+// choice's value is the context's index in contexts.
+func otherContextChoices(contexts []*kubeconfig.Context, current *kubeconfig.Context) []scopeChoice {
+	return slices.DeleteFunc(contextChoices(contexts, current), func(c scopeChoice) bool {
+		var i int
+		_, err := fmt.Sscan(c.Value, &i)
+		return err != nil || contexts[i] == current
+	})
 }
 
 // compareWithContext reads the right side from target's cluster. The

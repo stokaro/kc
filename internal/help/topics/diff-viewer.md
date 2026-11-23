@@ -16,8 +16,8 @@ The first lines name what is compared:
 
 The `---` and `+++` lines carry the same identity as a path. Each
 change is a hunk with three lines of context. Two equal manifests read
-`No differences in the configuration view.` The footer counts the
-changes (`3 changes`, `change 2/3`).
+`No differences in the configuration view.` The right end of the top
+line counts the changes (`3 changes`, `change 2/3`).
 
 The configuration view, the default, leaves out what the API server
 writes: `metadata.uid`, `resourceVersion`, `generation`,

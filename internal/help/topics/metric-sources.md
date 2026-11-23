@@ -20,7 +20,8 @@ kc reads two kinds of usage data:
 
 When the dialog opens, kc checks each source once for the namespace of
 the active panel and lists one line per check: the state, what was
-checked and what it means. A check that is not `ok` is red. States:
+checked and what it means. A long explanation wraps onto the next
+lines. A check that is not `ok` is red. States:
 
 - `ok`: the source answers.
 - `forbidden`: your user may not read it. The line names the
@@ -62,6 +63,9 @@ current usage from the metrics API still works.
   a server that holds several clusters: `cluster=prod-eu`. kc never
   derives them from the context name.
 - **https**: the proxy reaches the Service over https.
+
+An empty field shows an example in grey that starts with `e.g.`; it is
+not a value and is not saved.
 
 Buttons:
 

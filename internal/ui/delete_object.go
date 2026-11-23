@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -26,6 +27,9 @@ type deleteTarget struct {
 	uid       types.UID
 	cluster   *kccluster.Cluster
 	context   string
+	// label names the object for the user, as kubectl's output does:
+	// "pod shop/web-1", "deployment.apps shop/web".
+	label string
 }
 
 // errNoInstance means the row does not say which object instance it shows,
@@ -43,15 +47,43 @@ func deleteTargetFor(panelIdx int, item models.Item) (deleteTarget, error) {
 	if obj.UID() == "" || origin.Cluster == nil {
 		return deleteTarget{}, errNoInstance
 	}
+	gvr := obj.GVR()
 	return deleteTarget{
 		panelIdx:  panelIdx,
-		gvr:       obj.GVR(),
+		gvr:       gvr,
 		namespace: obj.Namespace(),
 		name:      obj.Name(),
 		uid:       obj.UID(),
 		cluster:   origin.Cluster,
 		context:   origin.Context,
+		label:     objectLabel(gvr, itemKind(obj), obj.Namespace(), obj.Name()),
 	}, nil
+}
+
+// itemKind returns the kind the row knows, or "". It reads no mapper:
+// this runs on the UI thread.
+func itemKind(item models.Item) string {
+	if k, ok := item.(interface{ Kind() string }); ok {
+		return k.Kind()
+	}
+	return ""
+}
+
+// objectLabel names an object as kubectl's output does: the kind in lower
+// case, with the API group unless it is the core group, then
+// namespace/name. Without a kind it uses the resource name.
+func objectLabel(gvr schema.GroupVersionResource, kind, namespace, name string) string {
+	noun := strings.ToLower(kind)
+	if noun == "" {
+		noun = gvr.Resource
+	}
+	if gvr.Group != "" {
+		noun += "." + gvr.Group
+	}
+	if namespace != "" {
+		name = namespace + "/" + name
+	}
+	return noun + " " + name
 }
 
 // executeDelete deletes target on the cluster it was read from. It never
@@ -89,7 +121,7 @@ func deleteObjectInstance(ctx context.Context, c crclient.Client, kind schema.Gr
 // NotFound mean nothing was deleted; both are reported as such so the user
 // selects the object again rather than assuming the delete went through.
 func deleteResultText(msg resourceDeletedMsg) string {
-	ref := kubectlResourceRef(msg.target.gvr, msg.target.name)
+	ref := msg.target.label
 	switch {
 	case apierrors.IsConflict(msg.err):
 		return fmt.Sprintf("%s was replaced by a new object with the same name; nothing was deleted. Select it again to delete the new one", ref)

@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -1360,6 +1361,7 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	rightWidth := lipgloss.Width(right)
 	indicatorWidth := lipgloss.Width(indicator)
 	contentWidth := max(width-leftWidth-rightWidth-indicatorWidth-connectorWidth, 0)
+	statusText := bottomStatusText(info.FooterStatus, mode)
 	// The scope goes on the outermost bottom border only: the one that also
 	// carries the mode label.
 	if strings.TrimSpace(mode) != "" && p.search.active {
@@ -1372,33 +1374,17 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 		if c, ok := p.contextTint(); ok && !p.commandFocused {
 			tint = c
 		}
-		scope, hits := renderScopeLabel(p.scope, borderStyle.Render(border.Bottom), leftWidth, contentWidth/2, tint)
-		if f, ok := p.RowFilter(); ok && f.Active() {
-			from := lipgloss.Width(left) + lipgloss.Width(scope)
-			label := renderRowFilter(f.Label(), borderStyle.Render(border.Bottom), (contentWidth-lipgloss.Width(scope))/2)
-			if label != "" {
-				hits.filterFrom = from + lipgloss.Width(border.Bottom)
-				hits.filterTo = from + lipgloss.Width(label)
-				scope += label
-			}
-		}
+		labels, hits := p.scopeLabels(borderStyle.Render(border.Bottom), leftWidth, contentWidth, statusText, tint)
 		p.scopeHits = hits
-		left += scope
-		contentWidth -= lipgloss.Width(scope)
+		left += labels
+		contentWidth -= lipgloss.Width(labels)
 	}
 
-	statusLabel := strings.TrimSpace(info.FooterStatus)
-	modeLabel := strings.TrimSpace(mode)
-	var parts []string
-	if statusLabel != "" {
-		parts = append(parts, statusLabel)
-	}
-	if modeLabel != "" {
-		parts = append(parts, modeLabel)
-	}
-	text := strings.Join(parts, " • ")
-	if text != "" {
-		text = truncateStringToWidth(" "+text+" ", contentWidth)
+	text := ""
+	// A status cut below a few columns ("D…") says nothing; the line is
+	// drawn instead.
+	if statusText != "" && contentWidth >= 6 {
+		text = " " + ansi.Truncate(statusText, contentWidth-2, "…") + " "
 	}
 	renderedText := ""
 	textWidth := 0
@@ -1419,6 +1405,62 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	}
 
 	return left + filler + renderedText + connector + indicator + right
+}
+
+// scopeLabels renders the scope ("─ ctx : ns ") and, when the folder is
+// filtered, the filter label after the bottom-left corner, which is offset
+// columns wide, in at most room columns. They leave the status on the right
+// what labelRoom gives it.
+func (p *Panel) scopeLabels(dash string, offset, room int, status string, tint color.Color) (string, scopeHits) {
+	scopeRoom := labelRoom(room, status)
+	if whole, _ := renderScopeLabel(p.scope, dash, offset, room, tint); lipgloss.Width(whole) > scopeRoom {
+		// In a narrow panel the context and namespace keep the whole
+		// line rather than share it with a status cut to a stub.
+		scopeRoom = room
+	}
+	out, hits := renderScopeLabel(p.scope, dash, offset, scopeRoom, tint)
+	f, ok := p.RowFilter()
+	if !ok || !f.Active() {
+		return out, hits
+	}
+	label := renderRowFilter(f.Label(), dash, labelRoom(room-lipgloss.Width(out), status))
+	if label != "" {
+		from := offset + lipgloss.Width(out)
+		hits.filterFrom = from + lipgloss.Width(dash)
+		hits.filterTo = from + lipgloss.Width(label)
+		out += label
+	}
+	return out, hits
+}
+
+// minStatusRoom is the room the labels on the left of a bottom border leave
+// for the status on the right ("3/9 • 100% • List"), so a cut status still
+// says something.
+const minStatusRoom = 10
+
+// bottomStatusText joins the footer status and the mode label of a bottom
+// border: "3/9 • 100% • List".
+func bottomStatusText(status, mode string) string {
+	var parts []string
+	for _, s := range []string{status, mode} {
+		if s = strings.TrimSpace(s); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, " • ")
+}
+
+// labelRoom returns the width a label on the left of a bottom border may
+// take out of room: all of it but what the status on the right needs, up
+// to minStatusRoom, and never less than half. The context, the namespace
+// and the filter say what the panel shows, so they are cut after the
+// status.
+func labelRoom(room int, status string) int {
+	need := 0
+	if status != "" {
+		need = min(lipgloss.Width(status)+2, minStatusRoom)
+	}
+	return max(room/2, room-need)
 }
 
 func indicatorGlyph(indicator, fallback string) string {
@@ -1461,7 +1503,14 @@ func (p *Panel) ellipsizeBreadcrumbTitle(labelStyle lipgloss.Style, title string
 		acc = candidate
 	}
 	if acc == "" {
-		return "..."
+		// Not even the last segment fits: cut it, or a title that is no
+		// path ("Info: kind-kc-demo: shop"), at the end, so it still says
+		// what the panel shows.
+		room := maxWidth - lipgloss.Width(labelStyle.Render(""))
+		if len(segs) > 1 || strings.HasPrefix(title, "/") {
+			return "..." + ansi.Truncate("/"+segs[len(segs)-1], room-3, "…")
+		}
+		return ansi.Truncate(title, room, "…")
 	}
 	return "..." + acc
 }

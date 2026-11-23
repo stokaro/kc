@@ -50,8 +50,9 @@ kubectl logs web-0 -n shop -c app --tail=200 --since=1h \
   --timestamps -p -f
 ```
 
-- The logs viewer footer lists the active options and the stream state,
-  such as `tail 200, since 1h, timestamps, previous (ended)`.
+- The logs viewer's status line, at the right of its top line, lists
+  the active options and the stream state, such as
+  `tail 200, since 1h, timestamps, previous (ended)`.
 
 ## Limits
 
