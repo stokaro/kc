@@ -49,7 +49,11 @@ A wrong value shows the reason in the dialog; fix it or press `Esc`.
   the session usage history covers, for example
   `window last 1h: session usage history from 13:55:00 only
   (incomplete)`. kc only has usage it measured itself while Info was
-  open, and the sparklines still show their 15 minutes.
+  open, and the sparklines still show their 15 minutes. "Covered" means
+  both CPU and memory have samples from the window's start to its end
+  with no gap longer than two and a half polls; otherwise the line names
+  what is missing, such as `1 gap`, `stale since 14:02:10` or
+  `CPU covered, memory from 14:01:00 only`.
 - The Command menu (`F9`) shows the current window next to
   "Investigation window" with a check mark.
 
