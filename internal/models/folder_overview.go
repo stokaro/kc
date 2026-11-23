@@ -56,7 +56,7 @@ func (f *OverviewFolder) NamespaceScope() string { return f.namespace }
 // workloads in scope.
 func (f *OverviewFolder) KubectlCommand() string {
 	args := []string{"get", "nodes,pods,deployments,statefulsets,daemonsets,jobs"}
-	return kubectlCommand(f.Deps, append(args, namespaceArgs(f.namespace, true)...)...)
+	return kubectlCommand(f.Deps, append(args, namespaceArgs(f.namespace, true)...)...) + "  # objects the overview reads; a finding row shows its inputs"
 }
 
 func (f *OverviewFolder) populate(context.Context) ([]table.Row, error) {
@@ -101,20 +101,38 @@ func (f *OverviewFolder) findingRow(finding overviewFinding, mixed bool) table.R
 		id:      finding.id,
 	}
 	item.SetDetails(title + ": " + finding.value)
-	// The command line holds one command; F3 lists all of them.
-	if len(finding.kubectl) > 0 {
-		item.SetViewCommand(kubectlCommand(f.Deps, finding.kubectl[0]...))
+	// The viewer's command line holds one runnable command; with several
+	// inputs F3 lists them all and the viewer shows none, so it never
+	// presents one of them as the source of the value.
+	if line, ok := findingCommandLine(f.Deps, finding, nil); ok && line.Copy == "" {
+		item.SetViewCommand(line.Show)
 	}
 	return item
 }
 
-// findingCommands joins the kubectl commands that show a finding's inputs.
+// findingCommands lists the inputs of a finding for F3: what each one
+// supplies, then its commands.
 func (f *OverviewFolder) findingCommands(finding overviewFinding) string {
-	cmds := make([]string, 0, len(finding.kubectl))
-	for _, args := range finding.kubectl {
-		cmds = append(cmds, kubectlCommand(f.Deps, args...))
+	var b strings.Builder
+	for i, in := range findingInputs(f.Deps, finding, nil) {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		if in.supplies != "" {
+			fmt.Fprintf(&b, "# %s\n", in.supplies)
+		}
+		if len(in.commands) == 0 {
+			fmt.Fprintf(&b, "# %s\n", templateHint(in.template))
+			continue
+		}
+		for _, c := range in.commands {
+			b.WriteString(c + "\n")
+		}
+		if in.omitted > 0 {
+			fmt.Fprintf(&b, "# %d more; %s\n", in.omitted, templateHint(in.template))
+		}
 	}
-	return strings.Join(cmds, "\n")
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // OverviewFindingItem is an overview row. Enter lists the objects behind it;
@@ -195,14 +213,18 @@ func (f *OverviewTargetsFolder) Close() {
 	}
 }
 
-// KubectlCommand shows the commands of the finding.
+// KubectlCommand shows the first input of the finding, with a count when
+// there are more; CommandLineFor gives the whole set.
 func (f *OverviewTargetsFolder) KubectlCommand() string {
-	report, _ := f.engine.snapshot()
-	finding, ok := report.finding(f.findingID)
-	if !ok || len(finding.kubectl) == 0 {
+	finding, ok := f.finding()
+	if !ok {
 		return ""
 	}
-	return kubectlCommand(f.Deps, finding.kubectl[0]...)
+	line, ok := findingCommandLine(f.Deps, finding, nil)
+	if !ok {
+		return ""
+	}
+	return line.Show
 }
 
 func (f *OverviewTargetsFolder) populate(context.Context) ([]table.Row, error) {

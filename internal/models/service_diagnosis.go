@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -62,6 +63,24 @@ type diagFinding struct {
 	Title    string
 	Detail   string
 	Links    []diagLink
+	// Observed is when the fact was recorded: a condition's transition, a
+	// container's finish, an event, or the read for a count. Zero when the
+	// finding is about configuration.
+	Observed time.Time
+	// Logs are the container logs that may show the cause, for the exact
+	// pod and container the finding is about.
+	Logs []diagLog
+	// Hint is a possible explanation, kept apart from the observed facts:
+	// a correlation, never a confirmed cause.
+	Hint string
+	// Next is what to inspect next.
+	Next string
+}
+
+// diagLog is a container log a finding offers.
+type diagLog struct {
+	Label string
+	Spec  LogsSpec
 }
 
 // serviceInput is what a Service diagnosis reads. A nil slice with an error
@@ -81,24 +100,27 @@ type endpointCounts struct {
 	AddressTypes                                   []string
 }
 
-// serviceDiagnosis is the result: a summary and the findings, the most
+// diagReport is the result of a diagnosis: a summary and the findings, the most
 // severe first, and the backends with their evidence.
-type serviceDiagnosis struct {
+type diagReport struct {
 	Summary  []string
 	Findings []diagFinding
 	Backends []diagLink
+	// Note says what the checks do not prove.
+	Note string
 }
 
 // diagnoseService checks the path Service -> selected pods -> EndpointSlices
 // -> readiness and target ports, as the EndpointSlice controller builds it.
 // It reports only what the objects show; it does not test DNS, the network
 // or the application.
-func diagnoseService(in serviceInput) (d serviceDiagnosis) {
+func diagnoseService(in serviceInput) (d diagReport) {
 	svc := in.Service
 	if svc == nil {
 		return d
 	}
 	defer func() { sortFindings(d.Findings) }()
+	d.Note = serviceDiagnosisNote
 	d.Summary = append(d.Summary, serviceTypeSummary(svc))
 	if svc.Spec.Type == corev1.ServiceTypeExternalName {
 		d.Findings = append(d.Findings, diagFinding{
@@ -141,7 +163,7 @@ func specFindings(spec *corev1.ServiceSpec) []diagFinding {
 
 // addEndpoints adds the endpoint summary and the slices as backends, or
 // says they could not be read.
-func (d *serviceDiagnosis) addEndpoints(slicesErr error, own []discoveryv1.EndpointSlice) {
+func (d *diagReport) addEndpoints(slicesErr error, own []discoveryv1.EndpointSlice) {
 	if slicesErr != nil {
 		d.Summary = append(d.Summary, "endpoints: unknown")
 		d.Findings = append(d.Findings, diagFinding{
@@ -158,7 +180,7 @@ func (d *serviceDiagnosis) addEndpoints(slicesErr error, own []discoveryv1.Endpo
 	}
 }
 
-func (d *serviceDiagnosis) addSelectorless(svc *corev1.Service, slicesErr error, own []discoveryv1.EndpointSlice) {
+func (d *diagReport) addSelectorless(svc *corev1.Service, slicesErr error, own []discoveryv1.EndpointSlice) {
 	d.Summary = append(d.Summary, "selector: none")
 	d.Findings = append(d.Findings, diagFinding{
 		Code: "selectorless", Severity: diagInfo,
@@ -176,7 +198,7 @@ func (d *serviceDiagnosis) addSelectorless(svc *corev1.Service, slicesErr error,
 
 // addSelection checks the selected pods: readiness, target ports and
 // their endpoints.
-func (d *serviceDiagnosis) addSelection(in serviceInput, own []discoveryv1.EndpointSlice) {
+func (d *diagReport) addSelection(in serviceInput, own []discoveryv1.EndpointSlice) {
 	svc := in.Service
 	selector := labels.SelectorFromSet(svc.Spec.Selector)
 	d.Summary = append(d.Summary, "selector: "+selector.String())

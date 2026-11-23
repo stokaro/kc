@@ -74,7 +74,7 @@ func diagSlice(name string, at discoveryv1.AddressType, eps ...discoveryv1.Endpo
 	}
 }
 
-func findingCodes(d serviceDiagnosis) []string {
+func findingCodes(d diagReport) []string {
 	out := make([]string, 0)
 	for _, f := range d.Findings {
 		out = append(out, f.Severity.String()+" "+f.Code)
@@ -82,7 +82,7 @@ func findingCodes(d serviceDiagnosis) []string {
 	return out
 }
 
-func findingByCode(t *testing.T, d serviceDiagnosis, code string) diagFinding {
+func findingByCode(t *testing.T, d diagReport, code string) diagFinding {
 	t.Helper()
 	for _, f := range d.Findings {
 		if f.Code == code {
@@ -119,13 +119,13 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 		name  string
 		in    serviceInput
 		codes []string
-		check func(t *testing.T, d serviceDiagnosis)
+		check func(t *testing.T, d diagReport)
 	}{
 		{
 			name:  "consistent service has no finding",
 			in:    serviceInput{Service: diagService(nil), Pods: []corev1.Pod{diagPod("a", true, ip)}, Slices: []discoveryv1.EndpointSlice{okSlice("a")}},
 			codes: make([]string, 0),
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				if len(d.Backends) != 2 || d.Backends[0].Evidence != "ready; http=8080" {
 					t.Fatalf("backends = %+v", d.Backends)
 				}
@@ -142,7 +142,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 				},
 			},
 			codes: []string{"error no-pods"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				f := findingByCode(t, d, "no-pods")
 				if !strings.Contains(f.Title, "app=web-v2") {
 					t.Errorf("title %q does not name the selector", f.Title)
@@ -156,7 +156,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 			name:  "no candidate shares a selector key",
 			in:    serviceInput{Service: diagService(func(s *corev1.Service) { s.Spec.Selector = map[string]string{"run": "x"} }), Pods: []corev1.Pod{diagPod("a", true, ip)}},
 			codes: []string{"error no-pods"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				f := findingByCode(t, d, "no-pods")
 				if len(f.Links) != 0 || !strings.Contains(f.Detail, "label keys run") {
 					t.Errorf("finding = %+v", f)
@@ -171,7 +171,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 				Slices:  []discoveryv1.EndpointSlice{okSlice("a", "b")},
 			},
 			codes: []string{"warning pods-not-ready"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				got := linkEvidence(findingByCode(t, d, "pods-not-ready"))
 				want := []string{"b: not ready (ContainersNotReady); app: waiting CrashLoopBackOff, 4 restarts"}
 				if !reflect.DeepEqual(got, want) {
@@ -205,7 +205,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 				Slices: []discoveryv1.EndpointSlice{okSlice("a", "b", "c", "d")},
 			},
 			codes: []string{"warning target-port-http"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				got := linkEvidence(findingByCode(t, d, "target-port-http"))
 				want := []string{"b: no container port named http/TCP", "d: no container port named http/TCP"}
 				if !reflect.DeepEqual(got, want) {
@@ -229,7 +229,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 				Pods: []corev1.Pod{diagPod("a", true, ip, corev1.ContainerPort{Name: "other", ContainerPort: 1})}, Slices: []discoveryv1.EndpointSlice{okSlice("a")},
 			},
 			codes: make([]string, 0),
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				if !slices.Contains(d.Summary, "ports: 80 -> 8080/TCP, m 9100 -> 9100/UDP") {
 					t.Errorf("summary = %q", d.Summary)
 				}
@@ -254,7 +254,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 				s.Spec.Type, s.Spec.ExternalName, s.Spec.Selector, s.Spec.ClusterIP = corev1.ServiceTypeExternalName, "db.example.com", nil, ""
 			})},
 			codes: []string{"info external-name"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				if len(d.Backends) != 0 {
 					t.Errorf("backends = %+v", d.Backends)
 				}
@@ -279,7 +279,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 				Slices: []discoveryv1.EndpointSlice{okSlice("a")},
 			},
 			codes: []string{"warning family-IPv6"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				if d.Summary[0] != "type ClusterIP, families IPv4, IPv6 (RequireDualStack)" {
 					t.Errorf("summary = %q", d.Summary[0])
 				}
@@ -303,7 +303,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 			name:  "unreadable pods: incomplete, never no pods",
 			in:    serviceInput{Service: diagService(nil), PodsErr: deniedError(podGVR, "shop", ""), Slices: make([]discoveryv1.EndpointSlice, 0)},
 			codes: []string{"incomplete pods-unreadable"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				if !slices.Contains(d.Summary, "pods: unknown") {
 					t.Errorf("summary = %q", d.Summary)
 				}
@@ -313,7 +313,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 			name:  "unreadable slices: incomplete, no endpoint claims",
 			in:    serviceInput{Service: diagService(nil), Pods: []corev1.Pod{diagPod("a", true, ip)}, SlicesErr: errors.New("informer not synced")},
 			codes: []string{"incomplete slices-unreadable"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				if !slices.Contains(d.Summary, "endpoints: unknown") {
 					t.Errorf("summary = %q", d.Summary)
 				}
@@ -340,7 +340,7 @@ func TestDiagnoseServiceFindings(t *testing.T) {
 				)},
 			},
 			codes: []string{"warning missing-endpoints", "warning stale-endpoints"},
-			check: func(t *testing.T, d serviceDiagnosis) {
+			check: func(t *testing.T, d diagReport) {
 				if got, want := linkEvidence(findingByCode(t, d, "missing-endpoints")), []string{"late: IP 10.1.0.9, in no EndpointSlice"}; !reflect.DeepEqual(got, want) {
 					t.Errorf("missing = %q, want %q", got, want)
 				}
