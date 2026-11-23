@@ -358,16 +358,56 @@ func (v *LogsViewer) FooterHints() []FooterHint {
 	}, v.logViewHints()...)
 }
 
-// FooterStatus shows the search summary while a search is active, and the
-// stream options and state otherwise.
+// FooterStatus shows the stream options and state. While a search is
+// applied it shows the search summary instead, followed by what the
+// options would hide from it: missing sources, a stream that reconnects,
+// failed or ended, and dropped lines (see searchFooter).
 func (v *LogsViewer) FooterStatus(width int) string {
 	if width <= 0 {
 		return ""
 	}
-	if base := v.inner.FooterStatusText(width); base != "" {
-		return lipgloss.NewStyle().Width(width).Render(base)
+	if search := v.inner.SearchSummary(); search != "" {
+		return lipgloss.NewStyle().Width(width).Render(searchFooter(search, v.alertText(), width))
 	}
 	return lipgloss.NewStyle().Width(width).Render(truncateStringToWidth(v.statusText(), width))
+}
+
+// alertText is the part of the status a search must not hide: the coverage
+// of a merged log that misses sources, the stream state other than
+// streaming, and what retention dropped or cut. It is empty while every
+// source streams and nothing was lost.
+func (v *LogsViewer) alertText() string {
+	var parts []string
+	if mux := v.Mux(); mux != nil {
+		if st := mux.Stats(); st.Incomplete() {
+			parts = append(parts, st.String())
+		}
+	}
+	if state := v.streamState(); state != "" {
+		parts = append(parts, state)
+	}
+	if note := v.historyNote(); note != "" {
+		parts = append(parts, note)
+	}
+	if v.lostPlace {
+		parts = append(parts, "view moved: its lines were dropped")
+	}
+	return strings.Join(parts, "; ")
+}
+
+// searchFooter puts the search summary and the alert on one line of width
+// cells. A narrow line cuts the search first: the alert is the part that
+// says the evidence is incomplete.
+func searchFooter(search, alert string, width int) string {
+	if alert == "" {
+		return truncateStringToWidth(search, width)
+	}
+	const sep = " | "
+	room := width - lipgloss.Width(alert) - lipgloss.Width(sep)
+	if room < min(lipgloss.Width(search), 8) {
+		return truncateStringToWidth(alert, width)
+	}
+	return truncateStringToWidth(search, room) + sep + alert
 }
 
 // statusText is the stream options followed by the stream state. A merged
@@ -380,17 +420,27 @@ func (v *LogsViewer) statusText() string {
 	if fields := v.fieldsStatus(); fields != "" {
 		text += "; " + fields
 	}
-	switch {
-	case v.opening:
-		text += " (connecting)"
-	case isReconnecting(v.reader):
-		text += " (reconnecting)"
-	case v.err != nil:
-		text += " (failed)"
-	case v.done:
-		text += " (ended)"
+	if state := v.streamState(); state != "" {
+		text += " " + state
 	}
 	return text
+}
+
+// streamState is the stream state for the status line, or "" while it
+// streams. A stream that stopped for good says so, whatever its reader
+// last reported about reconnecting.
+func (v *LogsViewer) streamState() string {
+	switch {
+	case v.opening:
+		return "(connecting)"
+	case v.err != nil:
+		return "(failed)"
+	case v.done:
+		return "(ended)"
+	case isReconnecting(v.reader):
+		return "(reconnecting)"
+	}
+	return ""
 }
 
 func (v *LogsViewer) FooterCursor(width int) *tea.Cursor {

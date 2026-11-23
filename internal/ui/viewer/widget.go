@@ -441,6 +441,16 @@ func (w *Widget) HandleEscape() (tea.Cmd, bool) {
 	return nil, false
 }
 
+// SearchSummary is the applied search and the match in focus, for a footer
+// that shows it next to other state, for example "/timeout (2/7)". It is
+// empty while the search dialog is open or no search is applied.
+func (w *Widget) SearchSummary() string {
+	if w.searchDialog != nil {
+		return ""
+	}
+	return w.searchSummary()
+}
+
 // FooterStatusText describes the active search prompt or summary for footer display.
 func (w *Widget) FooterStatusText(width int) string {
 	if width <= 0 {
