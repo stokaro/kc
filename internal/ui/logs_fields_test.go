@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -169,6 +170,57 @@ func TestLogsFieldsContext(t *testing.T) {
 	}
 	if got := plainLines(v); len(got) != 4 || !strings.Contains(got[3], "late") {
 		t.Fatalf("same-source context = %q, want the api-1 lines including the later one", got)
+	}
+}
+
+// TestLogsContextRowsKeepTheirRecords opens the context view after older
+// records were dropped, so it starts with a notice row. Each row must map
+// to its own record, and the notice row to none.
+func TestLogsContextRowsKeepTheirRecords(t *testing.T) {
+	sample := `{"msg":"discarded"}` + "\n" + `{"msg":"alpha"}` + "\n" + `{"msg":"beta"}` + "\n" + `{"msg":"gamma"}` + "\n"
+	for _, sameSource := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sameSource=%v", sameSource), func(t *testing.T) {
+			v := newTestLogsViewer(t, sample)
+			v.SetFieldOptions(appconfig.Default().Viewer.Logs)
+			streamAll(t, v)
+			v.SetLimits(logview.Limits{MaxRecords: 3})
+			if v.log.Dropped() != 1 {
+				t.Fatalf("dropped %d records, want 1", v.log.Dropped())
+			}
+			if err := v.showContext(seqOf(t, v, "alpha"), sameSource); err != nil {
+				t.Fatal(err)
+			}
+			rows := plainLines(v)
+			if len(rows) != 4 || !strings.Contains(rows[0], "older lines were dropped") {
+				t.Fatalf("context rows = %q, want the notice and three records", rows)
+			}
+			// One row in view at a time: the focus is the top row.
+			v.inner.Resize(80, 1)
+			for row, msg := range []string{"", "alpha", "beta", "gamma"} {
+				v.inner.ScrollToLine(row)
+				seq, ok := v.focusRecord()
+				if msg == "" {
+					if ok {
+						r, _ := v.log.Record(seq)
+						t.Fatalf("the notice row maps to record %q", r.Raw)
+					}
+					continue
+				}
+				if !ok || seq != seqOf(t, v, msg) {
+					t.Fatalf("row %d (%q) maps to %d, %v, want %s", row, rows[row], seq, ok, msg)
+				}
+				d, err := newLogsFieldsDialog(v, seq, func() {})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if f, _ := d.selected(); f.Value != msg {
+					d.cursor = 0
+					if f, _ = d.selected(); f.Value != msg {
+						t.Fatalf("fields of row %d show %s=%s, want msg=%s", row, f.Path, f.Value, msg)
+					}
+				}
+			}
+		})
 	}
 }
 

@@ -430,6 +430,8 @@ func (v *LogsViewer) statusText() string {
 // streams. A stream that stopped for good says so, whatever its reader
 // last reported about reconnecting.
 func (v *LogsViewer) streamState() string {
+	// A stream that stopped for good says so, whatever its reader last
+	// reported about reconnecting.
 	switch {
 	case v.opening:
 		return "(connecting)"

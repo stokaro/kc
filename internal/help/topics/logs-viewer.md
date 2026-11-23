@@ -26,7 +26,9 @@ back; the filter, the search and follow mode stay.
 The status line shows the stream options (`tail 200, since 1h,
 timestamps`), the view (`formatted, 12 of 40 lines`), the filter, and
 the stream state: `(connecting)`, `(reconnecting)`, `(ended)` or
-`(failed)`. A merged log starts with its coverage, for example
+`(failed)`. `(reconnecting)` shows only while a retry is pending; a
+stream that gave up or was refused shows `(failed)`. A merged log starts
+with its coverage, for example
 `incomplete: 50 streaming, 20 waiting (limit 50)`. While a search is
 applied the status line shows the search (`/timeout (2/7)`) and, after
 `|`, what the search must not hide: missing sources, a stream that is
