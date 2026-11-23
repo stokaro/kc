@@ -2086,15 +2086,10 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	if a.cfg != nil {
 		spec = logsSpecWithDefaults(spec, a.cfg.Viewer.Logs)
 	}
-	parent := a.ctx
+	parent, cl := a.ctx, a.cl
 	open := func(spec models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) {
 		ctx, cancel := context.WithCancel(parent)
-		opts := spec.PodLogOptions()
-		ctrllog.FromContext(ctx).WithName("logsViewer").Info("client stream logs",
-			"gvr", "v1/pods", "namespace", spec.Namespace, "pod", spec.Pod, "container", spec.Container,
-			"tailLines", spec.EffectiveTailLines(), "sinceSeconds", spec.SinceSeconds,
-			"timestamps", spec.Timestamps, "previous", spec.Previous, "follow", spec.Follow)
-		stream, err := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts).Stream(ctx)
+		stream, err := openResumingLogs(ctx, cl, clientset, spec, "logsViewer")
 		if err != nil {
 			cancel()
 			return nil, nil, err

@@ -138,6 +138,15 @@ type Widget struct {
 	// lines the user was reading went; the next scroll clears it.
 	window    *logview.Window
 	lostPlace bool
+	// body is the open stream's body; a resumed stream reports when it
+	// waits to reconnect (docs/adr/0180-resume-live-logs.md).
+	body io.ReadCloser
+}
+
+// reconnecting reports a stream body that waits to reconnect.
+func reconnecting(body io.ReadCloser) bool {
+	r, ok := body.(interface{ Reconnecting() bool })
+	return ok && r.Reconnecting()
 }
 
 type debounceMsg struct {
@@ -304,6 +313,7 @@ func (w *Widget) Streaming() bool { return w.state == stateWaiting || w.state ==
 // stop cancels the current stream and makes every pending result stale.
 func (w *Widget) stop() {
 	w.gen++
+	w.body = nil
 	if w.cancel != nil {
 		w.cancel()
 		w.cancel = nil
@@ -370,7 +380,7 @@ func (w *Widget) onOpened(m openedMsg) (tea.Cmd, bool) {
 		w.fail(m.err)
 		return nil, true
 	}
-	w.state, w.cancel = stateStreaming, m.stream.Cancel
+	w.state, w.cancel, w.body = stateStreaming, m.stream.Cancel, m.stream.Body
 	if m.stream.Spec.Pod != "" {
 		w.spec = m.stream.Spec
 	}
@@ -547,6 +557,8 @@ func (w *Widget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panel
 		info.HeaderStatus = panelcontent.LoadingStatus
 	case stateStreaming:
 		switch {
+		case reconnecting(w.body):
+			info.HeaderStatus = "reconnecting"
 		case w.lostPlace:
 			info.HeaderStatus = "paused, view moved: its lines were dropped"
 		case !w.follow:
