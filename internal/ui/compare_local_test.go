@@ -157,7 +157,7 @@ func TestCompareLocalFileWithLiveObject(t *testing.T) {
 	if !ok || msg.err != nil {
 		t.Fatalf("compare = %#v", msg)
 	}
-	header := strings.SplitN(msg.result.Text, "\n# view:", 2)[0]
+	header, _, _ := strings.Cut(msg.result.Text, "\n# view:")
 	for _, want := range []string{"# left:    context local file " + filepath.Join(dir, "web.yaml"), ", sha256 ", "# right:   context envtest", ", resourceVersion "} {
 		if !strings.Contains(header, want) {
 			t.Errorf("header misses %q:\n%s", want, header)

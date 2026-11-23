@@ -224,7 +224,9 @@ func recordVerdict(gk schema.GroupKind, manager, obj *unstructured.Unstructured)
 	self := obj.GroupVersionKind()
 	switch gk {
 	case fluxKustomizationGK:
-		entries, found, _ := unstructured.NestedSlice(manager.Object, "status", "inventory", "entries")
+		// An inventory with no entries may be written as null.
+		_, found, _ := unstructured.NestedFieldNoCopy(manager.Object, "status", "inventory")
+		entries, _, _ := unstructured.NestedSlice(manager.Object, "status", "inventory", "entries")
 		if !found {
 			return "label only: the Kustomization has no inventory"
 		}

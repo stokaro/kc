@@ -137,7 +137,7 @@ func TestGitOpsOwnersAndDiagnosisEnvtest(t *testing.T) {
 	if err := cli.Get(ctx, crclient.ObjectKey{Namespace: "flux-system", Name: "apps"}, latest); err != nil {
 		t.Fatal(err)
 	}
-	if err := unstructured.SetNestedSlice(latest.Object, []any{}, "status", "inventory", "entries"); err != nil {
+	if err := unstructured.SetNestedSlice(latest.Object, nil, "status", "inventory", "entries"); err != nil {
 		t.Fatal(err)
 	}
 	if err := cli.Update(ctx, latest); err != nil {

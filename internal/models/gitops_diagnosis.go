@@ -18,7 +18,9 @@ import (
 )
 
 // gitopsDriftNote says what a GitOps diagnosis does not prove.
-const gitopsDriftNote = "Read-only. kc does not fetch the source or render manifests: a Ready condition means the last apply succeeded, not that live objects match Git. To compare one object, open its rendered manifest in a local-files panel (M-l) and press C-x C-d with the live object in the other panel."
+const gitopsDriftNote = "Read-only. kc does not fetch the source or render manifests: " +
+	"a Ready condition means the last apply succeeded, not that live objects match Git. " +
+	"To compare one object, open its rendered manifest in a local-files panel (M-l) and press C-x C-d with the live object in the other panel."
 
 // hasGitOpsDiagnosis reports whether objects of gvr have a GitOps
 // diagnosis: Flux Kustomizations and HelmReleases, Argo CD Applications,
@@ -159,7 +161,8 @@ func (d *diagReport) diagnoseFlux(gvr schema.GroupVersionResource, obj *unstruct
 		if prune, found, _ := unstructured.NestedBool(o, "spec", "prune"); found {
 			d.Summary = append(d.Summary, "prune: "+strconv.FormatBool(prune))
 		}
-		if entries, found, _ := unstructured.NestedSlice(o, "status", "inventory", "entries"); found {
+		if _, found, _ := unstructured.NestedFieldNoCopy(o, "status", "inventory"); found {
+			entries, _, _ := unstructured.NestedSlice(o, "status", "inventory", "entries")
 			d.Summary = append(d.Summary, fmt.Sprintf("inventory: %d objects", len(entries)))
 		} else {
 			d.Summary = append(d.Summary, "inventory: none recorded")
@@ -376,12 +379,8 @@ func (d *diagReport) addDependsOn(obj *unstructured.Unstructured, gvr schema.Gro
 	}
 }
 
-// diagnoseArgoApplication reports what an Argo CD Application says about
-// itself: sources, sync status and revision, health, the last operation
-// and its conditions. Argo CD compares live and desired state itself; kc
-// shows that result as Argo CD's, with the time it was computed.
-func (d *diagReport) diagnoseArgoApplication(obj *unstructured.Unstructured, self diagLink) {
-	o := obj.Object
+// addArgoSources summarizes spec.source and spec.sources.
+func (d *diagReport) addArgoSources(o map[string]any) {
 	sources, _, _ := unstructured.NestedSlice(o, "spec", "sources")
 	if src, found, _ := unstructured.NestedMap(o, "spec", "source"); found {
 		sources = append([]any{src}, sources...)
@@ -391,14 +390,23 @@ func (d *diagReport) diagnoseArgoApplication(obj *unstructured.Unstructured, sel
 		if !ok {
 			continue
 		}
-		where := str(m, "repoURL")
+		where := []string{str(m, "repoURL")}
 		for _, f := range []string{"path", "chart"} {
 			if v := str(m, f); v != "" {
-				where += " " + f + " " + v
+				where = append(where, f, v)
 			}
 		}
-		d.Summary = append(d.Summary, fmt.Sprintf("source %d: %s at %s", i+1, where, orUnrecorded(str(m, "targetRevision"))))
+		d.Summary = append(d.Summary, fmt.Sprintf("source %d: %s at %s", i+1, strings.Join(where, " "), orUnrecorded(str(m, "targetRevision"))))
 	}
+}
+
+// diagnoseArgoApplication reports what an Argo CD Application says about
+// itself: sources, sync status and revision, health, the last operation
+// and its conditions. Argo CD compares live and desired state itself; kc
+// shows that result as Argo CD's, with the time it was computed.
+func (d *diagReport) diagnoseArgoApplication(obj *unstructured.Unstructured, self diagLink) {
+	o := obj.Object
+	d.addArgoSources(o)
 	sync := str(o, "status", "sync", "status")
 	revision := str(o, "status", "sync", "revision")
 	at := str(o, "status", "reconciledAt")

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -37,9 +38,7 @@ func gitopsMapper(ok bool) meta.RESTMapper {
 
 func uobj(apiVersion, kind, namespace, name string, fields map[string]any) *unstructured.Unstructured {
 	obj := map[string]any{"apiVersion": apiVersion, "kind": kind, "metadata": map[string]any{"namespace": namespace, "name": name}}
-	for k, v := range fields {
-		obj[k] = v
-	}
+	maps.Copy(obj, fields)
 	return &unstructured.Unstructured{Object: obj}
 }
 
@@ -54,7 +53,7 @@ func fluxLabels(name string) map[string]string {
 	return map[string]string{fluxKustomizeNameLabel: name, fluxKustomizeNamespaceLabel: "flux-system"}
 }
 
-func kustomization(name string, status map[string]any, spec map[string]any) *unstructured.Unstructured {
+func kustomization(name string, status, spec map[string]any) *unstructured.Unstructured {
 	return uobj("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "flux-system", name, map[string]any{"spec": spec, "status": status})
 }
 
@@ -88,7 +87,7 @@ func TestGitOpsRefs(t *testing.T) {
 			objects:  map[schema.GroupVersionResource][]runtime.Object{kustomizationsGVR: {kustomization("apps", inventory("shop_other_apps_Deployment"), nil)}},
 			relation: "label only: not in its inventory"},
 		{name: "absent inventory", obj: gitopsDeployment(fluxLabels("apps"), nil), served: true,
-			objects:  map[schema.GroupVersionResource][]runtime.Object{kustomizationsGVR: {kustomization("apps", map[string]any{}, nil)}},
+			objects:  map[schema.GroupVersionResource][]runtime.Object{kustomizationsGVR: {kustomization("apps", make(map[string]any), nil)}},
 			relation: "label only: the Kustomization has no inventory"},
 		{name: "missing owner", obj: gitopsDeployment(fluxLabels("gone"), nil), served: true, problem: problemNotFound},
 		{name: "forbidden owner", obj: gitopsDeployment(fluxLabels("apps"), nil), served: true,

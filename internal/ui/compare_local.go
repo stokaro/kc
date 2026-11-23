@@ -49,7 +49,7 @@ func (f *fileManifest) Manifest(context.Context) (*unstructured.Unstructured, er
 
 // compareSides pairs the two cursors for C-x C-d. A local file is allowed
 // on one side when the other is a cluster object.
-func compareSides(left, right models.Item) (models.ManifestSource, models.ManifestSource, bool) {
+func compareSides(left, right models.Item) (l, r models.ManifestSource, ok bool) {
 	l, lok := left.(models.ManifestSource)
 	r, rok := right.(models.ManifestSource)
 	switch {

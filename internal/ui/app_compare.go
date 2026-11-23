@@ -48,16 +48,7 @@ func (a *App) handleCtrlXKey(press tea.KeyPressMsg) tea.Cmd {
 	return a.commandChord(press)
 }
 
-// selectedManifestSource returns the object under the cursor of panel.
-func selectedManifestSource(ctx context.Context, panel *Panel) (models.ManifestSource, bool) {
-	item, ok := selectedItem(ctx, panel)
-	if !ok {
-		return nil, false
-	}
-	src, ok := item.(models.ManifestSource)
-	return src, ok
-}
-
+// selectedItem returns the row under the cursor of panel.
 func selectedItem(ctx context.Context, panel *Panel) (models.Item, bool) {
 	if panel == nil {
 		return nil, false
