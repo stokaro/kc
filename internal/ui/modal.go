@@ -378,6 +378,28 @@ func (m *Modal) helpPage() help.ID {
 	return m.manager.helpPage(m.name)
 }
 
+// titleGrowth returns how much wider a window of width winW gets so that
+// its title fits: the title, its padding, a line glyph on each side and the
+// corners. It grows up to the screen width less the dialog padding; a title
+// that still does not fit is cut (fitFrameTitle).
+func titleGrowth(title string, winW, screenW int) int {
+	need := lipgloss.Width(title) + 6
+	if need <= winW {
+		return 0
+	}
+	return max(0, min(need, screenW-2*dialogPadX)-winW)
+}
+
+// fitFrameTitle cuts title with "…" so that, with its padding and a line
+// glyph on each side, it fits a top border of available columns.
+func fitFrameTitle(title string, available int) string {
+	room := available - 4
+	if room < 1 {
+		return ""
+	}
+	return ansi.Truncate(title, room, "…")
+}
+
 // View renders the modal and optionally returns a cursor when the content
 // exposes one (e.g., viewer search input).
 //
@@ -431,6 +453,8 @@ func (m *Modal) View() tea.View {
 		if winW <= 0 {
 			winW = bgWidth
 		}
+		grow := titleGrowth(m.title, winW, bgWidth)
+		winW += grow
 		winH := max(1, min(m.winHeight, max(1, availableHeight)))
 		innerW := max(1, winW-2)
 		innerH := max(1, winH-2)
@@ -443,7 +467,8 @@ func (m *Modal) View() tea.View {
 			windowOffsetY = (availableHeight - winH) / 2
 		}
 		if m.windowHasPos {
-			windowOffsetX = m.windowOffsetX
+			// A window widened for its title keeps its center.
+			windowOffsetX = m.windowOffsetX - grow/2
 			windowOffsetY = m.windowOffsetY
 		}
 		// Like mc, the frame sits inside a padded window that casts a
@@ -486,7 +511,6 @@ func (m *Modal) View() tea.View {
 			Bold(m.danger).
 			Background(frameBg).
 			Padding(0, 1)
-		label := labelStyle.Render(m.title)
 		border := boxStyle.GetBorderStyle()
 		topBorderStyler := lipgloss.NewStyle().
 			Foreground(boxStyle.GetBorderTopForeground()).
@@ -496,6 +520,7 @@ func (m *Modal) View() tea.View {
 		topLeft := topBorderStyler(border.TopLeft)
 		topRight := topBorderStyler(border.TopRight)
 		available := winW - lipgloss.Width(topLeft+topRight)
+		label := labelStyle.Render(fitFrameTitle(m.title, available))
 		lw := lipgloss.Width(label)
 		var top string
 		if lw >= available {
@@ -586,7 +611,6 @@ func (m *Modal) View() tea.View {
 			Background(lipgloss.Color(uistyles.ColorModalBg)).
 			Padding(0, 1)
 	}
-	label := labelStyle.Render(m.title)
 	border := boxStyle.GetBorderStyle()
 	topBorderStyler := lipgloss.NewStyle().
 		Foreground(boxStyle.GetBorderTopForeground()).
@@ -605,6 +629,7 @@ func (m *Modal) View() tea.View {
 	topLeft := topBorderStyler(tl)
 	topRight := topBorderStyler(tr)
 	available := m.width - lipgloss.Width(topLeft+topRight)
+	label := labelStyle.Render(fitFrameTitle(m.title, available))
 	lw := lipgloss.Width(label)
 	var top string
 	if lw >= available {
