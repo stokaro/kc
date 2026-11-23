@@ -1082,6 +1082,7 @@ func (a *App) setupModals() {
 	delModel := NewDeleteConfirmModel()
 	delModal := NewModal("Confirm Delete", delModel)
 	delModal.SetCloseOnSingleEsc(true)
+	delModal.SetDanger(true)
 	a.modalManager.Register("delete_confirm", delModal)
 	a.deleteConfirm = delModel
 
@@ -1901,14 +1902,9 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	modal.SetContent(a.deleteConfirm)
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
-	winW := min(max(50, a.width/2), a.width-4)
-	winH := min(9, a.height-4)
-	if winW < 40 {
-		winW = 40
-	}
-	if winH < 6 {
-		winH = 6
-	}
+	winW := max(min(max(50, a.width/2), a.width-4), 40)
+	// The frame fits the content exactly: two border lines around it.
+	winH := min(a.deleteConfirm.Height(winW-2)+2, max(5, a.height-4))
 	modal.SetWindowed(winW, winH, bg)
 	modal.SetOnClose(func() tea.Cmd {
 		a.pendingDelete = nil
