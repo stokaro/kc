@@ -454,24 +454,29 @@ func TestDiagnoseWorkload(t *testing.T) {
 			}
 		},
 	}, {
-		name: "pods beyond the bound are counted, not explained",
+		name: "pods with the same symptom are one finding that cites them all",
 		in: func(t *testing.T) workloadInput {
 			var pods []corev1.Pod
-			for i := range maxDiagnosedPods + 2 {
+			for i := range maxSymptomGroups + 2 {
 				pods = append(pods, dgPod(fmt.Sprintf("web-1-%02d", i), types.UID(fmt.Sprintf("pod-%d", i)), "rs-1", dgUnschedulable))
 			}
 			return deploymentInput(t, dgDeployment("dep-1", nil), pods...)
 		},
 		check: func(t *testing.T, d diagReport) {
-			n := 0
 			for _, c := range dgCodes(d) {
 				if strings.HasPrefix(c, "unschedulable/") {
+					t.Fatalf("a pod's own finding %s next to the group", c)
+				}
+			}
+			g := findingByCode(t, d, "group/unschedulable/*")
+			n := 0
+			for _, l := range g.Links {
+				if l.GVR == podGVR {
 					n++
 				}
 			}
-			more := findingByCode(t, d, "more-pods")
-			if n != maxDiagnosedPods || !strings.HasPrefix(more.Title, "2 more pods") {
-				t.Fatalf("explained %d pods; more = %q", n, more.Title)
+			if n != maxSymptomGroups+2 || !strings.HasSuffix(g.Title, "(12 pods)") {
+				t.Fatalf("group cites %d pods; title %q", n, g.Title)
 			}
 		},
 	}, {
