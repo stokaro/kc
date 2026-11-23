@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -386,80 +387,183 @@ func TestHelmResourceRowsWithoutMapper(t *testing.T) {
 	}
 }
 
-func TestHelmCheckAccess(t *testing.T) {
+// fakeHelmScopes stands in for resolveListScope and the direct list. Each
+// decision returns Deps named after the scope, so a test sees which cache a
+// read would use, and counts the namespace caches still held.
+type fakeHelmScopes struct {
+	mu       sync.Mutex
+	scopes   map[string]listScope // missing: shared
+	peekErrs map[string]error
+	resolves int
+	held     int
+	peeked   []string
+}
+
+func (f *fakeHelmScopes) install(r *helmReader) {
+	r.resolve = func(ns string) (Deps, listScope, func()) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.resolves++
+		scope := f.scopes[ns]
+		f.held++
+		return Deps{CtxName: scope.String() + ":" + ns}, scope, sync.OnceFunc(func() {
+			f.mu.Lock()
+			f.held--
+			f.mu.Unlock()
+		})
+	}
+	r.peek = func(_ context.Context, d Deps, ns string) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.peeked = append(f.peeked, d.CtxName)
+		return f.peekErrs[ns]
+	}
+}
+
+func (f *fakeHelmScopes) counts() (resolves, held int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.resolves, f.held
+}
+
+func TestHelmScopeFor(t *testing.T) {
 	t.Parallel()
 	forbidden := apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "", errors.New("no"))
 	cases := []struct {
 		name      string
 		namespace string
-		cluster   error
-		inNS      error
-		want      helmAccess
-		wantPeeks int
-		// cached: a second call does not peek again.
-		cached bool
+		scope     listScope
+		peekErr   error
+		wantDeps  string // CtxName of the Deps used for reads; "" when denied
+		wantErr   string // "access", "other" or ""
+		wantHeld  int    // caches held after the decision
+		wantCache bool   // a second call decides nothing again
 	}{
-		{name: "allowed", namespace: "a", want: helmAccessOK, wantPeeks: 1, cached: true},
-		{name: "namespace only", namespace: "a", cluster: forbidden, want: helmAccessNamespaceOnly, wantPeeks: 2, cached: true},
-		{name: "denied everywhere", namespace: "a", cluster: forbidden, inNS: forbidden, want: helmAccessDenied, wantPeeks: 2, cached: true},
-		{name: "denied, all namespaces scope", namespace: AllNamespaces, cluster: forbidden, want: helmAccessDenied, wantPeeks: 1, cached: true},
-		{name: "other errors are retried", namespace: "a", cluster: errors.New("connection refused"), want: helmAccessUnknown, wantPeeks: 1},
+		{name: "cluster-wide access uses the shared cache", namespace: "a", scope: scopeShared, wantDeps: "shared:a", wantHeld: 1, wantCache: true},
+		{name: "namespace-only access uses a namespace cache", namespace: "a", scope: scopeNamespace, wantDeps: "namespace:a", wantHeld: 1, wantCache: true},
+		{name: "denied by the review", namespace: "a", scope: scopeDenied, peekErr: forbidden, wantErr: "access", wantCache: true},
+		{name: "denied in all namespaces", namespace: AllNamespaces, scope: scopeDenied, peekErr: forbidden, wantErr: "access", wantCache: true},
+		{name: "unknown review, the list is forbidden", namespace: AllNamespaces, scope: scopeShared, peekErr: forbidden, wantErr: "access", wantCache: true},
+		{name: "other errors are retried", namespace: "a", scope: scopeNamespace, peekErr: errors.New("connection refused"), wantErr: "other"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			r := newHelmReader(helmTestDeps(t))
-			peeks := 0
-			r.peek = func(_ context.Context, ns string) error {
-				peeks++
-				if ns == AllNamespaces {
-					return tc.cluster
-				}
-				return tc.inNS
+			fake := &fakeHelmScopes{
+				scopes:   map[string]listScope{tc.namespace: tc.scope},
+				peekErrs: map[string]error{tc.namespace: tc.peekErr},
 			}
-			err := r.checkAccess(t.Context(), tc.namespace)
-			r.mu.Lock()
-			got := r.access
-			r.mu.Unlock()
-			if got != tc.want || peeks != tc.wantPeeks {
-				t.Fatalf("access = %v after %d peeks (err %v), want %v after %d", got, peeks, err, tc.want, tc.wantPeeks)
-			}
+			fake.install(r)
+			deps, err := r.scopeFor(t.Context(), tc.namespace)
 			ae, isAccess := isHelmAccessError(err)
-			if isAccess != (tc.want == helmAccessDenied || tc.want == helmAccessNamespaceOnly) {
-				t.Fatalf("err = %v", err)
+			switch tc.wantErr {
+			case "access":
+				if !isAccess || !apierrors.IsForbidden(err) {
+					t.Fatalf("err = %v, want an access error that unwraps to Forbidden", err)
+				}
+				if ae.namespace != tc.namespace {
+					t.Errorf("access error namespace = %q", ae.namespace)
+				}
+			case "other":
+				if err == nil || isAccess {
+					t.Fatalf("err = %v, want a plain error", err)
+				}
+			default:
+				if err != nil {
+					t.Fatalf("err = %v", err)
+				}
 			}
-			if isAccess && !apierrors.IsForbidden(err) {
-				t.Errorf("access error does not unwrap to Forbidden: %v", err)
+			if deps.CtxName != tc.wantDeps {
+				t.Errorf("reads use %q, want %q", deps.CtxName, tc.wantDeps)
 			}
-			if tc.want == helmAccessNamespaceOnly && !strings.Contains(ae.Error(), "in a but not in all namespaces") {
-				t.Errorf("message = %q", ae.Error())
+			if _, held := fake.counts(); held != tc.wantHeld {
+				t.Errorf("caches held = %d, want %d", held, tc.wantHeld)
 			}
-			if r.accessible() != (tc.want == helmAccessOK) {
-				t.Errorf("accessible = %v", r.accessible())
+			_, _ = r.scopeFor(t.Context(), tc.namespace)
+			if resolves, _ := fake.counts(); (resolves == 1) != tc.wantCache {
+				t.Errorf("decisions after two calls = %d, cached = %v", resolves, tc.wantCache)
 			}
-			_ = r.checkAccess(t.Context(), tc.namespace)
-			if again := peeks - tc.wantPeeks; (again == 0) != tc.cached {
-				t.Errorf("second call peeked %d more times, cached = %v", again, tc.cached)
+			r.Close()
+			if _, held := fake.counts(); held != 0 {
+				t.Errorf("caches held after Close = %d", held)
 			}
 		})
 	}
 }
 
-// Until access is known the watch factory starts nothing; once denied it
+// A denial in one namespace does not change the answer for another, and
+// the watch of each namespace uses its own decision.
+func TestHelmScopesAreIndependent(t *testing.T) {
+	t.Parallel()
+	r := newHelmReader(helmTestDeps(t))
+	forbidden := apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "", errors.New("no"))
+	fake := &fakeHelmScopes{
+		scopes:   map[string]listScope{"a": scopeNamespace, "b": scopeDenied},
+		peekErrs: map[string]error{"b": forbidden},
+	}
+	fake.install(r)
+	if _, err := r.scopeFor(t.Context(), "b"); err == nil {
+		t.Fatal("b: want a denial")
+	}
+	deps, err := r.scopeFor(t.Context(), "a")
+	if err != nil || deps.CtxName != "namespace:a" {
+		t.Fatalf("a after b was denied: deps %q, err %v", deps.CtxName, err)
+	}
+	if _, err := r.watchFactory("b", "")(func() {}, func() {}); !apierrors.IsForbidden(err) {
+		t.Errorf("watch in b: err = %v, want Forbidden", err)
+	}
+	r.Close()
+	if _, held := fake.counts(); held != 0 {
+		t.Errorf("caches held after Close = %d", held)
+	}
+}
+
+// Until a decision is made the watch factory starts nothing; once denied it
 // reports Forbidden, which stops the row source from retrying.
 func TestHelmWatchFactoryWaitsForAccess(t *testing.T) {
 	t.Parallel()
 	r := newHelmReader(helmTestDeps(t))
 	cancel, err := r.watchFactory("a", "")(func() {}, func() {})
 	if cancel != nil || err != nil {
-		t.Fatalf("before the probe: cancel=%v err=%v", cancel != nil, err)
+		t.Fatalf("before the decision: cancel=%v err=%v", cancel != nil, err)
 	}
-	r.peek = func(context.Context, string) error {
-		return apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "", errors.New("no"))
+	fake := &fakeHelmScopes{
+		scopes:   map[string]listScope{"a": scopeDenied},
+		peekErrs: map[string]error{"a": apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "", errors.New("no"))},
 	}
-	_ = r.checkAccess(t.Context(), "a")
+	fake.install(r)
+	_, _ = r.scopeFor(t.Context(), "a")
 	if _, err := r.watchFactory("a", "")(func() {}, func() {}); !apierrors.IsForbidden(err) {
-		t.Fatalf("after a denied probe: err = %v, want Forbidden", err)
+		t.Fatalf("after a denial: err = %v, want Forbidden", err)
+	}
+}
+
+// A load that finishes after the view closed gives its cache back at once.
+func TestHelmScopeAfterClose(t *testing.T) {
+	t.Parallel()
+	r := newHelmReader(helmTestDeps(t))
+	fake := &fakeHelmScopes{scopes: map[string]listScope{"a": scopeNamespace}}
+	fake.install(r)
+	r.Close()
+	if _, err := r.scopeFor(t.Context(), "a"); !errors.Is(err, errHelmReaderClosed) {
+		t.Fatalf("err = %v, want errHelmReaderClosed", err)
+	}
+	if _, held := fake.counts(); held != 0 {
+		t.Errorf("caches held = %d, want 0", held)
+	}
+}
+
+// A review that denies watch while the list works still explains itself
+// as Forbidden.
+func TestHelmDeniedCauseWithoutListError(t *testing.T) {
+	t.Parallel()
+	r := newHelmReader(helmTestDeps(t))
+	fake := &fakeHelmScopes{scopes: map[string]listScope{"a": scopeDenied}}
+	fake.install(r)
+	_, err := r.scopeFor(t.Context(), "a")
+	if !apierrors.IsForbidden(err) || !strings.Contains(err.(*helmAccessError).cause.Error(), "list or watch") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -472,10 +576,10 @@ func TestHelmAccessNotice(t *testing.T) {
 		ns     string
 		wantIn []string
 	}{
-		{name: "namespace only", ns: "a", err: &helmAccessError{access: helmAccessNamespaceOnly, namespace: "a"},
-			wantIn: []string{"in a but not in all namespaces", "helm --kube-context prod list -a -n a"}},
-		{name: "denied", ns: AllNamespaces, err: &helmAccessError{access: helmAccessDenied, cause: errors.New(`secrets is forbidden: User "u"`)},
-			wantIn: []string{"forbidden", "helm.sh/release.v1", "helm --kube-context prod list -a -A", `User "u"`}},
+		{name: "namespace", ns: "a", err: &helmAccessError{namespace: "a"},
+			wantIn: []string{"Secrets in a is forbidden", "list and watch on secrets in a", "helm --kube-context prod list -a -n a"}},
+		{name: "all namespaces", ns: AllNamespaces, err: &helmAccessError{namespace: AllNamespaces, cause: errors.New(`secrets is forbidden: User "u"`)},
+			wantIn: []string{"in all namespaces is forbidden", "Open /helm in a namespace", "helm.sh/release.v1", "helm --kube-context prod list -a -A", `User "u"`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
