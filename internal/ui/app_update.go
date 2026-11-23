@@ -26,6 +26,18 @@ func (a *App) enqueueCmd(cmd tea.Cmd) {
 	}
 }
 
+// keepsCachedView reports whether Update may keep the cached frame for msg.
+// These are timers that fire several times a second and redraw by
+// themselves when they change the screen (see the busy and toast cases).
+// Every other message redraws.
+func keepsCachedView(msg tea.Msg) bool {
+	switch msg.(type) {
+	case nil, BusyShowMsg, BusyTickMsg, BusyHideMsg, busyDoneMsg, toastTickMsg:
+		return true
+	}
+	return false
+}
+
 func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 	if a.terminal == nil {
 		return nil
@@ -45,6 +57,14 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	defer a.syncActivity()
 	// Start the access reviews the selected row needs for function key gating.
 	defer func() { cmd = batchAccessPrefetch(cmd, a.accessPrefetchCmd()) }()
+	// Every message drops the cached frame, so a case that returns early
+	// cannot leave its result off the screen. Only the timers in
+	// keepsCachedView keep it; they invalidate when they change something.
+	defer func() {
+		if !keepsCachedView(msg) {
+			a.invalidateView("")
+		}
+	}()
 	if a.cfg != nil {
 		a.logMsg(msg)
 	}
