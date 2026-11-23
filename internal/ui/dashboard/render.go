@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/chart"
 )
 
@@ -179,9 +180,8 @@ func (m *Model) chartOf(v *view, wd widget, w, h int) chart.Chart {
 	if v.cursor >= 0 {
 		c.Cursor = v.cursor
 	}
-	amount := v.now.CPU
 	if wd == widgetMemory {
-		c.Format, c.Scale, amount = formatBytes, chart.BinaryTop, v.now.Memory
+		c.Format, c.Scale = formatBytes, chart.BinaryTop
 	}
 	if pts, hold, ok := m.promPoints(v, wd); ok {
 		c.Points, c.Hold = pts, hold
@@ -192,16 +192,58 @@ func (m *Model) chartOf(v *view, wd widget, w, h int) chart.Chart {
 			c.Points = mem
 		}
 	}
-	if amount.Capacity > 0 {
-		c.Refs = append(c.Refs, chart.Ref{V: amount.Capacity, Style: allocStyle})
-	}
-	if amount.Limits > 0 && !amount.LimitsPartial {
-		c.Refs = append(c.Refs, chart.Ref{V: amount.Limits, Style: limStyle})
-	}
-	if amount.Requests > 0 {
-		c.Refs = append(c.Refs, chart.Ref{V: amount.Requests, Style: reqStyle})
-	}
+	c.Refs = m.refsOf(v, wd)
 	return c
+}
+
+// Reference line order: refsOf returns them so, and the status line reads
+// them back by index.
+const (
+	refCapacity = iota
+	refLimits
+	refRequests
+)
+
+// refsOf are the allocatable, limit and request lines of a widget, each
+// as it was at each time: from kube-state-metrics with Prometheus, else
+// from the session samples. Today's spec is never drawn over the past.
+// A source without that history draws no lines.
+func (m *Model) refsOf(v *view, wd widget) []chart.Ref {
+	var req, lim, alloc []chart.Point
+	var hold time.Duration
+	if u := v.prom.usage; m.usesProm(v) {
+		res := u.Resources
+		if !res.Known() {
+			return nil
+		}
+		h := res.CPU
+		if wd == widgetMemory {
+			h = res.Memory
+		}
+		req, lim, alloc = chartPoints(h.Requests), chartPoints(res.FullLimits(h)), chartPoints(h.Capacity)
+		hold = u.Range.Step + u.Range.Step/2
+	} else {
+		req, lim, alloc = m.sess.refPoints(v.target.Key(), wd == widgetMemory)
+		hold = sessionHold
+	}
+	return []chart.Ref{
+		refCapacity: {Points: alloc, Hold: hold, Style: allocStyle},
+		refLimits:   {Points: lim, Hold: hold, Style: limStyle},
+		refRequests: {Points: req, Hold: hold, Style: reqStyle},
+	}
+}
+
+// usesProm reports whether the charts show a Prometheus read.
+func (m *Model) usesProm(v *view) bool {
+	return m.src.Usage != nil && v.prom.usage != nil && v.prom.err == nil
+}
+
+func chartPoints(ps []promhistory.Point) []chart.Point {
+	out := make([]chart.Point, len(ps))
+	for i, p := range ps {
+		out[i] = chart.Point{At: p.At, V: p.Value}
+	}
+	return out
 }
 
 // promPoints are the Prometheus points of a widget, when there is a read
@@ -218,12 +260,8 @@ func (m *Model) promPoints(v *view, wd widget) ([]chart.Point, time.Duration, bo
 			src = u.Memory
 		}
 	}
-	pts := make([]chart.Point, len(src))
-	for i, p := range src {
-		pts[i] = chart.Point{At: p.At, V: p.Value}
-	}
 	// A step stands until the next one; a missing step is a gap.
-	return pts, u.Range.Step + u.Range.Step/2, true
+	return chartPoints(src), u.Range.Step + u.Range.Step/2, true
 }
 
 // titleLine names the dashboard, its target and context, and the state.
@@ -260,32 +298,44 @@ func (m *Model) loc() *time.Location {
 	return time.UTC
 }
 
+// cursorLine is the time span of the cursor cell, the largest usage in
+// it, and the request and limit of that time.
+func (m *Model) cursorLine(v *view, charts map[widget]chart.Chart, w int) string {
+	var parts []string
+	var span string
+	for _, wd := range []widget{widgetCPU, widgetMemory} {
+		c, ok := charts[wd]
+		if !ok {
+			c = m.chartOf(v, wd, max(w, 40), minChartHeight)
+			c.PlotCells = m.cells
+		}
+		cv := c.Cell(v.cursor)
+		if span == "" && !cv.From.IsZero() {
+			span = cv.From.In(m.loc()).Format("15:04:05") + "–" + cv.To.In(m.loc()).Format("15:04:05")
+		}
+		name, text := "CPU", "no data"
+		if wd == widgetMemory {
+			name = "Memory"
+		}
+		if cv.OK {
+			text = c.Format(cv.V)
+		}
+		if req, ok := c.RefAt(refRequests, v.cursor); ok && req > 0 {
+			text += " req " + c.Format(req)
+		}
+		if lim, ok := c.RefAt(refLimits, v.cursor); ok && lim > 0 {
+			text += " lim " + c.Format(lim)
+		}
+		parts = append(parts, name+" "+text)
+	}
+	return fit(focusStyle.Render("▏"+span)+"  "+strings.Join(parts, "  ·  ")+dimStyle.Render("  (max in the cell)"), w)
+}
+
 // statusLine is the values under the cursor, else the current
 // measurement with requests and limits.
 func (m *Model) statusLine(v *view, charts map[widget]chart.Chart, w int) string {
 	if v.cursor >= 0 {
-		var parts []string
-		var span string
-		for _, wd := range []widget{widgetCPU, widgetMemory} {
-			c, ok := charts[wd]
-			if !ok {
-				c = m.chartOf(v, wd, max(w, 40), minChartHeight)
-				c.PlotCells = m.cells
-			}
-			cv := c.Cell(v.cursor)
-			if span == "" && !cv.From.IsZero() {
-				span = cv.From.In(m.loc()).Format("15:04:05") + "–" + cv.To.In(m.loc()).Format("15:04:05")
-			}
-			name, text := "CPU", "no data"
-			if wd == widgetMemory {
-				name = "Memory"
-			}
-			if cv.OK {
-				text = c.Format(cv.V)
-			}
-			parts = append(parts, name+" "+text)
-		}
-		return fit(focusStyle.Render("▏"+span)+"  "+strings.Join(parts, "  ·  ")+dimStyle.Render("  (max in the cell)"), w)
+		return m.cursorLine(v, charts, w)
 	}
 	a := v.now
 	switch {

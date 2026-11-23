@@ -14,12 +14,22 @@ all of them). `Esc` returns to the panels as you left them.
 - **The status line**: the current usage with the requests and limits
   of the pods that have not terminated, and how many running pods were
   measured. With the cursor on a chart it shows the time span of the
-  cursor cell and the largest value in it.
+  cursor cell, the largest value in it, and the request and limit of
+  that time (`CPU 0.25 req 0.5 lim 1`).
 - **CPU cores** and **Memory**: the usage as a filled line, with the
   requests (yellow), the limits (red) and, for a node or all
-  namespaces, the allocatable (blue) as dashed lines. The limits are not
-  drawn when a pod has no limit: their sum is then no ceiling. Requests
-  and limits are those of now, not of the past.
+  namespaces, the allocatable (blue) as dashed lines. Each line is the
+  value of its time, so a raised request steps up where it changed:
+  with Prometheus it comes from kube-state-metrics, else from what this
+  session sampled. The limit is not drawn where a container had no
+  limit: the sum is then no ceiling. Where the history has no sample,
+  the line has a gap; today's values are never drawn over the past.
+  The Prometheus lines sum the app containers. The status line also
+  counts init containers, sidecars and pod overhead, so it can show
+  more.
+- `no req/lim history: …` in a chart title means Prometheus has no
+  kube-state-metrics container series for the range (or the read
+  failed, with the reason). The usage still shows; the lines do not.
 - **Events**: the Kubernetes Events of the target in the range. A
   workload's include those of its ReplicaSets or Jobs and of its pods; a
   node's include its pods'. The lane under the title is on the charts'
@@ -104,7 +114,7 @@ exits.
 - A Deployment's revisions are in its `/rollout`. For other kinds kc
   records revisions only while the object's `/timeline` runs, so a
   rollout before that has no recorded revision.
-- Requests and limits history, restarts and throttling are not charted.
+- Restarts, OOM kills, CPU throttling and node pressure are not charted.
 
 Related: [Metric sources](metric-sources.md), [Info mode](mode-info.md),
 [Investigation window](investigation-window.md), [Timeline](timeline.md),

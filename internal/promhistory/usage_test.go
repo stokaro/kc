@@ -128,6 +128,7 @@ func TestUsageQueriesAndCoverage(t *testing.T) {
 	r := promhistory.RangeFor(now.Add(-time.Hour), now, 60)
 	b := &rangeBackend{t: t}
 	b.rules = []rangeRule{
+		{contains: "kube_pod_container_resource_", body: emptyMatrix},
 		{contains: "count(sum by (namespace, pod)", body: steady(r, "1")},
 		{contains: "count((", body: steady(r, "2")},
 		{contains: "max_over_time((sum(container_memory", body: steady(r, "300")},
@@ -151,8 +152,8 @@ func TestUsageQueriesAndCoverage(t *testing.T) {
 		t.Errorf("coverage = %+v: one measured pod of two expected must be partial at every step", cov)
 	}
 	qs := b.queries()
-	if len(qs) != 5 {
-		t.Fatalf("%d queries, want 5", len(qs))
+	if len(qs) != 7 {
+		t.Fatalf("%d queries, want 7: five usage, requests and limits", len(qs))
 	}
 	for _, q := range qs {
 		if !strings.Contains(q["query"], `cluster="eu"`) {
@@ -184,8 +185,8 @@ func TestUsageEveryNamespace(t *testing.T) {
 		t.Fatalf("Usage: %v", err)
 	}
 	qs := b.queries()
-	if len(qs) != 5 {
-		t.Fatalf("%d queries, want 5", len(qs))
+	if len(qs) != 7 {
+		t.Fatalf("%d queries, want 7: five usage, requests and limits", len(qs))
 	}
 	for _, q := range qs {
 		if strings.Contains(q["query"], "namespace=") || !strings.Contains(q["query"], `cluster="eu"`) {

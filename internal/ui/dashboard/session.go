@@ -21,11 +21,25 @@ const (
 	sessionHold = 2*models.UsagePollInterval + models.UsagePollInterval/2
 )
 
-// sample is one Metrics API reading of a target.
+// sample is one Metrics API reading of a target, with the requests,
+// limits and allocatable of that moment.
 type sample struct {
 	at, readAt         time.Time
 	cpu, mem           float64
 	measured, expected int
+	cpuRes, memRes     sampleRefs
+}
+
+// sampleRefs are the reference values of one resource at a sample. A
+// limit is zero when one pod had none: then the sum is no ceiling.
+type sampleRefs struct{ requests, limits, capacity float64 }
+
+func refsOf(a models.ResourceAmount) sampleRefs {
+	r := sampleRefs{requests: a.Requests, capacity: a.Capacity}
+	if !a.LimitsPartial {
+		r.limits = a.Limits
+	}
+	return r
 }
 
 // series is the session history of one target, oldest first.
@@ -59,7 +73,10 @@ func (s *session) add(key string, a models.UsageAmounts) bool {
 	if n := len(h.samples); n > 0 && !a.ReadAt.After(h.samples[n-1].readAt) {
 		return false
 	}
-	h.samples = append(h.samples, sample{at: a.At, readAt: a.ReadAt, cpu: a.CPU.Used, mem: a.Memory.Used, measured: a.Measured, expected: a.Running})
+	h.samples = append(h.samples, sample{
+		at: a.At, readAt: a.ReadAt, cpu: a.CPU.Used, mem: a.Memory.Used, measured: a.Measured, expected: a.Running,
+		cpuRes: refsOf(a.CPU), memRes: refsOf(a.Memory),
+	})
 	cut := 0
 	for cut < len(h.samples)-1 && a.At.Sub(h.samples[cut].at) > SessionRetention {
 		cut++
@@ -93,6 +110,25 @@ func (s *session) points(key string) (cpu, mem []chart.Point) {
 		mem = append(mem, chart.Point{At: x.at, V: x.mem})
 	}
 	return cpu, mem
+}
+
+// refPoints returns key's requests, limits and allocatable of one
+// resource as they were at each sample.
+func (s *session) refPoints(key string, memory bool) (requests, limits, capacity []chart.Point) {
+	h := s.byKey[key]
+	if h == nil {
+		return nil, nil, nil
+	}
+	for _, x := range h.samples {
+		r := x.cpuRes
+		if memory {
+			r = x.memRes
+		}
+		requests = append(requests, chart.Point{At: x.at, V: r.requests})
+		limits = append(limits, chart.Point{At: x.at, V: r.limits})
+		capacity = append(capacity, chart.Point{At: x.at, V: r.capacity})
+	}
+	return requests, limits, capacity
 }
 
 // kept returns the time of key's oldest and newest samples.
