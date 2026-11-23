@@ -76,6 +76,10 @@ cert-manager is not installed.`, days),
 				`custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason,NOT_AFTER:.status.notAfter`)...),
 			append([]string{"describe", "certificates.cert-manager.io"}, rc.nsArgs()...),
 		},
+		supplies: []string{
+			"the Ready condition and notAfter of each certificate",
+			"the conditions and events of each certificate",
+		},
 	}
 	warnBefore := time.Duration(days) * 24 * time.Hour
 	return countFinding(rc, f, []schema.GroupVersionResource{ovCertificatesGVR}, func() []overviewTarget {

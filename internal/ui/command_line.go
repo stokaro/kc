@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,23 +36,42 @@ func (a *App) commandLineHeight() int {
 	return 1
 }
 
-// panelCommand returns the kubectl command matching the active panel's folder.
+// panelCommand returns the command shown for the active panel.
 func (a *App) panelCommand() string {
+	return a.panelCommandLine().Show
+}
+
+// panelCommandLine is the command line of the active panel: the selected
+// row's own commands when its folder has them (an overview finding's
+// inputs), otherwise the folder's equivalent kubectl command.
+func (a *App) panelCommandLine() models.CommandLine {
 	panel := a.activePanelRef()
 	if panel == nil {
-		return ""
+		return models.CommandLine{}
 	}
-	if c, ok := panel.Folder().(models.KubectlCommander); ok {
-		return c.KubectlCommand()
+	folder := panel.Folder()
+	if sc, ok := folder.(models.SelectionCommander); ok {
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		item, selected := panel.SelectedNavItem(ctx)
+		cancel()
+		if selected {
+			if line, ok := sc.CommandLineFor(item); ok {
+				return line
+			}
+		}
 	}
-	return ""
+	if c, ok := folder.(models.KubectlCommander); ok {
+		return models.CommandLine{Label: "Command", Show: c.KubectlCommand()}
+	}
+	return models.CommandLine{}
 }
 
 func (a *App) renderCommandLine() string {
 	if a.toastOnCommandLine() {
 		return renderToast(a.toastText, a.toastInfo, a.width)
 	}
-	return renderCommandLine(a.panelCommand(), a.width)
+	line := a.panelCommandLine()
+	return renderLabeledCommandLine(line.Label, line.Show, a.width)
 }
 
 // toastOnCommandLine reports whether the toast covers the command line. It
@@ -79,10 +99,20 @@ func renderToast(msg string, info bool, width int) string {
 }
 
 func renderCommandLine(command string, width int) string {
+	return renderLabeledCommandLine("Command", command, width)
+}
+
+// renderLabeledCommandLine draws the line with label in place of
+// "Command": "Inputs (5)" says the command reads part of what a computed
+// value uses.
+func renderLabeledCommandLine(name, command string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	label := " Command: "
+	if name == "" {
+		name = "Command"
+	}
+	label := " " + name + ": "
 	hint := ""
 	if command != "" {
 		hint = renderCopyHint()
@@ -129,12 +159,21 @@ type copyResultMsg struct {
 }
 
 // copyPanelCommand puts the active panel's command on the clipboard.
+// A finding's inputs are copied whole, with the comments that say what
+// each one supplies.
 func (a *App) copyPanelCommand() tea.Cmd {
-	command := a.panelCommand()
-	if command == "" {
+	line := a.panelCommandLine()
+	if line.Show == "" {
 		return nil
 	}
-	return a.copyText(command, command)
+	text, what := line.Show, line.Show
+	if line.Copy != "" {
+		text = line.Copy
+	}
+	if line.What != "" {
+		what = line.What
+	}
+	return a.copyText(text, what)
 }
 
 // copyText puts text on the clipboard: a local clipboard tool (pbcopy,
