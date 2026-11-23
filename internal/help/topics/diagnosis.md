@@ -1,8 +1,9 @@
 # Diagnosis
 
 `/diagnosis` is a row inside a Service, a Pod, a Deployment, ReplicaSet,
-StatefulSet, DaemonSet or Job, and inside a namespaced custom resource
-that has an entry in the `health:` configuration. It collects what the
+StatefulSet, DaemonSet or Job, an Ingress, a Gateway API HTTPRoute, and
+inside a namespaced custom resource that has an entry in the `health:`
+configuration. It collects what the
 object, its pods, their containers, claims and events say about a
 problem, with the evidence for each finding. Use it when a row is red
 and you want to know why without reading five describes.
@@ -46,6 +47,13 @@ containers too), and a claim that is missing or not Bound (the pod's
 own diagnosis explains the claim further, see Storage below). A Deployment
 whose availability is younger than `overview.startupGrace` is `starting`.
 
+An OOM kill is an `error` while the container is terminated by it or
+crash loops after it. When the container runs again, the kill is a
+`warning` for the first hour and `info` after that: history that shows
+the memory was once too small, with the time of the kill. The `next` row
+cites `limits.memory` when the container has one; without it, the kill
+came from a pod-level limit or from memory pressure on the node.
+
 A running pod whose `Ready` condition is not `True` gets a finding. It
 names the containers that are not ready (sidecars too) and cites the
 `Ready` and `ContainersReady` conditions and the warning events, such as
@@ -54,6 +62,40 @@ A pending readiness gate is reported apart from the containers, since
 another controller sets it. A pod that became unready less than
 `overview.startupGrace` ago is `starting`; completed, failed and
 terminating pods get no readiness finding.
+
+## Ingresses and HTTPRoutes
+
+The routing diagnosis follows the path a route declares, from its class
+or parent Gateways to its backend Services. The summary shows each rule
+(host, path and match type, backends with port and weight), the
+IngressClass or each parent with the listeners that accept the route,
+the Gateway's `Accepted` and `Programmed` conditions and the route's
+own status per parent. Conditions keep their reason, transition time
+and the generation they describe.
+
+Findings cover:
+
+- an IngressClass that does not exist, no class and no default class,
+  or the deprecated class annotation,
+- a backend Service that does not exist, or a port it does not expose,
+- a parent Gateway that does not exist, a `sectionName` or `port` that
+  names no listener, and listeners that refuse the route: protocol,
+  `allowedRoutes` kinds and namespaces (`Same`, `All`, `Selector`) and
+  hostnames that do not intersect,
+- `Accepted`, `ResolvedRefs` or `Programmed` that are `False` or
+  `Unknown`, or describe an older generation, and a parent with no
+  status from any controller,
+- a reference to another namespace without a ReferenceGrant there,
+- a TLS Secret that does not exist (only its metadata is read, never
+  its data), a TLS host without a rule, and no load balancer address.
+
+Resource backends, non-Service backendRefs, non-Gateway parents (mesh)
+and extension filters are listed as `info`, not checked. Services,
+Gateways, ReferenceGrants or namespaces you may not read, and Gateway
+API types the cluster does not serve, give `incomplete` findings,
+never a missing object.
+
+`Enter` on a backend Service opens its Service diagnosis.
 
 ## A pod that cannot be scheduled
 
@@ -138,7 +180,9 @@ are listed only for a pod on a node with a CSI volume.
 ## Limits
 
 - Only API objects are read. A clean result does not prove that DNS,
-  the network, probes, nodes or the application work.
+  the network, probes, nodes or the application work. A routing
+  diagnosis does not test DNS, TLS handshakes or reachability, and does
+  not read controller-specific annotations or policies.
 - Pods are matched by controller owner UID (through the ReplicaSets of
   a Deployment), events by UID. A recreated object with the same name
   does not inherit the old one's pods or events.

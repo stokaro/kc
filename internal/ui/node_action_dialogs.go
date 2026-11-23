@@ -337,8 +337,7 @@ func (m *drainOptionsModel) FooterHints() []FooterHint {
 	}
 }
 
-// maxBlockedLines bounds how many PDB-blocked pods the progress dialog
-// lists.
+// maxBlockedLines bounds how many refused pods the progress dialog lists.
 const maxBlockedLines = 5
 
 // drainDialogWidth is the width the progress dialog opens with when the
@@ -348,7 +347,7 @@ const maxBlockedLines = 5
 const drainDialogWidth = 100
 
 // drainProgressModel shows a running drain: per node its phase, evicted,
-// remaining and PDB-blocked pods. Esc or Enter cancels while it runs and
+// remaining and refused pods. Esc or Enter cancels while it runs and
 // closes once it is done.
 type drainProgressModel struct {
 	nodes         []string
@@ -421,16 +420,22 @@ func (m *drainProgressModel) lines() []string {
 	for _, n := range m.progress.Nodes {
 		out = append(out, fmt.Sprintf(" %-*s  %-9s %7d %9d %7d", nameW, n.Node, n.Phase, n.Evicted, n.Remaining, len(n.Blocked)))
 		for _, b := range n.Blocked {
-			blocked = append(blocked, "   "+b.String())
+			line := "   " + b.String()
+			if b.Evidence != "" {
+				line += "\n     " + b.Evidence
+			}
+			blocked = append(blocked, line)
 		}
 	}
 	out = append(out, "")
 	if len(blocked) > 0 {
-		out = append(out, " Refused (usually by a PodDisruptionBudget), retried every "+nodeaction.DefaultRetryDelay.String()+":")
+		out = append(out, " Refused by the API server, retried every "+nodeaction.DefaultRetryDelay.String()+":")
 		if len(blocked) > maxBlockedLines {
 			blocked = append(blocked[:maxBlockedLines], fmt.Sprintf("   ... and %d more", len(blocked)-maxBlockedLines))
 		}
-		out = append(out, blocked...)
+		for _, b := range blocked {
+			out = append(out, strings.Split(b, "\n")...)
+		}
 		out = append(out, "")
 	}
 	switch {

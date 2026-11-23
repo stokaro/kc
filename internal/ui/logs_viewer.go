@@ -380,15 +380,17 @@ func (v *LogsViewer) statusText() string {
 	if fields := v.fieldsStatus(); fields != "" {
 		text += "; " + fields
 	}
+	// A stream that stopped for good says so, whatever its reader last
+	// reported about reconnecting.
 	switch {
 	case v.opening:
 		text += " (connecting)"
-	case isReconnecting(v.reader):
-		text += " (reconnecting)"
 	case v.err != nil:
 		text += " (failed)"
 	case v.done:
 		text += " (ended)"
+	case isReconnecting(v.reader):
+		text += " (reconnecting)"
 	}
 	return text
 }

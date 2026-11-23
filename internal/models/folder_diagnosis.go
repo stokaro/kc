@@ -24,7 +24,7 @@ import (
 // builtinObjectRows are rows models itself adds inside objects, next to
 // the rows registered with RegisterObjectRows.
 func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
-	diagnosis := gvr == serviceGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr)
+	diagnosis := gvr == serviceGVR || gvr == pvcGVR || hasWorkloadDiagnosis(gvr) || hasRouteDiagnosis(gvr)
 	if !diagnosis && !hasTimeline(gvr) {
 		return nil, false
 	}
@@ -49,11 +49,13 @@ func diagnosisRow(deps Deps, gvr schema.GroupVersionResource, namespace, name st
 		return newDiagnosisFolder(deps, gvr, namespace, name, path)
 	})
 	item.RowItem.details = "Explain the conditions, failing containers, events and claims of this object"
-	switch gvr {
-	case serviceGVR:
+	switch {
+	case gvr == serviceGVR:
 		item.RowItem.details = "Check the selector, pods, EndpointSlices and target ports of this Service"
-	case pvcGVR:
+	case gvr == pvcGVR:
 		item.RowItem.details = "Explain provisioning, binding, attachment and mount events of this claim"
+	case hasRouteDiagnosis(gvr):
+		item.RowItem.details = "Check the class or parents, rules, backend Services and TLS references of this route"
 	}
 	return item
 }
@@ -89,6 +91,8 @@ func diagnosisWatches(gvr schema.GroupVersionResource, namespace string, self re
 		return relatedWatch{gvr: g, namespace: namespace}
 	}
 	switch {
+	case hasRouteDiagnosis(gvr):
+		return routeDiagnosisWatches(gvr, namespace, self), true
 	case gvr == serviceGVR:
 		return []relatedWatch{self, in(podGVR), in(endpointSlicesGVR)}, true
 	case gvr == podGVR:
@@ -128,6 +132,9 @@ const serviceDiagnosisNote = "Configuration only: a consistent Service does not 
 // renders it: summary rows, each finding with the sources it cites, then
 // the backends of a Service.
 func (f *RelatedObjectsFolder) diagnosisRows(ctx context.Context) ([]table.Row, error) {
+	if hasRouteDiagnosis(f.gvr) {
+		return f.routeDiagnosisRows(ctx)
+	}
 	switch f.gvr {
 	case pvcGVR:
 		return f.claimDiagnosisRows(ctx)

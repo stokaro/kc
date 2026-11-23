@@ -34,7 +34,25 @@ notes and the equivalent kubectl command.
 kc then reads the pods on the nodes and refuses at once, changing
 nothing, when kubectl would refuse them (for example "Pods with local
 storage"). Otherwise the red dialog shows what the drain does, how many
-pods it evicts and the `kubectl drain` command.
+pods it evicts and the `kubectl drain` command, and what the evictions
+touch:
+
+- the workloads, by the controller of the evicted pods;
+- each PodDisruptionBudget that covers them, with its status as read
+  now: how many disruptions it allows, current and desired healthy pods,
+  expected pods, how many covered pods are not ready and its
+  `unhealthyPodEvictionPolicy`, and how many evictions will wait until
+  replacements are healthy;
+- how many pods no budget covers, and how many bypass budgets (pending,
+  finished or terminating pods);
+- warnings for a pod that more than one budget covers (the Eviction API
+  refuses it and the drain stops there), for a budget whose status is
+  stale, and for namespaces whose budgets you may not read (their pods'
+  budgets are unknown, not absent).
+
+The budget lines are a snapshot. The API server decides each eviction
+when it arrives, and the preview does not say whether replacements can
+be scheduled.
 
 ## Drain progress
 
@@ -45,8 +63,10 @@ pods and, when chosen, DaemonSet pods stay.
 A dialog shows one line per node: its phase (`waiting`, `cordoning`,
 `evicting`, `drained`, `failed`, `canceled`), and how many pods were
 evicted, remain and are blocked. Below it are the pods whose eviction
-was refused, usually by a PodDisruptionBudget. kc asks again every five
-seconds.
+was refused, with the API server's message. A refusal that names a
+disruption budget also shows that budget as it was when the drain was
+prepared. A 429 without a budget cause (the API server sheds load) is
+shown as such. kc asks again every five seconds.
 
 ## Keys
 

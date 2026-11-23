@@ -160,6 +160,10 @@ func TestNodeActionsEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare drain b: %v", err)
 	}
+	// The preview reads the budget through the scoped cache list.
+	if im := drainB.Impact(); !im.Read || len(im.Budgets) != 1 || im.Budgets[0].Name != "db" || im.Budgets[0].Waiting() != 1 {
+		t.Fatalf("drain b impact = %+v, want budget db with one waiting eviction", im)
+	}
 	drainB.RetryDelay = 50 * time.Millisecond
 	runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -175,6 +179,9 @@ func TestNodeActionsEnvtest(t *testing.T) {
 	}
 	if len(blocked) != 1 || blocked[0].Name != "db-1" || !strings.Contains(blocked[0].Message, "disruption budget") {
 		t.Fatalf("blocked = %+v, want db-1 refused by its disruption budget", blocked)
+	}
+	if want := "when planned: " + ns + "/db allows 0 now"; !strings.HasPrefix(blocked[0].Evidence, want) {
+		t.Fatalf("evidence = %q, want %q...", blocked[0].Evidence, want)
 	}
 	if err := cl.GetAPIReader().Get(ctx, crclient.ObjectKey{Namespace: ns, Name: "db-1"}, &corev1.Pod{}); err != nil {
 		t.Fatalf("db-1 must survive a refused eviction: %v", err)
