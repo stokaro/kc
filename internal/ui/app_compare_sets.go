@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -27,6 +28,9 @@ const (
 	// compareContextKey completes C-x c: the active panel's list against
 	// the same list in another context.
 	compareContextKey = "c"
+	// compareWholeListsKey completes C-x a: the two panels' lists in full,
+	// whatever their filters and marks.
+	compareWholeListsKey = "a"
 	// compareListsTimeout bounds reading both lists. A list of another
 	// context starts its informer first.
 	compareListsTimeout = 30 * time.Second
@@ -45,8 +49,9 @@ type listMetaFolder interface {
 }
 
 // panelListSide describes the object list panel idx shows; false when it
-// shows something else.
-func (a *App) panelListSide(idx int) (setSide, bool) {
+// shows something else. Unless whole is set, the side keeps what the
+// panel shows: its marked rows, else its rows under an active filter.
+func (a *App) panelListSide(idx int, whole bool) (setSide, bool) {
 	nav := a.navigatorFor(idx)
 	if nav == nil || a.cl == nil {
 		return setSide{}, false
@@ -60,7 +65,78 @@ func (a *App) panelListSide(idx int) (setSide, bool) {
 	deps := a.makeDeps(a.cl, a.ensurePanelConfig(a.panelByIndex(idx)), key)
 	set := setdiff.Set{Context: key.ContextName, GVR: gvr, Namespace: ns}
 	set.AllNamespaces = ns == models.AllNamespaces && namespacedResource(a.cl.RESTMapper(), gvr)
+	if !whole {
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		set.Selection = panelSelection(ctx, a.panelByIndex(idx), gvr)
+		cancel()
+	}
 	return setSide{set: set, deps: deps}, true
+}
+
+// uidRow is a row that knows the object instance it shows.
+type uidRow interface {
+	UID() types.UID
+}
+
+// selectionMember is the identity of an object row of gvr.
+func selectionMember(item models.Item, gvr schema.GroupVersionResource) (setdiff.Member, bool) {
+	obj, ok := item.(models.ObjectItem)
+	if !ok || obj.GVR() != gvr || obj.Name() == "" {
+		return setdiff.Member{}, false
+	}
+	m := setdiff.Member{Namespace: obj.Namespace(), Name: obj.Name()}
+	if u, ok := item.(uidRow); ok {
+		m.UID = u.UID()
+	}
+	return m, true
+}
+
+// panelSelection freezes what panel shows of gvr: the marked rows when
+// there are any (the rows F5 and F8 act on), else the rows its row filter
+// keeps when a filter is active, else the whole list.
+func panelSelection(ctx context.Context, panel *Panel, gvr schema.GroupVersionResource) setdiff.Selection {
+	if panel == nil {
+		return setdiff.Selection{}
+	}
+	filter := ""
+	if f, ok := panel.RowFilter(); ok && f.Active() {
+		filter = f.Label()
+	}
+	var marked []setdiff.Member
+	for _, item := range panel.GetSelectedItems() {
+		if m, ok := selectionMember(item.Item, gvr); ok {
+			marked = append(marked, m)
+		}
+	}
+	if len(marked) > 0 {
+		return setdiff.Selection{Scope: setdiff.Marked, Members: marked, Filter: filter}
+	}
+	folder := panel.Folder()
+	if filter == "" || folder == nil {
+		return setdiff.Selection{}
+	}
+	sel := setdiff.Selection{Scope: setdiff.Visible, Filter: filter, Members: make([]setdiff.Member, 0)}
+	for _, row := range folder.Lines(ctx, 0, folder.Len(ctx)) {
+		if item, ok := row.(models.Item); ok {
+			if m, ok := selectionMember(item, gvr); ok {
+				sel.Members = append(sel.Members, m)
+			}
+		}
+	}
+	return sel
+}
+
+// pairSelections makes a side without a selection follow the other side's:
+// with a filter or marks on one panel only, the other panel contributes the
+// counterparts of those rows instead of its whole list.
+func pairSelections(left, right *setSide) {
+	l, r := left.set.Selection.Scope, right.set.Selection.Scope
+	switch {
+	case l != setdiff.Whole && r == setdiff.Whole:
+		right.set.Selection = setdiff.Selection{Scope: setdiff.Counterparts}
+	case r != setdiff.Whole && l == setdiff.Whole:
+		left.set.Selection = setdiff.Selection{Scope: setdiff.Counterparts}
+	}
 }
 
 // namespacedResource reports whether gvr is namespaced; unknown counts as
@@ -80,20 +156,40 @@ func namespacedResource(mapper meta.RESTMapper, gvr schema.GroupVersionResource)
 	return mapping.Scope.Name() == meta.RESTScopeNameNamespace
 }
 
-// compareLists compares the object lists of the two panels (C-x d).
+// compareLists compares what the two panels show (C-x d): marked rows,
+// else rows under a filter, else the whole lists.
 func (a *App) compareLists() tea.Cmd {
-	left, okL := a.panelListSide(0)
-	right, okR := a.panelListSide(1)
+	return a.comparePanelLists(false)
+}
+
+// compareWholeLists compares the two panels' lists in full (C-x a).
+func (a *App) compareWholeLists() tea.Cmd {
+	return a.comparePanelLists(true)
+}
+
+func (a *App) comparePanelLists(whole bool) tea.Cmd {
+	left, okL := a.panelListSide(0, whole)
+	right, okR := a.panelListSide(1, whole)
 	if !okL || !okR {
 		return a.ShowToast("Compare lists: open an object list in each panel", 3*time.Second)
 	}
+	pairSelections(&left, &right)
 	return a.runSetCompare(left, right, nil)
 }
 
-// compareListWithContext asks for a context and compares the active
-// panel's list with the same type and namespace there (C-x c).
+// compareListWithContext asks for a context and compares what the active
+// panel shows with the same type and namespace there (C-x c).
 func (a *App) compareListWithContext() tea.Cmd {
-	side, ok := a.panelListSide(a.activePanel)
+	return a.compareWithContextPicker(false)
+}
+
+// compareWholeListWithContext is C-x c for the whole list.
+func (a *App) compareWholeListWithContext() tea.Cmd {
+	return a.compareWithContextPicker(true)
+}
+
+func (a *App) compareWithContextPicker(whole bool) tea.Cmd {
+	side, ok := a.panelListSide(a.activePanel, whole)
 	if !ok {
 		return a.ShowToast("Compare with context: open an object list in the active panel", 3*time.Second)
 	}
@@ -145,6 +241,7 @@ func (a *App) compareWithContext(left setSide, target *kubeconfig.Context) tea.C
 	}
 	right := left
 	right.set.Context = target.Name
+	right.set.Selection = setdiff.Selection{Scope: setdiff.Counterparts}
 	right.deps = a.makeDeps(nil, left.deps.AppConfig, key)
 	pool := a.clPool
 	acquire := func(ctx context.Context) (*kccluster.Cluster, func(), error) {
@@ -218,7 +315,7 @@ func (a *App) applySetCompare(msg setCompareMsg) tea.Cmd {
 		return a.ShowToast("Compare lists: "+msg.err.Error(), 6*time.Second)
 	}
 	a.showSetCompare(msg)
-	return a.ShowInfo(msg.report.Summary(), 5*time.Second)
+	return a.ShowInfo(msg.report.Summary()+" | "+msg.report.Scopes(), 8*time.Second)
 }
 
 // setCompareChoices lists the rows of a report for the picker: the state,
@@ -233,7 +330,7 @@ func setCompareChoices(r setdiff.Report) []scopeChoice {
 
 // setCompareTitle names both sides, and the paired namespaces.
 func setCompareTitle(r setdiff.Report) string {
-	title := "left " + r.Left.Label() + " | right " + r.Right.Label()
+	title := "left " + r.Left.Label() + " [" + r.LeftCount.String() + "] | right " + r.Right.Label() + " [" + r.RightCount.String() + "]"
 	if r.PairedNamespaces {
 		title += " (metadata.namespace ignored)"
 	}
@@ -246,7 +343,7 @@ func (a *App) showSetCompare(msg setCompareMsg) {
 	r := msg.report
 	choices := setCompareChoices(r)
 	if len(choices) == 0 {
-		choices = []scopeChoice{{Label: "both lists are empty", Value: "-1"}}
+		choices = []scopeChoice{{Label: "nothing to compare: " + r.Scopes(), Value: "-1"}}
 	}
 	picker := NewScopePickerModel(choices, "", func(c scopeChoice) tea.Cmd {
 		var i int

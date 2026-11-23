@@ -38,6 +38,8 @@ func (a *App) handleCtrlXKey(press tea.KeyPressMsg) tea.Cmd {
 		return a.compareListWithContext()
 	case metricSourcesKey:
 		return a.showMetricSources()
+	case compareWholeListsKey:
+		return a.compareWholeLists()
 	}
 	if cmd, ok := a.handlePinChord(press.String()); ok {
 		return cmd

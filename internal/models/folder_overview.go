@@ -339,7 +339,9 @@ func (i *OverviewEventItem) LinkTarget() (ObjectRef, string) { return i.ref, i.m
 
 // involvedObjectRef maps an event's involved object to a GVR with the
 // RESTMapper (cached discovery, no request). An object without a namespace
-// of its own is in the event's namespace when its kind is namespaced.
+// of its own is in the event's namespace when its kind is namespaced. The
+// reference keeps the involved object's UID, so opening it can tell the
+// object the event is about from a later object with the same name.
 func involvedObjectRef(deps Deps, o corev1.ObjectReference, eventNamespace string) (ObjectRef, string) {
 	if deps.Cl == nil {
 		return ObjectRef{}, "the cluster's API types are not known yet; try again"
@@ -364,7 +366,7 @@ func involvedObjectRef(deps Deps, o corev1.ObjectReference, eventNamespace strin
 			ns = eventNamespace
 		}
 	}
-	return ObjectRef{GVR: mapping.Resource, Namespaced: namespaced, Namespace: ns, Name: o.Name}, ""
+	return ObjectRef{GVR: mapping.Resource, Namespaced: namespaced, Namespace: ns, Name: o.Name, UID: o.UID}, ""
 }
 
 // resourceVerbsByGVR returns the verbs discovery lists per resource, so the
