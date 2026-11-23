@@ -31,10 +31,10 @@ func TestResourceDetailTellsTwinRowsApart(t *testing.T) {
 		entry resourceEntry
 		want  []string
 	}{
-		{name: "core events", entry: coreEvents, want: []string{"events (v1)", "kubectl get events", "same objects"}},
-		{name: "events.k8s.io events", entry: newEvents, want: []string{"events (events.k8s.io/v1)", "same Event objects as the v1 row"}},
+		{name: "core events", entry: coreEvents, want: []string{"events (v1): core Events, what kubectl get events lists"}},
+		{name: "events.k8s.io events", entry: newEvents, want: []string{"events (events.k8s.io/v1): the same Events, newer API"}},
 		{name: "unique name", entry: pods, want: []string{"pods (v1)"}},
-		{name: "other twin", entry: argoApps, want: []string{"applications (argoproj.io/v1alpha1)", "/applications (app.k8s.io/v1beta1) is a different type"}},
+		{name: "other twin", entry: argoApps, want: []string{"applications (argoproj.io/v1alpha1)", "another type of this name is in app.k8s.io/v1beta1"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
