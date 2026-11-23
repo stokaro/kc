@@ -686,3 +686,32 @@ func TestLaneUnderSideBySideCharts(t *testing.T) {
 		t.Errorf("the 09:58 warning is at column %d, want just left of the CPU chart's end at %d:\n%s", col, cpuEnd, strings.Join(lines, "\n"))
 	}
 }
+
+// TestShortListShowsThePodsOfTheSelection: a namespace with few
+// workloads uses the rest of the list for the pods of the selected one.
+func TestShortListShowsThePodsOfTheSelection(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	wl := &models.InfoWorkload{GVR: deployGVR, Namespace: "shop", Name: "web"}
+	a.Rows = []models.UsageRow{{Workload: wl, Namespace: "shop", Name: "web", Pods: 2, Ready: 1, Measured: 2}}
+	a.PodRows = []models.UsageRow{podRow("web-1", 0.3, 200<<20, ""), podRow("web-2", 0.1, 100<<20, "CrashLoopBackOff")}
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, dashboard.Target{Kind: dashboard.KindScope, Namespace: "shop"}, 150, 42)
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "Workloads in shop", "Pods of Deployment web (Enter to open)", "web-1", "⚠ CrashLoopBackOff · 7 restarts")
+	// The pods are shown, not selectable: Down stays on the workload.
+	key(t, m, "down")
+	key(t, m, "enter")
+	requireText(t, screen(t, m, 150, 42), "Pods of Deployment web", "› Deployment web")
+}
+
+// TestLongPodNamesKeepTheirEnd: a pod name too long for the list keeps
+// its random suffix, which tells the pods of a workload apart.
+func TestLongPodNamesKeepTheirEnd(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	a.Rows = []models.UsageRow{podRow("web-6989b69646-dgqgj", 0.3, 200<<20, "")}
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, web, 150, 42)
+	requireText(t, screen(t, m, 150, 42), "web-698…-dgqgj")
+}

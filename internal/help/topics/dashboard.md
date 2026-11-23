@@ -20,7 +20,9 @@ all of them). `Esc` or `F10` returns to the panels as you left them.
   red. A row with a problem has a second line, for example
   `⚠ CrashLoopBackOff · 7 restarts`, `1 container OOMKilled`, `Pending` or
   `not ready`. The first row, `.. up to …`, goes back to the parent.
-  The bottom border counts the pods and the ready ones.
+  When the workloads leave room, the pods of the selected one are
+  listed under them. The bottom border counts the pods and the ready
+  ones.
 - **CPU, cores** and **Memory**: the usage as a filled area, with the
   request and the limit as dashed lines, and the allocatable for a node
   or all namespaces. The line above each chart says in words what they
@@ -35,13 +37,13 @@ The focused frame has its title highlighted. `Tab` moves the focus.
 
 - The scale fits the usage. A request or limit far above it is not
   drawn as a line at the top: an `↑` at the top right says it is above
-  the chart, and the line above the chart says `↑ off the scale` with
-  its value.
+  the chart, and the line above the chart says `↑ above` after its
+  value.
 - Each request and limit is the value of its time, so a raised request
   steps up where it changed: with Prometheus it comes from
   kube-state-metrics, else from what this session sampled. The limit is
   not drawn where a container had no limit: the sum is then no ceiling,
-  and the cursor says `limit not set on all pods`. Today's values are
+  and the cursor says `limit missing on some pods`. Today's values are
   never drawn over the past.
 - `no data` on a gray band marks the time where nothing was measured.
   A chart never draws a zero for missing data.
@@ -68,8 +70,9 @@ repeated Event marks its first and last time.
 The API server keeps Events about an hour by default; the bottom border
 says since when. Before that time the lane says `no Events kept before
 09:10`: kc does not know what happened then, which is not the same as
-nothing. `← 3 earlier` means the range has Events before the first
-sample of a chart that is still filling.
+nothing. `← 3 Events before the chart starts` means the range has
+Events before the first sample of a chart that is still filling; the
+list shows them.
 
 The list has the time, type, reason, object, count and message, newest
 first. With the cursor on a chart it holds the Events of the cursor

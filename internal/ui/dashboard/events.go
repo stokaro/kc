@@ -234,7 +234,7 @@ func (m *Model) laneLabels(v *view, lane []rune, cells int) string {
 		unknown++
 	}
 	if n := m.earlierEvents(v); n > 0 && unknown == 0 {
-		put(0, "← "+strconv.Itoa(n)+" earlier", markNormal)
+		put(0, "← "+plural(n, "Event")+" before the chart starts", markNormal)
 	}
 	for _, l := range m.markLabels(v, cells) {
 		n := len([]rune(l.text))
@@ -449,9 +449,5 @@ func (m *Model) cursorTime(v *view) time.Time {
 // laneLead is the label left of the lane, in the room of the charts'
 // value labels, or blanks when it does not fit.
 func laneLead(lead int) string {
-	const label = "Events "
-	if lead < len(label) {
-		return strings.Repeat(" ", lead)
-	}
-	return lpad(label, lead)
+	return strings.Repeat(" ", lead)
 }

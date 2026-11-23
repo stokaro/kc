@@ -83,7 +83,7 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) string {
 			x = c.Cells() - 1
 		}
 		if c.OffScaleAt(i, x) {
-			return " ↑ off the scale"
+			return " ↑ above"
 		}
 		return ""
 	}
@@ -99,7 +99,7 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) string {
 	limPart := swatch(limStyle, "┄") + " limit "
 	switch {
 	case !limKnown:
-		limPart += "not set on all pods"
+		limPart += "missing on some pods"
 	case lim <= 0:
 		limPart += "none set"
 	case useKnown && use >= limitNear*lim:

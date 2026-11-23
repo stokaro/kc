@@ -175,15 +175,7 @@ func (m *Model) targetLines(v *view, w, h int) ([]string, []int) {
 		nameW = w - colReady - colMem - colPct
 	}
 	nameW = max(minNameCol, nameW)
-	head := pad("Name", nameW) + lpad("Ready", colReady)
-	if wide {
-		head += lpad("CPU", colCPU) + lpad("of req", colPct)
-	}
-	head += lpad("Memory", colMem) + lpad("of req", colPct)
-	if wide {
-		head += lpad("Restarts", colRst)
-	}
-	lines, at := []string{headStyle().Render(fit(head, w))}, []int{-1}
+	lines, at := []string{headStyle().Render(fit(listHeader(wide, nameW), w))}, []int{-1}
 	if len(items) == 0 {
 		note := v.now.Note
 		switch {
@@ -226,7 +218,42 @@ func (m *Model) targetLines(v *view, w, h int) ([]string, []int) {
 			lines, at = append(lines, l), append(at, b.item)
 		}
 	}
+	// A short list of workloads leaves room: show the pods of the
+	// selected one under it.
+	if v.sel < len(items) && items[v.sel].row.Workload != nil && h-len(lines) >= 3 {
+		pods := podsOf(v, items[v.sel].row.Workload, wide, nameW, w)
+		pods = pods[:min(len(pods), h-len(lines))]
+		lines = append(lines, pods...)
+		for range pods {
+			at = append(at, -1)
+		}
+	}
 	return lines, at
+}
+
+// listHeader names the columns of the list.
+func listHeader(wide bool, nameW int) string {
+	head := pad("Name", nameW) + lpad("Ready", colReady)
+	if wide {
+		head += lpad("CPU", colCPU) + lpad("of req", colPct)
+	}
+	head += lpad("Memory", colMem) + lpad("of req", colPct)
+	if wide {
+		head += lpad("Restarts", colRst)
+	}
+	return head
+}
+
+// podsOf are the lines of the pods of workload wl under the list: a
+// blank line, a heading and the pods, which are shown, not selected.
+func podsOf(v *view, wl *models.InfoWorkload, wide bool, nameW, w int) []string {
+	lines := []string{"", headStyle().Render(fit("Pods of "+workloadKind(wl.GVR)+" "+wl.Name+" (Enter to open)", w))}
+	for _, p := range v.now.PodRows {
+		if p.Owner != nil && *p.Owner == *wl {
+			lines = append(lines, itemLines(targetItem{row: p}, false, wide, false, false, nameW, w)...)
+		}
+	}
+	return lines
 }
 
 // itemLines draws one item: its numbers, and under them what is not well.
@@ -257,7 +284,7 @@ func itemLines(it targetItem, sel, wide, showNS, showKind bool, nameW, w int) []
 	if sel {
 		base, readySt, cpuSt, memSt = curStyle(), curStyle(), curStyle(), curStyle()
 	}
-	line := base.Render(pad(truncate(name, nameW-1), nameW)) + readySt.Render(lpad(ready, colReady))
+	line := base.Render(pad(truncateMiddle(name, nameW-1), nameW)) + readySt.Render(lpad(ready, colReady))
 	if wide {
 		line += base.Render(lpad(cpu, colCPU)) + cpuSt.Render(lpad(cpuPct, colPct))
 	}
@@ -356,4 +383,15 @@ func (m *Model) firstRow(v *view) {
 	if _, ok := m.parent(v); ok {
 		v.sel = 1
 	}
+}
+
+// truncateMiddle shortens s to w runes by cutting its middle, so the end
+// that tells pods of one workload apart stays: web-69…-dgqgj.
+func truncateMiddle(s string, w int) string {
+	r := []rune(s)
+	if len(r) <= w || w < 3 {
+		return truncate(s, w)
+	}
+	tail := (w - 1) / 2
+	return string(r[:w-1-tail]) + "…" + string(r[len(r)-tail:])
 }

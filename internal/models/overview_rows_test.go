@@ -63,6 +63,21 @@ func TestUsageAmountsRows(t *testing.T) {
 			t.Errorf("web row = %+v", r)
 		}
 	})
+	t.Run("the scope also has a row per pod; a workload has none", func(t *testing.T) {
+		t.Parallel()
+		var deployment int
+		for _, r := range usageAmounts(report, nil, UsageFocus{}, 3).PodRows {
+			if r.Owner != nil && *r.Owner == wlDeployment {
+				deployment++
+			}
+		}
+		if deployment != 3 {
+			t.Errorf("%d pod rows of the Deployment, want 3", deployment)
+		}
+		if p := usageAmounts(report, nil, UsageFocus{Workload: &wlDeployment}, 3).PodRows; p != nil {
+			t.Errorf("a workload has pod rows %+v; its Rows are pods", p)
+		}
+	})
 	t.Run("a pod row names its owner", func(t *testing.T) {
 		t.Parallel()
 		r := usageAmounts(report, nil, UsageFocus{PodNamespace: "a", Pod: "web-1"}, 3).Rows

@@ -70,6 +70,10 @@ type UsageAmounts struct {
 	// Rows break the focus down: by top workload for the scope or a node,
 	// by pod for a workload or a pod; most memory first.
 	Rows []UsageRow
+	// PodRows are the rows of each pod when Rows are workloads, so the
+	// pods of a workload can be shown without drilling down; nil
+	// otherwise.
+	PodRows []UsageRow
 	// Events are the retained Kubernetes Events about the focus.
 	Events UsageEvents
 }
@@ -204,7 +208,12 @@ func usageAmounts(report *overviewReport, err error, focus UsageFocus, topN int)
 			out.Top = append(out.Top, UsageConsumer{Namespace: p.namespace, Name: p.name, Node: p.node, CPU: cores(p.cpu), Memory: float64(p.mem)})
 		}
 	}
-	out.Rows = usageRows(report.amounts.pods, in, focus.Pod == "" && focus.Workload == nil)
+	if byWorkload := focus.Pod == "" && focus.Workload == nil; byWorkload {
+		out.Rows = usageRows(report.amounts.pods, in, true)
+		out.PodRows = usageRows(report.amounts.pods, in, false)
+	} else {
+		out.Rows = usageRows(report.amounts.pods, in, false)
+	}
 	out.CPU.Used, out.CPU.Requests, out.CPU.Limits = cores(cpuUse), cores(cpuReq), cores(cpuLim)
 	out.Memory.Used, out.Memory.Requests, out.Memory.Limits = float64(memUse), float64(memReq), float64(memLim)
 	if !out.CPU.UsedKnown {

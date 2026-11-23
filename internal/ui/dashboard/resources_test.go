@@ -50,10 +50,10 @@ func TestRequestsFromHistoryNotToday(t *testing.T) {
 	}}
 	m := open(t, f, true, web, 240, 42)
 	key(t, m, "home")
-	requireText(t, screen(t, m, 240, 42), "█ usage 0.25 (highest)  ┄ request 0.5 (50% used)  ┄ limit 2 ↑ off the scale")
+	requireText(t, screen(t, m, 240, 42), "█ usage 0.25 (highest)  ┄ request 0.5 (50% used)  ┄ limit 2 ↑ above")
 	key(t, m, "end")
 	lines := screen(t, m, 240, 42)
-	requireText(t, lines, "█ usage 0.25 (highest)  ┄ request 1 (25% used) ↑ off the scale  ┄ limit 2 ↑ off the scale")
+	requireText(t, lines, "█ usage 0.25 (highest)  ┄ request 1 (25% used) ↑ above  ┄ limit 2 ↑ above")
 	for _, l := range lines {
 		if strings.Contains(l, "request 3") || strings.Contains(l, "limit 4") {
 			t.Fatalf("today's spec drawn over the past: %q", l)
@@ -63,7 +63,7 @@ func TestRequestsFromHistoryNotToday(t *testing.T) {
 	unlimited := false
 	key(t, m, "home")
 	for range 20 {
-		if l := screen(t, m, 240, 42); contains(l, "request 0.5 (50% used)  ┄ limit not set on all pods") {
+		if l := screen(t, m, 240, 42); contains(l, "request 0.5 (50% used)  ┄ limit missing on some pods") {
 			unlimited = true
 			break
 		}
