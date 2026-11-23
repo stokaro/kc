@@ -296,6 +296,15 @@ type OverviewConfig struct {
 	// CertificateExpiryDays flags a cert-manager Certificate whose
 	// status.notAfter is less than this many days away.
 	CertificateExpiryDays int `json:"certificateExpiryDays"`
+	// StartupGrace is how long a pod that is not ready or still pending, or
+	// a Deployment that is rolling out or not yet available, counts as
+	// starting rather than as a problem. It applies only to states the API
+	// server dates; explicit failures never wait.
+	StartupGrace metav1.Duration `json:"startupGrace"`
+	// UsageHysteresisPercent holds a container flagged near its memory or
+	// CPU limit until its usage drops this many points below the warning
+	// percent, so a value around the threshold does not flap.
+	UsageHysteresisPercent int `json:"usageHysteresisPercent"`
 }
 
 // TimelineConfig bounds the revisions kc keeps while it records objects. A
@@ -354,6 +363,8 @@ func DefaultOverview() OverviewConfig {
 		VolumeWarnPercent:        80,
 		StatsMaxNodes:            50,
 		CertificateExpiryDays:    14,
+		StartupGrace:             metav1.Duration{Duration: 5 * time.Minute},
+		UsageHysteresisPercent:   5,
 	}
 }
 
@@ -363,6 +374,9 @@ func (o OverviewConfig) Normalized() OverviewConfig {
 	d := DefaultOverview()
 	if o.Window.Duration <= 0 {
 		o.Window = d.Window
+	}
+	if o.StartupGrace.Duration <= 0 {
+		o.StartupGrace = d.StartupGrace
 	}
 	positive := func(v *int, def int) {
 		if *v <= 0 {
@@ -385,6 +399,7 @@ func (o OverviewConfig) Normalized() OverviewConfig {
 	positive(&o.VolumeWarnPercent, d.VolumeWarnPercent)
 	positive(&o.StatsMaxNodes, d.StatsMaxNodes)
 	positive(&o.CertificateExpiryDays, d.CertificateExpiryDays)
+	positive(&o.UsageHysteresisPercent, d.UsageHysteresisPercent)
 	if o.UnderRequestedFactor <= 1 {
 		// A factor of 1 or less would flag every node that uses what it
 		// requests.
@@ -518,6 +533,40 @@ type CommandConfig struct {
 	// Dangerous marks a command that changes the cluster. Read-only mode
 	// hides and refuses dangerous commands; every other command still runs.
 	Dangerous bool `json:"dangerous,omitempty"`
+	// Diagnostic runs a local tool once, without a shell, and shows its
+	// parsed output as a report instead of a terminal panel. Command stays
+	// empty then.
+	Diagnostic *DiagnosticConfig `json:"diagnostic,omitempty"`
+}
+
+// DiagnosticAdapterKRR parses `krr simple -f json` output.
+const DiagnosticAdapterKRR = "krr"
+
+// DiagnosticAdapters are the output parsers kc has.
+var DiagnosticAdapters = []string{DiagnosticAdapterKRR}
+
+// DefaultDiagnosticTimeout bounds a diagnostic run without a timeout.
+const DefaultDiagnosticTimeout = 5 * time.Minute
+
+// DiagnosticConfig is the `diagnostic:` block of a custom command.
+type DiagnosticConfig struct {
+	// Adapter names the parser of the tool's standard output.
+	Adapter string `json:"adapter"`
+	// Args is the argument vector. The first element is the executable,
+	// looked up in PATH; it is not a template. Each other element is
+	// rendered as a template on its own and passed as one argument, so a
+	// selected name never becomes shell syntax.
+	Args []string `json:"args"`
+	// Timeout stops the tool; zero means DefaultDiagnosticTimeout.
+	Timeout metav1.Duration `json:"timeout,omitzero"`
+}
+
+// EffectiveTimeout is Timeout, or the default when it is unset.
+func (d DiagnosticConfig) EffectiveTimeout() time.Duration {
+	if d.Timeout.Duration > 0 {
+		return d.Timeout.Duration
+	}
+	return DefaultDiagnosticTimeout
 }
 
 // ObjectsConfig controls object-list specific options.

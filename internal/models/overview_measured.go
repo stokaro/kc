@@ -106,13 +106,19 @@ func containerLimitRule(rc *ruleContext, f overviewFinding, resource corev1.Reso
 				return
 			}
 			best, bestName, bestLimit := highestLimitUse(p, used, resource)
-			if bestName == "" || best < float64(warnPercent) {
+			if bestName == "" {
 				return
 			}
-			out = append(out, overviewTarget{
-				gvr: ovPodsGVR, namespace: p.Namespace, name: p.Name, severity: severityWarning, rank: best,
-				value: value(bestName, best, bestLimit),
-			})
+			t := overviewTarget{gvr: ovPodsGVR, namespace: p.Namespace, name: p.Name, uid: p.UID, severity: severityWarning, rank: best}
+			held := rc.heldBelow(f.id, t, best, warnPercent)
+			if best < float64(warnPercent) && !held {
+				return
+			}
+			t.value = value(bestName, best, bestLimit)
+			if held {
+				t.value += fmt.Sprintf(", held until below %d%%", warnPercent-rc.cfg.UsageHysteresisPercent)
+			}
+			out = append(out, t)
 		})
 		return out
 	})

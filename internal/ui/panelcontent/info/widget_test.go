@@ -59,8 +59,8 @@ func (h *harness) last() *fakeSource { return h.opened[len(h.opened)-1] }
 
 func bars(cpu, mem float64) []models.InfoBar {
 	return []models.InfoBar{
-		{Label: "CPU", Known: true, Usage: true, Percent: cpu, Detail: "pods 1.0/4.0 cores allocatable, 25%", More: []string{"node 1.2/4.0 cores capacity, 30%", "req 10%, lim 20%"}, Flag: "ok", Health: models.RowHealthOK},
-		{Label: "Memory", Known: true, Usage: true, Percent: mem, Detail: "pods 5.5/10.0 Gi allocatable, 55% (under-req)", More: []string{"node 6.0/12.0 Gi capacity, 50%", "req 10%, lim 64%"}, Flag: "under-req", Health: models.RowHealthNotReady},
+		{Label: "CPU", Known: true, Usage: true, Base: "allocatable", Percent: cpu, Detail: "pods 1.0/4.0 cores allocatable, 25%", More: []string{"node 1.2/4.0 cores capacity, 30%", "req 10%, lim 20%"}, Flag: "ok", Health: models.RowHealthOK},
+		{Label: "Memory", Known: true, Usage: true, Base: "allocatable", Percent: mem, Detail: "pods 5.5/10.0 Gi allocatable, 55% (under-req)", More: []string{"node 6.0/12.0 Gi capacity, 50%", "req 10%, lim 64%"}, Flag: "under-req", Health: models.RowHealthNotReady},
 		{Label: "Pods", Known: true, Percent: 25, Detail: "27/110", Flag: "ok"},
 		{Label: "Disk", Detail: "forbidden: nodes/proxy"},
 	}
@@ -149,6 +149,9 @@ func TestWidgetViewAndHistory(t *testing.T) {
 	if strings.ContainsAny(view, "▁▂▃▄▅▆▇") {
 		t.Fatalf("a sparkline after one sample:\n%s", view)
 	}
+	if !strings.Contains(view, "% of allocatable: collecting, 1 sample so far") {
+		t.Fatalf("one sample must say it is collecting:\n%s", view)
+	}
 	for i, line := range h.w.lines(60, 40) {
 		if w := ansi.StringWidth(line); w > 60 {
 			t.Fatalf("line %d is %d cells wide: %q", i, w, line)
@@ -158,18 +161,18 @@ func TestWidgetViewAndHistory(t *testing.T) {
 	// The same measurement adds no sample; a new one does.
 	h.last().summary.Bars = bars(25, 100)
 	_, _ = h.w.Update(ctx, tickMsg{w: h.w, gen: h.w.gen})
-	if got := len(h.w.history[h.w.historyKey()].mem); got != 1 {
+	if got := len(h.w.history[h.w.historyKey()].mem.samples); got != 1 {
 		t.Fatalf("samples after a read of the same measurement = %d, want 1", got)
 	}
 	h.last().summary.UsageAt = h.now
 	_, _ = h.w.Update(ctx, tickMsg{w: h.w, gen: h.w.gen})
 	hist := h.w.history[h.w.historyKey()]
-	if len(hist.mem) != 2 || hist.mem[1] != 100 {
-		t.Fatalf("memory samples = %v, want [55 100]", hist.mem)
+	if len(hist.mem.samples) != 2 || hist.mem.samples[1].v != 100 {
+		t.Fatalf("memory samples = %v, want 55 then 100", hist.mem.samples)
 	}
-	view = strings.Join(h.w.lines(60, 40), "\n")
-	if !strings.Contains(view, "▅█") {
-		t.Fatalf("no memory sparkline:\n%s", view)
+	view = ansi.Strip(strings.Join(h.w.lines(60, 40), "\n"))
+	if !strings.Contains(view, "█\n        % of allocatable · 2 samples over 5s · 15m session") {
+		t.Fatalf("no labeled memory sparkline:\n%s", view)
 	}
 	if got := len(h.w.lines(60, 3)); got != 3 {
 		t.Fatalf("lines in 3 rows = %d", got)
@@ -301,10 +304,9 @@ func TestRenderBarAndSparkline(t *testing.T) {
 			t.Errorf("renderBar(%v, %d) = %q, want %q", tc.pct, tc.width, got, tc.want)
 		}
 	}
-	if got := sparkline([]float64{0, 50, 100, 120}, 10); got != "▁▅██" {
-		t.Errorf("sparkline = %q", got)
-	}
-	if got := sparkline([]float64{0, 50, 100}, 2); got != "▅█" {
-		t.Errorf("sparkline keeps the newest samples: %q", got)
+	for v, want := range map[float64]rune{0: '▁', 50: '▅', 100: '█', 120: '█', -3: '▁'} {
+		if got := sparkRune(v); got != want {
+			t.Errorf("sparkRune(%v) = %q, want %q", v, got, want)
+		}
 	}
 }

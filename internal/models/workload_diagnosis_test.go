@@ -475,6 +475,25 @@ func TestDiagnoseWorkload(t *testing.T) {
 			}
 		},
 	}, {
+		name: "a Deployment becoming available is starting inside the grace",
+		in: func(t *testing.T) workloadInput {
+			dep := dgDeployment("dep-1", func(d *appsv1.Deployment) {
+				d.Status.AvailableReplicas = 0
+				d.Status.Conditions = []appsv1.DeploymentCondition{{
+					Type: appsv1.DeploymentAvailable, Status: corev1.ConditionFalse, LastTransitionTime: metav1.NewTime(diagNow.Add(-time.Minute)),
+				}}
+			})
+			in := deploymentInput(t, dep)
+			in.Grace = 5 * time.Minute
+			return in
+		},
+		check: func(t *testing.T, d diagReport) {
+			f := findingByCode(t, d, "unavailable")
+			if f.Severity != diagInfo || f.Title != "1 of 1 replicas are unavailable, starting 60s (grace 5m)" {
+				t.Fatalf("finding = %+v", f)
+			}
+		},
+	}, {
 		name: "a StatefulSet counts ready replicas",
 		in: func(t *testing.T) workloadInput {
 			sts := &appsv1.StatefulSet{

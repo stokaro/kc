@@ -52,6 +52,9 @@ type workloadInput struct {
 	GVR    schema.GroupVersionResource
 	Object *unstructured.Unstructured // the workload or pod as read
 	Now    time.Time                  // the read time
+	// Grace is the startup grace (overview.startupGrace): a Deployment
+	// whose Available=False condition is younger is starting, not failing.
+	Grace time.Duration
 
 	Pods           []corev1.Pod // the pods of the namespace; unused for a pod
 	PodsErr        error
@@ -193,7 +196,14 @@ func (in *workloadInput) deploymentFindings(dep *appsv1.Deployment, owners map[t
 	if available != nil {
 		since = &available.LastTransitionTime
 	}
-	out = append(out, in.replicaFinding(replicasOf(dep.Spec.Replicas), dep.Status.AvailableReplicas, "status.availableReplicas", since)...)
+	replicas := in.replicaFinding(replicasOf(dep.Spec.Replicas), dep.Status.AvailableReplicas, "status.availableReplicas", since)
+	if len(replicas) == 1 && since != nil && !since.IsZero() && !deploymentFailed(dep) && in.Now.Sub(since.Time) < in.Grace {
+		f := &replicas[0]
+		f.Severity = diagInfo
+		f.Title += fmt.Sprintf(", starting %s (grace %s)", shortDuration(in.Now.Sub(since.Time)), shortDuration(in.Grace))
+		f.Detail += " Available became False less than the startup grace ago and the rollout has no failed condition."
+	}
+	out = append(out, replicas...)
 	if in.ReplicaSetsErr != nil {
 		out = append(out, unavailableSource("replicasets-unknown", "ReplicaSets", "which pods belong to the Deployment", in.ReplicaSetsErr, relReplicaSetsGVR, dep.Namespace))
 		return out

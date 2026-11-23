@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 
 	"github.com/stokaro/kc/pkg/appconfig"
@@ -64,6 +65,12 @@ type overviewTarget struct {
 	rank float64
 	// involved is the object an event is about; Enter on the event opens it.
 	involved *corev1.ObjectReference
+	// uid, since and starting are the target's lifecycle
+	// (overview_lifecycle.go): its UID, when the server dated its state,
+	// and whether it is inside the startup grace.
+	uid      types.UID
+	since    time.Time
+	starting bool
 }
 
 // overviewFinding is one row of the overview.
@@ -118,15 +125,22 @@ func (r *overviewReport) finding(id string) (overviewFinding, bool) {
 // computeOverview applies every rule to in. It only reads in and m; a nil m
 // means nothing was measured.
 func computeOverview(in *overviewInput, cfg appconfig.OverviewConfig, now time.Time, m *overviewMeasured) *overviewReport {
+	return computeOverviewWith(in, cfg, now, m, nil)
+}
+
+// computeOverviewWith is computeOverview with what the session saw in the
+// previous report, for the rules with hysteresis. A nil life knows nothing.
+func computeOverviewWith(in *overviewInput, cfg appconfig.OverviewConfig, now time.Time, m *overviewMeasured, life *overviewLifecycle) *overviewReport {
 	cfg = cfg.Normalized()
 	if m == nil {
 		m = &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", clusterPodsReason: "not measured", statsReason: "not measured"}
 	}
-	rc := ruleContext{in: in, cfg: cfg, now: now, m: m}
+	rc := ruleContext{in: in, cfg: cfg, now: now, m: m, life: life}
 	report := &overviewReport{at: now, usageAt: m.usageAt}
 	for _, rule := range overviewRules {
 		report.findings = append(report.findings, rule(&rc))
 	}
+	addGraceNotes(&rc, report.findings)
 	report.nodes = summarizeNodes(&rc)
 	var byPod map[string][]InfoWorkload
 	report.workloads, byPod = summarizeWorkloads(&rc)
@@ -142,6 +156,9 @@ type ruleContext struct {
 	cfg appconfig.OverviewConfig
 	now time.Time
 	m   *overviewMeasured
+	// life is the session's view of the previous report; nil in tests
+	// that compute one report.
+	life *overviewLifecycle
 }
 
 // within reports whether t lies inside the configured window before now.
@@ -223,6 +240,9 @@ func countFinding(rc *ruleContext, f overviewFinding, needs []schema.GroupVersio
 		}
 	}
 	f.state = f.severity.String()
+	if f.severity == severityOK && anyStarting(f.targets) {
+		f.state = "starting"
+	}
 	return f
 }
 
@@ -246,7 +266,7 @@ func sortTargets(ts []overviewTarget) []overviewTarget {
 }
 
 func objTarget(gvr schema.GroupVersionResource, m metav1.ObjectMeta, value string, sev overviewSeverity) overviewTarget {
-	return overviewTarget{gvr: gvr, namespace: m.Namespace, name: m.Name, value: value, severity: sev}
+	return overviewTarget{gvr: gvr, namespace: m.Namespace, name: m.Name, value: value, severity: sev, uid: m.UID}
 }
 
 func kubectlGet(resource string, extra ...string) []string {
@@ -664,7 +684,8 @@ traffic.`,
 					ready++
 				}
 			}
-			out = append(out, objTarget(ovPodsGVR, p.ObjectMeta, fmt.Sprintf("%d/%d ready", ready, len(p.Spec.Containers)), severityWarning))
+			since, explicit := rc.podNotReadySince(p)
+			out = append(out, rc.graced(objTarget(ovPodsGVR, p.ObjectMeta, fmt.Sprintf("%d/%d ready", ready, len(p.Spec.Containers)), severityWarning), since, explicit))
 		})
 		return out
 	})
@@ -683,7 +704,7 @@ func podsPendingRule(rc *ruleContext) overviewFinding {
 			if p.Status.Phase != corev1.PodPending {
 				return
 			}
-			value, sev := "Pending", severityWarning
+			value, sev, explicit := "Pending", severityWarning, false
 			if c := podCondition(p, corev1.PodScheduled); c != nil && c.Status == corev1.ConditionFalse {
 				value = c.Reason
 				if c.Reason == corev1.PodReasonUnschedulable {
@@ -693,11 +714,12 @@ func podsPendingRule(rc *ruleContext) overviewFinding {
 				for _, s := range podStatuses(p) {
 					if s.State.Waiting != nil && s.State.Waiting.Reason != "" {
 						value = fmt.Sprintf("%s (%s)", s.State.Waiting.Reason, s.Name)
+						explicit = waitingFailure(s.State.Waiting.Reason)
 						break
 					}
 				}
 			}
-			out = append(out, objTarget(ovPodsGVR, p.ObjectMeta, value, sev))
+			out = append(out, rc.graced(objTarget(ovPodsGVR, p.ObjectMeta, value, sev), p.CreationTimestamp.Time, explicit || sev == severityFailed))
 		})
 		return out
 	})
@@ -840,7 +862,8 @@ desiredNumberScheduled. None available fails the row.`,
 			d := &rc.in.deployments[i]
 			want := replicasOf(d.Spec.Replicas)
 			if want > 0 && d.Status.AvailableReplicas < want {
-				out = append(out, objTarget(ovDeploymentsGVR, d.ObjectMeta, fmt.Sprintf("available %d/%d", d.Status.AvailableReplicas, want), availabilitySeverity(d.Status.AvailableReplicas)))
+				t := objTarget(ovDeploymentsGVR, d.ObjectMeta, fmt.Sprintf("available %d/%d", d.Status.AvailableReplicas, want), availabilitySeverity(d.Status.AvailableReplicas))
+				out = append(out, rc.graced(t, deploymentUnavailableSince(d), deploymentFailed(d)))
 			}
 		}
 		for i := range rc.in.statefulSets {
@@ -897,7 +920,7 @@ False (for example ProgressDeadlineExceeded), which fails the row.`,
 			}
 			want := replicasOf(d.Spec.Replicas)
 			if d.Status.UpdatedReplicas < want {
-				out = append(out, objTarget(ovDeploymentsGVR, d.ObjectMeta, fmt.Sprintf("updated %d/%d", d.Status.UpdatedReplicas, want), severityWarning))
+				out = append(out, rc.graced(objTarget(ovDeploymentsGVR, d.ObjectMeta, fmt.Sprintf("updated %d/%d", d.Status.UpdatedReplicas, want), severityWarning), rc.deploymentRolloutSince(d), false))
 			}
 		}
 		for i := range rc.in.statefulSets {
