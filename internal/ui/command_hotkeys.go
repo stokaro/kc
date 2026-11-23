@@ -146,6 +146,11 @@ func (a *App) runCommandHotkey(idx int) tea.Cmd {
 	if panel == nil {
 		return nil
 	}
+	// The menu leaves a dangerous command out in read-only mode; say why
+	// rather than "not available here".
+	if refuse := a.refuseCommand(cmd); refuse != nil {
+		return refuse
+	}
 	ctrllog.FromContext(a.ctx).WithName("commands").V(1).Info("hotkey", "key", cmd.Hotkey, "name", cmd.Name)
 	before := a.activeCommandSelector
 	a.showContextMenuForPanel(panel)

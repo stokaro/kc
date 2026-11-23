@@ -125,6 +125,8 @@ func (s *stopPortForward) Confirmation() Confirmation {
 		},
 		Notes:  []string{"Open connections through the forward are closed."},
 		Action: "Stop",
+		// The forward runs in kc; stopping it leaves the cluster alone.
+		Local: true,
 	}
 }
 

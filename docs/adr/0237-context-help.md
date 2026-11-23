@@ -1,6 +1,6 @@
 # 0237. Context help: one page per feature, opened by F1
 
-- Status: Accepted
+- Status: Accepted; the findings in Consequences settled by 0240
 - Date: 2026-11-23
 - Pull request: #237
 

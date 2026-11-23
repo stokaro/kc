@@ -35,44 +35,64 @@ func panelWith(t *testing.T, folder models.Folder, id string) *Panel {
 	return p
 }
 
+// Stopping a forward ends a process of kc and leaves the cluster alone, so
+// read-only mode allows it.
 func TestPortForwardRowStopsWithF8(t *testing.T) {
-	ctx := t.Context()
-	reg := portforward.NewRegistry(ctx)
-	defer reg.StopAll(time.Second)
-	runner := portforward.RunnerFunc(func(ctx context.Context, _ portforward.Spec, ready func(int32)) error {
-		ready(8000)
-		<-ctx.Done()
-		return nil
-	})
-	spec := portforward.Spec{Context: "dev", Namespace: "ns", Kind: "pod", Name: "web-0", Pod: "web-0", Address: "127.0.0.1", RemotePort: 80}
-	if _, err := reg.Start(ctx, spec, runner); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	folder := models.NewPortForwardsFolder(models.Deps{PortForwards: reg}, reg, []string{models.PortForwardsPathSegment})
-	fwd := reg.List()[0]
-	p := panelWith(t, folder, fwd.ID)
+	for _, tc := range []struct {
+		name     string
+		override ReadOnlyOverride
+	}{
+		{"writable", ReadOnlyWriteForced},
+		{"read-only", ReadOnlyForced},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			reg := portforward.NewRegistry(ctx)
+			t.Cleanup(func() { reg.StopAll(time.Second) })
+			runner := portforward.RunnerFunc(func(ctx context.Context, _ portforward.Spec, ready func(int32)) error {
+				ready(8000)
+				<-ctx.Done()
+				return nil
+			})
+			spec := portforward.Spec{Context: "dev", Namespace: "ns", Kind: "pod", Name: "web-0", Pod: "web-0", Address: "127.0.0.1", RemotePort: 80}
+			if _, err := reg.Start(ctx, spec, runner); err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			folder := models.NewPortForwardsFolder(models.Deps{PortForwards: reg}, reg, []string{models.PortForwardsPathSegment})
+			fwd := reg.List()[0]
+			p := panelWith(t, folder, fwd.ID)
 
-	app := &App{ctx: ctx, width: 100, height: 30, modalManager: NewModalManager(nil),
-		leftPanel: p, rightPanel: NewPanel("r"), leftPanelWidthPercent: 50, rightPanelWidthPercent: 50}
-	p.SetActionHandlers(app.panelActionHandlers())
+			app := &App{ctx: ctx, width: 100, height: 30, modalManager: NewModalManager(nil),
+				leftPanel: p, rightPanel: NewPanel("r"), leftPanelWidthPercent: 50, rightPanelWidthPercent: 50,
+				readOnlyOverride: tc.override}
+			p.SetActionHandlers(app.panelActionHandlers())
+			p.SetEnvironmentSupplier(app.panelEnvironment)
 
-	// F8 is offered on a forward row although it is no Kubernetes object.
-	if caps := p.Capabilities(ctx); !caps.CanDelete {
-		t.Fatal("F8 not enabled on a port forward row")
-	}
-	p.InvokeAction(PanelActionDelete)
-	if !app.modalManager.IsModalVisible() || app.pendingConfirm == nil || app.pendingConfirm.row == nil {
-		t.Fatal("F8 did not ask for confirmation")
-	}
-	if c := app.pendingConfirm.row.Confirmation(); c.Title != "Stop port forward?" {
-		t.Fatalf("confirmation title = %q", c.Title)
-	}
-	if reg.Len() != 1 {
-		t.Fatal("the forward stopped before the user confirmed")
-	}
-	app.handleConfirmResult(confirmResultMsg{ok: true})
-	if reg.Len() != 0 {
-		t.Fatalf("forward still listed after confirming stop")
+			// F8 is offered on a forward row although it is no Kubernetes object.
+			if caps := p.Capabilities(ctx); !caps.CanDelete {
+				t.Fatal("F8 not enabled on a port forward row")
+			}
+			if cmd := p.invokeActionIfAllowed(ctx, PanelActionDelete); cmd != nil {
+				t.Fatalf("F8 returned %T, want the dialog", cmd())
+			}
+			if !app.modalManager.IsModalVisible() || app.pendingConfirm == nil || app.pendingConfirm.row == nil {
+				t.Fatal("F8 did not ask for confirmation")
+			}
+			if c := app.pendingConfirm.row.Confirmation(); c.Title != "Stop port forward?" || !c.Local {
+				t.Fatalf("confirmation %q, local %v; want a local stop", c.Title, c.Local)
+			}
+			if reg.Len() != 1 {
+				t.Fatal("the forward stopped before the user confirmed")
+			}
+			if cmd := app.handleConfirmResult(confirmResultMsg{ok: true}); cmd != nil {
+				if toast, ok := cmd().(showToastMsg); ok {
+					t.Fatalf("confirming showed %q", toast.text)
+				}
+			}
+			if reg.Len() != 0 {
+				t.Fatalf("forward still listed after confirming stop")
+			}
+		})
 	}
 }
 

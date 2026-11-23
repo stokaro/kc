@@ -8,7 +8,7 @@ dialog or view opens its page; this index lists them all. See
 ## Panels
 
 - [Panels and object lists](panels.md)
-- [Panel mode dialog](panel-mode.md)
+- [Panel mode](panel-mode.md)
 - [Describe mode](mode-describe.md)
 - [Manifest mode](mode-manifest.md)
 - [Logs mode](mode-logs.md)

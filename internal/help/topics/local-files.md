@@ -21,8 +21,8 @@ same entry as "Local files", after Info.
 
 ## Keys
 
-- `Enter` opens a directory. `/..` goes up one level; from `/` it
-  returns to the cluster.
+- `Enter` opens a directory and views a file, like `F3`. `/..` goes up
+  one level; from `/` it returns to the cluster.
 - `F3` shows a text file in the viewer.
 - `F4` opens the file in `$KUBE_EDITOR`, else `$EDITOR`, else `vi`,
   the editor `kubectl edit` uses. The editor saves the file in place,
@@ -31,7 +31,8 @@ same entry as "Local files", after Info.
 - `F5` with a container folder in the other panel copies the marked
   files and directories (or the row under the cursor) into the
   container.
-- `C-t` or `Ins` marks a row; `*` inverts the marks.
+- `C-t` or `Ins` marks a row; `*` inverts the marks; `+` and `-` mark
+  or unmark the names that match a pattern such as `*.log`.
 - `M-l` leaves the local tree in one step.
 
 ## Limits

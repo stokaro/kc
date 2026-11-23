@@ -1,6 +1,6 @@
 # 0042. Read-only mode
 
-- Status: Accepted
+- Status: Accepted; "hidden from the F9 menu" in decision 5 superseded by 0240 (the F2 user menu)
 - Date: 2026-11-22
 - Issue: #42
 
