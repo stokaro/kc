@@ -411,6 +411,7 @@ func (a *App) Init() tea.Cmd {
 	}
 	return tea.Batch(
 		a.loadCommandHotkeys(),
+		a.loadHealthConfig(),
 		lookErr,
 		a.initPanels(),
 		a.terminal.Init(),

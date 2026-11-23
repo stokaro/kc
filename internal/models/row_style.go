@@ -129,6 +129,14 @@ func registerHealthStylers() {
 	for gvr := range healthRules {
 		RegisterRowStylerForGVR(gvr, styler)
 	}
+	// The health config is installed after the stylers are, and is keyed
+	// by types kc does not know in advance.
+	RegisterGlobalRowStyler(rowStylerFunc(func(info RowStyleInfo) *lipgloss.Style {
+		if healthAdapterFor(info.GVR) == nil {
+			return info.BaseStyle
+		}
+		return RowHealthStyle(ClassifyRowHealth(info.GVR, info.Unstructured), info.BaseStyle)
+	}))
 }
 
 // RowHealthStyle returns the style of a row in state h: the colors object
