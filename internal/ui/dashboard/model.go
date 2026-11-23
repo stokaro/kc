@@ -182,7 +182,7 @@ type usageMsg struct {
 // that arrives when no dashboard is open.
 func IsMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case TickMsg, usageMsg, settledMsg:
+	case TickMsg, usageMsg, settledMsg, encodedMsg:
 		return true
 	}
 	return kittygfx.IsMsg(msg)
@@ -351,6 +351,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, Action) {
 			return m.syncImages(), Action{}
 		}
 		return nil, Action{}
+	}
+	if msg, ok := msg.(encodedMsg); ok {
+		return m.showEncoded(msg), Action{}
 	}
 	cmd, act := m.update(msg)
 	if act.Close || act.Open != nil || act.Logs != nil {

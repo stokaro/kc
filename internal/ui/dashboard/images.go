@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -143,9 +144,24 @@ func raw(seq string) tea.Cmd {
 	return tea.Raw(seq)
 }
 
-// syncImages rasterizes the charts of the frame the screen will show and
-// returns the transmits of the pictures the terminal does not have.
-func (m *Model) syncImages() tea.Cmd {
+// encodedMsg is a chart picture rastered and compressed off the event
+// loop, for dashboard id.
+type encodedMsg struct {
+	id  int
+	pic kittygfx.Picture
+}
+
+// syncImages starts, for each chart of the frame the screen will show, a
+// command that rasters and compresses its picture off the event loop.
+// A chart whose last picture is still being made gets none; that one's
+// return starts the next (see showEncoded).
+func (m *Model) syncImages() tea.Cmd { return m.syncKey(-1) }
+
+// syncKey is syncImages for the chart of image key only, or for all with
+// -1. A returning picture restarts its own chart only: restarting all
+// would mark the other chart's picture in flight as asked for again, and
+// the two returns would restart each other without end.
+func (m *Model) syncKey(only int) tea.Cmd {
 	if !m.images() || m.settling || m.w < 20 || m.h < 6 {
 		return nil
 	}
@@ -154,17 +170,74 @@ func (m *Model) syncImages() tea.Cmd {
 	var cmds []tea.Cmd
 	for wd, c := range charts {
 		key, ok := imageKey(wd)
-		if !ok {
+		if !ok || (only >= 0 && key != only) {
 			continue
 		}
 		cols, rows := c.PlotSize()
-		if cols == 0 || cols > kittygfx.MaxCells || rows > kittygfx.MaxCells {
+		if cols == 0 {
 			continue
 		}
-		cw, ch := m.src.Images.CellSize(cols, rows)
-		cmds = append(cmds, m.src.Images.Show(key, c.Raster(cw, ch), cols, rows))
+		job, ok := m.src.Images.Begin(key, cols, rows)
+		if !ok {
+			continue
+		}
+		c, id := detached(c), m.id
+		cmds = append(cmds, func() tea.Msg {
+			return encodedMsg{id: id, pic: job.Encode(c.Raster(job.CellSize()))}
+		})
 	}
 	return tea.Batch(cmds...)
+}
+
+// showEncoded takes a picture back on the event loop. One made for
+// another dashboard, before a resize, or for a plot of another size than
+// the chart's now is dropped, so it never paints an old size. A chart
+// asked for while its picture was made starts the next one.
+func (m *Model) showEncoded(msg encodedMsg) tea.Cmd {
+	im := m.src.Images
+	if im == nil {
+		return nil
+	}
+	job := msg.pic.Job()
+	cols, rows, ok := m.plotSize(job.Key())
+	if msg.id != m.id || !m.images() || m.settling || !ok || cols != job.Cols() || rows != job.Rows() {
+		if im.Drop(msg.pic) {
+			return m.syncKey(job.Key())
+		}
+		return nil
+	}
+	cmd, again := im.Finish(msg.pic)
+	if again {
+		return tea.Batch(cmd, m.syncKey(job.Key()))
+	}
+	return cmd
+}
+
+// plotSize is the plot size of the chart of image key in the frame the
+// screen shows now.
+func (m *Model) plotSize(key int) (cols, rows int, ok bool) {
+	if m.w < 20 || m.h < 6 {
+		return 0, 0, false
+	}
+	v := m.top()
+	for wd, c := range m.placeCharts(v, layout(v, m.w, m.h)) {
+		if k, isImage := imageKey(wd); isImage && k == key {
+			cols, rows = c.PlotSize()
+			return cols, rows, cols > 0
+		}
+	}
+	return 0, 0, false
+}
+
+// detached copies the samples of c, so a command can raster it while the
+// session history goes on changing.
+func detached(c chart.Chart) chart.Chart {
+	c.Points = slices.Clone(c.Points)
+	c.Refs = slices.Clone(c.Refs)
+	for i := range c.Refs {
+		c.Refs[i].Points = slices.Clone(c.Refs[i].Points)
+	}
+	return c
 }
 
 // placeImage replaces the plot cells of a rendered chart (lines[1:],
