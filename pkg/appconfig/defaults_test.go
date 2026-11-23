@@ -154,6 +154,10 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if len(a.ReadOnly.Contexts) != 0 || len(b.ReadOnly.Contexts) != 0 {
 		t.Fatalf("readOnly.contexts must be empty by default: yaml=%v code=%v", a.ReadOnly.Contexts, b.ReadOnly.Contexts)
 	}
+	// Compare as written, like overview: no backend by default.
+	if !reflect.DeepEqual(fromYAML.MetricsHistory, fromCode.MetricsHistory) {
+		t.Fatalf("metricsHistory mismatch: yaml=%+v code=%+v", fromYAML.MetricsHistory, fromCode.MetricsHistory)
+	}
 	if len(a.Commands) != len(b.Commands) {
 		t.Fatalf("commands count mismatch: yaml=%d code=%d", len(a.Commands), len(b.Commands))
 	}

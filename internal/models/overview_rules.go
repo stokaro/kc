@@ -103,9 +103,12 @@ type overviewFinding struct {
 
 // overviewReport is the result of one recompute.
 type overviewReport struct {
-	at       time.Time
-	usageAt  time.Time // when the node usage was measured; zero when unknown
-	findings []overviewFinding
+	at      time.Time
+	usageAt time.Time // when the usage was measured; zero when unknown
+	// usageWindow and usageReadAt go with usageAt; see overviewMeasured.
+	usageWindow time.Duration
+	usageReadAt time.Time
+	findings    []overviewFinding
 	// nodes, pods and workloads feed the Info panel mode.
 	nodes     []overviewNodeSummary
 	pods      []overviewPodUsage
@@ -144,7 +147,7 @@ func computeOverviewWith(in *overviewInput, cfg appconfig.OverviewConfig, now ti
 		m = &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", clusterPodsReason: "not measured", statsReason: "not measured"}
 	}
 	rc := ruleContext{in: in, cfg: cfg, now: now, m: m, life: life}
-	report := &overviewReport{at: now, usageAt: m.usageAt}
+	report := &overviewReport{at: now, usageAt: m.usageAt, usageWindow: m.usageWindow, usageReadAt: m.usageReadAt}
 	for _, rule := range overviewRules {
 		report.findings = append(report.findings, rule(&rc))
 	}
@@ -375,6 +378,8 @@ func nodeLoads(rc *ruleContext) []*nodeLoad {
 	}
 	for _, l := range loads {
 		name := l.node.Name
+		l.cpu.podsMeasured, l.cpu.podsEligible = measured[name], int(l.pods)
+		l.mem.podsMeasured, l.mem.podsEligible = measured[name], int(l.pods)
 		switch {
 		case podsReason != "":
 			l.cpu.podReason, l.mem.podReason = podsReason, podsReason

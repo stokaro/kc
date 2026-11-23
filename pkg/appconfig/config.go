@@ -260,6 +260,9 @@ type Config struct {
 	Timeline TimelineConfig `json:"timeline"`
 	// ReadOnly opens contexts in read-only mode; see ReadOnlyConfig.
 	ReadOnly ReadOnlyConfig `json:"readOnly"`
+	// MetricsHistory reads past workload usage from Prometheus; off by
+	// default.
+	MetricsHistory MetricsHistoryConfig `json:"metricsHistory"`
 }
 
 // OverviewConfig holds the thresholds of the /overview folder. A zero or
@@ -676,9 +679,10 @@ func Default() *Config {
 			Namespace:   DefaultNodeShellNamespace,
 			MaxDuration: metav1.Duration{Duration: DefaultNodeShellMaxDuration},
 		},
-		PortForward: PortForwardConfig{Address: DefaultPortForwardAddress},
-		Overview:    DefaultOverview(),
-		Timeline:    DefaultTimeline(),
+		PortForward:    PortForwardConfig{Address: DefaultPortForwardAddress},
+		Overview:       DefaultOverview(),
+		Timeline:       DefaultTimeline(),
+		MetricsHistory: DefaultMetricsHistory(),
 		Commands: []CommandConfig{
 			{
 				Name:          "Top Nodes",
