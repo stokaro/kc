@@ -7,7 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	uistyles "github.com/stokaro/kc/internal/ui/styles"
+	"github.com/stokaro/kc/internal/ui/dialog"
 )
 
 // DeleteConfirmMsg signals the result of the delete confirmation dialog.
@@ -101,61 +101,42 @@ func (m *DeleteConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *DeleteConfirmModel) View() tea.View {
 	innerWidth := max(30, m.width-4)
-	const buttonWidth = 8
-	separatorWidth := 1
+	skin := dialog.Danger()
+	row := skin.Normal.Width(innerWidth)
+	// The title wraps rather than cuts: the name is what the user checks
+	// before confirming.
+	lines := []string{row.Bold(true).Align(lipgloss.Center).Render(fmt.Sprintf("Delete %s?", m.target))}
+	if m.context != "" {
+		lines = append(lines, row.Align(lipgloss.Center).Render(fmt.Sprintf("Context: %s", m.context)))
+	}
+	lines = append(lines, row.Render(""))
+	top := lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	// No is the default answer, so Enter right after opening keeps the
+	// object, as mc's confirm dialogs do.
+	buttons, rects := dialog.RenderButtons(skin, innerWidth, []dialog.Button{
+		{Label: "&Yes"}, {Label: "&No", Default: true},
+	}, m.focus)
 	for i := range m.buttonRect {
 		m.buttonRect[i] = buttonRect{}
 	}
-	bg := lipgloss.NewStyle().
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Width(innerWidth)
-	title := fmt.Sprintf("Delete %s?", m.target)
-	titleView := bg.Bold(true).Align(lipgloss.Center).Render(title)
-	lines := []string{titleView}
-	if m.context != "" {
-		lines = append(lines, bg.Align(lipgloss.Center).Render(fmt.Sprintf("Context: %s", m.context)))
+	for i, r := range rects {
+		if i < len(m.buttonRect) {
+			m.buttonRect[i] = buttonRect{x: r.X, y: top, w: r.W, h: 1}
+		}
 	}
-	helpView := bg.Faint(true).Align(lipgloss.Center).Render("←/→ Switch • Enter: Confirm • Esc: Cancel")
-	options := []string{
-		m.renderOption("Yes", buttonWidth, m.focus == 0),
-		m.renderOption("No", buttonWidth, m.focus != 0),
-	}
-	separator := lipgloss.NewStyle().
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Render(" ")
-	bodyRow := lipgloss.JoinHorizontal(lipgloss.Center, options[0], separator, options[1])
-	bodyView := bg.Align(lipgloss.Center).Render(bodyRow)
-	rowWidth := lipgloss.Width(bodyRow)
-	leftPad := max(0, (innerWidth-rowWidth)/2)
-	bodyLine := len(lines) + 1 // title and context lines, spacer, buttons
-	yesWidth := lipgloss.Width(options[0])
-	noWidth := lipgloss.Width(options[1])
-	m.buttonRect[0] = buttonRect{x: leftPad, y: bodyLine, w: yesWidth, h: 1}
-	m.buttonRect[1] = buttonRect{
-		x: leftPad + yesWidth + separatorWidth,
-		y: bodyLine,
-		w: noWidth,
-		h: 1,
-	}
-	spacer := bg.Render("")
-	lines = append(lines, spacer, bodyView, spacer, helpView)
+	lines = append(lines, buttons)
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
-func (m *DeleteConfirmModel) renderOption(label string, width int, focused bool) string {
-	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Background(lipgloss.Color(uistyles.ColorDarkGrey)).
-		Width(width).
-		Align(lipgloss.Center)
-	if focused {
-		style = style.
-			Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-			Background(lipgloss.Color(uistyles.ColorModalSelBg)).
-			Bold(true)
-	}
-	return style.Render(label)
+// Height is the number of lines the dialog shows in a window whose inner
+// width is innerW: the title (wrapped), the context, a blank line and
+// the buttons.
+func (m *DeleteConfirmModel) Height(innerW int) int {
+	w, h := m.width, m.height
+	m.SetDimensions(innerW, h)
+	n := lipgloss.Height(m.View().Content)
+	m.SetDimensions(w, h)
+	return n
 }
 
 func (m *DeleteConfirmModel) FooterHints() []FooterHint {
