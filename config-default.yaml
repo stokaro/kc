@@ -112,6 +112,16 @@ portForward:
 #       wide: true
 columns: {}
 
+# Object timelines (/timeline inside an object): kc records the revisions
+# it observes from the shared cache while a recording runs.
+timeline:
+  # Revisions kept per object; the oldest are evicted first.
+  maxEntries: 100
+  # Bytes of revisions (as JSON) kept per object.
+  maxBytes: 4194304
+  # Objects recorded at once; one more stops the oldest recording.
+  maxObjects: 10
+
 overview:
   # How far back warning events and container restarts count.
   window: 1h
@@ -149,6 +159,13 @@ overview:
   # A cert-manager Certificate is flagged when it expires within this many
   # days.
   certificateExpiryDays: 14
+  # A pod that is not ready or pending, or a Deployment rolling out or not
+  # yet available, is "starting" for this long after the API server dated
+  # its state. Explicit failures never wait.
+  startupGrace: 5m
+  # A container flagged near its memory or CPU limit stays flagged until its
+  # usage is this many points below the warning percent.
+  usageHysteresisPercent: 5
 
 commands:
   - name: Top Nodes

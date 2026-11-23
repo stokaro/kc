@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/stokaro/kc/internal/cmdtemplate"
+	"github.com/stokaro/kc/internal/execctx"
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
@@ -121,6 +123,16 @@ func bindCommandInput(cmd appconfig.CommandConfig, values map[string]string) (ap
 	}
 	cmd.Command = command
 	cmd.Confirm.Message = message
+	if d := cmd.Diagnostic; d != nil {
+		bound := *d
+		bound.Args = slices.Clone(d.Args)
+		for i := 1; i < len(bound.Args); i++ {
+			if bound.Args[i], err = cmdtemplate.Bind(bound.Args[i], values); err != nil {
+				return cmd, err
+			}
+		}
+		cmd.Diagnostic = &bound
+	}
 	cmd.Prompts = nil
 	return cmd, nil
 }
@@ -128,7 +140,7 @@ func bindCommandInput(cmd appconfig.CommandConfig, values map[string]string) (ap
 // commandConfirmation describes cmd for the red dialog. The command is
 // rendered as it will run; a long one wraps over several lines.
 func (a *App) commandConfirmation(cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) (models.Confirmation, error) {
-	rendered, err := RenderCommand(cmd.Command, items, gvr)
+	rendered, err := a.commandPreview(cmd, items, gvr)
 	if err != nil {
 		return models.Confirmation{}, err
 	}
@@ -158,6 +170,19 @@ func (a *App) commandConfirmation(cmd appconfig.CommandConfig, items []models.It
 		c.Notes = append(c.Notes, wrapCommandLine(line, width)...)
 	}
 	return c, nil
+}
+
+// commandPreview is cmd as it will run: the rendered command, or the
+// argument vector of a diagnostic, quoted as a shell would read it.
+func (a *App) commandPreview(cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) (string, error) {
+	if cmd.Diagnostic == nil {
+		return RenderCommand(cmd.Command, items, gvr)
+	}
+	argv, err := RenderDiagnosticArgs(cmd.Diagnostic.Args, items, gvr, a.execContext(diagnosticNamespace(items)))
+	if err != nil {
+		return "", err
+	}
+	return execctx.ShellJoin(argv), nil
 }
 
 // wrapCommandLine cuts line into pieces of at most width runes, at spaces

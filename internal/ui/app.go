@@ -275,6 +275,7 @@ type App struct {
 	namespaceScopes    namespaceScopes      // namespaces used in this session (issue #56)
 	activity           *models.Activity     // pauses background refreshes while a dialog is open
 	pendingConfirm     *pendingConfirmation // waits for the red confirmation
+	diagnostics        diagnosticRuns       // running diagnostic commands; see diagnostic_command.go
 	objectActions      *objectaction.Registry
 	nodeShell          *nodeShellSession     // open node shell, shown full screen
 	nodeShellStarting  bool                  // a node shell pod is being created
@@ -3825,6 +3826,10 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			if obj, ok := items[0].(models.ObjectItem); ok {
 				gvr = obj.GVR()
 			}
+		}
+
+		if cmd.Diagnostic != nil {
+			return a.startDiagnostic(p, cmd, items, gvr)
 		}
 
 		runPanel := p

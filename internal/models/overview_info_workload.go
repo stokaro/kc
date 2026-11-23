@@ -78,13 +78,13 @@ func workloadResourceBar(cfg appconfig.OverviewConfig, label string, hasUse bool
 	warn := func(flag string) { bar.Flag, bar.Health = flag, severityWarning.RowHealth() }
 	switch {
 	case hasUse && limited:
-		bar.Known, bar.Usage, bar.Percent = true, true, percent(use, lim)
+		bar.Known, bar.Usage, bar.Percent, bar.Base = true, true, percent(use, lim), "limits"
 		bar.Detail = fmt.Sprintf("use %s of lim %s, req %s", format(use), format(lim), format(req))
 		if bar.Percent >= float64(warnPercent) {
 			warn(flagNearLimit)
 		}
 	case hasUse && req > 0:
-		bar.Known, bar.Usage, bar.Percent = true, true, percent(use, req)
+		bar.Known, bar.Usage, bar.Percent, bar.Base = true, true, percent(use, req), "requests"
 		bar.Detail = fmt.Sprintf("use %s of req %s, no limit", format(use), format(req))
 		if float64(use) >= cfg.UnderRequestedFactor*float64(req) {
 			warn(flagUnderRequested)

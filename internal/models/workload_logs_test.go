@@ -151,8 +151,8 @@ func TestPodContainersFolderHasAllContainersLogsRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 3 {
-		t.Fatalf("%d rows, want /containers, the logs row and /diagnosis", len(rows))
+	if len(rows) != 4 {
+		t.Fatalf("%d rows, want /containers, the logs row, /diagnosis and /timeline", len(rows))
 	}
 	if id, _, _, _ := rows[2].Columns(); id != ns.Name+"/api-1/"+DiagnosisSegment {
 		t.Fatalf("last row = %q, want the /diagnosis row", id)
