@@ -23,12 +23,15 @@ func TestChildResourceTypesFolderListsEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
-	// A Deployment also gets its logs row, its /diagnosis and its
-	// /timeline, after the child types.
-	if len(rows) != 4 {
-		t.Fatalf("rows = %d, want 4", len(rows))
+	// A Deployment also gets its logs row, its /diagnosis, its /events
+	// and its /timeline, after the child types.
+	if len(rows) != 5 {
+		t.Fatalf("rows = %d, want 5", len(rows))
 	}
-	if id, _, _, _ := rows[3].Columns(); id != "demo/demo-deploy/"+TimelineSegment {
+	if id, _, _, _ := rows[3].Columns(); id != "demo/demo-deploy/"+EventsSegment {
+		t.Fatalf("fourth row = %q, want the /events row", id)
+	}
+	if id, _, _, _ := rows[4].Columns(); id != "demo/demo-deploy/"+TimelineSegment {
 		t.Fatalf("last row = %q, want the /timeline row", id)
 	}
 	if _, ok := rows[1].(WorkloadLogsProvider); !ok {
@@ -64,9 +67,10 @@ func TestChildResourceTypesFolderMultipleEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
-	// The two child types, then the Service's /diagnosis and /timeline.
-	if len(rows) != 4 {
-		t.Fatalf("rows = %d, want 4", len(rows))
+	// The two child types, then the Service's /diagnosis, /events and
+	// /timeline.
+	if len(rows) != 5 {
+		t.Fatalf("rows = %d, want 5", len(rows))
 	}
 	if id, _, _, _ := rows[2].Columns(); id != "demo/svc-a/"+DiagnosisSegment {
 		t.Fatalf("third row = %q, want the diagnosis row", id)
@@ -104,7 +108,7 @@ func TestChildResourceTypesFolderAppendsRegisteredObjectRows(t *testing.T) {
 		_, c, _, _ := r.Columns()
 		cells = append(cells, c[0])
 	}
-	if want := []string{"/pods", "/timeline", "Act on w1 in mba"}; !reflect.DeepEqual(cells, want) {
+	if want := []string{"/pods", "/events", "/timeline", "Act on w1 in mba"}; !reflect.DeepEqual(cells, want) {
 		t.Fatalf("rows = %q, want %q", cells, want)
 	}
 
@@ -113,7 +117,7 @@ func TestChildResourceTypesFolderAppendsRegisteredObjectRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("gadget rows = %d, want only /pods and /timeline", len(rows))
+	if len(rows) != 3 {
+		t.Fatalf("gadget rows = %d, want only /pods, /events and /timeline", len(rows))
 	}
 }

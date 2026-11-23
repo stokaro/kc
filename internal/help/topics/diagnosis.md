@@ -24,6 +24,18 @@ read. Its title says when it was observed. Under it follow:
   owner, not a confirmed cause,
 - a `next` row that says what to inspect.
 
+In a workload, kc runs the same checks on every pod and groups equal
+symptoms: the same severity, the same check and the same title apart
+from the pod's name. A group shows the first pod's evidence, says
+`(15 pods)` in its title and cites up to 20 of the pods; when their
+messages differ, it says so. A group means the pods show the same
+symptom, not that they share a cause. Findings are ranked by severity,
+then by how many pods share them, then by the first pod's name, so
+identical reads give the same order and an error of one pod is never
+hidden behind a warning many pods share. The ten highest-ranked symptoms
+are expanded; `more-symptoms` lists the rest, each with a link to its
+first pod. Findings about unreadable sources stay.
+
 In a narrow panel the name, resource and namespace columns are cut first
 and the evidence gets the rest of the line. The bottom status line shows
 the full text of the row under the cursor.
@@ -218,7 +230,8 @@ live object in the other panel ([Compare objects](compare-objects.md)).
 - Pods are matched by controller owner UID (through the ReplicaSets of
   a Deployment), events by UID. A recreated object with the same name
   does not inherit the old one's pods or events.
-- Up to ten pods with problems are explained; the rest are counted.
+- Ten symptom groups are expanded, each citing up to 20 pods; the rest
+  are listed with one pod each.
 - Data you may not read is shown as unavailable, never as absent.
 - CronJobs have no diagnosis; look at their Jobs.
 
