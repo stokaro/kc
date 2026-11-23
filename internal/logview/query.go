@@ -156,25 +156,33 @@ func parseMatcher(body string) (matcher, error) {
 		}
 		return regexMatcher{re: re}, nil
 	}
-	if i := strings.IndexAny(body, "=~"); i > 0 && !strings.Contains(body[:i], `"`) {
-		path, err := ParsePath(body[:i])
-		if err != nil {
-			return nil, err
-		}
-		if len(path.steps) == 0 {
-			return nil, fmt.Errorf("%s: compare a field, not the whole record", body)
-		}
-		value := unquote(body[i+1:])
-		if body[i] == '~' {
-			re, err := regexp.Compile(value)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", body, err)
-			}
-			return fieldRegexMatcher{path: path, re: re}, nil
-		}
-		return fieldEqualMatcher{path: path, values: strings.Split(value, ",")}, nil
+	if i := fieldOperator(body); i > 0 {
+		return parseFieldMatcher(body, i)
 	}
 	return textMatcher(strings.ToLower(unquote(body))), nil
+}
+
+// parseFieldMatcher parses a field term whose operator is at body[i].
+func parseFieldMatcher(body string, i int) (matcher, error) {
+	path, err := ParsePath(body[:i])
+	if err != nil {
+		return nil, err
+	}
+	if len(path.steps) == 0 {
+		return nil, fmt.Errorf("%s: compare a field, not the whole record", body)
+	}
+	if strings.HasPrefix(body[i:], "==") {
+		return fieldExactMatcher{path: path, value: unquote(body[i+2:])}, nil
+	}
+	value := unquote(body[i+1:])
+	if body[i] == '~' {
+		re, err := regexp.Compile(value)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", body, err)
+		}
+		return fieldRegexMatcher{path: path, re: re}, nil
+	}
+	return fieldEqualMatcher{path: path, values: strings.Split(value, ",")}, nil
 }
 
 type textMatcher string
@@ -203,6 +211,66 @@ func (m fieldEqualMatcher) match(r *Record) bool {
 		}
 	}
 	return false
+}
+
+// fieldOperator returns the index of the = or ~ that ends the path of a
+// field term, or -1. Quoted keys in [...] steps may hold either; a quote
+// elsewhere before the operator makes the term text.
+func fieldOperator(body string) int {
+	depth, inQuote := 0, false
+	for i := 0; i < len(body); i++ {
+		c := body[i]
+		switch {
+		case inQuote && c == '\\':
+			i++
+		case c == '"':
+			if depth == 0 {
+				return -1
+			}
+			inQuote = !inQuote
+		case inQuote:
+		case c == '[':
+			depth++
+		case c == ']':
+			depth = max(0, depth-1)
+		case depth == 0 && (c == '=' || c == '~'):
+			return i
+		}
+	}
+	return -1
+}
+
+// fieldExactMatcher is path=="value": the field's text equals value
+// exactly, with case, commas and every other character as they are.
+type fieldExactMatcher struct {
+	path  Path
+	value string
+}
+
+func (m fieldExactMatcher) match(r *Record) bool {
+	v, ok := r.Field(m.path)
+	return ok && v == m.value
+}
+
+// FieldTerm returns the query term that keeps (or, with exclude, drops)
+// the records whose field at path is exactly value. The value is quoted,
+// so spaces, quotes, commas and regular expression characters stay
+// literal.
+func FieldTerm(path Path, value string, exclude bool) string {
+	var b strings.Builder
+	if exclude {
+		b.WriteByte('!')
+	}
+	b.WriteString(path.String())
+	b.WriteString(`=="`)
+	for i := 0; i < len(value); i++ {
+		if value[i] == '"' || value[i] == '\\' {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(value[i])
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 type fieldRegexMatcher struct {
