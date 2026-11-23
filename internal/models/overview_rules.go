@@ -95,6 +95,10 @@ type overviewFinding struct {
 	// <workload>); see overview_commands.go.
 	supplies []string
 	targets  []overviewTarget
+
+	// notApplicable says why there is nothing to check (no objects of the
+	// kind in scope, an add-on not installed). It is not a pass.
+	notApplicable string
 }
 
 // overviewReport is the result of one recompute.
@@ -228,12 +232,18 @@ var overviewRules = []overviewRule{
 // countFinding builds a row whose value is the number of targets and whose
 // severity is the worst target's.
 func countFinding(rc *ruleContext, f overviewFinding, needs []schema.GroupVersionResource, targets func() []overviewTarget) overviewFinding {
+	if reason := optionalNotServed(rc.in, needs); reason != "" {
+		return notApplicable(f, reason)
+	}
 	if reason := rc.in.missingReason(needs...); reason != "" {
 		f.unavailable = reason
 		f.value = "n/a"
 		f.severity = severityUnknown
 		f.state = severityUnknown.String()
 		return f
+	}
+	if reason := noSubjectsReason(rc.in, needs); reason != "" {
+		return notApplicable(f, reason)
 	}
 	f.targets = sortTargets(targets())
 	f.value = fmt.Sprintf("%d", len(f.targets))
@@ -257,18 +267,23 @@ func countFinding(rc *ruleContext, f overviewFinding, needs []schema.GroupVersio
 // can be read.
 func partialCountFinding(rc *ruleContext, f overviewFinding, needs, anyOf []schema.GroupVersionResource, targets func() []overviewTarget) overviewFinding {
 	var reasons []string
-	var missing []schema.GroupVersionResource
+	var missing, readable []schema.GroupVersionResource
 	for _, gvr := range anyOf {
 		if reason := rc.in.missingReason(gvr); reason != "" {
 			reasons = append(reasons, reason)
 			missing = append(missing, gvr)
+		} else {
+			readable = append(readable, gvr)
 		}
 	}
 	if len(missing) == len(anyOf) {
 		return countFinding(rc, f, append(slices.Clone(needs), anyOf...), targets)
 	}
-	f = countFinding(rc, f, needs, targets)
+	f = countFinding(rc, f, append(slices.Clone(needs), readable...), targets)
 	if len(missing) > 0 && f.unavailable == "" {
+		// No object of the readable kinds is no "nothing to check": the
+		// kinds that cannot be read may hold some (ADR 0172).
+		stillApplicable(&f)
 		f.partial, f.partialGVRs = strings.Join(reasons, "; "), missing
 		f.value += " (partial)"
 	}

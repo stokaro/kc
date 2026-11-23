@@ -29,7 +29,9 @@ func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
 	}
 	return func(deps Deps, namespace, name string, path []string) []table.Row {
 		var rows []table.Row
-		if diagnosis {
+		// A configured cluster-scoped type has no diagnosis: its pods and
+		// events would need cluster-wide reads.
+		if diagnosis && namespace != "" {
 			rows = append(rows, diagnosisRow(deps, gvr, namespace, name, path))
 		}
 		if hasTimeline(gvr) {

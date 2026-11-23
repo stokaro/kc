@@ -150,7 +150,13 @@ func TestOverviewDiskAndVolumes(t *testing.T) {
 		},
 		statsErrors: map[string]string{"n3": "forbidden: nodes/proxy"},
 	}
-	r := measuredReport(t, AllNamespaces, m, nodes...)
+	// The claims exist: a row without claims in scope has nothing to check.
+	objs := append(slices.Clone(nodes),
+		&corev1.PersistentVolumeClaim{ObjectMeta: om("a", "data")},
+		&corev1.PersistentVolumeClaim{ObjectMeta: om("a", "logs")},
+		&corev1.PersistentVolumeClaim{ObjectMeta: om("b", "full")},
+	)
+	r := measuredReport(t, AllNamespaces, m, objs...)
 	disk := mustFinding(t, r, "capacity/disk")
 	if disk.state != "full" || disk.severity != severityFailed {
 		t.Fatalf("disk = %q %v, want full (imagefs of n2 at 92%%)", disk.state, disk.severity)
@@ -181,7 +187,7 @@ func TestOverviewDiskAndVolumes(t *testing.T) {
 
 	t.Run("namespace scope", func(t *testing.T) {
 		t.Parallel()
-		r := measuredReport(t, "a", m, nodes...)
+		r := measuredReport(t, "a", m, objs...)
 		if got := targetKeys(mustFinding(t, r, "risks/volumes-full")); !slices.Equal(got, []string{"persistentvolumeclaims:a/data"}) {
 			t.Fatalf("volumes in a = %v", got)
 		}
