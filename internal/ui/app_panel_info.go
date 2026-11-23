@@ -62,7 +62,7 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 		t.PromHistory = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload)
 	}
 	t.Open = func() infowidget.Summarizer {
-		return newGatedInfo(root, cl.CanListWatchAllNamespaces, func() infowidget.Summarizer {
+		return newGatedInfo(root, cl.CanListWatchAllNamespaces, cl.CanListWatchInNamespace, ns, func() infowidget.Summarizer {
 			return models.NewOverviewInfo(a.makeDeps(cl, cfg, key), ns)
 		})
 	}

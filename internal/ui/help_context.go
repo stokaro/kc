@@ -56,6 +56,7 @@ var modalHelpPages = map[string]help.ID{
 	workloadConfirmModal:     help.WorkloadActions,
 	accessViewModalName:      help.Access,
 	windowModalKey:           help.InvestigationWindow,
+	metricSourcesModalName:   help.MetricSources,
 	"compare_viewer":         help.CompareObjects,
 	"compare_context_picker": help.CompareLists,
 	"compare_lists":          help.CompareLists,

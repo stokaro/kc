@@ -149,6 +149,7 @@ func (a *App) commandMenuItems() []menubar.Item {
 		{Label: "Compare with conte&xt...", Shortcut: "C-x c", Run: a.compareListWithContext},
 		{Label: "Compare whole list with co&ntext...", Run: a.compareWholeListWithContext},
 		a.windowMenuItem(),
+		a.metricSourcesMenuItem(),
 		menubar.Separator(),
 		{Label: "Hot&list", Shortcut: "C-\\", Run: a.showHotlist},
 		{Label: "History &back", Shortcut: "M-y", Run: a.historyBack},
