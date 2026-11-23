@@ -37,6 +37,10 @@ type Log struct {
 	truncated int
 	// first is the Seq of records[0].
 	first Seq
+	// solo, when soloOn, shows only the records of one source. It hides
+	// records from the display; it never stops a stream.
+	solo   Source
+	soloOn bool
 }
 
 // NewLog returns an empty log in the formatted view with DefaultLimits.
@@ -67,7 +71,7 @@ func (l *Log) Append(src Source, lines ...string) (shown []string, dropped int) 
 		if IsTruncated(r.Raw) {
 			l.truncated++
 		}
-		match := l.query.Match(&r)
+		match := l.match(&r)
 		l.records = append(l.records, r)
 		l.shown = append(l.shown, match)
 		l.window.Add(Cost(len(r.Raw), r.IsJSON()))
@@ -165,9 +169,37 @@ func (l *Log) SetQuery(q *Query) {
 		q = nil
 	}
 	l.query = q
+	l.rematch()
+}
+
+// Solo returns the source shown alone, and whether one is.
+func (l *Log) Solo() (Source, bool) { return l.solo, l.soloOn }
+
+// SetSolo shows only the records of src, or every source again with on
+// false. The records of the other sources are kept and stay in the
+// limits; clearing Solo shows them again. Call Lines to get the new
+// display.
+func (l *Log) SetSolo(src Source, on bool) {
+	if !on {
+		src = Source{}
+	}
+	l.solo, l.soloOn = src, on
+	l.rematch()
+}
+
+// match reports whether r passes the query and Solo.
+func (l *Log) match(r *Record) bool {
+	if l.soloOn && r.Source != l.solo {
+		return false
+	}
+	return l.query.Match(r)
+}
+
+// rematch decides again which kept records are shown.
+func (l *Log) rematch() {
 	l.nShown = 0
 	for i := range l.records {
-		l.shown[i] = q.Match(&l.records[i])
+		l.shown[i] = l.match(&l.records[i])
 		if l.shown[i] {
 			l.nShown++
 		}

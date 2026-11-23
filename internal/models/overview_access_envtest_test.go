@@ -123,7 +123,7 @@ func waitOverview(t *testing.T, e *overviewEngine, what string, ready func(*over
 	ok := func() bool {
 		r, _ := e.snapshot()
 		last = r
-		return r != nil && ready(r)
+		return r != nil && !cachesLoading(r) && ready(r)
 	}
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
@@ -140,6 +140,42 @@ func waitOverview(t *testing.T, e *overviewEngine, what string, ready func(*over
 	}
 	t.Fatalf("overview never %s; last report:%s", what, b.String())
 	return nil
+}
+
+// cachesLoading reports whether a finding of r still waits for an informer
+// cache to sync ("deployments.apps: loading"). A report computed before
+// every granted cache synced says "loading" where the test expects a value
+// or a permission reason, so a wait on one condition (the pods) is not
+// enough: the caches of the other kinds may sync later.
+func cachesLoading(r *overviewReport) bool {
+	for _, f := range r.findings {
+		if strings.Contains(f.unavailable, ": loading") || strings.Contains(f.partial, ": loading") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestCachesLoadingRefusesAnUnsyncedReport shows the wait filter refuses
+// the report the flaky run saw, and accepts permission reasons.
+func TestCachesLoadingRefusesAnUnsyncedReport(t *testing.T) {
+	t.Parallel()
+	seen := &overviewReport{findings: []overviewFinding{
+		{id: "health/workloads-unavailable", value: "n/a", unavailable: "deployments.apps: loading"},
+	}}
+	partial := &overviewReport{findings: []overviewFinding{
+		{id: "health/workloads-unavailable", value: "0 (partial)", partial: "statefulsets.apps: loading"},
+	}}
+	settled := &overviewReport{findings: []overviewFinding{
+		{id: "health/workloads-unavailable", value: "0 (partial)", partial: "statefulsets.apps: not permitted to list and watch"},
+		{id: "capacity/cpu", value: "n/a", unavailable: "nodes: not permitted to list and watch"},
+	}}
+	if !cachesLoading(seen) || !cachesLoading(partial) {
+		t.Fatal("a report with a cache still loading passed the wait")
+	}
+	if cachesLoading(settled) {
+		t.Fatal("a report with only permission reasons was held back")
+	}
 }
 
 func targetNames(f overviewFinding) []string {

@@ -105,6 +105,7 @@ var builtinHotkeys = map[string]string{
 	"M-j":     "owners",
 	"M-k":     "access view",
 	"M-l":     "local directory panel",
+	"M-m":     "show one source of a merged log alone in the viewer",
 	"M-n":     "node actions",
 	"M-o":     "sort by column",
 	"M-p":     "port forward",
