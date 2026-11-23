@@ -1286,7 +1286,13 @@ func (a *App) capabilitiesForPanel(panel *Panel) PanelCapabilities {
 	if caps.HasContextMenu {
 		caps.HasContextMenu = a.hasApplicableCommands(panel)
 	}
-	return maskCapabilitiesForMode(panel.Mode(), panel.HasCommandFocus(), caps)
+	caps = maskCapabilitiesForMode(panel.Mode(), panel.HasCommandFocus(), caps)
+	if panel.Mode() == PanelModeLogs {
+		// F3 expands the panel's log session full screen.
+		w := panel.logsWidget()
+		caps.CanView = w != nil && w.HasSession()
+	}
+	return caps
 }
 
 func maskCapabilitiesForMode(mode PanelViewMode, commandFocused bool, caps PanelCapabilities) PanelCapabilities {
@@ -1948,6 +1954,9 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	if panel == nil {
 		return nil
 	}
+	if panel.Mode() == PanelModeLogs {
+		return a.expandPanelLogs(panel)
+	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	item, ok := panel.SelectedNavItem(ctx)
@@ -2137,15 +2146,20 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	} else {
 		logsViewer.SetCommand(itemViewCommand(item))
 	}
-	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
+	return a.presentLogsViewer(logsViewer, a.modalTitleFromItem(item, title))
+}
+
+// presentLogsViewer wires the keys of a single-container logs viewer and
+// shows it full screen. Closing it stops its stream.
+func (a *App) presentLogsViewer(logsViewer *LogsViewer, modalTitle string) tea.Cmd {
+	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnFilter(func() tea.Cmd { return a.showLogsFilterModal(logsViewer) })
 	a.setupLogFields(logsViewer)
 	logsViewer.SetOnClose(func() tea.Cmd {
 		a.hideModal()
 		return nil
 	})
-	modalTitle := a.modalTitleFromItem(item, title)
 	modal := NewModal(modalTitle, logsViewer)
 	modal.SetMode(ModalModeFullscreen)
 	modal.SetDimensions(a.width, a.height)

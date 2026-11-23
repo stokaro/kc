@@ -145,6 +145,9 @@ type Widget struct {
 	body io.ReadCloser
 	// span is the investigation window (docs/adr/0187-pin-freeze-window.md).
 	span spanState
+	// followers read the lines from the panel's stream in another view,
+	// the full-screen viewer (docs/adr/0271-logs-session-workspace.md).
+	followers []*Follower
 }
 
 // reconnecting reports a stream body that waits to reconnect.
@@ -338,6 +341,7 @@ func (w *Widget) Streaming() bool { return w.state == stateWaiting || w.state ==
 
 // stop cancels the current stream and makes every pending result stale.
 func (w *Widget) stop() {
+	w.endFollowers(followerStopped, io.EOF)
 	w.gen++
 	w.body = nil
 	if w.cancel != nil {
@@ -433,14 +437,17 @@ func (w *Widget) onChunk(m chunkMsg) (tea.Cmd, bool) {
 	if errors.Is(m.err, io.EOF) {
 		w.state = stateEnded
 		w.append([]string{"[the log stream ended]"})
+		w.endFollowers("", io.EOF)
 	} else {
 		w.state, w.err = stateFailed, m.err
 		w.append([]string{fmt.Sprintf("[the log stream failed: %v]", m.err)})
+		w.endFollowers("", m.err)
 	}
 	return closeStream(m.stream), true
 }
 
 func (w *Widget) fail(err error) {
+	w.endFollowers("", err)
 	w.state, w.err = stateFailed, err
 	w.viewer.SetContent(fmt.Sprintf("Logs failed: %v", err), viewer.Metadata{Title: w.title()})
 }
@@ -453,6 +460,7 @@ func (w *Widget) append(lines []string) {
 		lines[i] = logview.TruncateLine(line, logview.ReadLimit)
 		w.window.Add(logview.Cost(len(lines[i]), false))
 	}
+	w.feedFollowers(lines)
 	if w.hasLines {
 		w.viewer.AppendLines(lines)
 	} else {

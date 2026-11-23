@@ -185,6 +185,9 @@ func (w *Widget) SetTheme(theme string) {
 // Theme returns the active chroma theme.
 func (w *Widget) Theme() string { return w.theme }
 
+// RawLines returns a copy of the text lines, without styling.
+func (w *Widget) RawLines() []string { return append([]string(nil), w.rawLines...) }
+
 // AppendLines appends raw text lines (used by logs viewer). In highlighted mode
 // this forces a full re-render; in plain mode we simply extend the backing
 // slices so appending remains cheap.

@@ -44,7 +44,8 @@ In a workload or pod, findings cover a rollout that does not progress,
 a replica failure, unavailable replicas, a failed Job, an unschedulable
 pod with the scheduler's message, image pull and start errors, an OOM
 kill, a crash loop or a restart in the last hour, a failed exit (init
-containers too), and a claim that is missing or not Bound. A Deployment
+containers too), and a claim that is missing or not Bound (the pod's
+own diagnosis explains the claim further, see Storage below). A Deployment
 whose availability is younger than `overview.startupGrace` is `starting`.
 
 An OOM kill is an `error` while the container is terminated by it or
@@ -135,6 +136,40 @@ its `/diagnosis` for the node checks.
 
 A pod with `spec.schedulingGates` is reported as waiting for its gates
 (a warning), not as unschedulable, and gets no node checks.
+
+## Storage: a claim or a pod that uses one
+
+A PersistentVolumeClaim has a `/diagnosis` row too. It and a pod's own
+`/diagnosis` follow each claim the pod uses through its StorageClass,
+its PersistentVolume, the CSIDriver and the VolumeAttachment on the
+pod's node, and tell the stages apart:
+
+- `storage/.../wait-for-consumer` (info): the class binds with
+  `WaitForFirstConsumer` and the pod is not scheduled yet. Waiting is
+  expected; the scheduling findings explain a pod that stays Pending.
+- `storage/.../provisioning` (warning): the provisioner has not created
+  a volume yet; `provisioningfailed`, `failedbinding` and the like
+  (error) quote the claim's own warning event.
+- `storage/.../class-missing`, `static`, `no-class`: the class does not
+  exist, the claim asks for a pre-created volume (`storageClassName: ""`)
+  and none matches, or the claim names no class.
+- `storage/.../pv-missing`, `pv-failed`, `lost`: the bound volume does
+  not exist, is `Failed`, or the claim is `Lost`.
+- `storage/.../attach-error` (error): the VolumeAttachment's
+  `status.attachError`, with its time; `attaching` (info) while it is
+  not attached yet; `no-attachment` (info) when there is none and the
+  driver needs one. A driver whose CSIDriver says `attachRequired: false`
+  needs no attachment, and kc says nothing.
+- `volume/<pod>/failedmount`, `failedattachvolume`, `failedmapvolume`
+  (error): the kubelet's or the attach/detach controller's event for a
+  pod that is Pending on its node. A workload's diagnosis shows these
+  too.
+
+Bound does not mean mounted: kc reports the mount events it finds and
+does not inspect the node, the filesystem, the provisioner or the CSI
+driver. A StorageClass, volume, CSIDriver or VolumeAttachments kc may
+not read make the stage `incomplete`, never missing. VolumeAttachments
+are listed only for a pod on a node with a CSI volume.
 
 ## Keys
 
