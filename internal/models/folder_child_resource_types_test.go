@@ -23,15 +23,18 @@ func TestChildResourceTypesFolderListsEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
-	// A Deployment also gets its logs row, its /diagnosis, its /events
-	// and its /timeline, after the child types.
-	if len(rows) != 5 {
-		t.Fatalf("rows = %d, want 5", len(rows))
+	// A Deployment also gets its logs row, its /diagnosis, its /rollout,
+	// its /events and its /timeline, after the child types.
+	if len(rows) != 6 {
+		t.Fatalf("rows = %d, want 6", len(rows))
 	}
-	if id, _, _, _ := rows[3].Columns(); id != "demo/demo-deploy/"+EventsSegment {
-		t.Fatalf("fourth row = %q, want the /events row", id)
+	if id, _, _, _ := rows[3].Columns(); id != "demo/demo-deploy/"+RolloutSegment {
+		t.Fatalf("fourth row = %q, want the /rollout row", id)
 	}
-	if id, _, _, _ := rows[4].Columns(); id != "demo/demo-deploy/"+TimelineSegment {
+	if id, _, _, _ := rows[4].Columns(); id != "demo/demo-deploy/"+EventsSegment {
+		t.Fatalf("fifth row = %q, want the /events row", id)
+	}
+	if id, _, _, _ := rows[5].Columns(); id != "demo/demo-deploy/"+TimelineSegment {
 		t.Fatalf("last row = %q, want the /timeline row", id)
 	}
 	if _, ok := rows[1].(WorkloadLogsProvider); !ok {

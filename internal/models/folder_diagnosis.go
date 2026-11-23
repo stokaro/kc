@@ -36,6 +36,9 @@ func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
 		if diagnosis && namespace != "" {
 			rows = append(rows, diagnosisRow(deps, gvr, namespace, name, path))
 		}
+		if gvr == relDeploymentsGVR && namespace != "" {
+			rows = append(rows, rolloutRow(deps, namespace, name, path))
+		}
 		if hasObjectEvents(gvr, namespace) {
 			rows = append(rows, eventsRow(deps, gvr, namespace, name, path))
 		}
@@ -68,11 +71,26 @@ func diagnosisRow(deps Deps, gvr schema.GroupVersionResource, namespace, name st
 	return item
 }
 
+// rolloutRow is the /rollout row inside a Deployment at path.
+func rolloutRow(deps Deps, namespace, name string, path []string) table.Row {
+	p := append(slices.Clone(path), RolloutSegment)
+	item := NewChildResourceItem(namespace+"/"+name+"/"+RolloutSegment, []string{"/" + RolloutSegment}, p, func() (Folder, error) {
+		return newLazyRelatedFolder(deps, RelatedRollout, relDeploymentsGVR, namespace, name, path)
+	})
+	item.RowItem.details = "Show the revisions, their pods, template changes and rollout progress"
+	return item
+}
+
 // newDiagnosisFolder builds the folder at path/diagnosis. Enter calls it on
 // the UI thread, so it acquires nothing and reads nothing: the unscoped
 // cluster and the scope decisions are taken on first use, in the background
 // populate and watch start.
 func newDiagnosisFolder(deps Deps, gvr schema.GroupVersionResource, namespace, name string, path []string) (Folder, error) {
+	return newLazyRelatedFolder(deps, RelatedDiagnosis, gvr, namespace, name, path)
+}
+
+// newLazyRelatedFolder builds a diagnosis or rollout folder without reads.
+func newLazyRelatedFolder(deps Deps, kind RelatedKind, gvr schema.GroupVersionResource, namespace, name string, path []string) (Folder, error) {
 	var (
 		once     sync.Once
 		unscoped Deps
@@ -89,7 +107,7 @@ func newDiagnosisFolder(deps Deps, gvr schema.GroupVersionResource, namespace, n
 		once.Do(func() {}) // nothing acquired after Close
 		release()
 	}
-	return newRelatedFolder(deps.Ctx, deps, newScopedReader(resolve), releaseLazy, RelatedDiagnosis, gvr, namespace, name, path)
+	return newRelatedFolder(deps.Ctx, deps, newScopedReader(resolve), releaseLazy, kind, gvr, namespace, name, path)
 }
 
 // diagnosisWatches returns what a diagnosis of gvr reads, so changes to
