@@ -165,6 +165,7 @@ func grantSecretsInNamespace(t *testing.T, admin *kccluster.Cluster, namespace, 
 	if err := admin.GetClient().Create(ctx, binding); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatal(err)
 	}
+	kctesting.WaitForAccess(t, admin.GetClient(), user, namespace, "", "secrets", "list", "watch")
 }
 
 // A user who may read Secrets in one namespace only browses that

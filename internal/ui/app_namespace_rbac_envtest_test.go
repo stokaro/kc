@@ -45,6 +45,7 @@ func TestAppBrowsesPodsWithNamespaceOnlyAccess(t *testing.T) {
 		RoleRef:  rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: "pod-reader"},
 		Subjects: []rbacv1.Subject{{Kind: rbacv1.UserKind, Name: user}},
 	})
+	kctesting.WaitForAccess(t, admin.GetClient(), user, ns, "", "pods", "list", "watch")
 	adminCreate(t, admin, testPod(ns, "pod-1"))
 
 	// A kubeconfig for the pool, which builds clusters from files. Never

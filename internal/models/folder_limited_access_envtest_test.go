@@ -174,4 +174,6 @@ func grantLimitedUser(t *testing.T, cl *kccluster.Cluster, user string) {
 	if err := cl.GetClient().Create(ctx, binding); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatalf("create clusterrolebinding: %v", err)
 	}
+	kctesting.WaitForAccess(t, cl.GetClient(), user, "", "", "namespaces", "list", "watch")
+	kctesting.WaitForAccess(t, cl.GetClient(), user, "", "", "pods", "list", "watch")
 }

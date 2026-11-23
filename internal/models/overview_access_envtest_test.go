@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,27 +42,9 @@ func grantOverviewReads(t *testing.T, cl *kccluster.Cluster, namespace, user str
 	if err := cl.GetClient().Create(ctx, binding); err != nil {
 		t.Fatalf("create rolebinding: %v", err)
 	}
-	waitGranted(t, cl, user, namespace, "", "events")
-	waitGranted(t, cl, user, namespace, "apps", "deployments")
-}
-
-// waitGranted waits until the API server's authorizer has seen a new grant,
-// asked with a SubjectAccessReview so the user's own cached answers stay
-// untouched.
-func waitGranted(t *testing.T, cl *kccluster.Cluster, user, namespace, group, resource string) {
-	t.Helper()
-	kctesting.Eventually(t, 10*time.Second, 50*time.Millisecond, func() bool {
-		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-		defer cancel()
-		review := &authorizationv1.SubjectAccessReview{Spec: authorizationv1.SubjectAccessReviewSpec{
-			User:               user,
-			ResourceAttributes: &authorizationv1.ResourceAttributes{Namespace: namespace, Verb: "watch", Group: group, Resource: resource},
-		}}
-		if err := cl.GetClient().Create(ctx, review); err != nil {
-			return false
-		}
-		return review.Status.Allowed
-	}, "grant of "+resource+" to "+user+" never took effect")
+	kctesting.WaitForAccess(t, cl.GetClient(), user, namespace, "", "events", "list", "watch")
+	kctesting.WaitForAccess(t, cl.GetClient(), user, namespace, "apps", "deployments", "list", "watch")
+	kctesting.WaitForAccess(t, cl.GetClient(), user, namespace, "apps", "replicasets", "list", "watch")
 }
 
 // grantNodeReads lets user list and watch nodes, cluster-wide.
@@ -92,7 +73,7 @@ func grantNodeReads(t *testing.T, cl *kccluster.Cluster, user string) {
 		_ = cl.GetClient().Delete(delCtx, binding)
 		_ = cl.GetClient().Delete(delCtx, role)
 	})
-	waitGranted(t, cl, user, "", "", "nodes")
+	kctesting.WaitForAccess(t, cl.GetClient(), user, "", "", "nodes", "list", "watch")
 }
 
 func createWarningEvent(t *testing.T, cl *kccluster.Cluster, namespace, name, pod string) {

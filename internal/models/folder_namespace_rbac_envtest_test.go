@@ -164,6 +164,7 @@ func grantPodsInNamespace(t *testing.T, cl *kccluster.Cluster, namespace, user s
 	if err := cl.GetClient().Create(ctx, binding); err != nil {
 		t.Fatalf("create rolebinding in %s: %v", namespace, err)
 	}
+	kctesting.WaitForAccess(t, cl.GetClient(), user, namespace, "", "pods", "list", "watch")
 }
 
 func deletePod(t *testing.T, cl *kccluster.Cluster, namespace, name string) {
