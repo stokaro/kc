@@ -23,12 +23,20 @@ import (
 // builtinObjectRows are rows models itself adds inside objects, next to
 // the rows registered with RegisterObjectRows.
 func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
-	if gvr == serviceGVR || hasWorkloadDiagnosis(gvr) {
-		return func(deps Deps, namespace, name string, path []string) []table.Row {
-			return []table.Row{diagnosisRow(deps, gvr, namespace, name, path)}
-		}, true
+	diagnosis := gvr == serviceGVR || hasWorkloadDiagnosis(gvr)
+	if !diagnosis && !hasTimeline(gvr) {
+		return nil, false
 	}
-	return nil, false
+	return func(deps Deps, namespace, name string, path []string) []table.Row {
+		var rows []table.Row
+		if diagnosis {
+			rows = append(rows, diagnosisRow(deps, gvr, namespace, name, path))
+		}
+		if hasTimeline(gvr) {
+			rows = append(rows, timelineRow(deps, gvr, namespace, name, path))
+		}
+		return rows
+	}, true
 }
 
 // diagnosisRow is the /diagnosis row inside an object at path.

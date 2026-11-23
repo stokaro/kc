@@ -828,6 +828,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, a.handleRelatedFolder(msg)
 	case compareResultMsg:
 		return a, msg.view.apply(msg)
+	case setCompareMsg:
+		return a, a.applySetCompare(msg)
 	case copyResultMsg:
 		if msg.error {
 			return a, a.ShowToast(msg.text, 3*time.Second)
@@ -1135,6 +1137,10 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case accessResultMsg:
 		// Function keys and an open access view redraw from the cache.
+		return true
+	case setCompareMsg:
+		// A comparison started from the context picker finishes after
+		// the picker closed; another dialog may be open by then.
 		return true
 	case compareResultMsg:
 		// The result names its viewer; it must not be lost when another

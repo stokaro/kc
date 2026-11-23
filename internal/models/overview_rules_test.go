@@ -446,8 +446,10 @@ func TestOverviewRules(t *testing.T) {
 	}
 }
 
-// TestOverviewRulesWithNothingToReport checks that an empty cluster reports
-// every rule as ok with a count of zero.
+// TestOverviewRulesWithNothingToReport checks that a cluster with one node
+// and one healthy pod reports the rules over nodes, pods and events as ok
+// with a count of zero, and every other rule as not applicable: there is
+// no object it checks, which is not a pass.
 func TestOverviewRulesWithNothingToReport(t *testing.T) {
 	t.Parallel()
 	web := withPod(overviewRunningPod("a", "web"), func(p *corev1.Pod) { p.Spec.Containers[0].Resources = resources("100m", "64Mi", "", "64Mi") })
@@ -463,13 +465,29 @@ func TestOverviewRulesWithNothingToReport(t *testing.T) {
 	if len(r.findings) != len(overviewRules) {
 		t.Fatalf("findings = %d, want one per rule (%d)", len(r.findings), len(overviewRules))
 	}
+	notApplicable := []string{
+		"health/workloads-unavailable", "health/workloads-rollout", "health/jobs-failed", "health/cronjobs-failed",
+		"health/cronjobs-suspended", "health/pvcs", "health/pvs", "risks/pdbs-blocking", "risks/volumes-full", "risks/single-replica",
+		"risks/quotas", "risks/hpas", "risks/certificates",
+	}
+	var got []string
 	for _, f := range r.findings {
 		if f.section == overviewCapacity {
+			continue
+		}
+		if f.notApplicable != "" {
+			got = append(got, f.id)
+			if f.value != "none" || f.state != "n/a" || f.severity != severityOK || f.unavailable != "" || !strings.HasPrefix(f.notApplicable, "no ") {
+				t.Errorf("%s = %q %v %q %q, want none n/a", f.id, f.value, f.severity, f.state, f.notApplicable)
+			}
 			continue
 		}
 		if f.value != "0" || f.severity != severityOK || f.state != "ok" {
 			t.Errorf("%s = %q %v %q, want 0 ok", f.id, f.value, f.severity, f.state)
 		}
+	}
+	if strings.Join(got, ",") != strings.Join(notApplicable, ",") {
+		t.Errorf("not applicable = %v\nwant %v", got, notApplicable)
 	}
 }
 

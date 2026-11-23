@@ -25,6 +25,11 @@ viewer:
     # in MiB; older lines are dropped and the footer counts them.
     maxLines: 100000
     maxMemoryMiB: 64
+    # JSON fields that M-d "Follow request" filters by, first one found.
+    correlationFields: [trace_id, traceId, traceID, request_id, requestId, requestID]
+    # URL template for the trace of a line; {trace} is the field value.
+    # Empty: no trace link. Example: https://tempo.example/trace/{trace}
+    traceURL: ""
 
 panel:
   scrolling:
@@ -106,6 +111,16 @@ portForward:
 #       jsonPath: .status.hostIP
 #       wide: true
 columns: {}
+
+# Object timelines (/timeline inside an object): kc records the revisions
+# it observes from the shared cache while a recording runs.
+timeline:
+  # Revisions kept per object; the oldest are evicted first.
+  maxEntries: 100
+  # Bytes of revisions (as JSON) kept per object.
+  maxBytes: 4194304
+  # Objects recorded at once; one more stops the oldest recording.
+  maxObjects: 10
 
 overview:
   # How far back warning events and container restarts count.

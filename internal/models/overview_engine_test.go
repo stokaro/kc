@@ -254,7 +254,9 @@ func TestOverviewFolderRowsEnterAndExplain(t *testing.T) {
 		synctest.Wait()
 		rows := folder.Lines(ctx, 0, 100)
 		ids := overviewRowIDs(rows)
-		wantOrder := []string{"__back__", "section/capacity", "capacity/cpu", "capacity/memory", "capacity/pods", "capacity/disk", "section/health", "health/nodes-not-ready"}
+		// The node checks pass with nothing to report and fold into the
+		// section's quiet row (ADR 0172).
+		wantOrder := []string{"__back__", "overview/attention", "section/capacity", "capacity/cpu", "capacity/memory", "capacity/pods", "capacity/disk", "section/health", "health/pods-crashloop"}
 		if !slices.Equal(ids[:len(wantOrder)], wantOrder) {
 			t.Fatalf("first rows = %v, want %v", ids[:len(wantOrder)], wantOrder)
 		}
