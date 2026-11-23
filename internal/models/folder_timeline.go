@@ -40,12 +40,20 @@ type TimelineFolder struct {
 }
 
 func newTimelineFolder(deps Deps, gvr schema.GroupVersionResource, namespace, name string, path []string) *TimelineFolder {
-	base := NewBaseFolder(deps, []table.Column{{Title: " Observed"}, {Title: "Kind"}, {Title: "ResourceVersion"}, {Title: "Change"}}, path)
+	base := NewBaseFolder(deps, timelineColumns(), path)
 	f := &TimelineFolder{BaseFolder: base, gvr: gvr, namespace: namespace, name: name}
 	f.rec = recordingFor(deps, gvr, namespace, name)
 	base.SetRowSource(newSliceRowSource(f.populate))
 	f.unsub = f.rec.subscribe(f.Refresh)
 	return f
+}
+
+// timelineColumns are the timeline's columns. The change never shrinks;
+// Kind and ResourceVersion give up width first in a narrow pane, so the
+// change gets the rest of the line. The observed time is not cut. The
+// bottom status line shows the whole change.
+func timelineColumns() []table.Column {
+	return []table.Column{{Title: " Observed"}, {Title: "Kind", MinWidth: 6}, {Title: "ResourceVersion", MinWidth: 6}, {Title: "Change"}}
 }
 
 // Close stops following the recording; the recording keeps running.

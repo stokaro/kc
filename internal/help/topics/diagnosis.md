@@ -22,6 +22,10 @@ read. Its title says when it was observed. Under it follow:
   owner, not a confirmed cause,
 - a `next` row that says what to inspect.
 
+In a narrow panel the name, resource and namespace columns are cut first
+and the evidence gets the rest of the line. The bottom status line shows
+the full text of the row under the cursor.
+
 In a Service, the summary shows the type and IP families, selector,
 selected and ready pods, endpoint counts and each port with its
 targetPort. Findings cover:

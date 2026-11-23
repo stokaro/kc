@@ -168,7 +168,7 @@ func newRelatedFolder(ctx context.Context, deps Deps, reader *scopedReader, rele
 	if kind == RelatedDiagnosis {
 		last = "Evidence"
 	}
-	f.BaseFolder = NewBaseFolder(deps, []table.Column{{Title: " Name"}, {Title: "Resource"}, {Title: "Namespace"}, {Title: last}}, path)
+	f.BaseFolder = NewBaseFolder(deps, relatedColumns(last), path)
 	rows := newLiveObjectRowSourceWithHooks(f.populate, f.BaseFolder.markDirtyFromSource, f.startWatch)
 	rows.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: name})
 	rows.useBackground(deps)
@@ -177,6 +177,14 @@ func newRelatedFolder(ctx context.Context, deps Deps, reader *scopedReader, rele
 	f.rows = rows
 	f.BaseFolder.SetRowSource(rows)
 	return f, nil
+}
+
+// relatedColumns are the columns of a related folder. The last one says
+// why the row is listed and never shrinks; the name, resource and
+// namespace give up width first in a narrow pane, so the reason gets the
+// rest of the line. The bottom status line shows it in full.
+func relatedColumns(last string) []table.Column {
+	return []table.Column{{Title: " Name", MinWidth: 12}, {Title: "Resource", MinWidth: 7}, {Title: "Namespace", MinWidth: 7}, {Title: last}}
 }
 
 // relatedWatch is one watch of a related folder: a type in a namespace,
@@ -466,6 +474,9 @@ func relatedRowsPrefixed(deps Deps, depsFor func(RelatedRef) Deps, folderPath []
 		}
 		obj.SetViewCommand(kubectlCommand(rowDeps, append(args, "-o", "yaml")...))
 		obj.RowItem.details = objectDetails(ref.Namespace, ref.Name, ref.GVR.Resource, ref.GVR.GroupVersion().String())
+		if relation != "" {
+			obj.RowItem.details += ": " + relation
+		}
 		if hasChild && ctor != nil {
 			r := ref
 			rows = append(rows, NewObjectWithChildItem(obj, func() (Folder, error) {
