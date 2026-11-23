@@ -8,8 +8,9 @@ either direction, as mc copies between two panels.
 ## Copy to a local file
 
 `F5` on an object (its YAML), a log, an open viewer, or one container
-file of at most 512 KiB opens the Copy dialog: `Copy "<subject>" to:`
-and a file path.
+file opens the Copy dialog: `Copy "<subject>" to:` and a file path. A
+container file streams whole, whatever its size; the copy fails only
+when the stream stalls for 30 seconds.
 
 - The path starts in the other panel's directory when that panel shows
   the local filesystem, else in the system temp directory.

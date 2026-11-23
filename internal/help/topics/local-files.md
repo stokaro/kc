@@ -37,7 +37,8 @@ same entry as "Local files", after Info.
 ## Limits
 
 - `F3` and `F4` refuse directories, special files and binary files (a
-  NUL byte in the first 8000 bytes). `F3` shows at most 512 KiB.
+  NUL byte in the first 8000 bytes). `F3` opens a file over 2 MiB in
+  pages; see [File and YAML viewer](viewer.md).
 - `F4` on a local file does not touch a cluster, so read-only mode
   allows it.
 - After an edit or a copy kc reads the listing again.

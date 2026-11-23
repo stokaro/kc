@@ -61,7 +61,9 @@ container needs `tar` in the image.
 
 ## Limits
 
-- `F3` shows at most the first 512 KiB of a file.
+- `F3` opens a file over 512 KiB in pages: kc reads one block at a
+  time with `dd` on the container's file shell, without a new exec
+  request. See [File and YAML viewer](viewer.md).
 - Symbolic links, devices, pipes and sockets are never copied; the
   result lists them as left out.
 - Downloaded files keep only the owner permission bits (0644 becomes

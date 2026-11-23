@@ -43,7 +43,17 @@ with the error.
 ## Limits
 
 - The viewer is read-only; `F4` hands the object or file to an editor.
-- Container and local files show at most their first 512 KiB.
+- A local file over 2 MiB or a container file over 512 KiB opens in
+  pages, as in mc's viewer: kc reads 256 KiB blocks around the visible
+  lines and keeps at most 16 in memory. The status line says so, for
+  example `paged, 1.2 GiB, highlighting off`. A block on its way shows
+  as `~ reading...`.
+- In a paged file `Home`, `End`, `PgUp` and `PgDn` work on the whole
+  file. After `End` the position shows as a share of the bytes (`~97%`)
+  until the lines are counted (local files only). `F7` searches from the
+  current position with its progress in the footer; `Esc` cancels it.
+- A paged file has no syntax colors and no mouse selection, and `M-a`
+  does not copy it; save it with `F5`.
 - To save the content to a file, press `F5` on the row in the panel.
 - Wrap mode starts from `viewer.mode` in the configuration.
 
