@@ -57,8 +57,8 @@ Example: `-n prod,stage -l app=api restarts>3 !canary`
 - `Enter` applies the text. An empty text clears the filter.
 - `Esc` closes the dialog and keeps the filter as it was.
 - A click on `Filter:` in the bottom border clears the filter.
-- `C-z` shows only the rows in a fault state; it combines with the text
-  filter and shows as `faults` in the border.
+- `C-z` shows only the rows in a fault state, the red rows; it combines
+  with the text filter and shows as `faults` in the border.
 
 ## Limits
 

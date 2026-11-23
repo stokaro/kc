@@ -20,8 +20,8 @@ const (
 	ctrlXPrefixKey = "ctrl+x"
 	// compareKey completes C-x C-d, mc's "Compare files".
 	compareKey = "ctrl+d"
-	// compareReadTimeout bounds reading both manifests. The read waits for
-	// the informers to sync, which can take a while on a first visit.
+	// compareReadTimeout bounds reading both manifests: one GET each
+	// from the API server, which a slow or remote cluster can delay.
 	compareReadTimeout = 10 * time.Second
 )
 

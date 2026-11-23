@@ -33,6 +33,10 @@ kind, the resourceVersion and a summary of the change. Kinds:
 - `gap`: changes may be missing here (the cache lost the final state of
   a deletion, or the watch stopped).
 
+In a narrow panel the kind and resourceVersion columns are cut first and
+the summary gets the rest of the line; the bottom status line shows the
+whole summary of the row under the cursor.
+
 The summary names images, replicas, ready and available counts, phase,
 conditions, restarts, generation and a requested deletion.
 

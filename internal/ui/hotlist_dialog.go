@@ -153,8 +153,7 @@ func (a *App) showHotlist() tea.Cmd {
 			if err != nil {
 				return true, a.ShowToast("Cannot add to hotlist: "+err.Error(), 3*time.Second)
 			}
-			picker.SetChoices(hotlistChoices(a.hotlist))
-			picker.move(len(a.hotlist))
+			a.refreshHotlistDialog(len(a.hotlist) - 1)
 			return true, a.ShowInfo(msg, 2*time.Second)
 		case "f2":
 			return true, a.promptViewName(idx, -1)
@@ -167,7 +166,7 @@ func (a *App) showHotlist() tea.Cmd {
 			if err != nil {
 				return true, a.ShowToast("Cannot update the view: "+err.Error(), 3*time.Second)
 			}
-			picker.SetChoices(hotlistChoices(a.hotlist))
+			a.refreshHotlistDialog(i)
 			return true, a.ShowInfo(msg, 2*time.Second)
 		case "f6":
 			i, ok := choiceIndex(c, len(a.hotlist))
@@ -183,7 +182,7 @@ func (a *App) showHotlist() tea.Cmd {
 			if err := a.removeFromHotlist(i); err != nil {
 				return true, a.ShowToast("Cannot remove from hotlist: "+err.Error(), 3*time.Second)
 			}
-			picker.SetChoices(hotlistChoices(a.hotlist))
+			a.refreshHotlistDialog(-1)
 			return true, nil
 		}
 		return false, nil
@@ -191,9 +190,33 @@ func (a *App) showHotlist() tea.Cmd {
 	modal := NewModal(hotlistTitle, picker)
 	modal.SetCloseOnSingleEsc(true)
 	a.modalManager.Register(hotlistModalKey, modal)
-	a.configureModalWindow(modal, picker, idx, "", 84, min(max(len(a.hotlist), 4)+3, 20))
+	a.configureModalWindow(modal, picker, idx, "", 84, hotlistHeight(len(a.hotlist)))
 	a.showModal(hotlistModalKey)
 	return nil
+}
+
+// hotlistHeight is the dialog height for n entries.
+func hotlistHeight(n int) int { return min(max(n, 4)+3, 20) }
+
+// refreshHotlistDialog shows the current hotlist in the open hotlist
+// dialog, with the cursor on entry at (none when at < 0), and fits the
+// dialog to the entries. A change made from a dialog on top of the hotlist
+// (F2 save, F6 rename) shows when that dialog closes.
+func (a *App) refreshHotlistDialog(at int) {
+	modal := a.modalManager.modals[hotlistModalKey]
+	if modal == nil || !modal.IsVisible() {
+		return
+	}
+	picker, ok := modal.content.(*ScopePickerModel)
+	if !ok {
+		return
+	}
+	picker.SetChoices(hotlistChoices(a.hotlist))
+	if at >= 0 {
+		picker.selectValue(strconv.Itoa(at))
+	}
+	a.configureModalWindow(modal, picker, a.activePanel, "", 84, hotlistHeight(len(a.hotlist)))
+	a.invalidateView("hotlist changed")
 }
 
 // showHistoryList opens the active panel's history (M-H), newest first.

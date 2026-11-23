@@ -6,6 +6,7 @@ import (
 	textinput "charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/ui/dialog"
 )
@@ -47,6 +48,9 @@ type TextInputModalConfig struct {
 	Validate     func(string) error
 	ResultMsg    func(TextInputModalResult) tea.Msg
 	HideTitle    bool
+	// WrapDescription wraps each description line at the dialog width
+	// instead of cutting it; the dialog grows by the lines it needs.
+	WrapDescription bool
 	// Deprecated: ignored; see TextInputModalButtonStyles.
 	ButtonStyles TextInputModalButtonStyles
 }
@@ -54,6 +58,8 @@ type TextInputModalConfig struct {
 const (
 	textInputConfirmID = "confirm"
 	textInputCancelID  = "cancel"
+	// textInputMargin is the blank column dialog.Form keeps on each side.
+	textInputMargin = 1
 )
 
 // TextInputModal is mc's input dialog: a prompt, a cyan input line, a hint
@@ -65,6 +71,9 @@ type TextInputModal struct {
 	errMsg        string
 	width, height int
 	rules         []int
+	// wrapWidth is the content width the description wraps at; zero
+	// until the dialog is sized.
+	wrapWidth int
 }
 
 // NewTextInputModal constructs a TextInputModal with the given configuration.
@@ -93,7 +102,7 @@ func (m *TextInputModal) syncItems() {
 	items = append(items, dialog.Input{Model: &m.input})
 	// The hint keeps its lines; an error takes the first one, so the
 	// dialog does not change its height.
-	for i, line := range strings.Split(m.cfg.Description, "\n") {
+	for i, line := range m.descriptionLines() {
 		if i == 0 && m.errMsg != "" {
 			items = append(items, dialog.Text{Text: m.errMsg, Error: true})
 			continue
@@ -107,6 +116,21 @@ func (m *TextInputModal) syncItems() {
 		{ID: textInputCancelID, Label: cancel},
 	})
 	m.form.Items = items
+}
+
+// descriptionLines are the description's lines, wrapped at the content
+// width when the dialog asks for it and is sized.
+func (m *TextInputModal) descriptionLines() []string {
+	lines := strings.Split(m.cfg.Description, "\n")
+	if !m.cfg.WrapDescription || m.wrapWidth <= 0 {
+		return lines
+	}
+	inner := max(1, m.wrapWidth-2*textInputMargin)
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, strings.Split(ansi.Wrap(line, inner, ""), "\n")...)
+	}
+	return out
 }
 
 // hotkeyLabel marks the first letter of label as its hotkey, or the first
@@ -141,14 +165,19 @@ func (m *TextInputModal) Init() tea.Cmd { return nil }
 func (m *TextInputModal) SetDimensions(w, h int) {
 	m.width = w
 	m.height = h
+	if w > 0 {
+		m.wrapWidth = m.contentWidth()
+	}
 }
 
 // PreferredSize implements ModalSizer.
 func (m *TextInputModal) PreferredSize(maxContentWidth, maxContentHeight int) (width, height int) {
+	m.wrapWidth = 0 // the widest line decides the width
 	width = m.clampWidth(m.desiredWidth())
 	if maxContentWidth > 0 && width > maxContentWidth {
 		width = maxContentWidth
 	}
+	m.wrapWidth = width
 	m.syncItems()
 	height = m.clampHeight(m.form.Height())
 	if maxContentHeight > 0 && height > maxContentHeight {
@@ -159,7 +188,7 @@ func (m *TextInputModal) PreferredSize(maxContentWidth, maxContentHeight int) (w
 
 // View renders the modal content and cursor.
 func (m *TextInputModal) View() tea.View {
-	width := m.clampWidth(m.width)
+	width := m.contentWidth()
 	if width <= 0 {
 		width = m.clampWidth(m.desiredWidth())
 	}
@@ -257,10 +286,21 @@ func (m *TextInputModal) ClearError() { m.errMsg = "" }
 func (m *TextInputModal) Error() string { return m.errMsg }
 
 func (m *TextInputModal) render(width int) (string, *tea.Cursor) {
+	m.wrapWidth = width
 	m.syncItems()
 	content, cursor, rules := m.form.View(width)
 	m.rules = rules
 	return lipgloss.NewStyle().Width(width).Background(m.form.Skin.Normal.GetBackground()).Render(content), cursor
+}
+
+// contentWidth is the width the content renders at: the configured
+// bounds, but never wider than the window gave it, so a line that wraps
+// stays inside the frame. Zero before the window is sized.
+func (m *TextInputModal) contentWidth() int {
+	if m.width <= 0 {
+		return 0
+	}
+	return min(m.clampWidth(m.width), m.width)
 }
 
 func (m *TextInputModal) desiredWidth() int {

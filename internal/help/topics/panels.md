@@ -20,8 +20,10 @@ A panel in List mode starts at its root and goes deeper with `Enter`:
 The first row of a folder is `/..`; `Enter` on it goes back up. The frame
 title shows the path, the bottom border the context and namespace scope
 (`prod : shop`). A list across all namespaces gets a Namespace column.
-Rows kc considers faults are red: a crash looping pod, a Deployment with
-missing replicas, a node that is not Ready.
+Rows kc considers faults are red: a pod that is Pending, not ready, or
+waiting in CrashLoopBackOff, ImagePullBackOff, ErrImagePull or
+CreateContainerConfigError, a Deployment with missing replicas, a node
+that is not Ready.
 
 Above the shell line, the command line shows the kubectl command that
 lists the active panel, for example `kubectl get pods -n shop`. `M-c` or
@@ -40,7 +42,9 @@ the copy button at its right copies it.
 - `C-s` (or `M-s`) starts quick search: type to jump to the first row
   whose name starts with the text. `C-s` again finds the next match,
   `Backspace` removes a character, `Esc` ends it, and any other key ends
-  it and does its usual job.
+  it and does its usual job (`M-n` acts on the found node). Text typed
+  while the list is still loading is kept and applied when the rows
+  arrive.
 - `M-o` sorts by the next column, `M-r` reverses the sort. The sorted
   column title ends in an up or down arrow.
 - `M-f` filters rows; `C-z` keeps only rows in a fault state.

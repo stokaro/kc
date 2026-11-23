@@ -130,6 +130,12 @@ func (a *App) handleViewName(msg viewNameMsg) tea.Cmd {
 	if err != nil {
 		return a.ShowToast("Cannot save the view: "+err.Error(), 3*time.Second)
 	}
+	// The hotlist is still open under the name dialog; show the change.
+	at := msg.Entry
+	if at < 0 {
+		at = len(a.hotlist) - 1
+	}
+	a.refreshHotlistDialog(at)
 	if msg.Entry >= 0 {
 		return a.ShowInfo("Renamed to "+msg.Name, 2*time.Second)
 	}

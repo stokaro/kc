@@ -27,7 +27,7 @@ A saved view also stores:
 - `Ins` adds the active panel's place as a bookmark.
 - `F2` saves the active panel's place and settings as a named view. A
   dialog asks for the name ("Save view as"); `Enter` saves, `Esc`
-  cancels.
+  cancels. The new view shows in the hotlist at once, under the cursor.
 - `F4` stores the active panel's place and settings in the highlighted
   view. Nothing else changes a view.
 - `F6` renames the highlighted entry ("Rename to").

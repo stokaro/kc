@@ -319,6 +319,9 @@ func (a *App) showWindowDialog() tea.Cmd {
 		MaxWidth:     72,
 		MinHeight:    6,
 		HideTitle:    true,
+		// The example and the time zone must stay readable in a narrow
+		// panel: the description wraps instead of being cut.
+		WrapDescription: true,
 		Validate: func(s string) error {
 			_, err := investigation.Parse(s, time.Now(), loc)
 			return err

@@ -718,6 +718,7 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.RefreshFolder(ctx)
 	}
+	p.applyPendingQuickSearch(ctx)
 	var selItem models.Item
 	if item, ok := p.SelectedNavItem(ctx); ok {
 		selItem = item

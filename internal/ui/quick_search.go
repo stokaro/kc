@@ -5,6 +5,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/panelcontent"
 )
 
 // quickSearchStyle is the search text in the panel frame (mc draws it
@@ -16,6 +19,9 @@ var quickSearchStyle = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(
 type quickSearch struct {
 	active bool
 	text   string
+	// pending is set while text was typed into a list that had no rows
+	// yet: the search runs again when the rows arrive.
+	pending bool
 }
 
 // QuickSearchActive reports whether the panel is in quick search.
@@ -72,13 +78,57 @@ func (p *Panel) QuickSearchKey(key tea.KeyPressMsg) bool {
 		return true
 	}
 	if k := key.Key(); k.Text != "" && k.Mod&^tea.ModShift == 0 {
-		// mc ignores a character that matches no row.
-		if text := p.search.text + k.Text; lw.QuickSearch(ctx, text, false) {
-			p.search.text = text
+		text := p.search.text + k.Text
+		switch {
+		case lw.QuickSearch(ctx, text, false):
+			p.search.text, p.search.pending = text, false
+		case !hasObjectRows(lw.Items()):
+			// A live list may still be loading: keep the text and search
+			// when its rows arrive (see applyPendingQuickSearch).
+			p.search.text, p.search.pending = text, true
 		}
+		// mc ignores a character that matches no row of a loaded list.
 		return true
 	}
 	p.StopQuickSearch()
+	return false
+}
+
+// quickSearchSelectionChanged records the row the search moved the cursor
+// to as the panel's selection and returns the command that tells the other
+// panel, as a cursor key does.
+func (p *Panel) quickSearchSelectionChanged() tea.Cmd {
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.widgetSelectionChanged(ctx, panelcontent.Selection{})
+}
+
+// applyPendingQuickSearch runs the search for text typed before the list
+// had rows, once it has them. It reports whether the cursor moved.
+func (p *Panel) applyPendingQuickSearch(ctx context.Context) bool {
+	if !p.search.active || !p.search.pending || p.search.text == "" {
+		return false
+	}
+	lw := p.listWidget(ctx)
+	if lw == nil || !hasObjectRows(lw.Items()) {
+		return false
+	}
+	p.search.pending = false
+	p.invalidateRenderCache()
+	return lw.QuickSearch(ctx, p.search.text, false)
+}
+
+// hasObjectRows reports whether items has a row other than "/..".
+func hasObjectRows(items []Item) bool {
+	for _, it := range items {
+		if it.Item == nil || it.Name == ".." {
+			continue
+		}
+		if back, ok := it.Item.(models.Back); ok && back.IsBack() {
+			continue
+		}
+		return true
+	}
 	return false
 }
 

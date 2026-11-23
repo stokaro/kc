@@ -25,7 +25,9 @@ does this Deployment need to start".
 
 The Relation column names the field that links the two objects, for
 example `volumes[cfg]`, `containers[app].env[A,B]`, `spec.nodeName` or
-`controller of pods/web-1-abc`.
+`controller of pods/web-1-abc`. In a narrow panel the other columns are
+cut first; the bottom status line shows the object and the relation in
+full.
 
 A dim row cannot be opened; the reason says why:
 
