@@ -96,6 +96,39 @@ func (m *Model) View() string {
 		return fit("Dashboard: the terminal is too small", w)
 	}
 	v := m.top()
+	rects, charts := m.frame(v)
+	screen := make([]string, h)
+	screen[0] = m.titleLine(v, w)
+	screen[1] = m.statusLine(v, charts, w)
+	for i := 2; i < h-1; i++ {
+		screen[i] = strings.Repeat(" ", w)
+	}
+	screen[h-1] = m.keysLine(v, rects, w)
+	for wd, r := range rects {
+		var lines []string
+		switch wd {
+		case widgetTop:
+			lines = m.topLines(v, r.w, r.h)
+		case widgetEvents:
+			lines = m.eventLines(v, r.w, r.h)
+		default:
+			lines = append([]string{m.chartTitle(v, wd, r.w)}, charts[wd].Render()...)
+			m.placeImage(wd, charts[wd], lines)
+		}
+		for i, l := range lines {
+			if i >= r.h || r.y+i >= h-1 {
+				break
+			}
+			screen[r.y+i] = place(screen[r.y+i], fit(l, r.w), r.x, r.w, w)
+		}
+	}
+	return strings.Join(screen, "\n")
+}
+
+// frame lays out v on the screen and builds its charts on one cell grid.
+// It records the rectangles for the mouse and the cell count.
+func (m *Model) frame(v *view) (map[widget]rect, map[widget]chart.Chart) {
+	w, h := m.w, m.h
 	rects := layout(v, w, h)
 	charts := make(map[widget]chart.Chart)
 	m.rects = make(map[widget]rect, len(rects))
@@ -126,31 +159,7 @@ func (m *Model) View() string {
 	if v.cursor >= m.cells {
 		v.cursor = m.cells - 1
 	}
-	screen := make([]string, h)
-	screen[0] = m.titleLine(v, w)
-	screen[1] = m.statusLine(v, charts, w)
-	for i := 2; i < h-1; i++ {
-		screen[i] = strings.Repeat(" ", w)
-	}
-	screen[h-1] = m.keysLine(v, rects, w)
-	for wd, r := range rects {
-		var lines []string
-		switch wd {
-		case widgetTop:
-			lines = m.topLines(v, r.w, r.h)
-		case widgetEvents:
-			lines = m.eventLines(v, r.w, r.h)
-		default:
-			lines = append([]string{m.chartTitle(v, wd, r.w)}, charts[wd].Render()...)
-		}
-		for i, l := range lines {
-			if i >= r.h || r.y+i >= h-1 {
-				break
-			}
-			screen[r.y+i] = place(screen[r.y+i], fit(l, r.w), r.x, r.w, w)
-		}
-	}
-	return strings.Join(screen, "\n")
+	return rects, charts
 }
 
 // place puts cell text s of width sw at column x of line.

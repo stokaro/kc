@@ -11,6 +11,7 @@ import (
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/chart"
+	"github.com/stokaro/kc/internal/ui/kittygfx"
 )
 
 // Sources are what a dashboard reads. The App builds them for one
@@ -35,6 +36,10 @@ type Sources struct {
 	// while it is set; SetWindow sets it (w). Either may be nil.
 	Window    func() investigation.Window
 	SetWindow func(investigation.Window)
+	// Images draws the plots as Kitty graphics images (charts.graphics);
+	// nil draws text only. The App owns it and deletes the images when
+	// the dashboard closes and when kc exits.
+	Images *kittygfx.Images
 }
 
 const (
@@ -123,7 +128,9 @@ type Model struct {
 	stack []*view
 	w, h  int
 	mode  chart.Mode
-	seq   int
+	// pixels draws the plots as images while Sources.Images is set.
+	pixels bool
+	seq    int
 	// rects is where the last frame put each widget, for the mouse.
 	rects map[widget]rect
 	// cells is the plot width of the charts in the last frame.
@@ -166,12 +173,12 @@ func IsMsg(msg tea.Msg) bool {
 	case TickMsg, usageMsg:
 		return true
 	}
-	return false
+	return kittygfx.IsMsg(msg)
 }
 
 // New opens a dashboard of t.
 func New(src Sources, t Target) *Model {
-	m := &Model{src: src, sess: newSession(), mode: chart.Braille}
+	m := &Model{src: src, sess: newSession(), mode: chart.Braille, pixels: true}
 	m.stack = []*view{m.newView(t, nil)}
 	return m
 }
@@ -210,7 +217,11 @@ func (m *Model) Resume(src Sources, t Target) *Model {
 func (m *Model) Start() tea.Cmd {
 	m.followWindow()
 	m.refresh()
-	return tea.Batch(m.tick(), m.maybeRead())
+	cmds := []tea.Cmd{m.tick(), m.maybeRead()}
+	if m.images() {
+		cmds = append(cmds, kittygfx.QueryCellSize(), m.syncImages())
+	}
+	return tea.Batch(cmds...)
 }
 
 // Stop cancels the reads in flight; the App calls it on close.
@@ -316,11 +327,31 @@ func (m *Model) refresh() {
 	v.sel = min(v.sel, max(0, len(v.now.Top)-1))
 }
 
-// Update handles a message for the open dashboard.
+// Update handles a message for the open dashboard. With images on, it
+// also sends the pictures of the next frame the terminal does not have.
 func (m *Model) Update(msg tea.Msg) (tea.Cmd, Action) {
+	if kittygfx.IsMsg(msg) {
+		if m.src.Images != nil {
+			m.src.Images.Handle(msg)
+		}
+		return m.syncImages(), Action{}
+	}
+	cmd, act := m.update(msg)
+	if act.Close || act.Open != nil || act.Logs != nil {
+		// The dashboard leaves; the App deletes the images.
+		return cmd, act
+	}
+	return tea.Batch(cmd, m.syncImages()), act
+}
+
+func (m *Model) update(msg tea.Msg) (tea.Cmd, Action) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
+		if m.images() {
+			// A new font size comes with a resize.
+			return tea.Batch(m.maybeRead(), kittygfx.QueryCellSize()), Action{}
+		}
 		return m.maybeRead(), Action{}
 	case TickMsg:
 		if msg.id != m.id {
@@ -477,7 +508,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, Action) {
 	case "-":
 		m.zoom(v, 1)
 	case "b":
-		m.mode = map[chart.Mode]chart.Mode{chart.Braille: chart.Blocks, chart.Blocks: chart.Braille}[m.mode]
+		return tea.Batch(m.switchDraw(), m.maybeRead()), Action{}
 	case "r":
 		v.prom.key, v.prom.at = "", time.Time{}
 	case "o":
