@@ -32,8 +32,11 @@ The header shows the stream state:
 - for all containers, which sources stream, for example
   `incomplete: 3 streaming, 1 failed`.
 
-Lines of an all-containers stream start with `[pod/container]`. The
-footer counts lines dropped to stay within `viewer.logs.maxLines` and
+Lines that hold one JSON object are shown formatted, as in the logs
+viewer: time, level (colored by severity), message, then the other
+fields as `key=value`. Other lines are shown as they are. Lines of an
+all-containers stream start with `[pod/container]`. The footer counts
+lines dropped to stay within `viewer.logs.maxLines` and
 `viewer.logs.maxMemoryMiB`, for example `• 10000 older dropped`.
 
 With an investigation window (`C-x w`) the panel reads the log from the
@@ -61,10 +64,11 @@ start of the window instead of its tail, and the header shows the window.
 - Tail, since and timestamps stay when the cursor moves to another pod.
   A chosen container and Previous are cleared, since another pod may
   not have them. "All containers" stays.
-- JSON formatting, the log filter (`M-g`), the fields view (`M-d`) and
-  the raw toggle (`M-v`) are only in the full-screen logs viewer. Press
-  `F3` in the panel to expand its session, or `Enter` or `F3` on a
-  `logs` row for a viewer with its own stream.
+- The log filter (`M-g`), the fields view (`M-d`) and the raw view
+  (`M-v`) are only in the full-screen logs viewer. Press `F3` in the
+  panel to expand its session, or `Enter` or `F3` on a `logs` row for a
+  viewer with its own stream. The expanded viewer gets the lines as
+  read, so `M-v` there shows them raw.
 - An expanded viewer that falls more than 8192 lines behind the stream
   skips the oldest of them and says `[kc] N lines skipped`.
 - The user menu is not on `F2` in this mode; `F9` shows it disabled.
