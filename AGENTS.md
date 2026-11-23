@@ -71,6 +71,7 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
   - `mouse <button> <x> <y> <press|release|motion>` for mouse events,
   - `screen [ansi|plain]` to dump the current framebuffer,
   - `snapshot <file.png>` to write a PNG render of the terminal (plain text; `snapshot <file.png> color` keeps the colors and draws box lines, as used by `docs/demo/record.sh`),
+  - `caption <text>` to draw a caption box over the following color snapshots (a bare `caption` clears it) and `caption-at <top|bottom>` to move it (bottom by default, over the shell line and function-key bar),
   - `resize <cols> <rows>` and `wait` / `exit` for session control.
 - Designed for CI/e2e test harnesses—script it from shell pipelines or expect-like drivers without allocating a PTY.
 - Run it only against an envtest kubeconfig; see "No Live Clusters" below.

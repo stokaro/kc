@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"image/color"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -135,7 +137,7 @@ func TestDrawShapeLeavesOtherRunes(t *testing.T) {
 
 func TestColorSnapshotToPNG(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "frame.png")
-	if err := colorSnapshotToPNG(cellsOf("ok"), path); err != nil {
+	if err := colorSnapshotToPNG(cellsOf("ok"), "a caption", captionBottom, path); err != nil {
 		t.Fatal(err)
 	}
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), "*"))
@@ -144,5 +146,110 @@ func TestColorSnapshotToPNG(t *testing.T) {
 	}
 	if len(matches) != 1 || matches[0] != path {
 		t.Fatalf("files written = %v, want only %s", matches, path)
+	}
+}
+
+func TestDrawCaption(t *testing.T) {
+	rows := make([]string, 10)
+	for i := range rows {
+		rows[i] = strings.Repeat("x", 80)
+	}
+	plain, err := renderCells(cellsOf(rows...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bounds := plain.Bounds()
+	boxHeight := captionRows * colorCellHeight
+	centerX := bounds.Dx() / 2
+
+	t.Run("no caption keeps the frame unchanged", func(t *testing.T) {
+		img, err := renderCells(cellsOf(rows...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := drawCaption(img, "", captionBottom); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(img.Pix, plain.Pix) {
+			t.Fatal("an empty caption changed pixels")
+		}
+	})
+
+	for _, tt := range []struct {
+		position string
+		boxTop   int
+	}{
+		{position: captionBottom, boxTop: bounds.Dy() - boxHeight},
+		{position: captionTop, boxTop: 0},
+	} {
+		t.Run(tt.position, func(t *testing.T) {
+			img, err := renderCells(cellsOf(rows...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := drawCaption(img, "Quick search", tt.position); err != nil {
+				t.Fatal(err)
+			}
+			// The frame of the box is the accent color and its inside is
+			// the caption background, apart from the text.
+			if got := img.At(centerX, tt.boxTop); !sameColor(got, captionAccent) {
+				t.Fatalf("top edge of the box at (%d,%d) = %v, want the accent", centerX, tt.boxTop, got)
+			}
+			if got := img.At(centerX, tt.boxTop+boxHeight-1); !sameColor(got, captionAccent) {
+				t.Fatalf("bottom edge of the box = %v, want the accent", got)
+			}
+			bright, background := 0, 0
+			for y := tt.boxTop + captionBorder; y < tt.boxTop+boxHeight-captionBorder; y++ {
+				for x := centerX - 40; x < centerX+40; x++ {
+					switch c := img.At(x, y); {
+					case sameColor(c, captionFg):
+						bright++
+					case sameColor(c, captionBg):
+						background++
+					}
+				}
+			}
+			if bright == 0 || background == 0 {
+				t.Fatalf("inside the box: %d text pixels, %d background pixels; want both", bright, background)
+			}
+			// The box is centered and narrower than the frame, so the
+			// sides of the frame stay as they were.
+			for _, x := range []int{0, bounds.Dx() - 1} {
+				y := tt.boxTop + boxHeight/2
+				if got, want := img.At(x, y), plain.At(x, y); !sameColor(got, want) {
+					t.Fatalf("pixel (%d,%d) beside the box changed: %v, want %v", x, y, got, want)
+				}
+			}
+			// Rows outside the box are untouched.
+			outside := boxHeight
+			if tt.position == captionBottom {
+				outside = 0
+			}
+			for x := range bounds.Dx() {
+				if got, want := img.At(x, outside), plain.At(x, outside); !sameColor(got, want) {
+					t.Fatalf("pixel (%d,%d) outside the box changed", x, outside)
+				}
+			}
+		})
+	}
+}
+
+func TestCaptionCommands(t *testing.T) {
+	s := &session{captionAt: captionBottom}
+	s.handleLine("caption   Cluster overview: what needs attention ", nil)
+	if s.caption != "Cluster overview: what needs attention" {
+		t.Fatalf("caption = %q", s.caption)
+	}
+	s.handleLine("caption-at top", nil)
+	if s.captionAt != captionTop {
+		t.Fatalf("captionAt = %q, want top", s.captionAt)
+	}
+	s.handleLine("caption-at middle", nil)
+	if s.captionAt != captionTop {
+		t.Fatalf("an invalid position changed captionAt to %q", s.captionAt)
+	}
+	s.handleLine("caption", nil)
+	if s.caption != "" {
+		t.Fatalf("a bare caption left %q", s.caption)
 	}
 }
