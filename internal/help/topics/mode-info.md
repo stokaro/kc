@@ -79,5 +79,6 @@ sample so far; `stale, last 3m ago` means no recent sample.
 - [Overview](overview.md)
 - [Investigation window](investigation-window.md)
 - [Metric sources](metric-sources.md)
+- [Dashboard](dashboard.md)
 - [Pin and freeze](pin-freeze.md)
 - [Panel mode](panel-mode.md)

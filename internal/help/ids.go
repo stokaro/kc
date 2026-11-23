@@ -42,6 +42,7 @@ const (
 	PinFreeze           ID = "pin-freeze"
 	InvestigationWindow ID = "investigation-window"
 	MetricSources       ID = "metric-sources"
+	Dashboard           ID = "dashboard"
 
 	// Special folders.
 	Overview    ID = "overview"

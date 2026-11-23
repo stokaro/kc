@@ -13,6 +13,9 @@ const (
 	// KubectlVerbOverview starts in /overview (kc overview); kubectl has
 	// no such verb.
 	KubectlVerbOverview KubectlVerb = "overview"
+	// KubectlVerbDashboard starts in the full-screen dashboard (kc
+	// dashboard).
+	KubectlVerbDashboard KubectlVerb = "dashboard"
 )
 
 // StartupIntent captures CLI-driven startup requests (kubectl parity flows).

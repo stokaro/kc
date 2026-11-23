@@ -125,6 +125,7 @@ var builtinHotkeys = map[string]string{
 	"C-x f":   "freeze a panel's display",
 	"C-x w":   "investigation window",
 	"C-x m":   "metric sources",
+	"C-x g":   "dashboard",
 }
 
 // BuiltinHotkey reports whether kc binds key (normalized by ParseHotkey)

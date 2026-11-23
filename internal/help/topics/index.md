@@ -17,6 +17,7 @@ dialog or view opens its page; this index lists them all. See
 - [Panel options](panel-options.md)
 - [Pin and freeze a panel](pin-freeze.md)
 - [Investigation window](investigation-window.md)
+- [Dashboard](dashboard.md)
 - [Metric sources](metric-sources.md)
 
 ## Moving around

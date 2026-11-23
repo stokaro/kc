@@ -51,6 +51,7 @@ type cliFlags struct {
 	Get           getCommand     `cmd:"get" help:"Mirror kubectl get"`
 	Logs          logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
 	Overview      struct{}       `cmd:"overview" help:"Start in the cluster overview (/overview) of the namespace, or of all namespaces with -A"`
+	Dashboard     struct{}       `cmd:"dashboard" help:"Start in the full-screen dashboard of the namespace, or of all namespaces with -A"`
 	Version       versionCommand `cmd:"version" help:"Show version information"`
 }
 
@@ -240,12 +241,15 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 		intent.Namespace = ns
 		intent.Logs = logsIntent
 		return intent, ns, nil
-	case commandMatches(cmd, "kc overview", "overview"):
+	case commandMatches(cmd, "kc overview", "overview"), commandMatches(cmd, "kc dashboard", "dashboard"):
 		ns := selectNamespace(cli.Namespace, "")
 		if cli.AllNamespaces {
 			ns = ""
 		}
 		intent.Verb = ui.KubectlVerbOverview
+		if commandMatches(cmd, "kc dashboard", "dashboard") {
+			intent.Verb = ui.KubectlVerbDashboard
+		}
 		intent.Namespace = ns
 		return intent, ns, nil
 	default:

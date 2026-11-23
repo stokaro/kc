@@ -44,6 +44,7 @@ import (
 	"github.com/stokaro/kc/internal/objectaction"
 	"github.com/stokaro/kc/internal/podfs"
 	"github.com/stokaro/kc/internal/portforward"
+	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/menubar"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	describewidget "github.com/stokaro/kc/internal/ui/panelcontent/describe"
@@ -285,14 +286,18 @@ type App struct {
 	// Namespace auto-navigation state
 	// panelScope is each panel's namespace scope (models.AllNamespaces for
 	// all). It is kc state; kubeconfig is never changed.
-	panelScope         [2]string
-	namespaceScopes    namespaceScopes      // namespaces used in this session (issue #56)
-	activity           *models.Activity     // pauses background refreshes while a dialog is open
-	pendingConfirm     *pendingConfirmation // waits for the red confirmation
-	diagnostics        diagnosticRuns       // running diagnostic commands; see diagnostic_command.go
-	objectActions      *objectaction.Registry
-	nodeShell          *nodeShellSession     // open node shell, shown full screen
-	nodeShellStarting  bool                  // a node shell pod is being created
+	panelScope        [2]string
+	namespaceScopes   namespaceScopes      // namespaces used in this session (issue #56)
+	activity          *models.Activity     // pauses background refreshes while a dialog is open
+	pendingConfirm    *pendingConfirmation // waits for the red confirmation
+	diagnostics       diagnosticRuns       // running diagnostic commands; see diagnostic_command.go
+	objectActions     *objectaction.Registry
+	nodeShell         *nodeShellSession // open node shell, shown full screen
+	nodeShellStarting bool              // a node shell pod is being created
+	// dash is the full-screen dashboard, kept after closing for C-x g;
+	// promShared joins its identical Prometheus reads.
+	dash               *dashboardState
+	promShared         *promhistory.Shared
 	usage              *models.UsageMetrics  // polls metrics.k8s.io for usage columns
 	portForwards       *portforward.Registry // forwards of this process, across contexts
 	pendingPortForward *models.PortForwardPlan
@@ -2303,6 +2308,8 @@ func (a *App) applyStartupIntent() tea.Cmd {
 		return a.applyStartupIntentLogs()
 	case KubectlVerbOverview:
 		return a.applyStartupIntentOverview()
+	case KubectlVerbDashboard:
+		return a.applyStartupIntentDashboard()
 	default:
 		return nil
 	}

@@ -11,6 +11,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/dashboard"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	"github.com/stokaro/kc/internal/ui/viewer"
 	"github.com/stokaro/kc/internal/workloadaction"
@@ -83,6 +84,18 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, tea.Batch(append(cmds, cmd)...)
 	}
 	viewWasValid := a.mainViewCache.valid
+
+	// An open dashboard owns the keyboard and the screen; a message of a
+	// closed one is dropped.
+	if a.dashboardOpen() {
+		cmd, handled := a.updateDashboard(msg)
+		cmds = append(cmds, cmd)
+		if handled {
+			return a, tea.Batch(cmds...)
+		}
+	} else if dashboard.IsMsg(msg) {
+		return a, tea.Batch(cmds...)
+	}
 
 	// An open node shell owns the keyboard and the screen.
 	if a.nodeShell != nil {
