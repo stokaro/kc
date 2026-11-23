@@ -32,6 +32,9 @@ func (a *App) handleCtrlXKey(press tea.KeyPressMsg) tea.Cmd {
 	if press.String() == compareKey {
 		return a.compareSelectedObjects()
 	}
+	if cmd, ok := a.handlePinChord(press.String()); ok {
+		return cmd
+	}
 	return a.commandChord(press)
 }
 

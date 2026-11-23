@@ -33,13 +33,15 @@ func (a *App) newPanelLogsWidget(p *Panel) PanelWidget {
 			Timestamps:   defaults.Timestamps,
 		}
 	}
-	return logswidget.New(p.manifestWidgetDeps(), logswidget.Options{
+	w := logswidget.New(p.manifestWidgetDeps(), logswidget.Options{
 		Source:   a.panelLogsSource(),
 		Theme:    a.viewerTheme(),
 		Wrap:     a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap),
 		Settings: settings,
 		Limits:   a.logLimits(),
 	})
+	_ = w.SetSpan(a.logsSpan())
+	return w
 }
 
 // logLimits are the limits of what one logs viewer or Logs panel keeps,

@@ -67,6 +67,8 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 		a.panelModeItem(idx, "&Info", PanelModeInfo),
 		a.localFilesItem(idx),
 		menubar.Separator(),
+		a.pinMenuItem(idx),
+		a.freezeMenuItem(idx),
 		{Label: "Panel &options...", Shortcut: optionsKey, Disabled: !visible, Run: func() tea.Cmd {
 			return a.showViewOptionsModalForPanel(a.panelByIndex(idx))
 		}},
@@ -142,6 +144,7 @@ func (a *App) commandMenuItems() []menubar.Item {
 		{Label: "Switch panels &on/off", Shortcut: "C-o", Run: a.toggleTerminal},
 		{Label: "Copy &command", Shortcut: "M-c", Run: a.copyPanelCommand},
 		{Label: "Compare ob&jects", Shortcut: "C-x C-d", Run: a.compareSelectedObjects},
+		a.windowMenuItem(),
 		menubar.Separator(),
 		{Label: "Hot&list", Shortcut: "C-\\", Run: a.showHotlist},
 		{Label: "History &back", Shortcut: "M-y", Run: a.historyBack},

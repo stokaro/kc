@@ -56,6 +56,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		a.pendingCmds = nil
 	}
 	a.pendingCmdsMu.Unlock()
+	if cmd, ok := a.updatePin(msg); ok {
+		return a, tea.Batch(append(cmds, cmd)...)
+	}
 	viewWasValid := a.mainViewCache.valid
 
 	// An open node shell owns the keyboard and the screen.

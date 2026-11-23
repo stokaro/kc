@@ -59,6 +59,9 @@ type Panel struct {
 	renderCacheFocused   bool
 	renderCacheValid     bool
 	selectionObservers   []func(context.Context, panelcontent.Selection, string) tea.Msg
+	// pin and freeze: docs/adr/0187-pin-freeze-window.md.
+	pin    *panelPin
+	freeze *panelFreeze
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -340,6 +343,13 @@ func (p *Panel) SetMessagePoster(f func(tea.Msg)) { p.messagePoster = f }
 
 // SetMode switches the active view mode and ensures the widget is initialized.
 func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
+	if p.mode != mode {
+		// The still picture belongs to the mode that drew it.
+		p.Thaw()
+		if !followerMode(mode) {
+			p.ClearPin()
+		}
+	}
 	if current := p.ensureActiveWidget(ctx); current != nil && p.mode != mode {
 		current.SetFocus(ctx, false)
 	}
@@ -726,6 +736,12 @@ func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection)
 	if sel.Path == "" {
 		sel.Path = p.currentPath
 	}
+	if p.freeze != nil {
+		// Nothing changes behind a still picture; Thaw reports it.
+		p.freeze.missed = true
+		return nil
+	}
+	sel = p.pinnedSelection(sel)
 	if sel.Item == nil {
 		if item, ok := p.SelectedNavItem(ctx); ok {
 			sel.Item = item
@@ -745,6 +761,10 @@ func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection)
 // RefreshContent asks the active widget to reload what it shows because the
 // shared cache changed. The widget limits how often it really reloads.
 func (p *Panel) RefreshContent(ctx context.Context) tea.Cmd {
+	if p.freeze != nil {
+		// Rereading what nobody sees costs API requests; Thaw rereads.
+		return nil
+	}
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if r, ok := widget.(panelcontent.Refresher); ok {
 			return r.Refresh(ctx)
@@ -809,6 +829,13 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if _, ok := msg.(tea.MouseMsg); ok {
 		p.StopQuickSearch()
+	}
+	if p.freeze != nil {
+		switch msg.(type) {
+		case tea.KeyMsg, tea.MouseMsg:
+			// Keys would move the live widget behind the picture.
+			return p, nil
+		}
 	}
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if cmd, handled := widget.Update(ctx, msg); handled {
@@ -955,6 +982,14 @@ func (p *Panel) SetCurrentPath(path string) {
 }
 
 func (p *Panel) frameInfo(ctx context.Context, width int) panelcontent.FrameInfo {
+	if p.freeze != nil {
+		return p.decorateFrame(p.freeze.info)
+	}
+	return p.decorateFrame(p.widgetFrameInfo(ctx, width))
+}
+
+// widgetFrameInfo is the frame the active widget asks for.
+func (p *Panel) widgetFrameInfo(ctx context.Context, width int) panelcontent.FrameInfo {
 	info := panelcontent.FrameInfo{
 		Breadcrumb: p.currentPath,
 	}
@@ -1046,6 +1081,9 @@ func (p *Panel) renderContent(ctx context.Context) tea.View {
 
 // renderContentFocused renders the panel content with focus state
 func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) tea.View {
+	if p.freeze != nil {
+		return tea.NewView(p.frozenView(p.width, p.height))
+	}
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		return widget.View(ctx, panelcontent.Frame{
 			Size:    panelcontent.Size{Width: p.width, Height: p.height},
@@ -1504,7 +1542,11 @@ func (p *Panel) ColumnTitles(ctx context.Context) []string {
 // notifySelectionListeners tells the active widget about sel, then the
 // observers. Inactive widgets learn the selection when SetMode activates them.
 func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
-	sel = p.completeSelection(ctx, sel)
+	if p.freeze != nil {
+		p.freeze.missed = true
+		return nil
+	}
+	sel = p.completeSelection(ctx, p.pinnedSelection(sel))
 	var cmd tea.Cmd
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if listener, ok := widget.(panelcontent.SelectionListener); ok {

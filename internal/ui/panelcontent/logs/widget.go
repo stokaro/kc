@@ -98,6 +98,8 @@ type Options struct {
 	// Limits bound the lines the panel keeps; the zero value means
 	// logview.DefaultLimits.
 	Limits logview.Limits
+	// Now replaces time.Now in tests.
+	Now func() time.Time
 }
 
 type state int
@@ -141,6 +143,8 @@ type Widget struct {
 	// body is the open stream's body; a resumed stream reports when it
 	// waits to reconnect (docs/adr/0180-resume-live-logs.md).
 	body io.ReadCloser
+	// span is the investigation window (docs/adr/0187-pin-freeze-window.md).
+	span spanState
 }
 
 // reconnecting reports a stream body that waits to reconnect.
@@ -220,6 +224,7 @@ func (w *Widget) OnSelectionChanged(_ context.Context, sel panelcontent.Selectio
 		}
 		w.settings.Previous = false
 		w.targetID = id
+		w.resolveSpan()
 	}
 	w.target = target
 	return w.restart(sel.Force)
@@ -273,7 +278,7 @@ func (w *Widget) effective() Request {
 	default:
 		r.AllContainers, r.Spec.Container = false, c
 	}
-	return r
+	return w.applySpan(r)
 }
 
 // restart streams the effective request after the debounce delay. It keeps
@@ -289,6 +294,7 @@ func (w *Widget) restart(force bool) tea.Cmd {
 	w.req, w.spec = req, req.Spec
 	w.state, w.err = stateWaiting, nil
 	w.hasLines, w.follow, w.lostPlace = false, true, false
+	w.span.hidden, w.span.first = 0, time.Time{}
 	w.window.Reset()
 	w.viewer.SetContent("Waiting for the log...", viewer.Metadata{Title: w.title()})
 	gen := w.gen
@@ -399,7 +405,7 @@ func (w *Widget) onChunk(m chunkMsg) (tea.Cmd, bool) {
 	if m.gen != w.gen {
 		return closeStream(m.stream), true
 	}
-	w.append(m.lines)
+	w.append(w.cutAfterEnd(m.lines))
 	if m.err == nil {
 		return read(w, w.gen, m.stream, m.reader), true
 	}
@@ -573,6 +579,9 @@ func (w *Widget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panel
 		info.HeaderStatus = "ended"
 	case stateFailed:
 		info.HeaderStatus = "failed"
+	}
+	if s := w.spanStatus(); s != "" && w.state != stateIdle {
+		info.HeaderStatus = strings.TrimSuffix(s+", "+info.HeaderStatus, ", ")
 	}
 	current, total := w.viewer.Position()
 	if total > 0 && w.hasLines {
