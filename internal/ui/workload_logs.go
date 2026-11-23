@@ -18,6 +18,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/logmux"
+	"github.com/stokaro/kc/internal/logresume"
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
@@ -105,11 +106,15 @@ func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.W
 
 	logOpts := *logs.PodLogOptions()
 	logOpts.Container = ""
+	// The follower is set before its handler is registered, so before the
+	// first target, and with it the first stream, exists.
+	var follower *logmux.Follower
 	mux := logmux.New(ctx, open, logmux.Options{
 		LogOptions: logOpts,
 		MaxStreams: maxRequests,
+		Check:      func(t logmux.Target) (logresume.Instance, bool) { return follower.Instance(t) },
 	})
-	follower := logmux.NewFollower(mux, match)
+	follower = logmux.NewFollower(mux, match)
 	reg, err := informer.AddEventHandler(follower)
 	if err != nil {
 		mux.Close()

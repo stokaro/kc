@@ -1,18 +1,15 @@
 package logmux
 
 import (
-	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/stokaro/kc/internal/logview"
+	"github.com/stokaro/kc/internal/logresume"
 )
 
 // DefaultMaxStreams is the default number of streams that run at once. It
@@ -57,6 +54,10 @@ type Options struct {
 	// RemoveGrace is how long the stream of a removed target keeps running;
 	// zero or less means DefaultRemoveGrace.
 	RemoveGrace time.Duration
+	// Check, when set, returns the current state of a target's container
+	// (Follower.Instance). With it a stream that ends while its container
+	// still runs reconnects; without it only failed streams reconnect.
+	Check func(Target) (logresume.Instance, bool)
 }
 
 func (o Options) maxStreams() int {
@@ -99,10 +100,11 @@ type Stats struct {
 // Mux merges the log streams of a set of targets. SetTargets changes the
 // set; Lines delivers the merged lines until Close.
 //
-// A target keeps one stream for its lifetime: when its stream ends while
-// the target is still in the set, it is not reopened, since a new stream
-// would repeat the tail. A restarted container or a recreated pod is a new
-// target (see Target) and gets a new stream.
+// A target keeps one stream for its lifetime. A followed stream that fails,
+// or ends while Options.Check says the container still runs, reconnects
+// where it stopped, without repeating the tail (see logresume). Once the
+// stream has ended it is not reopened. A restarted container or a
+// recreated pod is a new target (see Target) and gets a new stream.
 type Mux struct {
 	open   Opener
 	opts   Options
@@ -316,36 +318,30 @@ func (m *Mux) run(ctx context.Context, s *stream) {
 	m.finish(s)
 }
 
+// stream reads the log of t until it ends. A followed stream that fails
+// while the container still runs is reopened where it stopped (see
+// logresume); the first open's error is returned.
 func (m *Mux) stream(ctx context.Context, t Target, opts *corev1.PodLogOptions) error {
-	rc, err := m.open(ctx, t, opts)
-	if err != nil {
-		return err
-	}
-	// Close the reader on cancel as well, for readers that do not watch ctx.
-	stop := context.AfterFunc(ctx, func() { _ = rc.Close() })
-	defer func() {
-		if stop() {
-			_ = rc.Close()
-		}
-	}()
-	m.emit([]Line{{Notice: true, Text: "+ " + t.Name()}})
-	br := bufio.NewReader(rc)
-	for {
-		// A bounded read: one endless line must not hold more than
-		// logview.MaxLineBytes in the mux's buffer of outBuffer lines.
-		line, err := logview.ReadLine(br, logview.MaxLineBytes)
-		if len(line) > 0 {
-			if !m.send(Line{Target: t, Text: strings.TrimRight(line, "\r\n")}) {
-				return nil
+	opened := false
+	cfg := logresume.Config{
+		Options: *opts,
+		Open: func(ctx context.Context, o *corev1.PodLogOptions) (io.ReadCloser, error) {
+			rc, err := m.open(ctx, t, o)
+			if err == nil && !opened {
+				opened = true
+				m.emit([]Line{{Notice: true, Text: "+ " + t.Name()}})
 			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		}
+			return rc, err
+		},
+		Start: logresume.Instance{PodUID: t.PodUID, Restarts: t.Restarts, Running: true},
 	}
+	if m.opts.Check != nil {
+		cfg.Check = func(context.Context) (logresume.Instance, bool) { return m.opts.Check(t) }
+	}
+	return logresume.Run(ctx, cfg, logresume.Sink{
+		Line:   func(text string) bool { return m.send(Line{Target: t, Text: text}) },
+		Notice: func(text string) { m.emit([]Line{{Notice: true, Text: "~ " + t.Name() + ": " + text}}) },
+	})
 }
 
 func (m *Mux) finish(s *stream) {
