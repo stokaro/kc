@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Records docs/demo.gif: creates a throwaway kind cluster, seeds demo objects,
 # drives kc through cmd/bubbleheadless, renders the frames to a GIF and
-# deletes the cluster again. See docs/demo/README.md.
+# deletes the cluster again. See docs/demo/README.md. The cluster and driver
+# functions are in docs/demo/lib.sh, which screenshots/capture.sh shares.
 #
 # Usage: docs/demo/record.sh [all|up|seed|record|gif|down]
 #
@@ -20,198 +21,46 @@
 set -euo pipefail
 
 CLUSTER=kc-demo
-CONTEXT=kind-$CLUSTER
 PORT=${KC_DEMO_PORT:-39158}
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 WORK=${KC_DEMO_WORK:-${TMPDIR:-/tmp}/kc-demo}
-WORK=${WORK%/}
 OUT=${KC_DEMO_OUT:-$REPO/docs/demo.gif}
 LOCAL=${KC_DEMO_LOCAL:-/tmp/kc-demo-downloads}
 SSH_DEST=${KC_DEMO_SSH:-}
-REMOTE_DIR=kc-demo-work
-METRICS_SERVER=https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.0/components.yaml
+REMOTE_KIND=${KC_DEMO_REMOTE_KIND:-}
 COLS=120
 ROWS=34
+LIB_TAG=demo
+# shellcheck source=docs/demo/lib.sh
+. "$REPO/docs/demo/lib.sh"
 
-mkdir -p "$WORK/home"
-KCFG=$WORK/kubeconfig
-
-log() { printf '[demo] %s\n' "$*" >&2; }
-die() { log "error: $*"; exit 1; }
-
-remote() { ssh -o BatchMode=yes "$SSH_DEST" "$@"; }
-
-# kk runs a command with the throwaway HOME and KUBECONFIG, after checking that
-# the kubeconfig points at the demo cluster on the local port and nothing else.
-kk() {
-	[ -s "$KCFG" ] || die "no kubeconfig at $KCFG; run '$0 up' first"
-	local ctx server
-	ctx=$(HOME=$WORK/home KUBECONFIG=$KCFG kubectl config current-context)
-	server=$(HOME=$WORK/home KUBECONFIG=$KCFG kubectl config view --minify -o 'jsonpath={.clusters[0].cluster.server}')
-	[ "$ctx" = "$CONTEXT" ] || die "current context is $ctx, want $CONTEXT"
-	[ "$server" = "https://127.0.0.1:$PORT" ] || die "server is $server, want https://127.0.0.1:$PORT"
-	HOME=$WORK/home KUBECONFIG=$KCFG TZ=UTC "$@"
-}
-
-kind_config() {
-	cat <<EOF
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-networking:
-  apiServerAddress: 127.0.0.1
-  apiServerPort: $PORT
-nodes:
-  - role: control-plane
-  - role: worker
-EOF
-}
-
-tunnel_pidfile=$WORK/tunnel.pid
-
-start_tunnel() {
-	[ -n "$SSH_DEST" ] || return 0
-	if [ -f "$tunnel_pidfile" ] && kill -0 "$(cat "$tunnel_pidfile")" 2>/dev/null; then
-		return 0
-	fi
-	ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N -L "$PORT:127.0.0.1:$PORT" "$SSH_DEST" &
-	echo $! >"$tunnel_pidfile"
-	sleep 2
-	kill -0 "$(cat "$tunnel_pidfile")" || die "ssh tunnel did not start"
-}
-
-stop_tunnel() {
-	if [ -f "$tunnel_pidfile" ]; then
-		kill "$(cat "$tunnel_pidfile")" 2>/dev/null || true
-		rm -f "$tunnel_pidfile"
-	fi
-}
-
-cmd_up() {
-	if [ -z "$SSH_DEST" ]; then
-		kind_config >"$WORK/kind.yaml"
-		HOME=$WORK/home kind create cluster --name "$CLUSTER" --config "$WORK/kind.yaml" --kubeconfig "$KCFG" --wait 120s
-	else
-		remote "mkdir -p $REMOTE_DIR"
-		local rkind=kind
-		if ! remote "command -v kind" >/dev/null; then
-			[ -n "${KC_DEMO_REMOTE_KIND:-}" ] || die "no kind on $SSH_DEST; set KC_DEMO_REMOTE_KIND"
-			remote "cat > $REMOTE_DIR/kind && chmod +x $REMOTE_DIR/kind" <"$KC_DEMO_REMOTE_KIND"
-			rkind=$REMOTE_DIR/kind
-		fi
-		echo "$rkind" >"$WORK/remote-kind"
-		kind_config | remote "cat > $REMOTE_DIR/kind.yaml"
-		remote "$rkind create cluster --name $CLUSTER --config $REMOTE_DIR/kind.yaml --kubeconfig $REMOTE_DIR/kubeconfig --wait 120s"
-		remote "cat $REMOTE_DIR/kubeconfig" >"$KCFG"
-		chmod 600 "$KCFG"
-		start_tunnel
-	fi
-	kk kubectl get nodes
-}
+cmd_up() { cluster_up; }
 
 cmd_seed() {
 	start_tunnel
 	# Server-side apply leaves no last-applied annotation in the YAML scene.
 	kk kubectl apply --server-side -f "$REPO/docs/demo/seed.yaml"
-	# metrics-server feeds the Info panel and the overview's capacity rows.
-	# kind's kubelets serve self-signed certificates. It runs on the control
-	# plane, so the drain scene neither stops it nor has to delete its
-	# emptyDir. --force-conflicts takes the args back from an earlier patch,
-	# which the guard below then adds again.
-	kk kubectl apply --server-side --force-conflicts -f "$METRICS_SERVER"
-	local args
-	args=$(kk kubectl -n kube-system get deploy metrics-server -o 'jsonpath={.spec.template.spec.containers[0].args}')
-	case $args in
-	*--kubelet-insecure-tls*) ;;
-	*) kk kubectl -n kube-system patch deploy metrics-server --type=json \
-		-p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]' ;;
-	esac
-	kk kubectl -n kube-system patch deploy metrics-server --type=strategic -p \
-		'{"spec":{"template":{"spec":{"nodeSelector":{"node-role.kubernetes.io/control-plane":""},"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}'
+	seed_metrics_server
 	kk kubectl -n shop rollout status deploy/web --timeout=180s
 	kk kubectl -n shop rollout status deploy/api --timeout=180s
 	kk kubectl -n batch rollout status deploy/worker --timeout=180s
-	kk kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s
 }
 
 cmd_down() {
-	if [ -z "$SSH_DEST" ]; then
-		HOME=$WORK/home kind delete cluster --name "$CLUSTER" --kubeconfig "$KCFG" || true
-	else
-		local rkind=kind
-		[ -f "$WORK/remote-kind" ] && rkind=$(cat "$WORK/remote-kind")
-		remote "$rkind delete cluster --name $CLUSTER --kubeconfig $REMOTE_DIR/kubeconfig; rm -rf $REMOTE_DIR" || true
-		stop_tunnel
-	fi
+	cluster_down
 	rm -rf "$WORK" "$LOCAL"
 }
 
-# --- driving kc ---------------------------------------------------------------
-
 FRAMES=$WORK/frames
-BH_LOG=$WORK/bh.log
-BH_FIFO=$WORK/bh.fifo
 frame_no=0
-marker_no=0
-
-bh() { printf '%s\n' "$*" >&3; }
-key() { bh "key $1"; }
-meta() { bh "text $(printf '\033')$1"; }
-typetext() { bh "text $1"; }
-
-# screen prints the current screen as plain text.
-screen() {
-	marker_no=$((marker_no + 1))
-	local mark="demo-mark-$marker_no" start
-	start=$(wc -c <"$BH_LOG")
-	bh "screen plain"
-	bh "$mark"
-	# The driver answers an unknown command with its name, which marks the
-	# end of the screen dump.
-	local i=0 out
-	while :; do
-		out=$(tail -c +"$((start + 1))" "$BH_LOG")
-		case $out in *"unknown command \"$mark\""*) break ;; esac
-		i=$((i + 1))
-		[ $i -lt 100 ] || die "the driver did not answer"
-		sleep 0.05
-	done
-	printf '%s\n' "$out"
-}
-
-# wait_for waits until the screen shows the text (a fixed string).
-wait_for() {
-	local text=$1 timeout=${2:-20} start
-	start=$(date +%s)
-	while ! shows "$text"; do
-		if [ $(($(date +%s) - start)) -ge "$timeout" ]; then
-			screen >&2
-			die "timed out after ${timeout}s waiting for \"$text\" on the screen"
-		fi
-		sleep 0.3
-	done
-}
-
-# shows reports whether the screen shows the text now. The screen is read
-# first so that grep -q cannot cut the pipe and fail it under pipefail.
-shows() {
-	local s
-	s=$(screen)
-	grep -qF -- "$1" <<<"$s"
-}
 
 # snap takes a frame and shows it for the given number of seconds.
 snap() {
 	local seconds=$1 name
 	frame_no=$((frame_no + 1))
 	name=$(printf 'f%04d.png' "$frame_no")
-	bh "snapshot $FRAMES/$name color"
+	write_png "$FRAMES/$name"
 	printf "file '%s'\nduration %s\n" "$name" "$seconds" >>"$FRAMES/list.txt"
-	local i=0
-	while [ ! -s "$FRAMES/$name" ]; do
-		i=$((i + 1))
-		[ $i -lt 100 ] || die "snapshot $name was not written"
-		sleep 0.05
-	done
 }
 
 # hotlist prints the saved views of the hotlist scene, in the format kc
@@ -247,8 +96,8 @@ EOF
 cmd_record() {
 	start_tunnel
 	rm -rf "$FRAMES"
-	mkdir -p "$FRAMES" "$WORK/bin"
-	(cd "$REPO" && go build -o "$WORK/bin/kc" ./cmd/kc && go build -o "$WORK/bin/bubbleheadless" ./cmd/bubbleheadless)
+	mkdir -p "$FRAMES"
+	build_kc
 	# Undo what an earlier recording changed, so that record can run again.
 	kk kubectl uncordon kc-demo-worker
 	kk kubectl -n shop scale deploy/web --replicas=2
@@ -266,25 +115,11 @@ cmd_record() {
 	rm -rf "$WORK/home/.kc"
 	mkdir -p "$WORK/home/.kc"
 	hotlist >"$WORK/home/.kc/hotlist.yaml"
-	rm -f "$BH_FIFO" "$BH_LOG"
-	mkfifo "$BH_FIFO"
-	# Assert the target once more, then start kc on the demo kubeconfig only.
-	# The environment is empty apart from what kc needs, and PS1 keeps user
-	# and host names out of the integrated terminal.
-	kk true
-	(cd "$LOCAL" && env -i PATH="$PATH" HOME="$WORK/home" KUBECONFIG="$KCFG" TZ=UTC LANG=en_US.UTF-8 \
-		SHELL=/bin/sh PS1='$ ' PWD="$LOCAL" \
-		"$WORK/bin/bubbleheadless" -cols "$COLS" -rows "$ROWS" -- "$WORK/bin/kc" --context "$CONTEXT" -n shop <"$BH_FIFO" >"$BH_LOG" 2>&1) &
-	local bh_pid=$!
-	exec 3>"$BH_FIFO"
-	trap 'bh exit 2>/dev/null || true; exec 3>&-; kill '"$bh_pid"' 2>/dev/null || true; '"${ON_EXIT:-:}" EXIT
+	start_kc --context "$CONTEXT" -n shop
 
 	scenes
 
-	bh exit
-	exec 3>&-
-	wait "$bh_pid" || true
-	trap "${ON_EXIT:-}" EXIT
+	stop_kc
 	log "recorded $frame_no frames in $FRAMES"
 }
 
@@ -314,28 +149,6 @@ STEP=1.8  # an ordinary step
 TYPE=1    # a frame that shows typed text
 ANIM=0.8  # one step of a live change (scale-up, drain progress)
 
-# caption sets the caption the driver draws over the following frames.
-caption() { bh "caption $*"; }
-
-# search moves the cursor to the first row that starts with the text (C-s).
-search() {
-	key ctrl+s
-	typetext "$1"
-	sleep 0.3
-	# A lone Esc counts once the Esc timeout (1s) passes: Esc+key is Meta.
-	key esc
-	sleep 1.2
-}
-
-# enter searches a row, enters it and waits for the text to show.
-enter() {
-	key ctrl+s
-	typetext "$1"
-	sleep 0.3
-	key enter
-	wait_for "$2"
-}
-
 # shell_line types a command on kc's shell line, shows it for the given
 # number of seconds and runs it.
 shell_line() {
@@ -343,22 +156,6 @@ shell_line() {
 	sleep 0.3
 	snap "${2:-$TYPE}"
 	key enter
-}
-
-# widen makes the left panel 75% wide (50, 66, 75); narrow gives the right
-# panel its half back (25, 33, 50). M-w only ever widens the active panel.
-widen() {
-	meta w
-	meta w
-	sleep 0.5
-}
-
-narrow() {
-	key tab
-	meta w
-	meta w
-	key tab
-	sleep 0.5
 }
 
 scene_intro() {
@@ -652,22 +449,6 @@ scene_files() {
 	key enter
 	wait_for " nginx.conf"
 	snap $STEP
-}
-
-# node_actions opens the node menu (M-n) on the node under the cursor. For
-# up to a minute after a log stream or a container file session ended, M-n
-# answered "Select a node first" in the recordings, so it tries again; the
-# GIF shows only the menu.
-node_actions() {
-	local i
-	for i in $(seq 30); do
-		meta n
-		sleep 3
-		if shows "Node actions"; then
-			return 0
-		fi
-	done
-	die "M-n did not open the node actions"
 }
 
 scene_drain() {
