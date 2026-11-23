@@ -141,6 +141,7 @@ The pages are in [`internal/help/topics`](internal/help/topics/index.md) and shi
 | `M-g`      | In the logs viewer: open the filter dialog.                                     |
 | `M-d`      | In the logs viewer: the fields of the line in focus (exact filters, follow a request, copy, trace URL, context). |
 | `M-z`      | In the logs viewer: return to the filter and the line before the last `M-d` action. |
+| `e`, `E`, `m`, `u`, `U`, `c` | In the logs viewer: next and previous warning or error (JSON level), mark a line, next and previous mark, copy the marked lines. See [Logs viewer](internal/help/topics/logs-viewer.md). |
 | `M-s`      | In a merged logs viewer: open the sources dialog (states, source filter, stream limit, retry). |
 | `M-m`      | In a merged logs viewer: show only the source of the line in focus; again to show every source. The other sources keep streaming. |
 | `M-l`      | Open a local directory in the active panel, or leave it again. `Esc l` does the same. |
