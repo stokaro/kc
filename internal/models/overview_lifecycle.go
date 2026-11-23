@@ -242,7 +242,13 @@ func (l *overviewLifecycle) apply(report *overviewReport, now time.Time) {
 			}
 			e.target = *t
 		}
-		f.targets = append(f.targets, l.recovered(f.id, current, names, now)...)
+		recovered := l.recovered(f.id, current, names, now)
+		f.targets = append(f.targets, recovered...)
+		if len(recovered) > 0 {
+			// The objects that recovered are gone, but the check had them
+			// to look at (ADR 0172).
+			stillApplicable(f)
+		}
 	}
 }
 

@@ -344,20 +344,30 @@ func TestHealthDiagnosis(t *testing.T) {
 // Not parallel: it installs the package-wide health config.
 func TestHealthDiagnosisRowNamespacedOnly(t *testing.T) {
 	installHealth(t, map[string][]appconfig.HealthRule{"example.com/v1/widgets": fluxRules})
-	fn, ok := builtinObjectRows(widgetsGVR)
-	if !ok {
-		t.Fatalf("no object rows for a configured type")
+	diagnosisRows := func(gvr schema.GroupVersionResource, namespace string) int {
+		t.Helper()
+		fn, ok := builtinObjectRows(gvr)
+		if !ok {
+			return 0
+		}
+		n := 0
+		for _, r := range fn(Deps{}, namespace, "w", []string{"widgets", "w"}) {
+			if id, _, _, _ := r.Columns(); strings.HasSuffix(id, "/"+DiagnosisSegment) {
+				n++
+			}
+		}
+		return n
 	}
-	if rows := fn(Deps{}, "ns", "w", []string{"widgets", "w"}); len(rows) != 1 {
-		t.Fatalf("namespaced rows = %d, want the /diagnosis row", len(rows))
+	if n := diagnosisRows(widgetsGVR, "ns"); n != 1 {
+		t.Fatalf("namespaced /diagnosis rows = %d, want 1", n)
 	}
-	if rows := fn(Deps{}, "", "w", []string{"widgets", "w"}); len(rows) != 0 {
-		t.Fatalf("cluster-scoped rows = %d, want none", len(rows))
+	if n := diagnosisRows(widgetsGVR, ""); n != 0 {
+		t.Fatalf("cluster-scoped /diagnosis rows = %d, want none", n)
 	}
 	if _, ok := diagnosisWatches(widgetsGVR, "ns", relatedWatch{gvr: widgetsGVR, namespace: "ns"}); !ok {
 		t.Fatalf("a configured type has no diagnosis watches")
 	}
-	if _, ok := builtinObjectRows(schema.GroupVersionResource{Group: "example.com", Version: "v1", Resource: "gadgets"}); ok {
-		t.Fatalf("an unconfigured type has object rows")
+	if n := diagnosisRows(schema.GroupVersionResource{Group: "example.com", Version: "v1", Resource: "gadgets"}, "ns"); n != 0 {
+		t.Fatalf("an unconfigured type has %d /diagnosis rows", n)
 	}
 }
