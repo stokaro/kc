@@ -1,6 +1,6 @@
 # 0032. Merged logs for workloads and for all containers of a pod
 
-- Status: Accepted
+- Status: Accepted; "a stream is not reopened" superseded by 0180 (streams resume after a failure)
 - Date: 2026-11-22
 - Issue: #32
 

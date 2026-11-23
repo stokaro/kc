@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	meta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -26,6 +27,10 @@ const (
 	RelatedUsedBy
 	// RelatedDependsOn lists the objects an object names in its spec.
 	RelatedDependsOn
+	// RelatedDiagnosis checks a Service against its pods and EndpointSlices
+	// (service_diagnosis.go). It is entered from the Service's folder, not
+	// opened by a key.
+	RelatedDiagnosis
 )
 
 // Path segments of the related-objects folders under an object.
@@ -33,6 +38,7 @@ const (
 	OwnersSegment    = "owners"
 	UsedBySegment    = "used-by"
 	DependsOnSegment = "requires"
+	DiagnosisSegment = "diagnosis"
 )
 
 var (
@@ -137,16 +143,30 @@ func newRelatedFolder(ctx context.Context, deps Deps, reader *scopedReader, rele
 		// object as it is now; a new type in a later spec is read but not
 		// watched until the folder is opened again.
 		f.watches = append([]relatedWatch{self}, dependencyWatches(dependencies)...)
+	case RelatedDiagnosis:
+		if gvr != serviceGVR {
+			return fail(fmt.Errorf("no diagnosis for %s", gvr))
+		}
+		// Built on Enter, on the UI thread: no reads here. The first
+		// populate and startWatch decide the scopes in the background.
+		segment = DiagnosisSegment
+		f.watches = []relatedWatch{self, {gvr: podGVR, namespace: namespace}, {gvr: endpointSlicesGVR, namespace: namespace}}
 	default:
 		return fail(fmt.Errorf("unknown related kind %d", kind))
 	}
-	// Decide the scope of every watched type here, off the UI thread;
-	// startWatch runs on it and only uses these decisions.
-	for _, w := range f.watches {
-		reader.scopeFor(w.gvr, w.namespace)
+	// Decide the scope of every watched type here, off the UI thread, so
+	// startWatch (on it) finds the decisions made.
+	if kind != RelatedDiagnosis {
+		for _, w := range f.watches {
+			reader.scopeFor(w.gvr, w.namespace)
+		}
 	}
 	path := append(append([]string(nil), objectPath...), segment)
-	f.BaseFolder = NewBaseFolder(deps, []table.Column{{Title: " Name"}, {Title: "Resource"}, {Title: "Namespace"}, {Title: "Relation"}}, path)
+	last := "Relation"
+	if kind == RelatedDiagnosis {
+		last = "Evidence"
+	}
+	f.BaseFolder = NewBaseFolder(deps, []table.Column{{Title: " Name"}, {Title: "Resource"}, {Title: "Namespace"}, {Title: last}}, path)
 	rows := newLiveObjectRowSourceWithHooks(f.populate, f.BaseFolder.markDirtyFromSource, f.startWatch)
 	rows.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: name})
 	rows.useBackground(deps)
@@ -206,6 +226,8 @@ func (f *RelatedObjectsFolder) Close() {
 // KubectlCommand prints what the folder is built from.
 func (f *RelatedObjectsFolder) KubectlCommand() string {
 	switch f.kind {
+	case RelatedDiagnosis:
+		return kubectlCommand(f.Deps, "get", "service,pods,endpointslices", "-n", f.namespace) + "  # behind service/" + f.name
 	case RelatedOwners, RelatedDependsOn:
 		args := []string{"get", kubectlResource(f.gvr), f.name}
 		if f.namespace != "" {
@@ -231,27 +253,69 @@ func (f *RelatedObjectsFolder) KubectlCommand() string {
 
 // startWatch watches what the rows depend on in the scope decided for each
 // type. A type the user may not list and watch is not watched: its informer
-// would never sync.
+// would never sync. It runs on the UI thread: pairs not decided yet are
+// decided and watched in the background.
 func (f *RelatedObjectsFolder) startWatch(onEvent, onStop func()) (func(), error) {
-	var cancels []func()
+	var (
+		mu      sync.Mutex
+		cancels []func()
+		stopped bool
+	)
 	cancelAll := func() {
-		for _, c := range cancels {
+		mu.Lock()
+		stopped = true
+		cs := cancels
+		cancels = nil
+		mu.Unlock()
+		for _, c := range cs {
 			c()
 		}
 	}
-	for _, w := range f.watches {
-		sc, ok := f.reader.decided(w.gvr, w.namespace)
-		if !ok || sc.scope == scopeDenied || sc.deps.Cl == nil {
-			continue
+	start := func(w relatedWatch, sc relatedScope) error {
+		if sc.scope == scopeDenied || sc.deps.Cl == nil {
+			return nil
 		}
 		cancel, err := startInformerForResource(sc.deps, w.gvr, w.namespace, w.name, onEvent, nil)
-		if err != nil {
+		if err != nil || cancel == nil {
+			return err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if stopped {
+			cancel()
+			return nil
+		}
+		cancels = append(cancels, cancel)
+		return nil
+	}
+	var later []relatedWatch
+	for _, w := range f.watches {
+		sc, ok := f.reader.decided(w.gvr, w.namespace)
+		if !ok {
+			later = append(later, w)
+			continue
+		}
+		if err := start(w, sc); err != nil {
 			cancelAll()
 			return nil, err
 		}
-		if cancel != nil {
-			cancels = append(cancels, cancel)
-		}
+	}
+	if len(later) > 0 {
+		go func() {
+			for _, w := range later {
+				mu.Lock()
+				done := stopped
+				mu.Unlock()
+				if done {
+					return
+				}
+				// An error is reported by the informer start itself; the
+				// rows still refresh on the other watches.
+				_ = start(w, f.reader.scopeFor(w.gvr, w.namespace))
+			}
+			// The rows may have been read before these watches existed.
+			onEvent()
+		}()
 	}
 	return func() {
 		cancelAll()
@@ -262,6 +326,9 @@ func (f *RelatedObjectsFolder) startWatch(onEvent, onStop func()) (func(), error
 }
 
 func (f *RelatedObjectsFolder) populate(ctx context.Context) ([]table.Row, error) {
+	if f.kind == RelatedDiagnosis {
+		return f.diagnosisRows(ctx)
+	}
 	log := ctrllog.FromContext(ctx).WithName("related")
 	refs, err := f.findRefs(ctx)
 	if err != nil {
@@ -350,10 +417,16 @@ func RelatedRowID(ref RelatedRef) string {
 // cannot be opened is a dim plain row that says why. depsFor returns the
 // Deps a row reads through; nil uses deps for every row.
 func relatedRows(deps Deps, depsFor func(RelatedRef) Deps, folderPath []string, refs []RelatedRef) []table.Row {
+	return relatedRowsPrefixed(deps, depsFor, folderPath, "", refs)
+}
+
+// relatedRowsPrefixed is relatedRows with idPrefix before every row ID, for
+// a folder that lists one object in several sections.
+func relatedRowsPrefixed(deps Deps, depsFor func(RelatedRef) Deps, folderPath []string, idPrefix string, refs []RelatedRef) []table.Row {
 	rows := make([]table.Row, 0, len(refs))
 	seen := make(map[string]bool, len(refs))
 	for _, ref := range refs {
-		id := RelatedRowID(ref)
+		id := idPrefix + RelatedRowID(ref)
 		if seen[id] {
 			continue
 		}

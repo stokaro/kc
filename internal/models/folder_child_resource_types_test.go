@@ -57,8 +57,12 @@ func TestChildResourceTypesFolderMultipleEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("populate: %v", err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("rows = %d, want 2", len(rows))
+	// The two child types, then the Service's /diagnosis row.
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want 3", len(rows))
+	}
+	if id, _, _, _ := rows[2].Columns(); id != "demo/svc-a/"+DiagnosisSegment {
+		t.Fatalf("third row = %q, want the diagnosis row", id)
 	}
 	paths := [][]string{rows[0].(*ChildResourceItem).Path(), rows[1].(*ChildResourceItem).Path()}
 	want0 := append(path, childA.Resource)
