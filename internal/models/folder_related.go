@@ -190,12 +190,17 @@ func newRelatedFolder(ctx context.Context, deps Deps, reader *scopedReader, rele
 	return f, nil
 }
 
+// reasonMinWidth is the narrowest a free-text column (why a row is listed,
+// a description) gets before the columns that name things give up width.
+const reasonMinWidth = 16
+
 // relatedColumns are the columns of a related folder. The last one says
-// why the row is listed and never shrinks; the name, resource and
-// namespace give up width first in a narrow pane, so the reason gets the
-// rest of the line. The bottom status line shows it in full.
+// why the row is listed: it takes the rest of the line and, in a narrow
+// pane, gives up width first, down to reasonMinWidth, so the name,
+// resource and namespace keep their natural width. Only then do they
+// narrow. The bottom status line shows the reason in full.
 func relatedColumns(last string) []table.Column {
-	return []table.Column{{Title: " Name", MinWidth: 12}, {Title: "Resource", MinWidth: 7}, {Title: "Namespace", MinWidth: 7}, {Title: last}}
+	return []table.Column{{Title: " Name", MinWidth: 12}, {Title: "Resource", MinWidth: 7}, {Title: "Namespace", MinWidth: 7}, {Title: last, Fill: true, MinWidth: reasonMinWidth}}
 }
 
 // relatedWatch is one watch of a related folder: a type in a namespace,

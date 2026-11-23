@@ -30,9 +30,10 @@ The Relation column names the field that links the two objects, for
 example `volumes[cfg]`, `containers[app].env[A,B]`, `spec.nodeName` or
 `controller of pods/web-1-abc`. A relation that starts with
 `pod template:` comes from the workload's spec, not from a running pod;
-a workload that has both says both on one row. In a narrow panel the other columns are
-cut first; the bottom status line shows the object and the relation in
-full.
+a workload that has both says both on one row. The relation gets the
+rest of the line. In a narrow panel it is cut first, down to 16 columns,
+so the name, resource and namespace stay whole as long as they can; the
+bottom status line shows the object and the relation in full.
 
 A dim row cannot be opened; the reason says why:
 
