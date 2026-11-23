@@ -122,6 +122,7 @@ var builtinHotkeys = map[string]string{
 	"C-x d":   "compare lists",
 	"C-x c":   "compare a list with another context",
 	"C-x a":   "compare whole lists",
+	"C-x n":   "NetworkPolicy between two pods",
 	"C-x p":   "pin a panel's target",
 	"C-x f":   "freeze a panel's display",
 	"C-x w":   "investigation window",

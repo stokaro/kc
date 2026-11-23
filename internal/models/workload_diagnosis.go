@@ -70,6 +70,10 @@ type workloadInput struct {
 	// volumes, drivers and attachments its claims name.
 	Storage *storageInput
 
+	// Chain is set for a custom resource: the namespace's controllers it
+	// may own on the way to its pods.
+	Chain *chainInput
+
 	health healthVerdict // of a type with a health config entry
 }
 
@@ -189,6 +193,13 @@ func workloadStatusFindings(in workloadInput) ([]diagFinding, map[types.UID]bool
 	default:
 		if a := in.adapter(); a != nil {
 			out = in.healthFindings(a, in.health)
+		}
+		if in.Chain != nil {
+			uids, edges := walkChain(in.Object.GetUID(), *in.Chain)
+			for uid := range uids {
+				owners[uid] = true
+			}
+			out = append(out, chainFindings(*in.Chain, edges, in.Object.GetNamespace())...)
 		}
 	}
 	return out, owners, err

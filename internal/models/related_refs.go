@@ -370,9 +370,22 @@ func builtinUsedBy() map[schema.GroupVersionResource]UsedByFinder {
 	m := make(map[schema.GroupVersionResource]UsedByFinder)
 	for _, target := range []schema.GroupVersionResource{configMapGVR, secretGVR, pvcGVR, serviceAccountGVR} {
 		m[target] = UsedByFinder{
-			Sources: []schema.GroupVersionResource{podGVR},
+			Sources: append([]schema.GroupVersionResource{podGVR}, templateSources...),
 			Find: func(ctx context.Context, r RelatedReader, namespace, name string) ([]RelatedRef, error) {
-				return podsUsing(ctx, r, target, namespace, name)
+				pods, err := podsUsing(ctx, r, target, namespace, name)
+				if err != nil {
+					// Without pods the templates still answer.
+					partial, ok := partialRef(namespace, err)
+					if !ok {
+						return nil, err
+					}
+					pods = []RelatedRef{partial}
+				}
+				templates, err := templateUsers(ctx, r, target, namespace, name)
+				if err != nil {
+					return nil, err
+				}
+				return append(pods, templates...), nil
 			},
 		}
 	}

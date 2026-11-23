@@ -14,7 +14,9 @@ does this Deployment need to start".
 - `M-b` opens `<object>/used-by`: the objects that use it, read from
   the watch cache. Pods that use a ConfigMap, Secret, claim or
   ServiceAccount, with the controllers that run them (ReplicaSet,
-  Deployment, Job and so on, once each). Also the Services that select
+  Deployment, Job and so on, once each), and the Deployments,
+  StatefulSets, DaemonSets, Jobs and CronJobs whose pod template names
+  it, also when they run no pod. Also the Services that select
   a Pod, the Ingresses that route to a Service, and the claim bound to
   a PersistentVolume.
 - `M-d` opens `<object>/requires`: what the object names in its spec.
@@ -26,7 +28,9 @@ does this Deployment need to start".
 
 The Relation column names the field that links the two objects, for
 example `volumes[cfg]`, `containers[app].env[A,B]`, `spec.nodeName` or
-`controller of pods/web-1-abc`. In a narrow panel the other columns are
+`controller of pods/web-1-abc`. A relation that starts with
+`pod template:` comes from the workload's spec, not from a running pod;
+a workload that has both says both on one row. In a narrow panel the other columns are
 cut first; the bottom status line shows the object and the relation in
 full.
 
@@ -80,8 +84,9 @@ at once.
 ## Limits
 
 - Rows are read-only here; edit or delete an object from its own list.
-- Used-by does not scan pod templates: a Deployment scaled to zero is
-  not listed under its ConfigMap. Use `M-d` on the Deployment.
+- Pod templates are scanned for Deployments, StatefulSets, DaemonSets,
+  Jobs and CronJobs. A bare ReplicaSet or a custom resource with its
+  own template is found only through its pods.
 - Only built-in relations are known; no links are guessed from CRDs.
 - A pod names a ConfigMap by name only, so a replaced ConfigMap with
   the same name is not detected.

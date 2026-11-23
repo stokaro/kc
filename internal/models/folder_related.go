@@ -409,7 +409,7 @@ func findUsers(ctx context.Context, r RelatedReader, mapper meta.RESTMapper, fin
 		}
 		return []RelatedRef{partial}, nil
 	}
-	refs := slices.Concat(found, workloadRefs(ctx, r, mapper, found))
+	refs := mergeRelations(slices.Concat(found, workloadRefs(ctx, r, mapper, found)))
 	sort.SliceStable(refs, func(i, j int) bool {
 		a, b := refs[i], refs[j]
 		if a.GVR.String() != b.GVR.String() {

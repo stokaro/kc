@@ -70,10 +70,14 @@ func TestRelatedFoldersNamespaceUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("used-by folder: %v", err)
 	}
-	waitRows(t, usedBy, 2)
+	// The pod templates of the workload types it may not list make the
+	// result incomplete: one row says so and names them.
+	waitRows(t, usedBy, 3)
 	assertRows(t, "used-by", usedBy, map[string][]string{
 		"v1/pods/" + ns + "/web-1-abc":         {"/web-1-abc", "pods", ns, "containers[c].envFrom"},
 		"apps/v1/replicasets/" + ns + "/web-1": {"web-1", "replicasets.apps", ns, "controller of pods/web-1-abc: forbidden"},
+		"unresolved//workloads/" + ns + "/(not listed)": {"(not listed)", "workloads", ns,
+			"pod templates of deployments.apps, statefulsets.apps, daemonsets.apps, jobs.batch, cronjobs.batch: forbidden; the result is incomplete"},
 	})
 
 	// The pods were read through a namespace cache, which the folders hold.
