@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"text/template"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -58,31 +59,61 @@ func RenderCommandIn(tmplStr string, items []models.Item, resourceInfo schema.Gr
 		return tmplStr, nil
 	}
 
+	return executeCommandTemplate(tmplStr, commandData(items, resourceInfo, exec))
+}
+
+// commandData is the template data for items run against exec.
+func commandData(items []models.Item, resourceInfo schema.GroupVersionResource, exec execctx.Context) CommandContext {
 	ctx := CommandContext{Items: commandItemContexts(items, resourceInfo)}
-
-	// Top-level fields mirror the first item for single-item templates.
-	first := ctx.Items[0]
-	ctx.Name = first.Name
-	ctx.Namespace = first.Namespace
-	ctx.Kind = first.Kind
-	ctx.Group = first.Group
-	ctx.Version = first.Version
-	ctx.Resource = first.Resource
-
+	if len(ctx.Items) > 0 {
+		// Top-level fields mirror the first item for single-item templates.
+		first := ctx.Items[0]
+		ctx.Name = first.Name
+		ctx.Namespace = first.Namespace
+		ctx.Kind = first.Kind
+		ctx.Group = first.Group
+		ctx.Version = first.Version
+		ctx.Resource = first.Resource
+	}
 	ctx.setExec(exec)
+	return ctx
+}
 
-	// Parse and execute template
+func executeCommandTemplate(tmplStr string, data CommandContext) (string, error) {
 	tmpl, err := template.New("command").Parse(tmplStr)
 	if err != nil {
 		return "", err
 	}
-
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, ctx); err != nil {
+	if err := tmpl.Execute(&buf, data); err != nil {
 		return "", err
 	}
-
 	return buf.String(), nil
+}
+
+// RenderDiagnosticArgs renders the argument vector of a diagnostic. The
+// executable stays as written; every other element is rendered on its own
+// and stays one argument whatever it contains. The template data is always
+// filled, also without items; .Namespace falls back to the namespace of
+// exec, the namespace the command runs in.
+func RenderDiagnosticArgs(args []string, items []models.Item, resourceInfo schema.GroupVersionResource, exec execctx.Context) ([]string, error) {
+	if len(args) == 0 {
+		return nil, nil
+	}
+	data := commandData(items, resourceInfo, exec)
+	if data.Namespace == "" {
+		data.Namespace = exec.Namespace
+	}
+	out := make([]string, len(args))
+	out[0] = args[0]
+	for i, arg := range args[1:] {
+		v, err := executeCommandTemplate(arg, data)
+		if err != nil {
+			return nil, fmt.Errorf("args[%d]: %w", i+1, err)
+		}
+		out[i+1] = v
+	}
+	return out, nil
 }
 
 // commandItemContexts builds the template data for items in their order.

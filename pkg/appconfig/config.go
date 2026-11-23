@@ -482,6 +482,40 @@ type CommandConfig struct {
 	// Dangerous marks a command that changes the cluster. Read-only mode
 	// hides and refuses dangerous commands; every other command still runs.
 	Dangerous bool `json:"dangerous,omitempty"`
+	// Diagnostic runs a local tool once, without a shell, and shows its
+	// parsed output as a report instead of a terminal panel. Command stays
+	// empty then.
+	Diagnostic *DiagnosticConfig `json:"diagnostic,omitempty"`
+}
+
+// DiagnosticAdapterKRR parses `krr simple -f json` output.
+const DiagnosticAdapterKRR = "krr"
+
+// DiagnosticAdapters are the output parsers kc has.
+var DiagnosticAdapters = []string{DiagnosticAdapterKRR}
+
+// DefaultDiagnosticTimeout bounds a diagnostic run without a timeout.
+const DefaultDiagnosticTimeout = 5 * time.Minute
+
+// DiagnosticConfig is the `diagnostic:` block of a custom command.
+type DiagnosticConfig struct {
+	// Adapter names the parser of the tool's standard output.
+	Adapter string `json:"adapter"`
+	// Args is the argument vector. The first element is the executable,
+	// looked up in PATH; it is not a template. Each other element is
+	// rendered as a template on its own and passed as one argument, so a
+	// selected name never becomes shell syntax.
+	Args []string `json:"args"`
+	// Timeout stops the tool; zero means DefaultDiagnosticTimeout.
+	Timeout metav1.Duration `json:"timeout,omitzero"`
+}
+
+// EffectiveTimeout is Timeout, or the default when it is unset.
+func (d DiagnosticConfig) EffectiveTimeout() time.Duration {
+	if d.Timeout.Duration > 0 {
+		return d.Timeout.Duration
+	}
+	return DefaultDiagnosticTimeout
 }
 
 // ObjectsConfig controls object-list specific options.

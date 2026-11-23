@@ -413,6 +413,31 @@ A command acts on the marked rows when any are marked, otherwise on the highligh
       resources: ["pods"]
 ```
 
+### Diagnostic commands
+
+A command with a `diagnostic:` block runs a local tool once and shows its parsed output in a full-screen report instead of a terminal panel. kc ships one adapter, `krr`, which reads the JSON output of [KRR](https://github.com/robusta-dev/krr) (`krr simple -f json`):
+
+```yaml
+commands:
+  - name: "KRR recommendations"
+    type: "sticky"
+    showFor:
+      resources: ["deployments", "statefulsets", "daemonsets", "namespaces"]
+    hotkey: "C-x k"
+    diagnostic:
+      adapter: krr
+      args: ["krr", "simple", "-f", "json", "--logtostderr", "-n", "{{.Namespace}}"]
+      timeout: 10m      # default 5m
+```
+
+- `args` is the argument vector, run without a shell. The first element is the executable, looked up in `PATH`. Every other element is a template rendered on its own and passed as one argument, so a selected name never becomes shell syntax. The tool gets `KUBECONFIG` for kc's context and the selected namespace, like other commands. `prompts`, `confirm`, `dangerous`, `showFor` and `hotkey` work as above. `command`, `interactive`, `watchInterval` and `type: namespace` do not apply.
+- kc never installs a tool and never runs a diagnostic on its own. A missing executable is reported when the command is picked.
+- The run keeps the context, namespace and selection it started with. While it runs, picking the command again asks whether to stop it.
+- The report names the context, scope, command line and outcome: finished, failed (with the exit status and the end of standard error), timed out, or output not understood. Output kc cannot parse is never shown as an empty result. Below the report kc shows the tool's raw output. Control characters in tool text are shown as `?`.
+- The KRR report lists, for the selected workload (or the selected namespace), each container's CPU and memory requests and limits as `current -> recommended`, with KRR's severity and its reason when it has no recommendation (`?`). The header gives the strategy, its observation window (`history_duration`) and its settings. KRR needs Prometheus with enough history; kc only shows what KRR returns and never changes requests or limits.
+
+kc has no adapter for cluster-side tools such as Inspektor Gadget, which need privileged pods on the nodes. If you have deployed one, add it as a plain command marked `dangerous: true` and `confirm: true`; it then runs in a terminal panel, read-only mode hides it, and closing the panel stops it. See [ADR 0198](docs/adr/0198-diagnostic-commands.md).
+
 ## Node Actions
 
 In the node list (`/nodes`), `M-n` (or `Esc n`) opens a menu for the marked nodes, or the node under the cursor when none is marked:
