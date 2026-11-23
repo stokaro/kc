@@ -1,9 +1,9 @@
 # Diagnosis
 
 `/diagnosis` is a row inside a Service, a Pod, a Deployment, ReplicaSet,
-StatefulSet, DaemonSet or Job, an Ingress, a Gateway API HTTPRoute, and
-inside a namespaced custom resource that has an entry in the `health:`
-configuration. It collects what the
+StatefulSet, DaemonSet, Job or HorizontalPodAutoscaler (`autoscaling/v2`),
+an Ingress, a Gateway API HTTPRoute, and inside a namespaced custom
+resource that has an entry in the `health:` configuration. It collects what the
 object, its pods, their containers, claims and events say about a
 problem, with the evidence for each finding. Use it when a row is red
 and you want to know why without reading five describes.
@@ -148,6 +148,36 @@ its `/diagnosis` for the node checks.
 A pod with `spec.schedulingGates` is reported as waiting for its gates
 (a warning), not as unschedulable, and gets no node checks.
 
+## A HorizontalPodAutoscaler
+
+The summary shows the target and min, current, desired and max replicas,
+and the last scale time. The findings explain the current state:
+
+- `hpa/at-max` and `hpa/at-min`: the desired count is at a bound.
+- `hpa/condition/...`: the controller's own `AbleToScale`, `ScalingActive`
+  and `ScalingLimited` reasons and messages, for example
+  `FailedGetResourceMetric` (the metrics API did not answer),
+  `ScalingDisabled` (the target has 0 replicas), `TooManyReplicas`, or
+  `ScaleDownStabilized` and the backoff reasons. These are what the
+  controller reports; kc does not show a countdown, since the API does
+  not expose the controller's recommendation history.
+- `hpa/metric/N`: each `spec.metrics` entry against its value in
+  `status.currentMetrics`, with the ratio and whether it asks for more or
+  fewer replicas. A metric without a reported value is a warning, never
+  zero. Several metrics stay separate findings.
+- `hpa/requests/N`: a CPU or memory `Utilization` target needs a request
+  on every container it counts; the finding names the containers of the
+  target's pod template without one.
+- `hpa/target`: the target does not exist (error) or cannot be read
+  (incomplete).
+- `hpa/stale`, `hpa/no-status`: the status describes an older
+  generation, or the controller has not reported at all.
+- `hpa/behavior`: the configured scale-up and scale-down windows and
+  policies, with the API defaults for omitted fields.
+
+kc reads the HPA, its target and the namespace's events from the cache.
+It does not query the metrics APIs and changes nothing.
+
 ## Storage: a claim or a pod that uses one
 
 A PersistentVolumeClaim has a `/diagnosis` row too. It and a pod's own
@@ -194,9 +224,16 @@ are listed only for a pod on a node with a CSI volume.
 - Only API objects are read. A clean result does not prove that DNS,
   the network, probes, nodes or the application work. A routing
   diagnosis does not test DNS, TLS handshakes or reachability, and does
-  not read controller-specific annotations or policies.
+  not read controller-specific annotations or policies. To check what
+  NetworkPolicies say about one client pod and one server pod, put them
+  under the cursors of the two panels and press `C-x n`
+  ([NetworkPolicy between two pods](network-policy.md)).
 - Pods are matched by controller owner UID (through the ReplicaSets of
-  a Deployment), events by UID. A recreated object with the same name
+  a Deployment), events by UID. For a custom resource kc follows
+  controller references through the Deployments, ReplicaSets,
+  StatefulSets, DaemonSets and Jobs of its namespace, at most four
+  hops; a type you may not list makes the chain partial, and the
+  diagnosis says so. A recreated object with the same name
   does not inherit the old one's pods or events.
 - Ten symptom groups are expanded, each citing up to 20 pods; the rest
   are listed with one pod each.

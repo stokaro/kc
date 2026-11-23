@@ -35,6 +35,7 @@ dialog or view opens its page; this index lists them all. See
 - [Quiet checks](quiet-checks.md)
 - [Diagnosis](diagnosis.md)
 - [Deployment rollout](rollout.md)
+- [NetworkPolicy between two pods](network-policy.md)
 - [Object timeline](timeline.md)
 - [Object events](object-events.md)
 - [Owners, used by and requires](related.md)

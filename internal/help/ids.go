@@ -42,6 +42,7 @@ const (
 	PinFreeze           ID = "pin-freeze"
 	InvestigationWindow ID = "investigation-window"
 	Rollout             ID = "rollout"
+	NetworkPolicy       ID = "network-policy"
 	MetricSources       ID = "metric-sources"
 
 	// Special folders.

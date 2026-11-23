@@ -106,6 +106,7 @@ var folderHelpPages = map[string]help.ID{
 	"HelmResourcesFolder":       help.Helm,
 	"PortForwardsFolder":        help.PortForward,
 	"ExplainFolder":             help.Explain,
+	"NetworkPolicyPairFolder":   help.NetworkPolicy,
 }
 
 // quietChecksSuffix ends the path segment of a section's quiet checks.
