@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -679,6 +680,24 @@ func (p *Panel) SelectRowIDs(ctx context.Context, ids []string) {
 	if len(ids) > 0 {
 		p.notifySelectionObservers(ctx, panelcontent.Selection{ID: ids[0], Path: p.currentPath})
 	}
+}
+
+// listedObjectUID returns the UID of the object the current list shows
+// under row id. found is false when the list has no such row; uid is empty
+// when the row does not carry an object instance.
+func (p *Panel) listedObjectUID(ctx context.Context, id string) (uid types.UID, found bool) {
+	lw := p.listWidget(ctx)
+	if lw == nil || lw.Folder() == nil {
+		return "", false
+	}
+	item, ok := lw.Folder().ItemByID(ctx, id)
+	if !ok {
+		return "", false
+	}
+	if inst, ok := item.(interface{ UID() types.UID }); ok {
+		return inst.UID(), true
+	}
+	return "", true
 }
 
 func (p *Panel) currentSelectionID(ctx context.Context) string {

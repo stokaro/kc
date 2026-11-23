@@ -105,3 +105,16 @@ func TestDiagnoseWorkloadOOMAge(t *testing.T) {
 		})
 	}
 }
+
+// An old OOM kill is history; it does not hide that the container is not
+// ready now.
+func TestDiagnoseOldOOMDoesNotHideReadiness(t *testing.T) {
+	t.Parallel()
+	pod := oomPod(7*24*time.Hour, oomRunning, "")
+	pod.Status.ContainerStatuses[0].Ready = false
+	pod.Status.Conditions[1] = corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionFalse, Reason: "ContainersNotReady"}
+	d := diagWorkload(t, deploymentInput(t, dgDeployment("dep-1", nil), pod))
+	if got, want := dgCodes(d), []string{"unready/web-1-a", "oom/web-1-a/app"}; !slices.Equal(got, want) {
+		t.Fatalf("findings = %v, want %v", got, want)
+	}
+}

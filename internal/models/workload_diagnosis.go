@@ -122,7 +122,7 @@ func diagnoseWorkload(in workloadInput) (diagReport, error) {
 		d.Findings = append(d.Findings, diagFinding{
 			Code: "no-problem", Severity: diagInfo, Observed: in.Now,
 			Title:  "No problem found by the checks kc runs",
-			Detail: "kc checks the status conditions and replica counts, scheduling, image pulls, container failures and restarts, initialization and the claims the pods use.",
+			Detail: "kc checks the status conditions and replica counts, scheduling, pod readiness and readiness gates, image pulls, container failures and restarts, initialization and the claims the pods use.",
 			Links:  in.eventLinks(ns, uid, "", true),
 		})
 	}
@@ -406,16 +406,22 @@ func (in *workloadInput) podFindings(pod *corev1.Pod) []diagFinding {
 	if f, ok := in.schedulingFinding(pod); ok {
 		out = append(out, f)
 	}
+	explained := make(map[string]bool)
 	for _, s := range pod.Status.InitContainerStatuses {
 		if f, ok := in.containerFinding(pod, s, true); ok {
 			out = append(out, f)
+			explained[s.Name] = f.Severity >= diagWarning
 		}
 	}
 	for _, s := range pod.Status.ContainerStatuses {
 		if f, ok := in.containerFinding(pod, s, false); ok {
 			out = append(out, f)
+			// An info row (an old OOM kill) is history: it does not
+			// explain that the container is not ready now.
+			explained[s.Name] = f.Severity >= diagWarning
 		}
 	}
+	out = append(out, in.readinessFindings(pod, explained)...)
 	return append(out, in.claimFindings(pod)...)
 }
 

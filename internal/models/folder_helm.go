@@ -63,17 +63,16 @@ func helmNoticeStyled(id, short, detail string, path []string, columns int, styl
 	return item
 }
 
-// helmAccessNotice turns a denied access probe into an actionable row.
+// helmAccessNotice turns a denied access decision into an actionable row.
 func helmAccessNotice(deps Deps, ae *helmAccessError, namespace string, path []string, columns int) *SimpleItem {
 	var detail strings.Builder
 	detail.WriteString(ae.Error())
 	detail.WriteString(".\n\n")
-	switch ae.access {
-	case helmAccessNamespaceOnly:
-		detail.WriteString("Ask for get, list and watch on secrets in all namespaces, or use helm directly:\n\n  ")
-	default:
-		detail.WriteString("kc reads Helm releases from Secrets of type " + helm.SecretType + " (label owner=helm).\n")
-		detail.WriteString("Ask for get, list and watch on secrets in all namespaces, or use helm directly:\n\n  ")
+	detail.WriteString("kc reads Helm releases from Secrets of type " + helm.SecretType + " (label owner=helm).\n")
+	if namespace == AllNamespaces {
+		detail.WriteString("Open /helm in a namespace where you may list and watch Secrets, ask for list and watch\non secrets in all namespaces, or use helm directly:\n\n  ")
+	} else {
+		detail.WriteString("Ask for list and watch on secrets in " + namespace + ", or use helm directly:\n\n  ")
 	}
 	detail.WriteString(helmListCommand(deps, namespace))
 	detail.WriteString("\n")
@@ -98,7 +97,8 @@ func scopeText(namespace string) string {
 }
 
 // HelmReleasesFolder lists the Helm releases of a namespace scope, newest
-// revision of each, from the Secrets in the shared cache.
+// revision of each, from the Secrets in the informer cache the user may use
+// there: the shared cache, or one limited to the namespace.
 type HelmReleasesFolder struct {
 	*BaseFolder
 	namespace string
@@ -130,8 +130,12 @@ func newHelmReleasesFolder(deps Deps, reader *helmReader, namespace string, path
 // Namespace returns the folder's namespace scope.
 func (f *HelmReleasesFolder) Namespace() string { return f.namespace }
 
-// Close stops the watch.
-func (f *HelmReleasesFolder) Close() { f.src.Close() }
+// Close stops the watch and gives up the namespace cache the folders below
+// it shared. The navigator closes those folders first.
+func (f *HelmReleasesFolder) Close() {
+	f.src.Close()
+	f.reader.Close()
+}
 
 func (f *HelmReleasesFolder) populate(ctx context.Context) ([]table.Row, error) {
 	recs, err := f.reader.records(ctx, f.namespace, "")

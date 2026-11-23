@@ -65,11 +65,17 @@ type NodeShellRequest struct {
 // ObjectRef names one Kubernetes object by its full GVR. Namespaced is
 // set by callers that know the resource scope (Helm release manifests);
 // others leave it false and use Namespace.
+//
+// UID, when set, is the instance the reference was taken from (an Event's
+// involvedObject.uid). A listed object with the same name but another UID
+// is a replacement, not the referenced object. An empty UID means the
+// reference names the object only, and the name match is unverified.
 type ObjectRef struct {
 	GVR        schema.GroupVersionResource
 	Namespaced bool
 	Namespace  string
 	Name       string
+	UID        types.UID
 }
 
 // ClusterAction is a change to the cluster that the UI confirms first.

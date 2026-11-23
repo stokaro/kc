@@ -70,7 +70,21 @@ func TestOpenLinkedObjectInOtherPanelEnvtest(t *testing.T) {
 		wantScope string
 		wantSel   string
 		wantToast bool
+		// notSel is a row that must not be selected; toast is a message
+		// the link must show.
+		notSel string
+		toast  string
 	}{
+		// The replacement case runs first, so no earlier case left the
+		// cursor on web-config.
+		{name: "same-name replacement is not selected", ref: models.ObjectRef{GVR: gvr, Namespaced: true, Namespace: ns, Name: "web-config", UID: "old-uid"},
+			wantPath: "/configmaps", wantScope: ns, notSel: "web-config", wantToast: true,
+			toast: "was replaced: the reference is to UID old-uid, the listed object is UID " + string(cm.UID)},
+		{name: "matching UID selects the object", ref: models.ObjectRef{GVR: gvr, Namespaced: true, Namespace: ns, Name: "web-config", UID: cm.UID},
+			wantPath: "/configmaps", wantScope: ns, wantSel: "web-config"},
+		{name: "missing original with a UID says so", ref: models.ObjectRef{GVR: gvr, Namespaced: true, Namespace: ns, Name: "gone", UID: "gone-uid"},
+			wantPath: "/configmaps", wantScope: ns, notSel: "gone", wantToast: true,
+			toast: "configmaps " + ns + "/gone is not in the list; the object may be deleted"},
 		{name: "existing object", ref: models.ObjectRef{GVR: gvr, Namespaced: true, Namespace: ns, Name: "web-config"},
 			wantPath: "/configmaps", wantScope: ns, wantSel: "web-config"},
 		{name: "missing object still opens its list", ref: models.ObjectRef{GVR: gvr, Namespaced: true, Namespace: ns, Name: "gone"},
@@ -98,6 +112,17 @@ func TestOpenLinkedObjectInOtherPanelEnvtest(t *testing.T) {
 				if sel != tc.wantSel {
 					t.Errorf("selection = %q, want %q", sel, tc.wantSel)
 				}
+			}
+			if tc.notSel != "" {
+				sctx, scancel := context.WithTimeout(t.Context(), time.Second)
+				sel := app.rightPanel.currentSelectionID(sctx)
+				scancel()
+				if sel == tc.notSel {
+					t.Errorf("selection = %q, want any other row", sel)
+				}
+			}
+			if tc.toast != "" && !strings.Contains(strings.Join(toasts, "|"), tc.toast) {
+				t.Errorf("messages = %q, want one with %q", toasts, tc.toast)
 			}
 			if (len(toasts) > 0) != tc.wantToast || (tc.wantToast && !strings.Contains(strings.Join(toasts, "|"), tc.missing)) {
 				t.Errorf("messages = %q, want toast %v with %q", toasts, tc.wantToast, tc.missing)

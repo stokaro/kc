@@ -52,6 +52,15 @@ the memory was once too small, with the time of the kill. The `next` row
 cites `limits.memory` when the container has one; without it, the kill
 came from a pod-level limit or from memory pressure on the node.
 
+A running pod whose `Ready` condition is not `True` gets a finding. It
+names the containers that are not ready (sidecars too) and cites the
+`Ready` and `ContainersReady` conditions and the warning events, such as
+`Unhealthy`; kc does not run the probes, so it never claims one failed.
+A pending readiness gate is reported apart from the containers, since
+another controller sets it. A pod that became unready less than
+`overview.startupGrace` ago is `starting`; completed, failed and
+terminating pods get no readiness finding.
+
 ## Keys
 
 - `Enter` on a cited object opens its own folder; `/..` comes back.

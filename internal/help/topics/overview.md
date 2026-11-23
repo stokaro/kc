@@ -57,7 +57,10 @@ of their section.
 - `Enter` on a row lists exactly the objects behind it, with the reason
   for each. `/..` goes back.
 - `Enter` on a warning event opens the object it is about in the other
-  panel.
+  panel. An event names its object by UID. When the object was deleted
+  and a newer one has the same name, kc opens the list but does not
+  select the newer object, and says that it was replaced. Move the
+  cursor to the row to look at the newer object.
 - `F3` on a row explains how the value is computed, its scope, and the
   kubectl commands that show the inputs.
 - `M-c` copies all input commands of the row in focus. The command line
