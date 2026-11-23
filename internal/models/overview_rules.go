@@ -395,8 +395,12 @@ least underRequestedMinPercent (%[7]d%%), so the scheduler thinks the node
 is emptier than it is; "high" when its pods or the node reach
 usageWarnPercent (%[8]d%%) or its requests reach requestsWarnPercent
 (%[4]d%%). What runs outside pods counts only on the node line, so it
-cannot make the pods look under-requested. The row shows the worst node.
-Enter lists the nodes, the most loaded first.`, resource, rc.cfg.RequestsFailPercent, rc.cfg.LimitsWarnPercent, rc.cfg.RequestsWarnPercent,
+cannot make the pods look under-requested.
+
+The value adds up the nodes; the state is that of the worst node, with the
+line that causes it and how many nodes share it ("node full, 1 of 2
+nodes"), so a healthy sum can carry the state of one node. Enter lists the
+nodes, the worst first, each with its own figures and state.`, resource, rc.cfg.RequestsFailPercent, rc.cfg.LimitsWarnPercent, rc.cfg.RequestsWarnPercent,
 			rc.cfg.UsageFailPercent, rc.cfg.UnderRequestedFactor, rc.cfg.UnderRequestedMinPercent, rc.cfg.UsageWarnPercent) + capacityUsageNote(rc.m),
 		kubectl: [][]string{
 			{"describe", "nodes"},
@@ -412,26 +416,49 @@ Enter lists the nodes, the most loaded first.`, resource, rc.cfg.RequestsFailPer
 	}
 	loads := nodeLoads(rc)
 	all := make([]capacityAmounts, 0, len(loads))
-	worst := infoStateOK
+	states := make(map[string]string, len(loads)) // node name: "lim overcommitted"
 	for _, l := range loads {
 		a := pick(l)
 		all = append(all, a)
 		j := judgeCapacity(rc.cfg, a)
-		st := j.worst()
-		if st.sev > worst.sev {
-			worst = st
+		st, signal := j.worstSignal()
+		value := j.overviewText(a)
+		if st.sev != severityOK {
+			states[l.node.Name] = signalState(st, signal)
+			value += " " + states[l.node.Name]
 		}
 		f.targets = append(f.targets, overviewTarget{
-			gvr: ovNodesGVR, name: l.node.Name, severity: st.sev,
-			value: j.overviewText(a) + flagSuffix(st.flag),
-			rank:  j.rank(),
+			gvr: ovNodesGVR, name: l.node.Name, severity: st.sev, value: value, rank: j.rank(),
 		})
 	}
 	f.targets = sortTargets(f.targets)
 	total := sumCapacity(all)
 	f.value = judgeCapacity(rc.cfg, total).overviewText(total)
-	f.severity, f.state = worst.sev, worst.flag
+	f.severity, f.state = capacityRowState(f.targets, states)
 	return f
+}
+
+// capacityRowState is the state of a capacity row: the state of its first
+// node (the targets are sorted, the worst first), the line that causes it
+// and how many nodes are in that same state, "node full, 1 of 2 nodes".
+// The row's value is the sum over the nodes, which can look healthy while
+// one node is not; the state says that it comes from nodes, and Enter
+// lists them in this order.
+func capacityRowState(targets []overviewTarget, states map[string]string) (overviewSeverity, string) {
+	if len(targets) == 0 || targets[0].severity == severityOK {
+		return severityOK, "ok"
+	}
+	first := states[targets[0].name]
+	n := 0
+	for _, t := range targets {
+		if t.severity == targets[0].severity && states[t.name] == first {
+			n++
+		}
+	}
+	if len(targets) == 1 {
+		return targets[0].severity, first
+	}
+	return targets[0].severity, fmt.Sprintf("%s, %d of %d nodes", first, n, len(targets))
 }
 
 func flagSuffix(flag string) string {

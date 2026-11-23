@@ -1063,7 +1063,7 @@ func (a *App) setupModals() {
 
 	// Copy-to-local modal
 	copyModel := NewCopyToLocalModel()
-	copyModal := NewModal("Copy to Local File", copyModel)
+	copyModal := NewModal("Copy", copyModel)
 	copyModal.SetCloseOnSingleEsc(true)
 	a.modalManager.Register("copy_local", copyModal)
 	a.copyInput = copyModel
@@ -2103,6 +2103,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	}
 	title := fmt.Sprintf("logs:%s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
 	logsViewer := NewLogsViewer(title, spec, open, a.viewerTheme())
+	logsViewer.SetLimits(a.logLimits())
 	if lc, ok := item.(models.LogsCommander); ok {
 		logsViewer.SetCommandBuilder(lc.LogsCommand)
 	} else {
@@ -2823,7 +2824,7 @@ func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
 	if modal == nil {
 		return nil
 	}
-	dir := a.defaultCopyDir()
+	dir := a.copyDialogDir()
 	target := filepath.Join(dir, req.filename)
 	a.copyInput.Configure(req.subject, target)
 	a.configureModalWindow(modal, a.copyInput, -1, "", 0, 0)

@@ -294,9 +294,13 @@ func (w *Widget) lines(width, height int) []string {
 	h := w.history[w.historyKey()]
 	for _, b := range w.summary.Bars {
 		add(barLine(b, width))
-		add(strings.Repeat(" ", labelWidth+1) + b.Detail)
-		for _, line := range b.More {
-			add(strings.Repeat(" ", labelWidth+1) + line)
+		add(strings.Repeat(" ", labelWidth+1) + styled(b.Detail, b.DetailHealth))
+		for i, line := range b.More {
+			h := models.RowHealthUnknown
+			if i < len(b.MoreHealth) {
+				h = b.MoreHealth[i]
+			}
+			add(strings.Repeat(" ", labelWidth+1) + styled(line, h))
 		}
 		if h != nil {
 			var samples []float64
@@ -329,8 +333,19 @@ func clip(lines []string, height int) []string {
 	return lines
 }
 
-// barLine renders "CPU     ████▌      55% under-req", colored like a row of
-// an object list in the same state.
+// styled renders s like a row of an object list in state h; ok and unknown
+// lines stay plain.
+func styled(s string, h models.RowHealth) string {
+	if style := models.RowHealthStyle(h, nil); style != nil && s != "" {
+		return style.Render(s)
+	}
+	return s
+}
+
+// barLine renders "CPU     ████▌      55% under-req ! lim". The bar and its
+// percentage are colored by the state of what the bar shows; the attention
+// mark names another line that needs attention, in that line's color, so
+// the warning stays readable without color.
 func barLine(b models.InfoBar, width int) string {
 	label := fmt.Sprintf(" %-*s", labelWidth, b.Label)
 	if !b.Known {
@@ -341,14 +356,12 @@ func barLine(b models.InfoBar, width int) string {
 	if b.Flag != "" && b.Flag != "ok" {
 		tail += " " + b.Flag
 	}
-	n := max(width-ansi.StringWidth(label)-ansi.StringWidth(tail), 4)
-	bar := renderBar(b.Percent, n)
-	style := models.RowHealthStyle(b.Health, nil)
-	if style != nil {
-		bar = style.Render(bar)
-		tail = style.Render(tail)
+	attention := ""
+	if b.AttentionText != "" {
+		attention = " " + b.AttentionText
 	}
-	return label + bar + tail
+	n := max(width-ansi.StringWidth(label)-ansi.StringWidth(tail)-ansi.StringWidth(attention), 4)
+	return label + styled(renderBar(b.Percent, n), b.Health) + styled(tail, b.Health) + styled(attention, b.Attention)
 }
 
 // eighths are the partial block characters, from one eighth to seven.

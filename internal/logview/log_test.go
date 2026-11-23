@@ -9,7 +9,7 @@ import (
 func TestLogKeepsRecordsAcrossFilters(t *testing.T) {
 	t.Parallel()
 	l := logview.NewLog(plain())
-	shown := l.Append(logview.Source{},
+	shown, _ := l.Append(logview.Source{},
 		`{"level":"info","msg":"start"}`,
 		`plain line`,
 		`{"level":"error","msg":"boom"}`,
@@ -27,7 +27,7 @@ func TestLogKeepsRecordsAcrossFilters(t *testing.T) {
 	}
 
 	// New lines pass through the same filter.
-	shown = l.Append(logview.Source{}, `{"level":"info","msg":"tick"}`, `{"level":"error","msg":"again"}`)
+	shown, _ = l.Append(logview.Source{}, `{"level":"info","msg":"tick"}`, `{"level":"error","msg":"again"}`)
 	if want := []string{"ERROR again"}; !equalStrings(shown, want) {
 		t.Fatalf("Append() under a filter = %q, want %q", shown, want)
 	}

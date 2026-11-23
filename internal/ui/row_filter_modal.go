@@ -25,12 +25,25 @@ type RowFilterModel struct {
 	modal *TextInputModal
 }
 
-const rowFilterHint = "regex on the name; !regex inverts; -l app=web selects labels; empty clears"
+const rowFilterHint = "terms, all must match: regex, !regex, -l app=web, -n a,b, cpu>500m, status=Running; empty clears"
 
 // NewRowFilterModel returns the Filter dialog for a panel, prefilled with
 // the current filter text.
 func NewRowFilterModel(panel int, text string) *RowFilterModel {
+	return newRowFilterModelFor(panel, text, nil)
+}
+
+// newRowFilterModelFor is NewRowFilterModel with a check of the parsed
+// filter against the list, such as the columns it has.
+func newRowFilterModelFor(panel int, text string, check func(models.RowFilter) error) *RowFilterModel {
 	m := &RowFilterModel{panel: panel}
+	validate := func(text string) error {
+		f, err := models.ParseRowFilter(text)
+		if err != nil || check == nil {
+			return err
+		}
+		return check(f)
+	}
 	confirmStyle := lipgloss.NewStyle().
 		Padding(0, 3).
 		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
@@ -49,7 +62,7 @@ func NewRowFilterModel(panel int, text string) *RowFilterModel {
 		MinWidth:     30,
 		MaxWidth:     70,
 		MinHeight:    5,
-		Validate:     validateRowFilter,
+		Validate:     validate,
 		ResultMsg:    m.resultMsg,
 		HideTitle:    true,
 		ButtonStyles: TextInputModalButtonStyles{
@@ -58,11 +71,6 @@ func NewRowFilterModel(panel int, text string) *RowFilterModel {
 		},
 	})
 	return m
-}
-
-func validateRowFilter(text string) error {
-	_, err := models.ParseRowFilter(text)
-	return err
 }
 
 func (m *RowFilterModel) Init() tea.Cmd          { return m.modal.Init() }
@@ -78,6 +86,9 @@ func (m *RowFilterModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *RowFilterModel) View() tea.View { return m.modal.View() }
+
+// RuleRows implements ModalRules.
+func (m *RowFilterModel) RuleRows() []int { return m.modal.RuleRows() }
 
 func (m *RowFilterModel) resultMsg(res TextInputModalResult) tea.Msg {
 	return RowFilterResultMsg{

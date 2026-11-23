@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/nodeaction"
+	"github.com/stokaro/kc/internal/ui/dialog"
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
@@ -319,28 +320,14 @@ func (m *drainOptionsModel) buttons(width int) string {
 // renderGreyButtons centers buttons on a grey line; focused is the index of
 // the focused button, or -1.
 func renderGreyButtons(width int, labels []string, focused int) string {
-	normal := lipgloss.NewStyle().
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalFg))
-	sel := lipgloss.NewStyle().
-		Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Bold(true)
-	total := 0
-	for _, l := range labels {
-		total += lipgloss.Width(l) + 2
-	}
-	var b strings.Builder
-	b.WriteString(normal.Render(strings.Repeat(" ", max(0, (width-total)/2))))
+	buttons := make([]dialog.Button, len(labels))
 	for i, l := range labels {
-		style := normal
-		if i == focused {
-			style = sel
-		}
-		b.WriteString(style.Render(l))
-		b.WriteString(normal.Render("  "))
+		l = strings.TrimSuffix(strings.TrimPrefix(l, "[ "), " ]")
+		// The first button is the one Enter runs from the fields.
+		buttons[i] = dialog.Button{Label: dialog.Label(l), Default: i == 0}
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalBg)).Width(width).Render(b.String())
+	row, _ := dialog.RenderButtons(dialog.Normal(), width, buttons, focused)
+	return row
 }
 
 func (m *drainOptionsModel) FooterHints() []FooterHint {

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/stokaro/kc/internal/logview"
 )
 
 // DefaultMaxStreams is the default number of streams that run at once. It
@@ -329,7 +331,9 @@ func (m *Mux) stream(ctx context.Context, t Target, opts *corev1.PodLogOptions) 
 	m.emit([]Line{{Notice: true, Text: "+ " + t.Name()}})
 	br := bufio.NewReader(rc)
 	for {
-		line, err := br.ReadString('\n')
+		// A bounded read: one endless line must not hold more than
+		// logview.MaxLineBytes in the mux's buffer of outBuffer lines.
+		line, err := logview.ReadLine(br, logview.MaxLineBytes)
 		if len(line) > 0 {
 			if !m.send(Line{Target: t, Text: strings.TrimRight(line, "\r\n")}) {
 				return nil

@@ -82,15 +82,15 @@ func TestTransferDialogRunsCopyAndShowsResults(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := &fakeTransferSource{sess: &transferFS{files: map[string]string{"/data/a.txt": "A", "/data/b.txt": "B"}}}
-	model := NewTransferModel(nil, 1)
+	model := NewTransferModel(nil, dest, existingEntries(fileEntries("a.txt", "b.txt")))
 	a.openTransfer(&transferJob{
 		model:     model,
 		req:       filexfer.Request{Dir: "/data", Entries: fileEntries("a.txt", "b.txt"), Dest: dest},
 		source:    src,
 		destPanel: 1,
 	})
-	if got := strings.Join(model.labels(), ","); got != "Skip existing,Overwrite,Cancel" {
-		t.Fatalf("labels with a conflict = %s", got)
+	if body := strings.Join(model.lines(), "\n"); !strings.Contains(body, "1 of the entries exist") || !strings.Contains(body, "[ ] Overwrite existing entries") {
+		t.Fatalf("dialog with a conflict:\n%s", body)
 	}
 
 	// The dialog is open, so the answer must pass it to reach the app.
@@ -161,7 +161,7 @@ func TestTransferDialogCancel(t *testing.T) {
 	dest := t.TempDir()
 	fsys := &transferFS{files: map[string]string{"/data/a.txt": "A"}, block: "/data/slow.bin", started: make(chan struct{})}
 	src := &fakeTransferSource{sess: fsys}
-	model := NewTransferModel(nil, 0)
+	model := NewTransferModel(nil, dest, nil)
 	a.openTransfer(&transferJob{
 		model:  model,
 		req:    filexfer.Request{Dir: "/data", Entries: fileEntries("a.txt", "slow.bin", "c.txt"), Dest: dest},
@@ -210,10 +210,10 @@ func TestTransferDialogCancel(t *testing.T) {
 
 func TestTransferDialogEscBeforeStartCloses(t *testing.T) {
 	a := newTransferApp(t)
-	model := NewTransferModel(nil, 0)
+	model := NewTransferModel(nil, t.TempDir(), nil)
 	a.openTransfer(&transferJob{model: model, source: &fakeTransferSource{}})
-	if got := strings.Join(model.labels(), ","); got != "Copy,Cancel" {
-		t.Fatalf("labels = %s", got)
+	if body := strings.Join(model.lines(), "\n"); !strings.Contains(body, "[< OK >] [ Cancel ]") {
+		t.Fatalf("buttons:\n%s", body)
 	}
 	_, esc := model.HandleModalEscape(tea.KeyPressMsg{Code: tea.KeyEscape})
 	a.Update(esc())

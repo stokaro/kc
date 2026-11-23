@@ -67,11 +67,14 @@ type Widget struct {
 	onOptions func() tea.Cmd
 	onClose   func() tea.Cmd
 
-	searchDialog     *searchDialog
-	searchQuery      string
-	searchOpts       SearchOptions
-	searchRe         *regexp.Regexp
-	searchMatches    []matchLocation
+	searchDialog  *searchDialog
+	searchQuery   string
+	searchOpts    SearchOptions
+	searchRe      *regexp.Regexp
+	searchMatches []matchLocation
+	// searchCapped is set when a search found more than maxSearchMatches;
+	// later matches are not recorded.
+	searchCapped     bool
 	searchMatchIndex map[int][]int
 	activeMatch      int
 
@@ -194,15 +197,26 @@ func (w *Widget) AppendLines(lines []string) {
 	}
 	start := len(w.rawLines)
 	w.rawLines = append(w.rawLines, lines...)
-	w.updateMaxLineWidth()
-	appendText := strings.Join(lines, "\n")
-	if w.raw == "" {
-		w.raw = appendText
+	// Lines only grow the widest line; measuring the new ones keeps an
+	// append independent of what is already shown.
+	for _, line := range lines {
+		w.maxLineWidth = max(w.maxLineWidth, runeWidth(line))
+	}
+	w.clampHorizontalOffset()
+	if w.plain {
+		// Plain mode never highlights, so it does not keep the joined
+		// text: rebuilding it on every append would copy the whole log.
+		w.raw = ""
 	} else {
-		if !strings.HasSuffix(w.raw, "\n") {
-			w.raw += "\n"
+		appendText := strings.Join(lines, "\n")
+		if w.raw == "" {
+			w.raw = appendText
+		} else {
+			if !strings.HasSuffix(w.raw, "\n") {
+				w.raw += "\n"
+			}
+			w.raw += appendText
 		}
-		w.raw += appendText
 	}
 	if w.plain {
 		if len(w.lines) == 0 {
@@ -225,17 +239,18 @@ func (w *Widget) AppendLines(lines []string) {
 func (w *Widget) SetLines(lines []string) {
 	w.rawLines = append([]string(nil), lines...)
 	w.styled = nil
-	w.raw = strings.Join(lines, "\n")
+	w.raw = ""
 	w.updateMaxLineWidth()
 	if w.plain {
 		w.lines = append([]string(nil), lines...)
 	} else {
+		w.raw = strings.Join(lines, "\n")
 		w.highlight()
 	}
 	w.offset = min(w.offset, max(0, len(w.lines)-w.page()))
 	w.sel = selection{}
 	w.searchMatchIndex = make(map[int][]int)
-	w.searchMatches = w.searchMatches[:0]
+	w.searchMatches, w.searchCapped = w.searchMatches[:0], false
 	w.activeMatch = -1
 	if w.searchRe == nil {
 		return
@@ -460,11 +475,15 @@ func (w *Widget) searchSummary() string {
 	if idx <= 0 {
 		idx = 1
 	}
+	if w.searchCapped {
+		return fmt.Sprintf("/%s (%d/%d+)", trimmed, idx, len(w.searchMatches))
+	}
 	return fmt.Sprintf("/%s (%d/%d)", trimmed, idx, len(w.searchMatches))
 }
 
 func (w *Widget) highlight() {
-	if w.raw == "" {
+	text := w.text()
+	if text == "" {
 		w.lines = []string{""}
 		return
 	}
@@ -473,10 +492,10 @@ func (w *Widget) highlight() {
 		return
 	}
 	ensureCustomStyles()
-	lexer := w.selectLexer()
-	iterator, err := lexer.Tokenise(nil, w.raw)
+	lexer := w.selectLexer(text)
+	iterator, err := lexer.Tokenise(nil, text)
 	if err != nil {
-		w.lines = strings.Split(w.raw, "\n")
+		w.lines = strings.Split(text, "\n")
 		return
 	}
 	var rendered string
@@ -496,7 +515,16 @@ func (w *Widget) highlight() {
 	}
 }
 
-func (w *Widget) selectLexer() chroma.Lexer {
+// text returns the whole body. Plain mode does not keep it joined (see
+// AppendLines) and joins the lines when it is needed.
+func (w *Widget) text() string {
+	if w.plain && w.raw == "" {
+		return strings.Join(w.rawLines, "\n")
+	}
+	return w.raw
+}
+
+func (w *Widget) selectLexer(text string) chroma.Lexer {
 	if w.metadata.Language != "" {
 		if lex := lexers.Get(w.metadata.Language); lex != nil {
 			return lex
@@ -512,7 +540,7 @@ func (w *Widget) selectLexer() chroma.Lexer {
 			return lex
 		}
 	}
-	if analyser := lexers.Analyse(w.raw); analyser != nil {
+	if analyser := lexers.Analyse(text); analyser != nil {
 		return analyser
 	}
 	return lexers.Fallback
@@ -641,7 +669,7 @@ func (w *Widget) clearSearchState() {
 	w.searchDialog = nil
 	w.searchQuery = ""
 	w.searchRe = nil
-	w.searchMatches = nil
+	w.searchMatches, w.searchCapped = nil, false
 	w.activeMatch = -1
 	if w.searchMatchIndex == nil {
 		w.searchMatchIndex = make(map[int][]int)
@@ -709,7 +737,7 @@ func (w *Widget) viewportWidth() int {
 
 func (w *Widget) updateSearchMatches() {
 	w.searchMatchIndex = make(map[int][]int)
-	w.searchMatches = w.searchMatches[:0]
+	w.searchMatches, w.searchCapped = w.searchMatches[:0], false
 	w.activeMatch = -1
 	if w.searchRe == nil {
 		return
@@ -759,21 +787,34 @@ func (w *Widget) appendMatchesForLine(lineIdx int, line string, re *regexp.Regex
 	if re == nil {
 		return
 	}
+	room := maxSearchMatches - len(w.searchMatches)
+	if room <= 0 {
+		w.searchCapped = true
+		return
+	}
 	// Match the text as shown: color codes (the logs viewer's level colors,
 	// a container's own colors) must neither match nor split a match.
 	if strings.IndexByte(line, '\x1b') >= 0 {
 		line = ansi.Strip(line)
 	}
-	for _, m := range re.FindAllStringIndex(line, -1) {
+	// Widths are summed from the previous match on, so a long line with
+	// many matches is measured once rather than once per match.
+	prevEnd, prevWidth := 0, 0
+	for _, m := range re.FindAllStringIndex(line, room+1) {
 		if m[1] <= m[0] {
 			continue // ignore empty matches (e.g. "a*")
 		}
-		startWidth := lipgloss.Width(line[:m[0]])
+		if len(w.searchMatches) >= maxSearchMatches {
+			w.searchCapped = true
+			return
+		}
+		startWidth := prevWidth + lipgloss.Width(line[prevEnd:m[0]])
 		loc := matchLocation{
 			line:  lineIdx,
 			start: startWidth,
 			end:   startWidth + lipgloss.Width(line[m[0]:m[1]]),
 		}
+		prevEnd, prevWidth = m[1], loc.end
 		w.searchMatches = append(w.searchMatches, loc)
 		w.searchMatchIndex[lineIdx] = append(w.searchMatchIndex[lineIdx], len(w.searchMatches)-1)
 	}

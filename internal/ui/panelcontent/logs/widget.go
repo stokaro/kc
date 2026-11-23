@@ -20,6 +20,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/stokaro/kc/internal/logview"
 	models "github.com/stokaro/kc/internal/models"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	"github.com/stokaro/kc/internal/ui/viewer"
@@ -94,6 +95,9 @@ type Options struct {
 	// Settings are the initial stream options, usually viewer.logs from
 	// the configuration.
 	Settings Settings
+	// Limits bound the lines the panel keeps; the zero value means
+	// logview.DefaultLimits.
+	Limits logview.Limits
 }
 
 type state int
@@ -129,6 +133,11 @@ type Widget struct {
 	cancel       context.CancelFunc // of the open stream, nil when none
 	hasLines     bool
 	follow       bool
+	// window accounts for the shown lines; the oldest go when it is full
+	// (docs/adr/0179-bounded-log-retention.md). lostPlace is set when the
+	// lines the user was reading went; the next scroll clears it.
+	window    *logview.Window
+	lostPlace bool
 }
 
 type debounceMsg struct {
@@ -168,10 +177,13 @@ func New(deps panelcontent.WidgetDeps, opts Options) *Widget {
 	if opts.After == nil {
 		opts.After = tea.Tick
 	}
+	if opts.Limits == (logview.Limits{}) {
+		opts.Limits = logview.DefaultLimits()
+	}
 	v := viewer.New(opts.Theme)
 	v.SetPlainMode(true)
 	v.SetWrapMode(opts.Wrap)
-	w := &Widget{deps: deps, opts: opts, viewer: v, follow: true, settings: opts.Settings}
+	w := &Widget{deps: deps, opts: opts, viewer: v, follow: true, settings: opts.Settings, window: logview.NewWindow(opts.Limits)}
 	w.showHint()
 	return w
 }
@@ -267,7 +279,8 @@ func (w *Widget) restart(force bool) tea.Cmd {
 	w.stop()
 	w.req, w.spec = req, req.Spec
 	w.state, w.err = stateWaiting, nil
-	w.hasLines, w.follow = false, true
+	w.hasLines, w.follow, w.lostPlace = false, true, false
+	w.window.Reset()
 	w.viewer.SetContent("Waiting for the log...", viewer.Metadata{Title: w.title()})
 	gen := w.gen
 	return w.opts.After(w.opts.Debounce, func(time.Time) tea.Msg { return debounceMsg{w: w, gen: gen} })
@@ -313,7 +326,7 @@ func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		return w.onChunk(m)
 	case tea.KeyMsg:
 		if m.String() == "end" && !w.follow {
-			w.follow = true
+			w.follow, w.lostPlace = true, false
 			w.viewer.ScrollToEnd()
 			return nil, true
 		}
@@ -321,6 +334,7 @@ func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	cmd, handled := w.viewer.Update(msg)
 	if handled {
 		w.follow = w.viewer.AtEnd()
+		w.lostPlace = false
 	}
 	return cmd, handled
 }
@@ -399,12 +413,19 @@ func (w *Widget) append(lines []string) {
 	if len(lines) == 0 {
 		return
 	}
+	for i, line := range lines {
+		lines[i] = logview.TruncateLine(line, logview.ReadLimit)
+		w.window.Add(logview.Cost(len(lines[i]), false))
+	}
 	if w.hasLines {
 		w.viewer.AppendLines(lines)
 	} else {
 		// SetContent keeps the viewer from starting with an empty line.
 		w.viewer.SetContent(strings.Join(lines, "\n"), w.viewer.Metadata())
 		w.hasLines = true
+	}
+	if n := w.window.Trim(); n > 0 && w.viewer.DropFirstLines(n) && !w.follow {
+		w.lostPlace = true
 	}
 	if w.follow || w.viewer.AtEnd() {
 		w.viewer.ScrollToEnd()
@@ -427,7 +448,7 @@ func read(w *Widget, gen uint64, s Stream, r *bufio.Reader) tea.Cmd {
 func readLines(r *bufio.Reader, limit int) ([]string, error) {
 	var lines []string
 	for len(lines) < limit {
-		line, err := r.ReadString('\n')
+		line, err := logview.ReadLine(r, logview.ReadLimit)
 		if line != "" {
 			lines = append(lines, strings.TrimRight(line, "\r\n"))
 		}
@@ -525,7 +546,10 @@ func (w *Widget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panel
 	case stateWaiting:
 		info.HeaderStatus = panelcontent.LoadingStatus
 	case stateStreaming:
-		if !w.follow {
+		switch {
+		case w.lostPlace:
+			info.HeaderStatus = "paused, view moved: its lines were dropped"
+		case !w.follow:
 			info.HeaderStatus = "paused, End follows"
 		}
 	case stateEnded:
@@ -544,6 +568,9 @@ func (w *Widget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panel
 		}
 		percent := int(math.Round(float64(current) * 100 / float64(total)))
 		info.FooterStatus = fmt.Sprintf("%d/%d • %d%%", current, total, min(max(percent, 0), 100))
+		if n := w.window.Dropped(); n > 0 {
+			info.FooterStatus += fmt.Sprintf(" • %d older dropped", n)
+		}
 	}
 	return info
 }

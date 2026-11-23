@@ -64,12 +64,12 @@ func TestOpenDialogsAreDrawn(t *testing.T) {
 			name: "copy from a container",
 			run: func(_ *testing.T, a *App) []string {
 				a.openTransfer(&transferJob{
-					model:     NewTransferModel(details, 0),
+					model:     NewTransferModel(details, "/home/user/projects/kc/some/deeper/directory/for/the/copy", nil),
 					req:       filexfer.Request{Dir: "/data", Entries: fileEntries("a.txt")},
 					source:    &fakeTransferSource{sess: &transferFS{}},
 					destPanel: 1 - a.activePanel,
 				})
-				return []string{"Copy from the container?", "[ Copy ]"}
+				return []string{"Copy from the container?", "to:", "[< OK >] [ Cancel ]"}
 			},
 		},
 		{
@@ -80,7 +80,7 @@ func TestOpenDialogsAreDrawn(t *testing.T) {
 				model.commands = []string{"kubectl cp /home/user/projects/kc/some/deeper/directory/for/the/copy/a.txt demo/bashpod:/data/a.txt -c bash"}
 				job.destPanel = 1 - a.activePanel
 				a.openTransfer(job)
-				return []string{"Copy into the container?", "[ Cancel ]"}
+				return []string{"Copy into the container?", "[ OK ] [< Cancel >]"}
 			},
 		},
 		{
@@ -92,7 +92,7 @@ func TestOpenDialogsAreDrawn(t *testing.T) {
 				dialogScreen(t, a)
 				job.running = true
 				a.Update(transferDoneMsg{gen: job.gen, err: errors.New("listing /data: io: read/write on closed pipe")})
-				return []string{"Copy finished: nothing copied", "read/write on closed pipe", "[ OK ]"}
+				return []string{"Copy finished: nothing copied", "read/write on closed pipe", "[< OK >]"}
 			},
 		},
 		{
@@ -108,7 +108,7 @@ func TestOpenDialogsAreDrawn(t *testing.T) {
 					Node: "kind-worker", Phase: nodeaction.PhaseEvicting, Remaining: 1,
 					Blocked: []nodeaction.PodNote{{Namespace: "demo", Name: "web-5d8f7c9b6-abcde", Message: "Cannot evict pod as it would violate the pod's disruption budget."}},
 				}}}})
-				requireDrawn(t, dialogScreen(t, a), "Refused", "[ Cancel ]")
+				requireDrawn(t, dialogScreen(t, a), "Refused", "[< Cancel >]")
 				a.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 				_, cmd := a.Update(nodeDrainDoneMsg{view: view, err: fmt.Errorf("drain node kind-worker canceled with 1 pods left: %w", context.Canceled)})
 				if cmd != nil {
@@ -117,7 +117,7 @@ func TestOpenDialogsAreDrawn(t *testing.T) {
 						a.Update(msg)
 					}
 				}
-				return []string{"canceled with 1 pods left", "[ Close ]"}
+				return []string{"canceled with 1 pods left", "[< Close >]"}
 			},
 		},
 	}

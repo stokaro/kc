@@ -185,8 +185,9 @@ func TestInfoSummaryReferenceNode(t *testing.T) {
 			for _, tc := range tests {
 				b := infoBar(t, s, tc.label)
 				// The bar is the pods' usage; overcommitted belongs to the
-				// limits, so the bar's word stays ok while its color warns.
-				if !b.Usage || b.Percent != tc.pct || b.Flag != "ok" || b.Health != RowHealthNotReady || !slices.Equal(barLines(b), tc.want) {
+				// limits, so the bar stays ok and the attention mark names
+				// the limits.
+				if !b.Usage || b.Percent != tc.pct || b.Flag != "ok" || b.Health != RowHealthOK || b.Attention != RowHealthNotReady || b.AttentionText != "! lim" || !slices.Equal(barLines(b), tc.want) {
 					t.Errorf("%s = %+v, want %q at %v%%", tc.label, b, tc.want, tc.pct)
 				}
 			}
@@ -253,7 +254,7 @@ func TestCapacityBarTruncates(t *testing.T) {
 	// 95.99% requests print as 95%, which reaches requestsFailPercent;
 	// 100.09% limits print as 100%, which does not exceed 100.
 	want := []string{"pods 1.0/10.0 cores allocatable, 9%", "node 1.0/10.0 cores capacity, 9%", "req 95% (full), lim 100%"}
-	if !slices.Equal(barLines(b), want) || b.Health != RowHealthFailed {
+	if !slices.Equal(barLines(b), want) || b.Health != RowHealthOK || b.Attention != RowHealthFailed || b.AttentionText != "!! req" {
 		t.Fatalf("bar = %+v, want %q", b, want)
 	}
 }
