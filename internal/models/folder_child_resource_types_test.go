@@ -87,6 +87,12 @@ func TestChildResourceTypesFolderAppendsRegisteredObjectRows(t *testing.T) {
 	RegisterObjectRows(widgets, func(d Deps, namespace, name string, path []string) []table.Row {
 		return []table.Row{NewSimpleItem(namespace+"/"+name+"/act", []string{"Act on " + name + " in " + d.CtxName}, path, nil)}
 	})
+	// The registry is global; a second run (-count=2) must not see two rows.
+	t.Cleanup(func() {
+		objectRowsMu.Lock()
+		delete(objectRows, widgets)
+		objectRowsMu.Unlock()
+	})
 
 	path := []string{"namespaces", "demo", "widgets", "w1"}
 	rows, err := NewChildResourceTypesFolder(deps, widgets, "demo", "w1", []schema.GroupVersionResource{child}, path).populate(t.Context())
