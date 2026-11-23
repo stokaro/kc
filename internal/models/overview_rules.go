@@ -121,6 +121,8 @@ type overviewReport struct {
 	workloadsReason, replicaSetsReason string
 	// info is what the Info mode needs beyond the summaries.
 	info overviewInfoInput
+	// amounts is what the dashboard plots (UsageAmounts).
+	amounts overviewAmounts
 }
 
 // finding returns the finding with id, if any.
@@ -161,6 +163,7 @@ func computeOverviewWith(in *overviewInput, cfg appconfig.OverviewConfig, now ti
 	report.workloadsReason = rc.in.missingReason(ovPodsGVR)
 	report.replicaSetsReason = rc.in.missingReason(ovReplicaSetsGVR)
 	report.pods = summarizePods(&rc, byPod)
+	report.amounts = summarizeAmounts(&rc, byPod)
 	report.info = infoInput(&rc)
 	return report
 }

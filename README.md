@@ -89,6 +89,7 @@ Kubernetes Commander accepts a subset of kubectl syntax so you can jump straight
 - `kc get pods/nginx pods/api svc/frontend` – multi-selects rows across resources.
 - `kc logs payments-0 -c worker --follow` – drills down to the pod → container → logs row and opens the streaming viewer.
 - `kc overview`, `kc -n shop overview`, `kc -A overview` – start in the [cluster overview](#cluster-overview) of the context's namespace, of `shop`, or of all namespaces.
+- `kc dashboard`, `kc -n shop dashboard`, `kc -A dashboard` – start in the full-screen [dashboard](internal/help/topics/dashboard.md) of the namespace or of all namespaces.
 
 All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s default.
 
@@ -157,6 +158,7 @@ The pages are in [`internal/help/topics`](internal/help/topics/index.md) and shi
 | `C-x p`    | Pin the Describe, Manifest, Logs or Info panel (the active one, else the other) to what it shows, or unpin it. See [Pin, freeze and the investigation window](#pin-freeze-and-the-investigation-window). |
 | `C-x f`    | Freeze the display of that panel at the current time, or return it to live data. |
 | `C-x w`    | Set the investigation window the Logs and Info panels use. |
+| `C-x g`    | Open the full-screen dashboard: CPU and memory over time of the scope, node, workload or pod under the cursor. |
 | `C-x n`    | Explain whether NetworkPolicies let the pod under the active panel's cursor reach the pod under the other panel's cursor, per port, with the policies and rules behind it. See [NetworkPolicy between two pods](internal/help/topics/network-policy.md). |
 | `C-x m`    | Show which metric sources the context has and set its Prometheus backend. |
 | `M-e`      | Explain: browse the field documentation of the selected object or resource type, read from the cluster's OpenAPI v3 schema for exactly that group and version (CRDs included). See [Field documentation](#field-documentation). `Esc e` does the same. |
@@ -389,7 +391,7 @@ In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
 - `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, measured pod and node usage, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
 - `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
-- `metricsHistory.window`, `metricsHistory.timeout`, `metricsHistory.backends` – past workload usage from Prometheus in the Info panel mode (off by default; see [Cluster Overview](#cluster-overview)). `C-x m` tests a backend and saves it for the current context; see [Metric sources](internal/help/topics/metric-sources.md).
+- `metricsHistory.window`, `metricsHistory.timeout`, `metricsHistory.backends` – past workload usage from Prometheus in the Info panel mode (off by default; see [Cluster Overview](#cluster-overview)). `C-x m` tests a backend and saves it for the current context; see [Metric sources](internal/help/topics/metric-sources.md). The dashboard (`C-x g`, `kc dashboard`) reads the same backend; see [Dashboard](internal/help/topics/dashboard.md).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 

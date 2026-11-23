@@ -21,6 +21,12 @@ const linkToastTTL = 6 * time.Second
 // the panel with the link, so the user can walk through the links.
 func (a *App) openLinkedObject(link models.ObjectLink) tea.Cmd {
 	ref, missing := link.LinkTarget()
+	return a.openObjectRef(ref, missing)
+}
+
+// openObjectRef shows ref in the other panel as openLinkedObject does;
+// missing says why the link cannot be followed exactly.
+func (a *App) openObjectRef(ref models.ObjectRef, missing string) tea.Cmd {
 	if ref.GVR.Empty() {
 		if missing == "" {
 			missing = "the object's type is not known to kc"

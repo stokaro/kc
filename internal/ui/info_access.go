@@ -153,3 +153,33 @@ func (g *gatedInfo) Close() {
 		inner.Close()
 	}
 }
+
+// amountsReader is the dashboard's read of an engine (models.OverviewInfo).
+type amountsReader interface {
+	Amounts(focus models.UsageFocus, topN int) models.UsageAmounts
+}
+
+// Amounts serves the engine's numbers to the dashboard under the same
+// gate as Summary.
+func (g *gatedInfo) Amounts(focus models.UsageFocus, topN int) models.UsageAmounts {
+	g.mu.Lock()
+	switch {
+	case !g.decided:
+		g.mu.Unlock()
+		return models.UsageAmounts{Loading: true}
+	case g.denied != "":
+		denied := g.denied
+		g.mu.Unlock()
+		return models.UsageAmounts{Err: denied}
+	}
+	if g.inner == nil && !g.closed {
+		g.inner = g.open()
+	}
+	inner := g.inner
+	g.mu.Unlock()
+	r, ok := inner.(amountsReader)
+	if !ok {
+		return models.UsageAmounts{}
+	}
+	return r.Amounts(focus, topN)
+}

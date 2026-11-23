@@ -44,6 +44,7 @@ const (
 	Rollout             ID = "rollout"
 	NetworkPolicy       ID = "network-policy"
 	MetricSources       ID = "metric-sources"
+	Dashboard           ID = "dashboard"
 
 	// Special folders.
 	Overview     ID = "overview"
