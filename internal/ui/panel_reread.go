@@ -20,7 +20,7 @@ const rereadDoneTTL = time.Second
 
 // rereadPanel reads again what panel idx shows (C-r, Left/Right > Reread):
 // the folder of a list, the object of Describe and Manifest, the summary
-// of Info. See docs/adr/0235-panel-reread.md.
+// of Info. See docs/adr/0236-panel-reread.md.
 func (a *App) rereadPanel(idx int) tea.Cmd {
 	panel := a.panelByIndex(idx)
 	if panel == nil {
