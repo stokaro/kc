@@ -44,16 +44,17 @@ const (
 	MetricSources       ID = "metric-sources"
 
 	// Special folders.
-	Overview    ID = "overview"
-	Attention   ID = "attention"
-	QuietChecks ID = "quiet-checks"
-	Diagnosis   ID = "diagnosis"
-	Timeline    ID = "timeline"
-	Related     ID = "related"
-	ContainerFS ID = "container-fs"
-	LocalFiles  ID = "local-files"
-	Helm        ID = "helm"
-	Explain     ID = "explain"
+	Overview     ID = "overview"
+	Attention    ID = "attention"
+	QuietChecks  ID = "quiet-checks"
+	Diagnosis    ID = "diagnosis"
+	Timeline     ID = "timeline"
+	ObjectEvents ID = "object-events"
+	Related      ID = "related"
+	ContainerFS  ID = "container-fs"
+	LocalFiles   ID = "local-files"
+	Helm         ID = "helm"
+	Explain      ID = "explain"
 
 	// Full-screen viewers and the logs dialogs.
 	Viewer      ID = "viewer"

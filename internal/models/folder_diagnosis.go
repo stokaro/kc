@@ -35,6 +35,9 @@ func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
 		if diagnosis && namespace != "" {
 			rows = append(rows, diagnosisRow(deps, gvr, namespace, name, path))
 		}
+		if hasObjectEvents(gvr, namespace) {
+			rows = append(rows, eventsRow(deps, gvr, namespace, name, path))
+		}
 		if hasTimeline(gvr) {
 			rows = append(rows, timelineRow(deps, gvr, namespace, name, path))
 		}
