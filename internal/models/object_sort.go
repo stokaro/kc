@@ -200,6 +200,13 @@ func columnSortValues(items []tablecache.Row, col int, def metav1.TableColumnDef
 			cells[i] = items[i].Cells[col]
 		}
 	}
+	_, vals := cellSortValues(cells, def)
+	return vals
+}
+
+// cellSortValues prepares the cells of one column and returns the kind they
+// compare as.
+func cellSortValues(cells []any, def metav1.TableColumnDefinition) (sortKind, []sortValue) {
 	var kind sortKind
 	switch def.Type {
 	case "integer", "number", "boolean":
@@ -213,7 +220,7 @@ func columnSortValues(items []tablecache.Row, col int, def metav1.TableColumnDef
 	for i, c := range cells {
 		vals[i] = parseSortValue(kind, c)
 	}
-	return vals
+	return kind, vals
 }
 
 // sortKindOrder lists the kinds detectSortKind tries. Number goes first, as

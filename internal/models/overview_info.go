@@ -131,9 +131,20 @@ type InfoBar struct {
 	// under-req, ... A state of another line (overcommitted limits) is in
 	// that line.
 	Flag string
-	// Health colors the bar like a row of an object list: the worst state
-	// of all its lines.
+	// Health colors the bar and its percentage like a row of an object
+	// list: the state of what Percent shows, so modest usage keeps a normal
+	// bar while the limits are overcommitted.
 	Health RowHealth
+	// DetailHealth and MoreHealth color the lines under the bar, each by
+	// its own state; MoreHealth is parallel to More and may be shorter.
+	DetailHealth RowHealth
+	MoreHealth   []RowHealth
+	// Attention is the worst state of all lines. When another line than the
+	// one the bar shows causes it, AttentionText names that line ("! lim",
+	// "!! node"; one mark for a warning, two for a failure) and follows the
+	// percentage.
+	Attention     RowHealth
+	AttentionText string
 }
 
 // InfoConsumer is one of the pods that use the most memory.
@@ -297,29 +308,51 @@ func capacityBar(cfg appconfig.OverviewConfig, label string, a capacityAmounts, 
 		return InfoBar{Label: label, Detail: "no allocatable " + label}
 	}
 	j := judgeCapacity(cfg, a)
-	bar := InfoBar{Label: label, Known: true, Health: j.worst().sev.RowHealth()}
-	var nodeLine string
+	bar := InfoBar{Label: label, Known: true}
+	nodeLine, nodeHealth := "", j.node.sev.RowHealth()
 	switch {
 	case j.nodeKnown:
 		nodeLine = fmt.Sprintf("node %s/%s %s capacity, %s%s", format(a.nodeUse), format(a.capacity), unit, percentText(j.nodePct), j.node.suffix())
 	case a.hasNodeUse:
 		nodeLine = fmt.Sprintf("node %s %s, capacity not reported", format(a.nodeUse), unit)
 	default:
-		nodeLine = "node use n/a: " + a.nodeReason
+		nodeLine, nodeHealth = "node use n/a: "+a.nodeReason, RowHealthUnknown
 	}
 	limLine := fmt.Sprintf("lim %s%s", percentText(j.limPct), j.lim.suffix())
 	if a.hasPodUse {
 		bar.Percent, bar.Usage, bar.Flag = j.podPct, true, j.pod.flag
+		bar.Health = j.pod.sev.RowHealth()
 		bar.Detail = fmt.Sprintf("pods %s/%s %s allocatable, %s%s", format(a.podUse), format(a.alloc), unit, percentText(j.podPct), j.pod.suffix())
+		bar.DetailHealth = bar.Health
 		bar.More = []string{nodeLine, fmt.Sprintf("req %s%s, %s", percentText(j.reqPct), j.req.suffix(), limLine)}
-		return bar
+		bar.MoreHealth = []RowHealth{nodeHealth, max(j.req.sev, j.lim.sev).RowHealth()}
+		return withAttention(bar, j, "pods")
 	}
 	bar.Percent, bar.Flag = j.reqPct, j.req.flag
+	bar.Health = j.req.sev.RowHealth()
 	bar.Detail = fmt.Sprintf("req %s/%s %s allocatable, %s%s", format(a.req), format(a.alloc), unit, percentText(j.reqPct), j.req.suffix())
+	bar.DetailHealth = bar.Health
 	if !a.hasNodeUse && a.nodeReason == a.podReason {
 		bar.More = []string{limLine, "use n/a: " + a.podReason}
+		bar.MoreHealth = []RowHealth{j.lim.sev.RowHealth(), RowHealthUnknown}
 	} else {
 		bar.More = []string{limLine, "pods use n/a: " + a.podReason, nodeLine}
+		bar.MoreHealth = []RowHealth{j.lim.sev.RowHealth(), RowHealthUnknown, nodeHealth}
+	}
+	return withAttention(bar, j, "req")
+}
+
+// withAttention adds the worst state of all lines to bar, and names the line
+// that causes it when that is not the line the bar shows (shown).
+func withAttention(bar InfoBar, j capacityJudgement, shown string) InfoBar {
+	st, signal := j.worstSignal()
+	bar.Attention = st.sev.RowHealth()
+	if signal != "" && signal != shown {
+		mark := "!"
+		if st.sev == severityFailed {
+			mark = "!!"
+		}
+		bar.AttentionText = mark + " " + signal
 	}
 	return bar
 }

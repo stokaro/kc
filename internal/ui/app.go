@@ -1063,7 +1063,7 @@ func (a *App) setupModals() {
 
 	// Copy-to-local modal
 	copyModel := NewCopyToLocalModel()
-	copyModal := NewModal("Copy to Local File", copyModel)
+	copyModal := NewModal("Copy", copyModel)
 	copyModal.SetCloseOnSingleEsc(true)
 	a.modalManager.Register("copy_local", copyModal)
 	a.copyInput = copyModel
@@ -2819,7 +2819,7 @@ func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
 	if modal == nil {
 		return nil
 	}
-	dir := a.defaultCopyDir()
+	dir := a.copyDialogDir()
 	target := filepath.Join(dir, req.filename)
 	a.copyInput.Configure(req.subject, target)
 	a.configureModalWindow(modal, a.copyInput, -1, "", 0, 0)

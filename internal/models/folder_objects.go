@@ -32,6 +32,7 @@ type ObjectsFolder struct {
 	hasObjOrder        bool
 	groupNamespaces    bool
 	hasGroupNamespaces bool
+	filterCols         *filterColumns
 	sortMu             sync.Mutex
 	sortState          folderSortState
 	verbs              []string
@@ -150,6 +151,20 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 	kind := o.kindString()
 	ctor, hasChild := o.childConstructor()
 
+	// Column filter terms see every server column, wide ones included, and
+	// the added ones, whatever the columns mode shows.
+	customCells := make([][]string, len(rl.Items))
+	filterCells := make([][]any, len(rl.Items))
+	for i := range rl.Items {
+		rr := &rl.Items[i]
+		name := rowName(rr)
+		ns, _ := o.objectNamespaceAndID(namespaced, rr.ObjectMeta.Namespace, name)
+		customCells[i] = cc.cells(ns, name)
+		filterCells[i] = withCustomCells(rr.Cells, len(rl.Columns), customCells[i])
+	}
+	fc := newFilterColumns(slices.Concat(rl.Columns, customColumnDefs(cc)), filterCells)
+	o.setFilterColumns(fc)
+
 	for _, ii := range idxs {
 		rr := &rl.Items[ii]
 		if o.Filter != nil && !o.Filter(rr) {
@@ -158,7 +173,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		name := rowName(rr)
 		ns, id := o.objectNamespaceAndID(namespaced, rr.ObjectMeta.Namespace, name)
 		cells := buildCells(rr.Cells, vis, hasChild)
-		cells = append(cells, cc.cells(ns, name)...)
+		cells = append(cells, customCells[ii]...)
 		if namespaced {
 			cells = withNamespaceColumn(cells, ns)
 		}
@@ -172,7 +187,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		info.Unstructured = unstructuredFromRow(rr)
 		style := applyRowStylers(info)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
-		obj.setRowFacts(rowFactsFor(info, id))
+		obj.setRowFacts(rowFactsFor(info, id, ns, fc, ii))
 		obj.SetResourceVerbs(o.verbs)
 		obj.SetInstance(rr.ObjectMeta.UID, o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))
@@ -234,6 +249,14 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
 	ctor, hasChild := o.childConstructor()
+	customCells := make([][]string, len(items))
+	filterCells := make([][]any, len(items))
+	for i, item := range items {
+		customCells[i] = cc.cellsFor(item)
+		filterCells[i] = withCustomCells([]any{item.GetName()}, 1, customCells[i])
+	}
+	fc := newFilterColumns(slices.Concat([]metav1.TableColumnDefinition{{Name: "Name"}}, customColumnDefs(cc)), filterCells)
+	o.setFilterColumns(fc)
 	for _, ii := range idxs {
 		item := items[ii]
 		name := item.GetName()
@@ -265,9 +288,9 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		if namespaced {
 			cells = append(cells, ns)
 		}
-		cells = append(cells, cc.cellsFor(item)...)
+		cells = append(cells, customCells[ii]...)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
-		obj.setRowFacts(rowFactsFor(info, id))
+		obj.setRowFacts(rowFactsFor(info, id, ns, fc, ii))
 		obj.SetResourceVerbs(o.verbs)
 		obj.SetInstance(item.GetUID(), o.origin())
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, ns, name))

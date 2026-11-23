@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/dialog"
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
@@ -102,28 +103,15 @@ func (m *ConfirmModel) View() tea.View {
 		}
 		out = append(out, style.Render(truncateStringToWidth(l, m.width)))
 	}
-	labels := [2]string{"[ " + m.c.Action + " ]", "[ Cancel ]"}
-	normal := lipgloss.NewStyle().Background(bg).Foreground(fg)
-	focused := lipgloss.NewStyle().Background(fg).Foreground(lipgloss.Color(uistyles.ColorBlack)).Bold(true)
-	total := lipgloss.Width(labels[0]) + 2 + lipgloss.Width(labels[1])
-	x := max(0, (m.width-total)/2)
-	y := len(out)
-	var b strings.Builder
-	b.WriteString(normal.Render(strings.Repeat(" ", x)))
-	for i, l := range labels {
-		style := normal
-		if i == m.focus {
-			style = focused
-		}
-		m.buttons[i] = buttonRect{x: x, y: y, w: lipgloss.Width(l), h: 1}
-		b.WriteString(style.Render(l))
-		x += lipgloss.Width(l)
-		if i == 0 {
-			b.WriteString(normal.Render("  "))
-			x += 2
-		}
+	// Enter on the focused button runs it; the default marker stays on
+	// Cancel, which has the focus when the dialog opens.
+	buttonRow, rects := dialog.RenderButtons(dialog.Danger(), m.width, []dialog.Button{
+		{Label: dialog.Label(m.c.Action)}, {Label: "Cancel", Default: true},
+	}, m.focus)
+	for i, r := range rects {
+		m.buttons[i] = buttonRect{x: r.X, y: len(out), w: r.W, h: 1}
 	}
-	out = append(out, row.Render(b.String()))
+	out = append(out, buttonRow)
 	return tea.NewView(strings.Join(out, "\n"))
 }
 

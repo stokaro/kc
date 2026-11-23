@@ -138,6 +138,33 @@ func (j capacityJudgement) worst() infoState {
 	return infoState{sev, "high"}
 }
 
+// worstSignal is worst together with the line that causes it: pods, node,
+// req or lim, or "" when every line is ok. Among lines in the same state the
+// usage comes first: lim, pods, node, req.
+func (j capacityJudgement) worstSignal() (infoState, string) {
+	st := j.worst()
+	if st.sev == severityOK {
+		return st, ""
+	}
+	for _, line := range []struct {
+		name  string
+		state infoState
+	}{{"lim", j.lim}, {"pods", j.pod}, {"node", j.node}, {"req", j.req}} {
+		if line.state == st {
+			return st, line.name
+		}
+	}
+	return st, ""
+}
+
+// signalState names a state with its line: "lim overcommitted", "node full".
+func signalState(st infoState, signal string) string {
+	if signal == "" {
+		return st.flag
+	}
+	return signal + " " + st.flag
+}
+
 // rank orders nodes by load: the largest of the percentages.
 func (j capacityJudgement) rank() float64 {
 	return max(j.reqPct, j.limPct, j.podPct, j.nodePct)
