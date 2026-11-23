@@ -8,9 +8,31 @@
 
 The demo was recorded before the menu bar stayed on the top row (see [Menu Bar](#menu-bar)).
 
-[screenshots/](screenshots/README.md) has a screenshot of every feature, grouped by topic.
-
 A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, Bubble Tea v2 and controller-runtime informers. See `TODO.md` for the plan.
+
+## Screenshots
+
+The cluster overview (`M-i`) next to the cluster capacity in the Info panel:
+
+![The cluster overview with capacity, health, risks and activity checks, and the cluster capacity in the Info panel](screenshots/info/03-overview.png)
+
+What needs attention, with the reason for a finding and the objects behind it:
+
+![The checks that failed or warn, and the explanation of the image pull errors with the pod that has them](screenshots/info/04-attention.png)
+
+A Deployment list next to the Describe of the selected Deployment:
+
+![Deployments in the left panel and kubectl describe of deployment web in the right panel](screenshots/viewer/03-describe-mode.png)
+
+Draining a node: what it evicts, the PodDisruptionBudgets and the same kubectl command, before anything happens:
+
+![The drain confirmation for a node, with the pods to evict, the budgets and the kubectl drain command](screenshots/drain/03-confirm.png)
+
+The CPU dashboard of a Deployment (`C-x g`) with the cursor in the past, from the redesign in #321:
+
+![A full-screen CPU chart of a Deployment over five minutes, with the request and limit lines and the cursor on one cell](screenshots/dashboard/04-expanded.png)
+
+More in the [screenshot catalog](screenshots/README.md), one page per topic.
 
 ## Highlights
 
