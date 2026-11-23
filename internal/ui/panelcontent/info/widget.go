@@ -292,31 +292,20 @@ func (w *Widget) lines(width, height int) []string {
 	}
 	add("")
 	h := w.history[w.historyKey()]
+	if t := w.summary.BarsTitle; t != "" {
+		add(" " + t)
+	}
 	for _, b := range w.summary.Bars {
-		add(barLine(b, width))
-		add(strings.Repeat(" ", labelWidth+1) + styled(b.Detail, b.DetailHealth))
-		for i, line := range b.More {
-			h := models.RowHealthUnknown
-			if i < len(b.MoreHealth) {
-				h = b.MoreHealth[i]
-			}
-			add(strings.Repeat(" ", labelWidth+1) + styled(line, h))
-		}
-		if h != nil {
-			var samples []float64
-			switch b.Label {
-			case "CPU":
-				samples = h.cpu
-			case "Memory":
-				samples = h.mem
-			}
-			if len(samples) > 1 {
-				add(strings.Repeat(" ", labelWidth+1) + sparkline(samples, width-labelWidth-2))
-			}
+		for _, line := range barBlock(b, h, width) {
+			add(line)
 		}
 	}
 	add("")
-	add(" Top pods by memory")
+	top := w.summary.TopTitle
+	if top == "" {
+		top = "Top pods by memory"
+	}
+	add(" " + top)
 	if len(w.summary.Top) == 0 {
 		add("   " + w.summary.TopNote)
 	}
@@ -324,6 +313,34 @@ func (w *Widget) lines(width, height int) []string {
 		add(fmt.Sprintf("   %8s %6s  %s/%s", c.Memory, c.CPU, c.Namespace, c.Name))
 	}
 	return clip(out, height)
+}
+
+// barBlock is one bar with the lines under it, each in its own state, and
+// the sparkline of its usage samples in h (nil when none).
+func barBlock(b models.InfoBar, h *history, width int) []string {
+	indent := strings.Repeat(" ", labelWidth+1)
+	out := []string{barLine(b, width), indent + styled(b.Detail, b.DetailHealth)}
+	for i, line := range b.More {
+		health := models.RowHealthUnknown
+		if i < len(b.MoreHealth) {
+			health = b.MoreHealth[i]
+		}
+		out = append(out, indent+styled(line, health))
+	}
+	if h == nil {
+		return out
+	}
+	var samples []float64
+	switch b.Label {
+	case "CPU":
+		samples = h.cpu
+	case "Memory":
+		samples = h.mem
+	}
+	if len(samples) > 1 {
+		out = append(out, indent+sparkline(samples, width-labelWidth-2))
+	}
+	return out
 }
 
 func clip(lines []string, height int) []string {

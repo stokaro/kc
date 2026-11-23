@@ -70,26 +70,37 @@ func (f *OverviewFolder) populate(context.Context) ([]table.Row, error) {
 	}
 	rows := make([]table.Row, 0, len(report.findings)+len(overviewSections))
 	for _, section := range overviewSections {
-		rows = append(rows, NewSimpleItem("section/"+strings.ToLower(section), []string{" " + section, "", ""}, f.Path(), overviewSectionStyle()))
+		// The header names the scope, so cluster capacity next to an
+		// empty namespace does not read as that namespace's figures.
+		scope, mixed := sectionScope(report.findings, section, f.namespace)
+		header := NewSimpleItem("section/"+strings.ToLower(section), []string{" " + section + " · " + scope, "", ""}, f.Path(), overviewSectionStyle())
+		header.SetDetails(section + " covers " + scope + ". " + overviewSwitchHint)
+		rows = append(rows, header)
 		for _, finding := range report.findings {
 			if finding.section != section {
 				continue
 			}
-			rows = append(rows, f.findingRow(finding))
+			rows = append(rows, f.findingRow(finding, mixed))
 		}
 	}
 	return rows, nil
 }
 
-func (f *OverviewFolder) findingRow(finding overviewFinding) table.Row {
+// findingRow is the row of finding. In a section that mixes namespace and
+// cluster findings (mixed), a cluster finding's title says so.
+func (f *OverviewFolder) findingRow(finding overviewFinding, mixed bool) table.Row {
 	path := append(f.Path(), strings.TrimPrefix(finding.title, "/"))
 	style := overviewSeverityStyle(finding.severity)
+	title := finding.title
+	if _, cluster := findingScope(finding.id, f.namespace); cluster && mixed {
+		title += " (cluster)"
+	}
 	item := &OverviewFindingItem{
-		RowItem: NewRowItem(finding.id, []string{finding.title, finding.value, finding.state}, path, style),
+		RowItem: NewRowItem(finding.id, []string{title, finding.value, finding.state}, path, style),
 		folder:  f,
 		id:      finding.id,
 	}
-	item.SetDetails(finding.title + ": " + finding.value)
+	item.SetDetails(title + ": " + finding.value)
 	// The command line holds one command; F3 lists all of them.
 	if len(finding.kubectl) > 0 {
 		item.SetViewCommand(kubectlCommand(f.Deps, finding.kubectl[0]...))
@@ -139,9 +150,9 @@ func (f *OverviewFolder) currentFinding(id string) (overviewFinding, bool) {
 
 func (f *OverviewFolder) explainFinding(finding overviewFinding) string {
 	var b strings.Builder
-	scope := "all namespaces"
-	if f.namespace != AllNamespaces {
-		scope = "namespace " + f.namespace
+	scope, cluster := findingScope(finding.id, f.namespace)
+	if cluster && f.namespace != AllNamespaces {
+		scope += ", whatever the namespace scope (" + namespaceScopeText(f.namespace) + ")"
 	}
 	fmt.Fprintf(&b, "%s\n\nValue: %s\nState: %s\nScope: %s\n", finding.title, finding.value, finding.state, scope)
 	if finding.unavailable != "" {
@@ -154,7 +165,7 @@ after a change. Thresholds are set under overview: in ~/.kc/config.yaml.
 `)
 	b.WriteString("\nkubectl\n\n")
 	b.WriteString(f.findingCommands(finding))
-	b.WriteString("\n")
+	b.WriteString("\n\n" + overviewSwitchHint + "\n")
 	return b.String()
 }
 
