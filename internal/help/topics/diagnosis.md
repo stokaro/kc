@@ -45,6 +45,13 @@ kill, a crash loop or a restart in the last hour, a failed exit (init
 containers too), and a claim that is missing or not Bound. A Deployment
 whose availability is younger than `overview.startupGrace` is `starting`.
 
+An OOM kill is an `error` while the container is terminated by it or
+crash loops after it. When the container runs again, the kill is a
+`warning` for the first hour and `info` after that: history that shows
+the memory was once too small, with the time of the kill. The `next` row
+cites `limits.memory` when the container has one; without it, the kill
+came from a pod-level limit or from memory pressure on the node.
+
 ## Keys
 
 - `Enter` on a cited object opens its own folder; `/..` comes back.
