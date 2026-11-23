@@ -185,6 +185,9 @@ func (w *Widget) SetTheme(theme string) {
 // Theme returns the active chroma theme.
 func (w *Widget) Theme() string { return w.theme }
 
+// RawLines returns a copy of the text lines, without styling.
+func (w *Widget) RawLines() []string { return append([]string(nil), w.rawLines...) }
+
 // AppendLines appends raw text lines (used by logs viewer). In highlighted mode
 // this forces a full re-render; in plain mode we simply extend the backing
 // slices so appending remains cheap.
@@ -439,6 +442,16 @@ func (w *Widget) HandleEscape() (tea.Cmd, bool) {
 		return nil, true
 	}
 	return nil, false
+}
+
+// SearchSummary is the applied search and the match in focus, for a footer
+// that shows it next to other state, for example "/timeout (2/7)". It is
+// empty while the search dialog is open or no search is applied.
+func (w *Widget) SearchSummary() string {
+	if w.searchDialog != nil {
+		return ""
+	}
+	return w.searchSummary()
 }
 
 // FooterStatusText describes the active search prompt or summary for footer display.

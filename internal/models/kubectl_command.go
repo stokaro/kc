@@ -258,6 +258,16 @@ func logsCommand(deps Deps, spec LogsSpec) string {
 	return kubectlCommand(deps, args...)
 }
 
+// PanelLogsCommand prints the kubectl command for what a Logs panel
+// streams: spec, or every container of spec's pod with allContainers.
+func PanelLogsCommand(deps Deps, spec LogsSpec, allContainers bool) string {
+	if !allContainers {
+		return logsCommand(deps, spec)
+	}
+	spec.Container = ""
+	return logsCommand(deps, spec) + " --all-containers --prefix"
+}
+
 // helmCommand joins helm arguments like kubectlCommand; helm names the
 // context flag --kube-context.
 func helmCommand(deps Deps, args ...string) string {
