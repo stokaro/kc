@@ -138,7 +138,7 @@ func (o *ObjectsFolder) KubectlCommand() string {
 		notes = append(notes, "kc also filters: "+strings.Join(filterOther, ", "))
 	}
 	if o.Deps.AppConfig != nil {
-		cc := planCustomColumns(o.Deps, o.gvr, o.Deps.AppConfig.Objects.Columns)
+		cc := planCustomColumns(o.Deps, o.gvr, o.requestedColumnsMode())
 		ccArgs, ccNote := cc.kubectlArgs(namespaced && o.namespace == "")
 		args = append(args, ccArgs...)
 		if ccNote != "" {

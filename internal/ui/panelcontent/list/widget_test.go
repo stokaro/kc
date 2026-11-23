@@ -103,3 +103,28 @@ func (f *orderCaptureFolder) Len(context.Context) int                        { r
 func (f *orderCaptureFolder) Find(context.Context, string) (int, table.Row, bool) {
 	return -1, nil, false
 }
+
+// modeCaptureFolder records the columns modes the widget applies.
+type modeCaptureFolder struct {
+	orderCaptureFolder
+	modes []string
+}
+
+func (f *modeCaptureFolder) ApplyColumnsMode(mode string) { f.modes = append(f.modes, mode) }
+
+// C-w and the panel options change the panel's columns mode; the folder
+// it lists must be told, or the list keeps the configured columns.
+func TestColumnsModeReachesTheFolder(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	f := &modeCaptureFolder{}
+	w := New(panelcontent.WidgetDeps{})
+	w.UseFolder(true)
+	w.SetFolder(ctx, f, false)
+	w.ToggleColumnsMode(ctx)
+	w.ToggleColumnsMode(ctx)
+	want := []string{"normal", "wide", "normal"}
+	if fmt.Sprint(f.modes) != fmt.Sprint(want) {
+		t.Fatalf("modes applied = %q, want %q", f.modes, want)
+	}
+}
