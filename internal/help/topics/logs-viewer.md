@@ -37,7 +37,10 @@ When a followed stream breaks while the container still runs, kc
 reconnects and goes on after the last line it showed, without repeating
 it. It tries eight times over about two minutes and does not retry a
 refusal such as forbidden or not found. `[kc] lines after <time> may be
-missing` marks a gap the kubelet could not fill.
+missing` marks a gap the kubelet could not fill. Before each attempt kc
+checks the container again: when it restarted, stopped or its pod was
+replaced during the wait, `[kc] not reconnecting: ...` says why and the
+stream ends, so the next instance's lines never continue the old one.
 
 The viewer keeps the most recent lines only, up to `viewer.logs.maxLines`
 (100000) and about `viewer.logs.maxMemoryMiB` MiB (64). When either limit
