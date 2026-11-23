@@ -41,6 +41,9 @@ type dashboardState struct {
 	engine *gatedInfo
 	scope  string
 	key    kccluster.Key
+	// window is the investigation window as the dashboard last saw it, to
+	// tell when w changed it.
+	window investigation.Window
 }
 
 func (a *App) dashboardMenuItem() menubar.Item {
@@ -109,7 +112,7 @@ func (a *App) openDashboard(scope string, target dashboard.Target) tea.Cmd {
 		})
 		d.scope, d.key = scope, key
 	}
-	src := a.dashboardSources(key, d.engine)
+	src := a.dashboardSources(key, d.engine, scope)
 	switch {
 	case d.model == nil:
 		d.model = dashboard.New(src, target)
@@ -120,7 +123,8 @@ func (a *App) openDashboard(scope string, target dashboard.Target) tea.Cmd {
 		d.model = d.model.Resume(src, target).Retarget(target)
 	}
 	d.open = true
-	d.model.Update(tea.WindowSizeMsg{Width: a.width, Height: a.height})
+	a.dash.window = a.window
+	d.model.Update(dashboardSize(a.width, a.height))
 	ctrllog.FromContext(a.ctx).WithName("dashboard").Info("dashboard opened", "context", key.ContextName, "scope", scope, "target", target.Key())
 	a.invalidateView("dashboard open")
 	return d.model.Start()
@@ -135,9 +139,10 @@ func (d *dashboardState) restores(src dashboard.Sources, target dashboard.Target
 // dashboardSources reads the overview engine and, when metricsHistory
 // names a backend for the context, Prometheus through the API server's
 // service proxy.
-func (a *App) dashboardSources(key kccluster.Key, engine *gatedInfo) dashboard.Sources {
+func (a *App) dashboardSources(key kccluster.Key, engine *gatedInfo, scope string) dashboard.Sources {
 	src := dashboard.Sources{
 		Context:   key.ContextName,
+		Scope:     scope,
 		Amounts:   engine.Amounts,
 		Now:       time.Now,
 		Loc:       time.Local,
@@ -186,9 +191,16 @@ func dashboardUsage(root context.Context, restConfig func() *rest.Config, key kc
 	}
 }
 
+// dashboardSize is the size the dashboard draws at: the screen less the
+// F-key bar, which the App draws under it.
+func dashboardSize(w, h int) tea.WindowSizeMsg {
+	return tea.WindowSizeMsg{Width: w, Height: max(0, h-1)}
+}
+
 // updateDashboard routes a message while the dashboard is open. A help
-// window over it takes the keys. handled is false for messages the rest
-// of kc also needs (window size, other async results).
+// window over it takes the keys, and so does its open menu bar. handled
+// is false for messages the rest of kc also needs (window size, other
+// async results).
 func (a *App) updateDashboard(msg tea.Msg) (tea.Cmd, bool) {
 	d := a.dash
 	if dashboard.IsMsg(msg) {
@@ -199,24 +211,79 @@ func (a *App) updateDashboard(msg tea.Msg) (tea.Cmd, bool) {
 	if a.modalManager != nil && a.modalManager.IsModalVisible() {
 		return nil, false
 	}
+	if a.menuBar.IsOpen() {
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			return a.handleMenuBarKey(msg), true
+		case tea.MouseMsg:
+			return a.handleMenuBarMouse(msg), true
+		}
+	}
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		if msg.String() == "f1" {
-			return a.showHelp(help.Dashboard), true
+		return a.dashboardKey(msg.String()), true
+	case tea.MouseClickMsg:
+		m := msg.Mouse()
+		switch {
+		case m.Y == a.height-1:
+			return a.dashboardFunctionKeyClick(m.X), true
+		case m.Y == 0 && m.Button == tea.MouseLeft:
+			if i := menubar.TitleIndex(d.model.Menus(nil), m.X); i >= 0 {
+				a.menuBar.OpenAt(d.model.Menus(a.dashboardKey), a.width, i)
+				a.invalidateView("dashboard menu")
+			}
+			return nil, true
 		}
 	case tea.WindowSizeMsg:
-		d.model.Update(msg)
+		d.model.Update(dashboardSize(msg.Width, msg.Height))
 		return nil, false
-	case tea.KeyMsg, tea.MouseMsg:
+	case tea.MouseMsg:
 	default:
 		return nil, false
 	}
-	before := a.window
-	cmd, act := d.model.Update(msg)
+	return a.dashboardResult(d.model.Update(msg)), true
+}
+
+// dashboardKey runs a key of the dashboard, typed or chosen from its menu
+// bar or F-key bar. F1 shows help, F2 drops down the Range menu, F9 opens
+// the menu bar; the dashboard runs the rest.
+func (a *App) dashboardKey(key string) tea.Cmd {
+	d := a.dash
+	if d == nil || !d.open {
+		return nil
+	}
+	switch key {
+	case "f1":
+		return a.showHelp(help.Dashboard)
+	case "f2":
+		a.menuBar.OpenAt(d.model.Menus(a.dashboardKey), a.width, dashboard.RangeMenu)
+		a.invalidateView("dashboard range menu")
+		return nil
+	case "f9":
+		a.menuBar.Open(d.model.Menus(a.dashboardKey), a.width)
+		a.invalidateView("dashboard menu")
+		return nil
+	}
+	return a.dashboardResult(d.model.Key(key))
+}
+
+// dashboardFunctionKeyClick runs the F-key under column x of the bar.
+func (a *App) dashboardFunctionKeyClick(x int) tea.Cmd {
+	keys := a.dash.model.FunctionKeys()
+	i := functionKeyAt(len(keys), a.width, x)
+	if i < 0 || !keys[i].Enabled || keys[i].Label == "" {
+		return nil
+	}
+	return a.dashboardKey(fmt.Sprintf("f%d", i+1))
+}
+
+// dashboardResult carries out what an update of the dashboard asks for.
+func (a *App) dashboardResult(cmd tea.Cmd, act dashboard.Action) tea.Cmd {
 	a.invalidateView("dashboard")
 	cmds := []tea.Cmd{cmd}
-	if a.window != before {
+	if a.window != a.dash.window {
 		// w made the dashboard's range the investigation window.
+		a.dash.window = a.window
 		cmds = append(cmds, a.applyWindow()...)
 		cmds = append(cmds, a.ShowInfo("Investigation window "+a.window.Label(time.Local)+" (Logs, Info and the dashboard)", 3*time.Second))
 	}
@@ -232,7 +299,17 @@ func (a *App) updateDashboard(msg tea.Msg) (tea.Cmd, bool) {
 	case act.Close:
 		a.closeDashboard()
 	}
-	return tea.Batch(cmds...), true
+	return tea.Batch(cmds...)
+}
+
+// dashboardKeys are the F-key bar under the dashboard.
+func (a *App) dashboardKeys() []functionKey {
+	fk := a.dash.model.FunctionKeys()
+	keys := make([]functionKey, len(fk))
+	for i, k := range fk {
+		keys[i] = functionKey{Key: fmt.Sprintf("%2d", i+1), Label: k.Label, Enabled: k.Enabled}
+	}
+	return keys
 }
 
 // openDashboardLogs makes w the investigation window and shows the logs
@@ -302,7 +379,12 @@ func (a *App) closeDashboard() {
 }
 
 func (a *App) renderDashboard() tea.View {
-	content := a.dash.model.View()
+	bottom := renderFunctionKeySlots(a.dashboardKeys(), a.width)
+	if a.toastActive && !a.toastOnCommandLine() {
+		bottom = renderToast(a.toastText, a.toastInfo, a.width)
+	}
+	content := a.dash.model.View() + "\n" + bottom
+	content = a.overlayMenuBar(content)
 	if a.modalManager != nil && a.modalManager.IsModalVisible() {
 		content = viewString(a.modalManager.View())
 	}

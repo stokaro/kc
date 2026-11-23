@@ -1,8 +1,8 @@
 package dashboard
 
 import (
-	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,16 +18,20 @@ import (
 const logsAround = 5 * time.Minute
 
 var (
-	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Red).Bold(true)
-	rolloutStyle = lipgloss.NewStyle().Foreground(lipgloss.Cyan)
+	warnStyle    = func() lipgloss.Style { return on(lipgloss.NewStyle().Foreground(lipgloss.BrightRed).Bold(true)) }
+	rolloutStyle = func() lipgloss.Style { return on(lipgloss.NewStyle().Foreground(lipgloss.BrightCyan).Bold(true)) }
 )
+
+// eventsListAt is the first line of the Events list inside its frame:
+// after the lane, its labels and the column headers.
+const eventsListAt = 3
 
 // Lane marks, strongest first.
 const (
 	markWarning = '▲'
 	markRollout = '◆'
 	markNormal  = '•'
-	markUnknown = '·' // before the oldest Event the API server kept
+	markUnknown = '░' // before the oldest Event the API server kept
 )
 
 // rolloutKinds are the controllers whose Normal Events are rollouts.
@@ -71,12 +75,14 @@ func overlaps(e models.UsageEvent, from, to time.Time) bool {
 	return !e.Last.Before(from) && !first.After(to)
 }
 
-// shownEvents are the Events of v in the shown range, or in the cursor
-// cell while there is a cursor, newest first.
+// shownEvents are the Events of v in the chosen range (also before a
+// chart narrowed to the session's data), or in the cursor cell while
+// there is a cursor, newest first.
 func (m *Model) shownEvents(v *view) []models.UsageEvent {
 	end := m.shownEnd(v)
 	from, to := end.Add(-v.span(m)), end
 	if v.cursor >= 0 && m.cells > 0 {
+		from = m.shownStart(v)
 		span := to.Sub(from)
 		from, to = from.Add(span*time.Duration(v.cursor)/time.Duration(m.cells)), from.Add(span*time.Duration(v.cursor+1)/time.Duration(m.cells))
 	}
@@ -106,7 +112,7 @@ func (m *Model) laneCells(v *view, cells int) []rune {
 		out[i] = ' '
 	}
 	end := m.shownEnd(v)
-	start := end.Add(-v.span(m))
+	start := m.shownStart(v)
 	span := end.Sub(start)
 	if cells <= 0 || span <= 0 {
 		return out
@@ -135,71 +141,209 @@ func (m *Model) laneCells(v *view, cells int) []rune {
 	return out
 }
 
-// eventLines are the events widget: a title, the lane under the charts'
-// plot cells, and the Events of the range or of the cursor cell.
-func (m *Model) eventLines(v *view, w, h int) []string {
+// eventsFrame is the Events widget: the lane on the charts' time cells
+// with the reasons written under the marks, then the Events of the range
+// or of the cursor cell in columns.
+func (m *Model) eventsFrame(v *view, r rect) []string {
 	shown := m.shownEvents(v)
-	lines := []string{fit(m.eventsHead(v, len(shown)), w)}
-	if h < 2 {
-		return lines
-	}
-	lines = append(lines, m.laneLine(v, w))
-	if rows := h - 2; rows > 0 {
-		lines = append(lines, m.eventRows(v, shown, w, rows)...)
-	}
-	return lines
-}
-
-// eventsHead is the title of the events widget: how many Events, since
-// when the API server kept them, and the legend.
-func (m *Model) eventsHead(v *view, shown int) string {
 	ev := v.now.Events
-	head := "  Events"
-	if v.focus == widgetEvents {
-		head = focusStyle.Render("▸ Events")
-	}
+	title := "Events"
 	switch {
 	case v.now.Loading:
-		head += dimStyle.Render(" · loading")
+		title += " · loading"
 	case ev.Missing != "":
-		head += " · cannot be read: " + ev.Missing
+		title += " · cannot be read: " + ev.Missing
+	case v.cursor >= 0:
+		title += " in the cursor cell: " + strconv.Itoa(len(shown))
 	default:
-		where := "in range"
-		if v.cursor >= 0 {
-			where = "in the cell"
-		}
-		head += fmt.Sprintf(" · %d %s", shown, where)
-		if !ev.Oldest.IsZero() {
-			head += dimStyle.Render(" · kept from " + ev.Oldest.In(m.loc()).Format(m.timeLayout(v)))
-		}
-		head += " " + warnStyle.Render(string(markWarning)+"warning") + " " + rolloutStyle.Render(string(markRollout)+"rollout")
+		title += " in the last " + longDuration(v.span(m)) + ": " + strconv.Itoa(len(shown))
 	}
-	return head
+	if ev.Missing == "" && !v.now.Loading {
+		title += " · ▲ warning ◆ rollout • other"
+	}
+	footer := ""
+	if !ev.Oldest.IsZero() {
+		footer = "the API server keeps them since " + ev.Oldest.In(m.loc()).Format(m.timeLayout(v))
+	}
+	inner := r.w - 2
+	lead := max(0, r.plotX-(r.x+1))
+	cells := min(m.cells, max(0, inner-lead))
+	lane := m.laneCells(v, cells)
+	body := []string{
+		noteStyle().Render(laneLead(lead)) + m.laneLine(v, lane),
+		strings.Repeat(" ", lead) + m.laneLabels(v, lane, cells),
+		headStyle().Render(fit(eventHeader(inner), inner)),
+	}
+	if rows := r.h - 2 - eventsListAt; rows > 0 {
+		body = append(body, m.eventRows(v, shown, inner, rows)...)
+	}
+	return frame(title, footer, v.focus == widgetEvents, r.w, r.h, body)
 }
 
-// laneLine is the lane, right-aligned like the plots, the cursor cell
-// reversed.
-func (m *Model) laneLine(v *view, w int) string {
-	cells := min(m.cells, max(0, w-1))
-	lane := m.laneCells(v, cells)
+// laneLine draws the lane cells, the cursor cell reversed.
+func (m *Model) laneLine(v *view, lane []rune) string {
 	var b strings.Builder
-	b.WriteString(strings.Repeat(" ", max(0, w-cells)))
 	for i, r := range lane {
 		s := string(r)
 		switch r {
 		case markWarning:
-			s = warnStyle.Render(s)
+			s = warnStyle().Render(s)
 		case markRollout:
-			s = rolloutStyle.Render(s)
-		case markNormal, markUnknown:
-			s = dimStyle.Render(s)
+			s = rolloutStyle().Render(s)
+		case markNormal:
+			s = noteStyle().Render(s)
+		case markUnknown:
+			s = gapStyle.Render(" ")
 		}
 		if i == v.cursor {
-			s = selStyle.Render(string(r))
+			s = lipgloss.NewStyle().Reverse(true).Render(string(r))
 		}
 		b.WriteString(s)
 	}
-	return fit(b.String(), w)
+	return b.String()
+}
+
+// laneLabels writes under the lane what its marks are: the reason and the
+// count of the strongest Events first, where they fit, and where kc does
+// not know what happened.
+func (m *Model) laneLabels(v *view, lane []rune, cells int) string {
+	out := make([]rune, cells)
+	for i := range out {
+		out[i] = ' '
+	}
+	kind := make([]rune, cells)
+	// A label keeps a blank cell before and after another label.
+	free := func(at, n int) bool {
+		if at < 0 || at+n > cells {
+			return false
+		}
+		for i := max(0, at-1); i < min(cells, at+n+1); i++ {
+			if out[i] != ' ' {
+				return false
+			}
+		}
+		return true
+	}
+	put := func(at int, text string, mark rune) {
+		for i, r := range []rune(text) {
+			out[at+i], kind[at+i] = r, mark
+		}
+	}
+	unknown := 0
+	for unknown < cells && lane[unknown] == markUnknown {
+		unknown++
+	}
+	if n := m.earlierEvents(v); n > 0 && unknown == 0 {
+		put(0, "← "+strconv.Itoa(n)+" earlier", markNormal)
+	}
+	for _, l := range m.markLabels(v, cells) {
+		n := len([]rune(l.text))
+		switch {
+		case free(l.at, n):
+			put(l.at, l.text, l.mark)
+		case free(l.at-n+1, n):
+			put(l.at-n+1, l.text, l.mark)
+		}
+	}
+	// What kc does not know goes in the room the marks left, in as many
+	// words as fit.
+	if unknown > 0 {
+		at := v.now.Events.Oldest.In(m.loc()).Format("15:04")
+		for _, text := range []string{"no Events kept before " + at, "none kept before " + at, "none before " + at, "expired"} {
+			if n := len([]rune(text)); free(0, n) {
+				put(0, text, markUnknown)
+				break
+			}
+		}
+	}
+	return styleLabels(out, kind)
+}
+
+// laneLabel is the text written under a mark of the lane.
+type laneLabel struct {
+	at   int
+	text string
+	mark rune
+}
+
+// markLabels are the labels of the Events in the chart's span, the
+// strongest first and, among equals, the newest.
+func (m *Model) markLabels(v *view, cells int) []laneLabel {
+	var labels []laneLabel
+	end := m.shownEnd(v)
+	start := m.shownStart(v)
+	span := end.Sub(start)
+	for _, e := range v.now.Events.Items {
+		if span <= 0 || e.Last.Before(start) || e.Last.After(end) {
+			continue
+		}
+		at := min(cells-1, int(float64(e.Last.Sub(start))/float64(span)*float64(cells)))
+		text := e.Reason
+		if e.Count > 1 {
+			text += " ×" + strconv.Itoa(int(e.Count))
+		}
+		labels = append(labels, laneLabel{at: at, text: text, mark: eventMark(e)})
+	}
+	slices.SortStableFunc(labels, func(a, b laneLabel) int {
+		if c := markRank(b.mark) - markRank(a.mark); c != 0 {
+			return c
+		}
+		return b.at - a.at
+	})
+	return labels
+}
+
+// styleLabels draws each label rune in the color of its mark.
+func styleLabels(out, kind []rune) string {
+	var b strings.Builder
+	for i, r := range out {
+		s := string(r)
+		switch kind[i] {
+		case markWarning:
+			s = warnStyle().Render(s)
+		case markRollout:
+			s = rolloutStyle().Render(s)
+		case markUnknown:
+			s = gapStyle.Render(s)
+		}
+		b.WriteString(s)
+	}
+	return b.String()
+}
+
+// earlierEvents counts the Events of the chosen range before the chart's
+// start, when the chart narrowed to the session's data (fits): the list
+// shows them, the lane cannot.
+func (m *Model) earlierEvents(v *view) int {
+	start, ok := m.fits(v)
+	if !ok {
+		return 0
+	}
+	from := m.shownEnd(v).Add(-v.span(m))
+	n := 0
+	for _, e := range v.now.Events.Items {
+		if e.Last.Before(start) && !e.Last.Before(from) {
+			n++
+		}
+	}
+	return n
+}
+
+// Column widths of the Events list.
+const (
+	colTime   = 10
+	colType   = 10
+	colReason = 18
+	colObject = 34
+	colCount  = 6
+)
+
+func eventHeader(w int) string {
+	h := pad("Time", colTime) + pad("Type", colType) + pad("Reason", colReason)
+	if w >= 100 {
+		h += pad("Object", colObject)
+	}
+	return h + lpad("Count", colCount) + "  Message"
 }
 
 // eventRows lists the shown Events in rows lines, scrolled to the
@@ -213,21 +357,21 @@ func (m *Model) eventRows(v *view, shown []models.UsageEvent, w, rows int) []str
 		first = v.evSel - rows + 1
 	}
 	for i := first; i < len(shown) && len(lines) < rows; i++ {
-		row := m.eventRow(v, shown[i])
+		row := m.eventRow(v, shown[i], w)
 		if v.focus == widgetEvents && i == v.evSel {
-			row = selStyle.Render(fit(ansi.Strip(row), w))
+			row = curStyle().Render(fit(ansi.Strip(row), w))
 		}
-		lines = append(lines, fit(row, w))
+		lines = append(lines, row)
 	}
 	if len(shown) == 0 && ev.Missing == "" && !v.now.Loading {
-		note := "  no Events in this range"
+		note := "no Events in this range"
 		if v.cursor >= 0 {
-			note = "  no Events in the cell"
+			note = "no Events in the cursor cell"
 		}
 		if !ev.Oldest.IsZero() && m.shownEnd(v).Before(ev.Oldest) {
-			note = "  the API server keeps no Events this old"
+			note = "the API server keeps no Events this old"
 		}
-		lines = append(lines, fit(dimStyle.Render(note), w))
+		lines = append(lines, noteStyle().Render(note))
 	}
 	return lines
 }
@@ -239,21 +383,28 @@ func (m *Model) timeLayout(v *view) string {
 	return "15:04:05"
 }
 
-// eventRow is one Event: when, its mark, the reason, the object, how
-// often, and the message.
-func (m *Model) eventRow(v *view, e models.UsageEvent) string {
-	mark := string(eventMark(e))
+// eventRow is one Event in the columns of eventHeader.
+func (m *Model) eventRow(v *view, e models.UsageEvent, w int) string {
+	typ := string(eventMark(e)) + " "
+	st := noteStyle()
 	switch eventMark(e) {
 	case markWarning:
-		mark = warnStyle.Render(mark)
+		typ, st = typ+"Warning", warnStyle()
 	case markRollout:
-		mark = rolloutStyle.Render(mark)
+		typ, st = typ+"Rollout", rolloutStyle()
+	default:
+		typ += "Normal"
 	}
-	obj := e.Kind + " " + e.Object.Name
-	if count := e.Count; count > 1 {
-		obj += fmt.Sprintf(" ×%d", count)
+	count := ""
+	if e.Count > 1 {
+		count = strconv.Itoa(int(e.Count))
 	}
-	return fmt.Sprintf("  %s %s %s %s  %s", e.Last.In(m.loc()).Format(m.timeLayout(v)), mark, e.Reason, obj, dimStyle.Render(firstLine(e.Message)))
+	row := baseStyle().Render(pad(e.Last.In(m.loc()).Format(m.timeLayout(v)), colTime)) +
+		st.Render(pad(typ, colType)) + baseStyle().Render(pad(truncate(e.Reason, colReason-1), colReason))
+	if w >= 100 {
+		row += baseStyle().Render(pad(truncate(e.Kind+" "+e.Object.Name, colObject-1), colObject))
+	}
+	return row + baseStyle().Render(lpad(count, colCount)+"  ") + noteStyle().Render(firstLine(e.Message))
 }
 
 // eventLogs is the logs request of l: the pod or workload of the
@@ -290,7 +441,17 @@ func (m *Model) cursorTime(v *view) time.Time {
 	if v.cursor < 0 || m.cells <= 0 {
 		return end
 	}
-	span := v.span(m)
-	start := end.Add(-span)
+	start := m.shownStart(v)
+	span := end.Sub(start)
 	return start.Add(span * time.Duration(2*v.cursor+1) / time.Duration(2*m.cells))
+}
+
+// laneLead is the label left of the lane, in the room of the charts'
+// value labels, or blanks when it does not fit.
+func laneLead(lead int) string {
+	const label = "Events "
+	if lead < len(label) {
+		return strings.Repeat(" ", lead)
+	}
+	return lpad(label, lead)
 }

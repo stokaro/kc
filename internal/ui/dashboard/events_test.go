@@ -44,39 +44,48 @@ func withEvents() models.UsageAmounts {
 	return a
 }
 
-func lane(t *testing.T, lines []string) string {
+// lane returns the lane of the Events widget and the line of labels
+// under it.
+func lane(t *testing.T, lines []string) (marks, labels string) {
 	t.Helper()
 	for i, l := range lines {
-		if strings.Contains(l, "Events ·") && i+1 < len(lines) {
-			return lines[i+1]
+		if strings.Contains(l, "Events in") && i+2 < len(lines) {
+			return lines[i+1], lines[i+2]
 		}
 	}
 	t.Fatalf("no events widget:\n%s", strings.Join(lines, "\n"))
-	return ""
+	return "", ""
 }
 
 // TestEventsLaneAndList: the lane marks a rollout and a warning at their
-// times and the cells before the oldest kept Event as unknown; the list
-// is newest first with the repeat count.
+// times with their reasons written under them, and says where kc does not
+// know what happened; the list is newest first in labeled columns.
 func TestEventsLaneAndList(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: withEvents()}
-	m := open(t, f, true, web, 120, 40)
-	lines := screen(t, m, 120, 40)
-	requireText(t, lines, "Events · 3 in range · kept from 09:10:00", "BackOff Pod web-1 ×12", "SuccessfulCreate ReplicaSet web-abc")
-	l := lane(t, lines)
-	for _, r := range []string{"▲", "◆", "·"} {
-		if !strings.Contains(l, r) {
-			t.Errorf("lane %q lacks %q", l, r)
+	m := open(t, f, true, web, 150, 42)
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "Events in the last 1 hour: 3", "the API server keeps them since 09:10:00",
+		"Time", "Type", "Reason", "Count", "Message",
+		"▲ Warning BackOff", "◆ Rollout SuccessfulCreate")
+	marks, labels := lane(t, lines)
+	for _, r := range []string{"▲", "◆"} {
+		if !strings.Contains(marks, r) {
+			t.Errorf("lane %q lacks %q", marks, r)
 		}
 	}
-	// The hour shown starts at 09:00: the first sixth is before 09:10.
-	cells := []rune(strings.TrimLeft(l, " "))
-	if cells[0] != '·' || strings.IndexRune(l, '◆') < strings.LastIndex(l, "·") {
-		t.Errorf("lane %q: want unknown cells first, then the rollout", l)
+	for _, want := range []string{"before 09:10", "BackOff ×12", "SuccessfulCreate"} {
+		if !strings.Contains(labels, want) {
+			t.Errorf("lane labels %q lack %q", labels, want)
+		}
+	}
+	// The hour shown starts at 09:00: the unknown first sixth is left of
+	// the rollout.
+	if strings.Index(labels, "before 09:10") > strings.Index(labels, "SuccessfulCreate") {
+		t.Errorf("labels %q: want the unknown cells first, then the rollout", labels)
 	}
 	joined := strings.Join(lines, "\n")
-	if strings.Index(joined, "BackOff") > strings.Index(joined, "SuccessfulCreate") {
+	if strings.Index(joined, "▲ Warning BackOff") > strings.Index(joined, "◆ Rollout SuccessfulCreate") {
 		t.Error("the list is not newest first")
 	}
 }
@@ -86,25 +95,25 @@ func TestEventsLaneAndList(t *testing.T) {
 func TestEventsOfTheCursorCell(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: withEvents()}
-	m := open(t, f, true, web, 100, 30)
-	screen(t, m, 100, 30)
+	m := open(t, f, true, web, 150, 42)
+	screen(t, m, 150, 42)
 	// The newest cell is after the BackOff's last time, 09:58: empty.
 	key(t, m, "left")
-	requireText(t, screen(t, m, 100, 30), "Events · 0 in the cell")
+	requireText(t, screen(t, m, 150, 42), "Events in the cursor cell: 0")
 	// Walk back into the BackOff's span; Synced at 09:40 stays out.
 	var lines []string
 	for range 10 {
 		key(t, m, "left")
-		if lines = screen(t, m, 100, 30); contains(lines, "Events · 1 in the cell") {
+		if lines = screen(t, m, 150, 42); contains(lines, "Events in the cursor cell: 1") {
 			break
 		}
 	}
-	requireText(t, lines, "Events · 1 in the cell", "BackOff", "▏09:5")
-	if contains(lines, "Synced") {
+	requireText(t, lines, "Events in the cursor cell: 1", "BackOff", "09:5")
+	if contains(lines, "Synced message") {
 		t.Error("an Event outside the cursor cell is listed")
 	}
 	key(t, m, "home")
-	requireText(t, screen(t, m, 100, 30), "Events · 0 in the cell", "no Events in the cell")
+	requireText(t, screen(t, m, 150, 42), "Events in the cursor cell: 0", "no Events in the cursor cell")
 }
 
 // TestOpenEventAndLogsAround: o opens the involved object with the Event;
@@ -114,8 +123,7 @@ func TestOpenEventAndLogsAround(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: withEvents()}
 	m := open(t, f, true, web, 100, 30)
-	key(t, m, "tab")
-	key(t, m, "tab") // Events
+	key(t, m, "shift+tab") // Events
 	act := key(t, m, "o")
 	if act.Open == nil || act.Open.Name != "web-1" || act.Open.GVR != podsGVR || act.Event == nil || act.Event.Reason != "BackOff" {
 		t.Fatalf("o on BackOff = %+v", act)
@@ -152,11 +160,11 @@ func TestEventsUnavailableAndTooOld(t *testing.T) {
 	requireText(t, screen(t, m, 100, 30), "Events · cannot be read: events is forbidden")
 
 	f2 := &fakes{now: t0, amounts: withEvents(), win: investigation.Window{Start: t0.Add(-3 * time.Hour), End: t0.Add(-2 * time.Hour)}}
-	m2 := open(t, f2, true, web, 100, 30)
-	lines := screen(t, m2, 100, 30)
-	requireText(t, lines, "Events · 0 in range", "the API server keeps no Events this old")
-	if l := lane(t, lines); strings.ContainsAny(l, "▲◆") || !strings.Contains(l, "·") {
-		t.Errorf("lane %q, want every cell unknown", l)
+	m2 := open(t, f2, true, web, 150, 42)
+	lines := screen(t, m2, 150, 42)
+	requireText(t, lines, "Events in the last 1 hour: 0", "the API server keeps no Events this old")
+	if marks, labels := lane(t, lines); strings.ContainsAny(marks, "▲◆") || !strings.Contains(labels, "no Events kept before 09:10") {
+		t.Errorf("lane %q / %q, want every cell unknown", marks, labels)
 	}
 }
 

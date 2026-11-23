@@ -37,7 +37,7 @@ func TestFixedWindowSetsTheRange(t *testing.T) {
 		t.Errorf("%d reads of a window that ended, want 1", len(f.reads))
 	}
 	// Live values stay labeled as now, not as the window.
-	requireText(t, screen(t, m, 100, 30), "at pause CPU 0.4")
+	requireText(t, screen(t, m, 100, 30), "At pause:  █ usage 0.4")
 
 	// A read in flight is canceled when the window changes, and its late
 	// result does not replace the read of the new window.
@@ -80,7 +80,7 @@ func TestZoomDetachesAndWAppliesTheRange(t *testing.T) {
 
 	// The cursor pauses a live window, which then is another range.
 	key(t, m, "left")
-	requireText(t, screen(t, m, 100, 30), "PAUSED at 10:00:00 1h ≠ window")
+	requireText(t, screen(t, m, 100, 30), "PAUSED at 10:00:00 · 1h ≠ window")
 	key(t, m, "w")
 	if !f.win.Start.Equal(t0.Add(-time.Hour)) || !f.win.End.Equal(t0) || f.win.Last != 0 {
 		t.Errorf("w while paused set %+v, want 09:00..10:00", f.win)
@@ -113,14 +113,11 @@ func TestWindowZoneAndDrilldown(t *testing.T) {
 	run(t, m, func() tea.Msg { return tea.WindowSizeMsg{Width: 100, Height: 30} })
 	run(t, m, m.Start())
 	requireText(t, screen(t, m, 100, 30), "WINDOW 2026-11-23 14:30:00 .. 15:00:00 +05:30")
-	key(t, m, "tab")
-	key(t, m, "tab")
-	key(t, m, "tab")
 	key(t, m, "enter")
 	if f.focuses[len(f.focuses)-1].Pod != "web-1" {
 		t.Fatalf("drilldown focus = %+v", f.focuses[len(f.focuses)-1])
 	}
-	requireText(t, screen(t, m, 100, 30), "pod shop/web-1", "WINDOW 2026-11-23 14:30:00 .. 15:00:00 +05:30")
+	requireText(t, screen(t, m, 100, 30), "Pod web-1", "WINDOW 2026-11-23 14:30:00 .. 15:00:00 +05:30")
 }
 
 // TestSessionOutsideRetention: a fixed window before the session history
@@ -128,13 +125,13 @@ func TestWindowZoneAndDrilldown(t *testing.T) {
 func TestSessionOutsideRetention(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
-	m := open(t, f, false, web, 100, 30)
+	m := open(t, f, false, web, 150, 42)
 	ticks(t, f, m, 4, 15*time.Second)
 	f.win = investigation.Window{Start: t0.Add(-3 * time.Hour), End: t0.Add(-2 * time.Hour)}
 	ticks(t, f, m, 1, time.Second)
-	lines := screen(t, m, 100, 30)
-	requireText(t, lines, "nothing recorded in this range; kept 10:00:00–10:01:01", "WINDOW 2026-11-23 07:00:00 .. 08:00:00")
-	if contains(lines, "samples from") {
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "nothing recorded in this range (kept 10:00:00–10:01:01)", "WINDOW 2026-11-23 07:00:00 .. 08:00:00")
+	if contains(lines, "samples") {
 		t.Errorf("the window shows samples from outside it:\n%s", lines[0])
 	}
 }

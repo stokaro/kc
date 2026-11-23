@@ -1,57 +1,59 @@
 package dashboard
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/chart"
+	"github.com/stokaro/kc/internal/ui/menubar"
 )
 
-// rect is where a widget is on the screen; plotX is the screen column of
-// the first plot cell of a chart.
+// rect is where a widget's frame is on the screen; plotX is the screen
+// column of the first plot cell of a chart, and of the Events lane.
 type rect struct{ x, y, w, h, plotX int }
 
 func (r rect) contains(x, y int) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
 
 const (
-	// wideWidth puts the two charts side by side.
+	// wideWidth puts the target list left of the charts and Events.
 	wideWidth = 120
-	// minChartHeight is a chart's title, two plot rows and the time axis.
-	minChartHeight = 4
-	// maxTopRows bounds the consumers shown below the charts.
-	maxTopRows = 6
-	// eventsHeight is the events widget: title, lane and Events.
-	minEventsHeight, maxEventsHeight = 3, 6
+	// sideWidth puts the two charts side by side below wideWidth.
+	sideWidth = 80
+	// minChartHeight is a chart's frame: two borders, the legend, two plot
+	// rows and the time axis.
+	minChartHeight = 6
+	// minEventsHeight is the Events frame with its lane and one Event.
+	minEventsHeight = 6
+	// minListHeight is the target list with a header and two rows.
+	minListHeight = 5
 	// labelWidth is the value label width a range read assumes.
 	labelWidth = 6
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Reverse(true).Bold(true)
-	focusStyle  = lipgloss.NewStyle().Bold(true)
-	dimStyle    = lipgloss.NewStyle().Faint(true)
-	selStyle    = lipgloss.NewStyle().Reverse(true)
-	useStyle    = lipgloss.NewStyle().Foreground(lipgloss.Green)
-	reqStyle    = lipgloss.NewStyle().Foreground(lipgloss.Yellow)
-	limStyle    = lipgloss.NewStyle().Foreground(lipgloss.Red)
-	allocStyle  = lipgloss.NewStyle().Foreground(lipgloss.Blue)
-	pausedStyle = lipgloss.NewStyle().Reverse(true).Bold(true).Foreground(lipgloss.Yellow)
+	useStyle    = plotStyle.Foreground(lipgloss.BrightGreen)
+	reqStyle    = plotStyle.Foreground(lipgloss.BrightYellow)
+	limStyle    = plotStyle.Foreground(lipgloss.BrightRed)
+	allocStyle  = plotStyle.Foreground(lipgloss.BrightBlue)
+	pausedStyle = lipgloss.NewStyle().Background(lipgloss.Yellow).Foreground(lipgloss.Black).Bold(true)
+	liveStyle   = lipgloss.NewStyle().Background(lipgloss.Black).Foreground(lipgloss.BrightGreen).Bold(true)
+	crumbStyle  = lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.Black)
 )
 
-// layout places the widgets of v on a w x h screen: title, status line,
-// body, keys. The charts sit side by side from wideWidth columns, else
-// one above the other; the consumers go below. When the body is too low
-// for that, only the focused widget shows and Tab pages through them.
+// layout places the widgets of v on a w x h screen below the menu bar.
+// From wideWidth columns the target list is on the left and the charts
+// and Events on the right; below that the charts sit side by side (one
+// above the other below sideWidth), with Events and the target list
+// under them. When the body is too low, only the focused widget shows and
+// Tab pages through them.
 func layout(v *view, w, h int) map[widget]rect {
 	out := make(map[widget]rect)
-	y0, body := 2, h-3
-	if body < 1 || w < 1 {
+	y0, body := 1, h-1
+	if body < 3 || w < 20 {
 		return out
 	}
 	full := rect{x: 0, y: y0, w: w, h: body}
@@ -59,37 +61,51 @@ func layout(v *view, w, h int) map[widget]rect {
 		out[v.focus] = full
 		return out
 	}
-	hasTop := v.target.Kind != KindPod
-	topH := 0
-	if hasTop {
-		topH = min(maxTopRows+1, max(3, len(v.now.Top)+1))
-	}
-	evH := minEventsHeight
 	switch {
-	case w >= wideWidth && body-topH-evH >= minChartHeight:
-		evH = min(maxEventsHeight, max(evH, body-topH-2*minChartHeight))
-		ch := body - topH - evH
-		half := (w - 1) / 2
+	case w >= wideWidth:
+		lw := min(66, max(48, w*42/100))
+		rw := w - lw
+		evH := min(14, max(minEventsHeight+1, body/3))
+		ch := (body - evH) / 2
+		if ch < minChartHeight {
+			break
+		}
+		out[widgetTargets] = rect{x: 0, y: y0, w: lw, h: body}
+		out[widgetCPU] = rect{x: lw, y: y0, w: rw, h: ch}
+		out[widgetMemory] = rect{x: lw, y: y0 + ch, w: rw, h: ch}
+		out[widgetEvents] = rect{x: lw, y: y0 + 2*ch, w: rw, h: body - 2*ch}
+		return out
+	case w >= sideWidth:
+		listH := min(10, max(minListHeight, body/4))
+		evH := min(10, max(minEventsHeight, body/4))
+		ch := body - listH - evH
+		if ch < minChartHeight {
+			break
+		}
+		half := w / 2
 		out[widgetCPU] = rect{x: 0, y: y0, w: half, h: ch}
-		out[widgetMemory] = rect{x: half + 1, y: y0, w: w - half - 1, h: ch}
+		out[widgetMemory] = rect{x: half, y: y0, w: w - half, h: ch}
 		out[widgetEvents] = rect{x: 0, y: y0 + ch, w: w, h: evH}
-	case (body-topH-evH)/2 >= minChartHeight:
-		ch := (body - topH - evH) / 2
-		evH = body - topH - 2*ch
+		out[widgetTargets] = rect{x: 0, y: y0 + ch + evH, w: w, h: listH}
+		return out
+	default:
+		listH, evH := minListHeight, minEventsHeight
+		ch := (body - listH - evH) / 2
+		if ch < minChartHeight {
+			break
+		}
 		out[widgetCPU] = rect{x: 0, y: y0, w: w, h: ch}
 		out[widgetMemory] = rect{x: 0, y: y0 + ch, w: w, h: ch}
 		out[widgetEvents] = rect{x: 0, y: y0 + 2*ch, w: w, h: evH}
-	default:
-		out[v.focus] = full
+		out[widgetTargets] = rect{x: 0, y: y0 + 2*ch + evH, w: w, h: body - 2*ch - evH}
 		return out
 	}
-	if hasTop {
-		out[widgetTop] = rect{x: 0, y: y0 + body - topH, w: w, h: topH}
-	}
+	out[v.focus] = full
 	return out
 }
 
-// View renders the dashboard at its size.
+// View renders the dashboard at its size: the menu bar row and the
+// widgets. The App draws the F-key bar under it.
 func (m *Model) View() string {
 	w, h := m.w, m.h
 	if w < 20 || h < 6 {
@@ -97,17 +113,27 @@ func (m *Model) View() string {
 	}
 	v := m.top()
 	rects := layout(v, w, h)
+	charts := m.placeCharts(v, rects)
+	screen := make([]string, h)
+	m.drawScreen(v, screen, rects, charts)
+	return strings.Join(screen, "\n")
+}
+
+// placeCharts builds the charts of rects on one cell grid and records
+// where each widget and its plot are, for the mouse.
+func (m *Model) placeCharts(v *view, rects map[widget]rect) map[widget]chart.Chart {
 	charts := make(map[widget]chart.Chart)
 	m.rects = make(map[widget]rect, len(rects))
 	cells := 0
 	for wd, r := range rects {
 		m.rects[wd] = r
-		if wd == widgetTop || wd == widgetEvents {
+		if wd != widgetCPU && wd != widgetMemory {
 			continue
 		}
-		c := m.chartOf(v, wd, r.w, r.h-1)
+		c := m.chartOf(v, wd, r.w-2, r.h-3)
 		charts[wd] = c
-		if n := c.Cells(); cells == 0 || n < cells {
+		// Labels up to labelWidth keep the plot width the reads assume.
+		if n := min(c.Cells(), chart.PlotWidth(r.w-2, labelWidth)); cells == 0 || n < cells {
 			cells = n
 		}
 	}
@@ -115,42 +141,61 @@ func (m *Model) View() string {
 	// the same time everywhere.
 	if cells > 0 {
 		m.cells = cells
+	} else if r, ok := rects[widgetEvents]; ok && m.cells == 0 {
+		m.cells = chart.PlotWidth(r.w-2, labelWidth)
 	}
-	for wd, c := range charts {
-		c.PlotCells = m.cells
-		charts[wd] = c
-		r := m.rects[wd]
-		r.plotX = r.x + r.w - c.Cells()
+	for wd, r := range m.rects {
+		if c, ok := charts[wd]; ok {
+			c.PlotCells = m.cells
+			charts[wd] = c
+		}
+		// Plots and the lane end at the right border.
+		r.plotX = r.x + r.w - 1 - m.cells
 		m.rects[wd] = r
+	}
+	// Under charts side by side, the lane is on the time axis of the left
+	// one: it is read from the left.
+	if cpu, ok := m.rects[widgetCPU]; ok {
+		if ev, ok := m.rects[widgetEvents]; ok && ev.x == cpu.x && ev.w > cpu.w {
+			ev.plotX = cpu.plotX
+			m.rects[widgetEvents] = ev
+		}
 	}
 	if v.cursor >= m.cells {
 		v.cursor = m.cells - 1
 	}
-	screen := make([]string, h)
-	screen[0] = m.titleLine(v, w)
-	screen[1] = m.statusLine(v, charts, w)
-	for i := 2; i < h-1; i++ {
-		screen[i] = strings.Repeat(" ", w)
+	return charts
+}
+
+// drawScreen fills screen with the top bar and the widgets in rects.
+func (m *Model) drawScreen(v *view, screen []string, rects map[widget]rect, charts map[widget]chart.Chart) {
+	w, h := m.w, len(screen)
+	screen[0] = m.topBar(v, w)
+	blank := onPanel("", w)
+	for i := 1; i < h; i++ {
+		screen[i] = blank
 	}
-	screen[h-1] = m.keysLine(v, rects, w)
-	for wd, r := range rects {
+	m.itemAt = nil
+	for wd := range rects {
+		r := m.rects[wd]
 		var lines []string
 		switch wd {
-		case widgetTop:
-			lines = m.topLines(v, r.w, r.h)
+		case widgetTargets:
+			var body []string
+			body, m.itemAt = m.targetLines(v, r.w-2, r.h-2)
+			lines = frame(listTitle(v), listFooter(v), v.focus == wd, r.w, r.h, body)
 		case widgetEvents:
-			lines = m.eventLines(v, r.w, r.h)
+			lines = m.eventsFrame(v, r)
 		default:
-			lines = append([]string{m.chartTitle(v, wd, r.w)}, charts[wd].Render()...)
+			lines = m.chartFrame(v, wd, charts[wd], r)
 		}
 		for i, l := range lines {
-			if i >= r.h || r.y+i >= h-1 {
+			if i >= r.h || r.y+i >= h {
 				break
 			}
-			screen[r.y+i] = place(screen[r.y+i], fit(l, r.w), r.x, r.w, w)
+			screen[r.y+i] = place(screen[r.y+i], l, r.x, r.w, w)
 		}
 	}
-	return strings.Join(screen, "\n")
 }
 
 // place puts cell text s of width sw at column x of line.
@@ -170,12 +215,113 @@ func fit(s string, w int) string {
 	return s
 }
 
+// chartFrame is a chart in its frame: the title with the unit and the
+// range, a legend in words, the plot, and where the line comes from.
+func (m *Model) chartFrame(v *view, wd widget, c chart.Chart, r rect) []string {
+	title := "CPU, cores"
+	if wd == widgetMemory {
+		title = "Memory"
+	}
+	if note := m.rangeNote(v); note != "" {
+		title += " · " + note
+	}
+	body := append([]string{m.legend(v, wd, c)}, c.Render()...)
+	return frame(title, m.sourceLabel(v, wd), v.focus == wd, r.w, r.h, body)
+}
+
+// topBar is the menu bar row: the menu titles, the breadcrumb of the
+// target and the state.
+func (m *Model) topBar(v *view, w int) string {
+	bar := menubar.RenderTitles(m.Menus(nil), w)
+	state := m.stateText(v, w >= wideWidth)
+	st := liveStyle
+	if v.paused {
+		st = pausedStyle
+	}
+	stateCell := st.Render(" " + state + " ")
+	sw := lipgloss.Width(stateCell)
+	// The menu titles end where the bar stops finding one.
+	menus := m.Menus(nil)
+	titles := w
+	for titles > 0 && menubar.TitleIndex(menus, titles-1) < 0 {
+		titles--
+	}
+	room := w - sw - titles - 2
+	if room < 8 {
+		return place(bar, stateCell, w-sw, sw, w)
+	}
+	crumbs := m.breadcrumb(v)
+	text := strings.Join(crumbs, " › ")
+	for ansi.StringWidth(text) > room && len(crumbs) > 2 {
+		crumbs = append([]string{"…"}, crumbs[2:]...)
+		text = strings.Join(crumbs, " › ")
+	}
+	text = ansi.Truncate(text, room, "…") + " "
+	right := crumbStyle.Render(text) + stateCell
+	rw := lipgloss.Width(right)
+	return place(bar, right, w-rw, rw, w)
+}
+
+// breadcrumb is where the view is: the context, the namespace scope, and
+// the workload and pod it narrowed to.
+func (m *Model) breadcrumb(v *view) []string {
+	out := []string{m.src.Context}
+	scope := m.scopeTarget()
+	out = append(out, scope.Title())
+	var path []Target
+	for _, x := range m.stack {
+		if x.target.Kind != KindScope {
+			path = append(path, x.target)
+		}
+	}
+	if len(path) > 0 && path[0].Kind == KindPod {
+		if p, ok := m.parent(m.stack[0]); ok && p.Kind == KindWorkload && m.stack[0] == v {
+			path = append([]Target{p}, path...)
+		}
+	}
+	for _, t := range path {
+		out = append(out, crumb(t))
+	}
+	return out
+}
+
+// crumb names a target in the breadcrumb.
+func crumb(t Target) string {
+	switch t.Kind {
+	case KindNode:
+		return "node " + t.Name
+	case KindWorkload:
+		return workloadKind(t.Workload) + " " + t.Name
+	case KindPod:
+		return "pod " + t.Name
+	}
+	return t.Title()
+}
+
+// stateText is LIVE or PAUSED with the range, or the window followed.
+func (m *Model) stateText(v *view, long bool) string {
+	if ws := m.windowState(v); ws != "" {
+		return ws
+	}
+	state := "LIVE " + shortDuration(v.span(m))
+	if long {
+		state = "LIVE · last " + longDuration(v.span(m))
+	}
+	if v.paused {
+		state = "PAUSED at " + v.end.In(m.loc()).Format("15:04:05") + " · " + shortDuration(v.span(m))
+	}
+	if !m.lastWin.Off() {
+		state += " ≠ window"
+	}
+	return state
+}
+
 // chartOf builds the chart of a CPU or memory widget.
 func (m *Model) chartOf(v *view, wd widget, w, h int) chart.Chart {
 	end := m.shownEnd(v)
 	c := chart.Chart{
-		Start: end.Add(-v.span(m)), End: end, Width: w, Height: h, Mode: m.mode,
-		Style: useStyle, Cursor: -1, Loc: m.src.Loc, Format: formatCores,
+		Start: m.shownStart(v), End: end, Width: w, Height: h, Mode: m.mode,
+		Style: useStyle, GapStyle: gapStyle, Cursor: -1, Loc: m.src.Loc, Format: formatCores,
 	}
 	if v.cursor >= 0 {
 		c.Cursor = v.cursor
@@ -264,114 +410,9 @@ func (m *Model) promPoints(v *view, wd widget) ([]chart.Point, time.Duration, bo
 	return chartPoints(src), u.Range.Step + u.Range.Step/2, true
 }
 
-// titleLine names the dashboard, its target and context, and the state.
-func (m *Model) titleLine(v *view, w int) string {
-	title := v.target.Title()
-	if len(m.stack) > 1 {
-		title = m.stack[0].target.Title() + " > " + title
-	}
-	parts := []string{" " + title, m.src.Context, m.sourceTitle(v)}
-	if w >= 100 {
-		parts[0] = " Dashboard │ " + title
-	}
-	state := "LIVE " + shortDuration(v.span(m))
-	if v.paused {
-		state = "PAUSED at " + v.end.In(m.loc()).Format("15:04:05") + " " + shortDuration(v.span(m))
-	}
-	if ws := m.windowState(v); ws != "" {
-		state = ws
-	} else if !m.lastWin.Off() {
-		state += " ≠ window"
-	}
-	left := titleStyle.Render(fit(strings.Join(parts, " │ ")+" │ ", max(0, w-lipgloss.Width(state)-2)))
-	st := titleStyle
-	if v.paused {
-		st = pausedStyle
-	}
-	return fit(left+st.Render(" "+state+" "), w)
-}
-
 func (m *Model) loc() *time.Location {
 	if m.src.Loc != nil {
 		return m.src.Loc
 	}
 	return time.UTC
-}
-
-// cursorLine is the time span of the cursor cell, the largest usage in
-// it, and the request and limit of that time.
-func (m *Model) cursorLine(v *view, charts map[widget]chart.Chart, w int) string {
-	var parts []string
-	var span string
-	for _, wd := range []widget{widgetCPU, widgetMemory} {
-		c, ok := charts[wd]
-		if !ok {
-			c = m.chartOf(v, wd, max(w, 40), minChartHeight)
-			c.PlotCells = m.cells
-		}
-		cv := c.Cell(v.cursor)
-		if span == "" && !cv.From.IsZero() {
-			span = cv.From.In(m.loc()).Format("15:04:05") + "–" + cv.To.In(m.loc()).Format("15:04:05")
-		}
-		name, text := "CPU", "no data"
-		if wd == widgetMemory {
-			name = "Memory"
-		}
-		if cv.OK {
-			text = c.Format(cv.V)
-		}
-		if req, ok := c.RefAt(refRequests, v.cursor); ok && req > 0 {
-			text += " req " + c.Format(req)
-		}
-		if lim, ok := c.RefAt(refLimits, v.cursor); ok && lim > 0 {
-			text += " lim " + c.Format(lim)
-		}
-		parts = append(parts, name+" "+text)
-	}
-	return fit(focusStyle.Render("▏"+span)+"  "+strings.Join(parts, "  ·  ")+dimStyle.Render("  (max in the cell)"), w)
-}
-
-// statusLine is the values under the cursor, else the current
-// measurement with requests and limits.
-func (m *Model) statusLine(v *view, charts map[widget]chart.Chart, w int) string {
-	if v.cursor >= 0 {
-		return m.cursorLine(v, charts, w)
-	}
-	a := v.now
-	switch {
-	case a.Loading:
-		return fit(dimStyle.Render("Loading the cluster's objects…"), w)
-	case a.Err != "":
-		return fit("Metrics API: "+a.Err, w)
-	case !a.Found && a.Note == "":
-		return fit(v.target.Title()+" is not in the lists kc reads; it may be gone", w)
-	}
-	now := "now"
-	if v.paused {
-		now = "at pause"
-	}
-	line := fmt.Sprintf("%s CPU %s · Memory %s", now, amountText(a.CPU, formatCores), amountText(a.Memory, formatBytes))
-	if a.Note != "" {
-		line = now + " " + a.Note + " · req CPU " + formatCores(a.CPU.Requests) + ", Memory " + formatBytes(a.Memory.Requests)
-	} else if a.Running > 0 {
-		line += fmt.Sprintf(" · %d/%d pods measured", a.Measured, a.Running)
-	}
-	return fit(line, w)
-}
-
-// amountText is "U req R lim L" of one resource; a limit sum with a pod
-// without a limit says so instead of a number.
-func amountText(a models.ResourceAmount, format func(float64) string) string {
-	use := "unmeasured"
-	if a.UsedKnown {
-		use = format(a.Used)
-	}
-	lim := format(a.Limits)
-	switch {
-	case a.LimitsPartial:
-		lim = "partial"
-	case a.Limits == 0:
-		lim = "none"
-	}
-	return fmt.Sprintf("%s req %s lim %s", use, format(a.Requests), lim)
 }

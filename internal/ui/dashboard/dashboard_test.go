@@ -42,6 +42,7 @@ type fakes struct {
 func (f *fakes) sources(prom bool) dashboard.Sources {
 	src := dashboard.Sources{
 		Context:   "kind-test",
+		Scope:     "shop",
 		Now:       func() time.Time { f.mu.Lock(); defer f.mu.Unlock(); return f.now },
 		Loc:       time.UTC,
 		Tick:      func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil },
@@ -110,7 +111,26 @@ func measured() models.UsageAmounts {
 			{Namespace: "shop", Name: "web-1", CPU: 0.3, Memory: 200 << 20},
 			{Namespace: "shop", Name: "web-2", CPU: 0.1, Memory: 100 << 20},
 		},
+		Rows: []models.UsageRow{
+			podRow("web-1", 0.3, 200<<20, ""),
+			podRow("web-2", 0.1, 100<<20, "CrashLoopBackOff"),
+		},
 	}
+}
+
+// podRow is a row of a pod of the Deployment web, using half its
+// requests and a quarter of its limits per unit of usage.
+func podRow(name string, cpu, mem float64, problem string) models.UsageRow {
+	owner := &models.InfoWorkload{GVR: deployGVR, Namespace: "shop", Name: "web"}
+	r := models.UsageRow{
+		Owner: owner, Namespace: "shop", Name: name, Pods: 1, Ready: 1, Measured: 1, Problem: problem,
+		CPU:    models.ResourceAmount{Used: cpu, UsedKnown: true, Requests: 0.5, Limits: 1},
+		Memory: models.ResourceAmount{Used: mem, UsedKnown: true, Requests: 256 << 20, Limits: 512 << 20},
+	}
+	if problem != "" {
+		r.Ready, r.Restarts = 0, 7
+	}
+	return r
 }
 
 // run feeds cmd's messages back into m until nothing is left.
@@ -221,35 +241,63 @@ func ticks(t *testing.T, f *fakes, m *dashboard.Model, n int, every time.Duratio
 
 // TestMetricsAPIOnly: without Prometheus the charts plot the session
 // samples and say where they come from; a context without a backend is
-// named, never drawn as zero.
+// named, never drawn as zero. The legend says in words what each line is.
 func TestMetricsAPIOnly(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
-	m := open(t, f, false, web, 80, 24)
+	m := open(t, f, false, web, 150, 42)
 	ticks(t, f, m, 4, 15*time.Second)
-	lines := screen(t, m, 80, 24)
-	requireText(t, lines, "Deployment shop/web", "LIVE 15m", "session: 5 samples from 10:00:00",
-		"no Prometheus (C-x m)", "now CPU 0.4 req 1 lim 2 · Memory 300Mi req 512Mi lim 1Gi · 2/2 pods measured",
-		"Top pods by memory", "web-1", "Esc back")
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "kind-test › namespace shop › Deployment web", "LIVE · last 15 minutes",
+		"Metrics API, 5 samples · 2 of 2 pods measured · no Prometheus (C-x m)",
+		"Now:  █ usage 0.4  ┄ request 1 (40% used)  ┄ limit 2",
+		"Pods of Deployment web", "web-1", ".. up to namespace shop")
 	if f.focuses[0].Workload == nil || f.focuses[0].Workload.Name != "web" || f.focuses[0].Workload.GVR != deployGVR {
 		t.Errorf("focus = %+v, want the Deployment with its GVR", f.focuses[0])
 	}
 }
 
-// TestNoMeasurementIsNotZero: a pod set without PodMetrics says so in the
-// status line and draws no line at all.
+// TestSessionChartFitsItsData: while the session is shorter than the
+// range, a live chart starts at its first sample and its title says so.
+func TestSessionChartFitsItsData(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: measured()}
+	m := open(t, f, false, web, 120, 30)
+	ticks(t, f, m, 8, 15*time.Second)
+	lines := screen(t, m, 120, 30)
+	requireText(t, lines, "CPU, cores · 2m of 15m collected so far", "└10:00:00")
+	if contains(lines, "no data") {
+		t.Errorf("a fitted chart shows no data:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// TestTargetListShowsUsageAgainstRequestsAndHealth: each row has its
+// usage, the share of its request, and what is not well.
+func TestTargetListShowsUsageAgainstRequestsAndHealth(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	a.Rows[0].Memory.Used = 480 << 20 // near the 512Mi limit
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, web, 150, 42)
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "Name", "Ready", "CPU", "of req", "Memory", "Restarts",
+		"web-1", "60%", "480Mi", "188%", "web-2", "⚠ CrashLoopBackOff · 7 restarts", "2 pods · 1 ready")
+}
+
+// TestNoMeasurementIsNotZero: a pod set without PodMetrics says so and
+// draws no line at all.
 func TestNoMeasurementIsNotZero(t *testing.T) {
 	t.Parallel()
 	a := measured()
-	a.CPU.Used, a.CPU.UsedKnown, a.Memory.Used, a.Memory.UsedKnown, a.Top = 0, false, 0, false, nil
+	a.CPU.Used, a.CPU.UsedKnown, a.Memory.Used, a.Memory.UsedKnown, a.Top, a.Rows = 0, false, 0, false, nil, nil
 	a.Note = "metrics unavailable: metrics.k8s.io is not served"
 	f := &fakes{now: t0, amounts: a}
-	m := open(t, f, false, web, 80, 24)
+	m := open(t, f, false, web, 120, 30)
 	ticks(t, f, m, 3, 15*time.Second)
-	lines := screen(t, m, 80, 24)
-	requireText(t, lines, "metrics unavailable: metrics.k8s.io is not served", "no samples yet")
-	for _, l := range lines[2:20] {
-		if strings.Contains(l, "│") && strings.ContainsAny(l, "⡀⣀⣿▁█") {
+	lines := screen(t, m, 120, 30)
+	requireText(t, lines, "usage metrics unavailable: metrics.k8s.io is not served", "no samples yet", "no data")
+	for _, l := range lines[1:20] {
+		if strings.ContainsAny(l, "⡀⣀⣿▁█") && !strings.Contains(l, "usage") {
 			t.Fatalf("a line is drawn without measurements: %q", l)
 		}
 	}
@@ -257,32 +305,32 @@ func TestNoMeasurementIsNotZero(t *testing.T) {
 
 func TestLayoutsAtEverySize(t *testing.T) {
 	t.Parallel()
-	for _, size := range [][2]int{{80, 24}, {120, 30}, {240, 60}, {100, 17}, {100, 16}, {100, 14}, {40, 10}} {
+	for _, size := range [][2]int{{80, 24}, {100, 30}, {120, 30}, {150, 42}, {240, 60}, {100, 17}, {60, 30}, {40, 10}} {
 		f := &fakes{now: t0, amounts: measured()}
 		m := open(t, f, true, web, size[0], size[1])
 		lines := screen(t, m, size[0], size[1])
-		paged := strings.Contains(lines[size[1]-1], "Tab next widget")
-		// Two charts of four rows, the events and the pods need 17 rows.
-		wantPaged := size[1] < 17
+		requireText(t, lines[:1], "Dashboard", "LIVE")
+		titles := []string{"CPU, cores", "Memory", "Events", "Pods of Deployment web"}
+		shown := 0
+		for _, title := range titles {
+			if contains(lines, title) {
+				shown++
+			}
+		}
+		paged := shown < len(titles)
+		wantPaged := size[1] < 24 || size[0] < 60
 		if paged != wantPaged {
 			t.Errorf("%v: paged %v, want %v:\n%s", size, paged, wantPaged, strings.Join(lines, "\n"))
 		}
-		if !paged {
-			requireText(t, lines, "CPU cores", "Memory", "Events", "Top pods by memory")
+		if size[0] >= 120 && !strings.Contains(lines[1], "Pods of") {
+			t.Errorf("%v: the target list is not on the left: %q", size, lines[1])
 		}
-		if size[0] >= 120 {
-			// Side by side: both chart titles on one line.
-			if !strings.Contains(lines[2], "CPU cores") || !strings.Contains(lines[2], "Memory") {
-				t.Errorf("%v: charts not side by side: %q", size, lines[2])
-			}
-		}
-		// Every widget is reachable with Tab.
+		// Every widget is reachable with Tab, and its title shows focused.
 		seen := make(map[string]bool)
 		for range 4 {
-			l := screen(t, m, size[0], size[1])
-			for _, name := range []string{"▸ CPU cores", "▸ Memory", "▸ Events", "▸ Top pods"} {
-				if contains(l, name) {
-					seen[name] = true
+			for _, title := range titles {
+				if contains(screen(t, m, size[0], size[1]), title) {
+					seen[title] = true
 				}
 			}
 			key(t, m, "tab")
@@ -304,7 +352,7 @@ func TestPrometheusSourceCoverageAndIdentity(t *testing.T) {
 		u.Measured[len(u.Measured)-1].Value = 1
 		return u, nil
 	}
-	m := open(t, f, true, web, 120, 30)
+	m := open(t, f, true, web, 150, 42)
 	if len(f.reads) != 1 {
 		t.Fatalf("%d reads, want 1", len(f.reads))
 	}
@@ -312,11 +360,11 @@ func TestPrometheusSourceCoverageAndIdentity(t *testing.T) {
 	if s.Kind != promhistory.ScopeWorkload || s.Workload.Kind != "Deployment" || s.UID != "dep-uid" || !s.Since.Equal(a.Created) {
 		t.Errorf("scope = %+v, want the Deployment with its UID and creation", s)
 	}
-	if r := f.ranges[0]; r.End.After(t0) || t0.Sub(r.Start) < time.Hour || r.Steps() > 2*120 {
+	if r := f.ranges[0]; r.End.After(t0) || t0.Sub(r.Start) < time.Hour || r.Steps() > 2*150 {
 		t.Errorf("range %v..%v step %v: want the last hour at the chart's resolution", r.Start, r.End, r.Step)
 	}
-	lines := screen(t, m, 120, 30)
-	requireText(t, lines, "LIVE 1h", "Prometheus monitoring/prometheus", "5m avg", "partial 1/", "created 09:4")
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "LIVE · last 1 hour", "5m avg", "partial 1/", "created 09:4")
 }
 
 func TestPrometheusFailureFallsBackToTheSession(t *testing.T) {
@@ -325,10 +373,10 @@ func TestPrometheusFailureFallsBackToTheSession(t *testing.T) {
 	f.usage = func(promhistory.Scope, promhistory.Range) (promhistory.Usage, error) {
 		return promhistory.Usage{}, errors.New("prometheus monitoring/prometheus: 403 (needs get on services/proxy)\ndetails")
 	}
-	m := open(t, f, true, web, 120, 30)
+	m := open(t, f, true, web, 240, 42)
 	ticks(t, f, m, 2, 10*time.Second)
-	lines := screen(t, m, 120, 30)
-	requireText(t, lines, "session: 3 samples", "Metrics API: Prometheus failed: 403", "LIVE 15m")
+	lines := screen(t, m, 240, 42)
+	requireText(t, lines, "3 samples", "Metrics API: Prometheus failed: 403", "LIVE · last 15 minutes")
 	// A failed read is retried after a pause, not every tick.
 	if len(f.reads) != 1 {
 		t.Errorf("%d reads within 30s of a failure, want 1", len(f.reads))
@@ -361,40 +409,41 @@ func TestLiveRefreshAndPausedReads(t *testing.T) {
 	if len(f.reads) != 3 || f.ranges[2].End.After(t0.Add(65*time.Second)) || f.ranges[2].End.Sub(f.ranges[2].Start) > 16*time.Minute {
 		t.Errorf("zoom: reads %d, last range %v..%v", len(f.reads), f.ranges[len(f.ranges)-1].Start, f.ranges[len(f.ranges)-1].End)
 	}
-	requireText(t, screen(t, m, 80, 24), "PAUSED at 10:01:05 15m")
+	requireText(t, screen(t, m, 80, 24), "PAUSED at 10:01:05 · 15m")
 }
 
-// TestPauseCursorAndEsc: the cursor pauses and shows values; Enter
-// expands; Esc collapses, then removes the cursor, then closes.
+// TestPauseCursorAndEsc: the cursor pauses and shows values; Enter on a
+// chart expands it; Esc collapses, then removes the cursor, then closes.
 func TestPauseCursorAndEsc(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
-	m := open(t, f, true, web, 80, 24)
+	m := open(t, f, true, web, 120, 30)
 	key(t, m, "left")
-	lines := screen(t, m, 80, 24)
-	requireText(t, lines, "PAUSED at 10:00:00", "CPU 1  ·  Memory 1Gi", "(max in the cell)")
-	// Paused, the status line keeps the values of the pause.
+	lines := screen(t, m, 120, 30)
+	requireText(t, lines, "PAUSED at 10:00:00", "█ usage 1 (highest)", "usage 1Gi (highest)")
+	// Paused, the legend keeps the values of the pause.
 	f.amounts.CPU.Used = 9
 	ticks(t, f, m, 2, 15*time.Second)
-	if contains(screen(t, m, 80, 24), "CPU 9") {
+	if contains(screen(t, m, 120, 30), "usage 9") {
 		t.Error("a paused dashboard shows new values")
 	}
+	key(t, m, "tab")
 	key(t, m, "enter")
-	lines = screen(t, m, 80, 24)
-	if contains(lines, "Memory ·") || !contains(lines, "▸ CPU cores") {
+	lines = screen(t, m, 120, 30)
+	if contains(lines, "Memory") || !contains(lines, "CPU, cores") {
 		t.Errorf("Enter did not expand the CPU chart:\n%s", strings.Join(lines, "\n"))
 	}
 	if act := key(t, m, "esc"); act.Close {
 		t.Fatal("first Esc closed the dashboard")
 	}
-	if !contains(screen(t, m, 80, 24), "Memory ·") {
+	if !contains(screen(t, m, 120, 30), "Memory") {
 		t.Error("first Esc did not collapse the chart")
 	}
 	if act := key(t, m, "esc"); act.Close {
 		t.Fatal("second Esc closed the dashboard")
 	}
-	lines = screen(t, m, 80, 24)
-	if contains(lines, "(max in the cell)") || !contains(lines, "PAUSED") {
+	lines = screen(t, m, 120, 30)
+	if contains(lines, "(highest)") || !contains(lines, "PAUSED") {
 		t.Error("second Esc must remove the cursor and stay paused")
 	}
 	if act := key(t, m, "esc"); !act.Close {
@@ -402,24 +451,24 @@ func TestPauseCursorAndEsc(t *testing.T) {
 	}
 }
 
-func TestDrilldownAndOpen(t *testing.T) {
+// TestDrilldownUpAndOpen: Enter on a row opens its dashboard, Backspace
+// goes back up, and up again past the target the dashboard opened for.
+func TestDrilldownUpAndOpen(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
-	m := open(t, f, true, web, 80, 24)
+	m := open(t, f, true, web, 150, 42)
+	key(t, m, "tab")
 	if act := key(t, m, "o"); act.Open == nil || act.Open.GVR != deployGVR || act.Open.Name != "web" || act.Open.UID != types.UID("dep-uid") {
 		t.Errorf("o on the workload = %+v", act.Open)
 	}
-	key(t, m, "tab")
-	key(t, m, "tab")
-	key(t, m, "tab")
+	key(t, m, "shift+tab")
 	key(t, m, "down")
 	if act := key(t, m, "o"); act.Open == nil || act.Open.GVR.Resource != "pods" || act.Open.Name != "web-2" {
-		t.Errorf("o on a consumer = %+v", act.Open)
+		t.Errorf("o on a pod row = %+v", act.Open)
 	}
 	reads := len(f.reads)
 	key(t, m, "enter")
-	lines := screen(t, m, 80, 24)
-	requireText(t, lines, "Deployment shop/web > pod shop/web-2")
+	requireText(t, screen(t, m, 150, 42), "namespace shop › Deployment web › pod web-2", ".. up to Deployment shop/web")
 	last := f.focuses[len(f.focuses)-1]
 	if last.Pod != "web-2" || last.PodNamespace != "shop" {
 		t.Errorf("drilldown focus = %+v", last)
@@ -427,10 +476,55 @@ func TestDrilldownAndOpen(t *testing.T) {
 	if len(f.reads) != reads+1 || f.reads[len(f.reads)-1].Kind != promhistory.ScopePod {
 		t.Errorf("drilldown reads = %+v", f.reads[reads:])
 	}
-	if act := key(t, m, "esc"); act.Close {
-		t.Fatal("Esc in a drilldown closed the dashboard")
+	if _, act := m.Key("backspace"); act.Close {
+		t.Fatal("Backspace in a drilldown closed the dashboard")
 	}
-	requireText(t, screen(t, m, 80, 24), "Deployment shop/web │")
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "Pods of Deployment web")
+	if contains(lines[:1], "pod web-2") {
+		t.Error("Backspace did not leave the pod")
+	}
+	// Up from the target the dashboard opened for: the namespace scope.
+	// A terminal that sends ^H for Backspace goes up too.
+	m.Key("ctrl+h")
+	requireText(t, screen(t, m, 150, 42), "Workloads in shop")
+	if last := f.focuses[len(f.focuses)-1]; last != (models.UsageFocus{}) {
+		t.Errorf("up from the workload read %+v, want the scope", last)
+	}
+	if _, act := m.Key("f10"); !act.Close {
+		t.Error("F10 must close")
+	}
+}
+
+// TestMenusAndFunctionKeys: the F-key bar follows the state and the Range
+// menu sets the range.
+func TestMenusAndFunctionKeys(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: measured()}
+	m := open(t, f, false, web, 150, 42)
+	keys := m.FunctionKeys()
+	if len(keys) != 10 || keys[0].Label != "Help" || keys[2].Label != "Pause" || keys[9].Label != "Close" {
+		t.Fatalf("F-keys = %+v", keys)
+	}
+	m.Key("f3")
+	if keys := m.FunctionKeys(); keys[2].Label != "Live" {
+		t.Errorf("F3 paused, yet F3 says %q", keys[2].Label)
+	}
+	var ran []string
+	menus := m.Menus(func(k string) tea.Cmd { ran = append(ran, k); return nil })
+	if menus[dashboard.RangeMenu].Title != "&Range" {
+		t.Fatalf("menu %d is %q, want Range", dashboard.RangeMenu, menus[dashboard.RangeMenu].Title)
+	}
+	for _, it := range menus[dashboard.RangeMenu].Items {
+		if it.Text() == "Last 1 hour" {
+			it.Run()
+		}
+	}
+	if len(ran) != 1 {
+		t.Fatalf("ran %v", ran)
+	}
+	m.Key(ran[0])
+	requireText(t, screen(t, m, 150, 42)[:1], "· 1h")
 }
 
 // TestWaitsForTheIdentity: a workload's history starts at its creation,
@@ -470,28 +564,25 @@ func TestWaitsForTheIdentity(t *testing.T) {
 func TestResume(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
-	m := open(t, f, false, web, 80, 24)
+	m := open(t, f, false, web, 150, 42)
 	ticks(t, f, m, 2, 15*time.Second)
-	key(t, m, "tab")
-	key(t, m, "tab")
-	key(t, m, "tab")
 	key(t, m, "enter")
 	m.Stop()
 	// Same context: the drilldown and the session history come back.
 	m = m.Resume(f.sources(false), web)
 	run(t, m, m.Start())
-	requireText(t, screen(t, m, 80, 24), "> pod shop/web-1")
+	requireText(t, screen(t, m, 150, 42), "› pod web-1")
 	key(t, m, "esc")
-	requireText(t, screen(t, m, 80, 24), "3 samples")
+	requireText(t, screen(t, m, 150, 42), "3 samples")
 	// Another context starts at the target again.
 	m.Stop()
 	other := f.sources(false)
-	other.Context = "kind-other"
+	other.Context, other.Scope = "kind-other", models.AllNamespaces
 	m = m.Resume(other, dashboard.Target{Kind: dashboard.KindScope, Namespace: models.AllNamespaces})
 	run(t, m, m.Start())
-	lines := screen(t, m, 80, 24)
-	requireText(t, lines, "all namespaces │ kind-other")
-	if contains(lines, "pod shop/web-1") {
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "kind-other › all namespaces")
+	if contains(lines, "pod web-1") {
 		t.Error("a dashboard of another context kept the drilldown")
 	}
 }
@@ -515,27 +606,27 @@ func TestStaleTickIsDropped(t *testing.T) {
 func TestMouse(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
-	m := open(t, f, true, web, 80, 24)
-	screen(t, m, 80, 24)
-	// Rows 2..8 are the CPU chart; click its plot.
-	m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 40, Y: 5})
-	lines := screen(t, m, 80, 24)
-	requireText(t, lines, "PAUSED", "(max in the cell)")
+	m := open(t, f, true, web, 150, 42)
+	screen(t, m, 150, 42)
+	// The CPU chart's plot ends at the right border, three rows down.
+	m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 140, Y: 5})
+	lines := screen(t, m, 150, 42)
+	requireText(t, lines, "PAUSED", "(highest)")
 	// The wheel zooms.
-	cmd, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp, X: 40, Y: 5})
+	cmd, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp, X: 140, Y: 5})
 	run(t, m, cmd)
-	requireText(t, screen(t, m, 80, 24), "15m")
-	// Clicking a consumer selects it; clicking it again opens its dashboard.
-	var topRow int
-	for i, l := range screen(t, m, 80, 24) {
+	requireText(t, screen(t, m, 150, 42), "15m")
+	// Clicking a row selects it; clicking it again opens its dashboard.
+	var row int
+	for i, l := range screen(t, m, 150, 42) {
 		if strings.Contains(l, "web-2") {
-			topRow = i
+			row = i
 		}
 	}
-	m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: topRow})
-	cmd, _ = m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: topRow})
+	m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: row})
+	cmd, _ = m.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 5, Y: row})
 	run(t, m, cmd)
-	requireText(t, screen(t, m, 80, 24), "> pod shop/web-2")
+	requireText(t, screen(t, m, 150, 42), "› pod web-2")
 }
 
 func TestBlocksToggle(t *testing.T) {
@@ -547,25 +638,51 @@ func TestBlocksToggle(t *testing.T) {
 	}
 	key(t, m, "b")
 	lines := screen(t, m, 120, 30)
-	if strings.ContainsAny(strings.Join(lines, ""), "⣀⣤⣶⣿") || !contains(lines, "b braille") {
+	if strings.ContainsAny(strings.Join(lines, ""), "⣀⣤⣶⣿") || m.FunctionKeys()[5].Label != "Braille" {
 		t.Error("block mode still draws braille")
 	}
 }
 
 // TestChartsShareTheCellGrid: the CPU and memory charts have labels of
-// different widths, yet their plots start at the same column, so one
-// cursor cell is one time in both.
+// different widths, yet their plots end at the same column and are as
+// wide, so one cursor cell is one time in both.
 func TestChartsShareTheCellGrid(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
-	m := open(t, f, true, web, 80, 24)
+	m := open(t, f, true, web, 150, 42)
 	var axes []int
-	for _, l := range screen(t, m, 80, 24) {
-		if i := strings.IndexRune(l, '└'); i >= 0 {
+	for _, l := range screen(t, m, 150, 42) {
+		if i := strings.IndexRune(l, '└'); i >= 0 && strings.Contains(l, "10:00") {
 			axes = append(axes, len([]rune(l[:i])))
 		}
 	}
 	if len(axes) != 2 || axes[0] != axes[1] {
 		t.Fatalf("time axes start at columns %v, want two at the same column", axes)
+	}
+}
+
+// TestLaneUnderSideBySideCharts: with the charts side by side, the Events
+// lane is on the time axis of the left chart, so a mark of 09:58 is under
+// the end of the CPU chart, not under the memory chart.
+func TestLaneUnderSideBySideCharts(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: withEvents()}
+	m := open(t, f, true, web, 100, 30)
+	lines := screen(t, m, 100, 30)
+	if !strings.HasPrefix(lines[1], "┌─ CPU") {
+		t.Fatalf("want the CPU chart on the left: %q", lines[1])
+	}
+	cpuEnd := strings.Index(lines[1], "┐┌")
+	if cpuEnd < 0 {
+		t.Fatalf("no two charts side by side: %q", lines[1])
+	}
+	cpuEnd = len([]rune(lines[1][:cpuEnd]))
+	marks, _ := lane(t, lines)
+	before, _, ok := strings.CutLast(marks, "▲")
+	if !ok {
+		t.Fatalf("lane %q has no warning", marks)
+	}
+	if col := len([]rune(before)); col > cpuEnd || col < cpuEnd-5 {
+		t.Errorf("the 09:58 warning is at column %d, want just left of the CPU chart's end at %d:\n%s", col, cpuEnd, strings.Join(lines, "\n"))
 	}
 }
