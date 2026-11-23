@@ -3,7 +3,8 @@
 The investigation window is one period of time that you set for the
 whole session, for example "the last hour" or "today from 10:00 to
 11:30". The panels that can show a period then show that period instead
-of their own default. Today these are the Logs and Info panels.
+of their own default. These are the Logs and Info panels and the
+dashboard (`C-x g`).
 
 Use it when you investigate an incident. Say an alert fired at 10:12 and
 recovered at 10:40. Without a window, a Logs panel shows the last lines
@@ -54,6 +55,14 @@ A wrong value shows the reason in the dialog; fix it or press `Esc`.
   with no gap longer than two and a half polls; otherwise the line names
   what is missing, such as `1 gap`, `stale since 14:02:10` or
   `CPU covered, memory from 14:01:00 only`.
+- Info: the Prometheus history of a workload reads the window instead
+  of `metricsHistory.window`, and its heading names it.
+- Dashboard: the charts and the Events show the window, and the title
+  bar names it with its zone, for example `WINDOW 2026-11-23 10:00:00
+  .. 10:45:00 +01:00` or `LIVE window 2h`. Zooming or panning leaves it
+  (`≠ window`); `w` makes the shown range the window. On an Event, `l`
+  sets the window to five minutes either side of it and shows the logs.
+  See [Dashboard](dashboard.md).
 - The Command menu (`F9`) shows the current window next to
   "Investigation window" with a check mark.
 
@@ -68,7 +77,6 @@ A wrong value shows the reason in the dialog; fix it or press `Esc`.
 
 - Describe, Manifest, object lists, `/overview` and `/diagnosis` keep
   their own time ranges. Events in Describe are not filtered.
-- The Prometheus history in Info keeps its configured window.
 - The window lasts for this session. It is not saved in saved views.
 
 ## See also
@@ -76,4 +84,5 @@ A wrong value shows the reason in the dialog; fix it or press `Esc`.
 - [Pin and freeze](pin-freeze.md)
 - [Logs mode](mode-logs.md)
 - [Info mode](mode-info.md)
+- [Dashboard](dashboard.md)
 - [Logs viewer](logs-viewer.md)

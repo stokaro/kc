@@ -311,7 +311,7 @@ func (a *App) showWindowDialog() tea.Cmd {
 	modal := NewTextInputModal(TextInputModalConfig{
 		Title:        "Investigation window",
 		Label:        "Window",
-		Description:  "15m or 2h (live), or START .. END such as 10:00 .. 11:30 (time zone " + zone + "); empty turns it off. Logs and Info panels use it.",
+		Description:  "15m or 2h (live), or START .. END such as 10:00 .. 11:30 (time zone " + zone + "); empty turns it off. Logs, Info and the dashboard use it.",
 		ConfirmLabel: "OK",
 		CancelLabel:  "Cancel",
 		InitialValue: a.window.Text(loc),
@@ -358,7 +358,7 @@ func (a *App) handleWindowResult(msg windowResultMsg) tea.Cmd {
 	cmds := a.applyWindow()
 	text := "Investigation window off"
 	if !w.Off() {
-		text = "Investigation window " + w.Label(time.Local) + " (Logs and Info panels)"
+		text = "Investigation window " + w.Label(time.Local) + " (Logs, Info and the dashboard)"
 	}
 	return tea.Batch(append(cmds, a.ShowInfo(text, 3*time.Second))...)
 }

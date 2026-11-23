@@ -28,7 +28,7 @@ func TestWindowDialogShowsTheWholeDescription(t *testing.T) {
 		joined := strings.Join(strings.Fields(strings.Join(text, " ")), " ")
 		for _, want := range []string{
 			"15m or 2h (live)", "START .. END", "such as 10:00 .. 11:30", "(time zone " + zone + ")",
-			"empty turns it off", "Logs and Info panels use it.",
+			"empty turns it off", "Logs, Info and the dashboard use it.",
 		} {
 			if !strings.Contains(joined, want) {
 				t.Errorf("width %d: the dialog misses %q:\n%s", width, want, screen)

@@ -59,7 +59,7 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 	}
 	cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
 	if t.Workload != nil && t.Finding == nil && a.cfg != nil {
-		t.PromHistory = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload)
+		t.PromHistory = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload, a.window)
 	}
 	t.Open = func() infowidget.Summarizer {
 		return newGatedInfo(root, cl.CanListWatchAllNamespaces, cl.CanListWatchInNamespace, ns, func() infowidget.Summarizer {
@@ -71,8 +71,9 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 
 // infoHistory is the history source of workload wl when metricsHistory
 // names a backend for the context, nil otherwise. The client is built in
-// the read, off the UI goroutine.
-func infoHistory(root context.Context, restConfig func() *rest.Config, key kccluster.Key, mh appconfig.MetricsHistoryConfig, wl models.InfoWorkload) *infowidget.PromHistorySource {
+// the read, off the UI goroutine. While an investigation window is set
+// (C-x w) it reads that period instead of the configured window.
+func infoHistory(root context.Context, restConfig func() *rest.Config, key kccluster.Key, mh appconfig.MetricsHistoryConfig, wl models.InfoWorkload, win investigation.Window) *infowidget.PromHistorySource {
 	backend, ok := mh.BackendFor(key.ContextName)
 	if !ok {
 		return nil
@@ -83,22 +84,38 @@ func infoHistory(root context.Context, restConfig func() *rest.Config, key kcclu
 	}
 	window, timeout := mh.EffectiveWindow(), mh.EffectiveTimeout()
 	target := promhistory.Target{Kind: kind, Namespace: wl.Namespace, Name: wl.Name}
+	label := win.Label(time.Local)
 	return &infowidget.PromHistorySource{
 		// The cluster key carries the impersonation, which changes what
-		// the proxy lets through.
-		Key:    fmt.Sprintf("%+v|%s/%s|%s|%s/%s|%s", key, backend.Namespace, backend.Service, wl.GVR, wl.Namespace, wl.Name, window),
+		// the proxy lets through; the window text changes what is read.
+		Key:    fmt.Sprintf("%+v|%s/%s|%s|%s/%s|%s|%s", key, backend.Namespace, backend.Service, wl.GVR, wl.Namespace, wl.Name, window, win.Text(time.UTC)),
 		Window: window,
+		Label:  label,
 		Start: func() (func() (promhistory.History, error), func()) {
 			ctx, cancel := context.WithTimeout(root, timeout)
+			opts := historyOptions(window, win, time.Now())
 			return func() (promhistory.History, error) {
 				c, err := promhistory.NewServiceProxyClient(restConfig(), backend)
 				if err != nil {
 					return promhistory.History{}, err
 				}
-				return c.Fetch(ctx, target, promhistory.Options{Window: window})
+				return c.Fetch(ctx, target, opts)
 			}, cancel
 		},
 	}
+}
+
+// historyOptions reads the investigation window when it is set, else the
+// configured window up to now.
+func historyOptions(window time.Duration, win investigation.Window, now time.Time) promhistory.Options {
+	start, end, ok := win.Bounds(now)
+	if !ok {
+		return promhistory.Options{Window: window}
+	}
+	if end.IsZero() {
+		end = now
+	}
+	return promhistory.Options{Window: max(end.Sub(start), time.Minute), Now: end}
 }
 
 // narrowInfoTarget points t at the row under the other panel's cursor: an

@@ -76,6 +76,8 @@ sample so far; `stale, last 3m ago` means no recent sample.
   usage from Prometheus. `no series` means Prometheus returned none for
   the metric; `no finite samples in this window` means it returned a
   series whose values are all `NaN` or infinite. Neither is zero usage.
+  It covers `metricsHistory.window`, or the investigation window
+  (`C-x w`) while one is set; the heading names it.
 
 ## See also
 

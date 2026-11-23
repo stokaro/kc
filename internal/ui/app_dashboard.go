@@ -12,6 +12,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/help"
+	"github.com/stokaro/kc/internal/investigation"
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/dashboard"
@@ -136,10 +137,12 @@ func (d *dashboardState) restores(src dashboard.Sources, target dashboard.Target
 // service proxy.
 func (a *App) dashboardSources(key kccluster.Key, engine *gatedInfo) dashboard.Sources {
 	src := dashboard.Sources{
-		Context: key.ContextName,
-		Amounts: engine.Amounts,
-		Now:     time.Now,
-		Loc:     time.Local,
+		Context:   key.ContextName,
+		Amounts:   engine.Amounts,
+		Now:       time.Now,
+		Loc:       time.Local,
+		Window:    func() investigation.Window { return a.window },
+		SetWindow: func(w investigation.Window) { a.window = w },
 	}
 	if a.cfg == nil {
 		return src
@@ -208,16 +211,71 @@ func (a *App) updateDashboard(msg tea.Msg) (tea.Cmd, bool) {
 	default:
 		return nil, false
 	}
+	before := a.window
 	cmd, act := d.model.Update(msg)
 	a.invalidateView("dashboard")
+	cmds := []tea.Cmd{cmd}
+	if a.window != before {
+		// w made the dashboard's range the investigation window.
+		cmds = append(cmds, a.applyWindow()...)
+		cmds = append(cmds, a.ShowInfo("Investigation window "+a.window.Label(time.Local)+" (Logs, Info and the dashboard)", 3*time.Second))
+	}
 	switch {
+	case act.Note != "":
+		cmds = append(cmds, a.ShowToast(act.Note, linkToastTTL))
+	case act.Logs != nil:
+		a.closeDashboard()
+		cmds = append(cmds, a.openDashboardLogs(*act.Logs, act.Window))
 	case act.Open != nil:
 		a.closeDashboard()
-		return tea.Batch(cmd, a.openDashboardObject(*act.Open)), true
+		cmds = append(cmds, a.openDashboardObject(*act.Open), a.revisionNote(act.Event))
 	case act.Close:
 		a.closeDashboard()
 	}
-	return cmd, true
+	return tea.Batch(cmds...), true
+}
+
+// openDashboardLogs makes w the investigation window and shows the logs
+// of ref: ref selected in the other panel, the panel the dashboard was
+// opened from in Logs mode, following it.
+func (a *App) openDashboardLogs(ref models.ObjectRef, w investigation.Window) tea.Cmd {
+	from := a.activePanel
+	a.window = w
+	cmds := a.applyWindow()
+	cmds = append(cmds, a.openObjectRef(ref, ""))
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	if p := a.panelByIndex(from); p != nil && p.Mode() != PanelModeLogs {
+		cmds = append(cmds, a.setPanelMode(ctx, p, PanelModeLogs, "dashboard logs"))
+	}
+	cmds = append(cmds, a.ShowInfo("Logs of "+ref.Name+", investigation window "+w.Label(time.Local), 3*time.Second))
+	return tea.Batch(cmds...)
+}
+
+// revisionNote says where the revisions of the object a rollout Event is
+// about are. A Deployment's are in its /rollout, built from its
+// ReplicaSets (ADR 0264). For other kinds kc has them only while the
+// object's /timeline records, so a rollout before that has none.
+func (a *App) revisionNote(e *models.UsageEvent) tea.Cmd {
+	if e == nil || !dashboard.IsRollout(*e) || e.Object.GVR.Empty() {
+		return nil
+	}
+	o := e.Object
+	if o.GVR.GroupResource() == (schema.GroupResource{Group: "apps", Resource: "deployments"}) {
+		return a.ShowInfo("Deployment "+o.Name+": its revisions are in /rollout, from its ReplicaSets", linkToastTTL)
+	}
+	since, running, ok := models.RecordedRevisions(a.currentClusterKey(), o.GVR, o.Namespace, o.Name)
+	switch {
+	case ok && !since.After(e.Last):
+		state := "recorded"
+		if running {
+			state = "recording"
+		}
+		return a.ShowInfo(fmt.Sprintf("%s %s: revisions %s since %s; open its /timeline to compare them", e.Kind, o.Name, state, since.In(time.Local).Format("15:04:05")), linkToastTTL)
+	case ok:
+		return a.ShowToast(fmt.Sprintf("%s %s: revision not recorded; the /timeline recording started at %s, after this Event", e.Kind, o.Name, since.In(time.Local).Format("15:04:05")), linkToastTTL)
+	}
+	return a.ShowToast(e.Kind+" "+o.Name+": revision not recorded; kc records revisions only while the object's /timeline runs. Showing the object and its Event.", linkToastTTL)
 }
 
 // openDashboardObject shows ref in Commander: in the other panel, which

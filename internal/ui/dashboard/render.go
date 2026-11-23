@@ -25,6 +25,8 @@ const (
 	minChartHeight = 4
 	// maxTopRows bounds the consumers shown below the charts.
 	maxTopRows = 6
+	// eventsHeight is the events widget: title, lane and Events.
+	minEventsHeight, maxEventsHeight = 3, 6
 	// labelWidth is the value label width a range read assumes.
 	labelWidth = 6
 )
@@ -56,21 +58,26 @@ func layout(v *view, w, h int) map[widget]rect {
 		out[v.focus] = full
 		return out
 	}
-	hasTop := len(v.widgets()) == 3
+	hasTop := v.target.Kind != KindPod
 	topH := 0
 	if hasTop {
 		topH = min(maxTopRows+1, max(3, len(v.now.Top)+1))
 	}
+	evH := minEventsHeight
 	switch {
-	case w >= wideWidth && body-topH >= minChartHeight:
+	case w >= wideWidth && body-topH-evH >= minChartHeight:
+		evH = min(maxEventsHeight, max(evH, body-topH-2*minChartHeight))
+		ch := body - topH - evH
 		half := (w - 1) / 2
-		out[widgetCPU] = rect{x: 0, y: y0, w: half, h: body - topH}
-		out[widgetMemory] = rect{x: half + 1, y: y0, w: w - half - 1, h: body - topH}
-	case (body-topH)/2 >= minChartHeight:
-		ch := (body - topH) / 2
+		out[widgetCPU] = rect{x: 0, y: y0, w: half, h: ch}
+		out[widgetMemory] = rect{x: half + 1, y: y0, w: w - half - 1, h: ch}
+		out[widgetEvents] = rect{x: 0, y: y0 + ch, w: w, h: evH}
+	case (body-topH-evH)/2 >= minChartHeight:
+		ch := (body - topH - evH) / 2
+		evH = body - topH - 2*ch
 		out[widgetCPU] = rect{x: 0, y: y0, w: w, h: ch}
 		out[widgetMemory] = rect{x: 0, y: y0 + ch, w: w, h: ch}
-		topH = body - 2*ch
+		out[widgetEvents] = rect{x: 0, y: y0 + 2*ch, w: w, h: evH}
 	default:
 		out[v.focus] = full
 		return out
@@ -94,7 +101,7 @@ func (m *Model) View() string {
 	cells := 0
 	for wd, r := range rects {
 		m.rects[wd] = r
-		if wd == widgetTop {
+		if wd == widgetTop || wd == widgetEvents {
 			continue
 		}
 		c := m.chartOf(v, wd, r.w, r.h-1)
@@ -103,8 +110,8 @@ func (m *Model) View() string {
 			cells = n
 		}
 	}
-	// One cell grid for both charts, so the cursor is the same time in
-	// each: their value labels differ in width.
+	// One cell grid for the charts and the events lane, so the cursor is
+	// the same time everywhere.
 	if cells > 0 {
 		m.cells = cells
 	}
@@ -127,9 +134,12 @@ func (m *Model) View() string {
 	screen[h-1] = m.keysLine(v, rects, w)
 	for wd, r := range rects {
 		var lines []string
-		if wd == widgetTop {
+		switch wd {
+		case widgetTop:
 			lines = m.topLines(v, r.w, r.h)
-		} else {
+		case widgetEvents:
+			lines = m.eventLines(v, r.w, r.h)
+		default:
 			lines = append([]string{m.chartTitle(v, wd, r.w)}, charts[wd].Render()...)
 		}
 		for i, l := range lines {
@@ -229,6 +239,11 @@ func (m *Model) titleLine(v *view, w int) string {
 	state := "LIVE " + shortDuration(v.span(m))
 	if v.paused {
 		state = "PAUSED at " + v.end.In(m.loc()).Format("15:04:05") + " " + shortDuration(v.span(m))
+	}
+	if ws := m.windowState(v); ws != "" {
+		state = ws
+	} else if !m.lastWin.Off() {
+		state += " ≠ window"
 	}
 	left := titleStyle.Render(fit(strings.Join(parts, " │ ")+" │ ", max(0, w-lipgloss.Width(state)-2)))
 	st := titleStyle

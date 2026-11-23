@@ -95,6 +95,15 @@ func (s *session) points(key string) (cpu, mem []chart.Point) {
 	return cpu, mem
 }
 
+// kept returns the time of key's oldest and newest samples.
+func (s *session) kept(key string) (first, last time.Time, ok bool) {
+	h := s.byKey[key]
+	if h == nil || len(h.samples) == 0 {
+		return time.Time{}, time.Time{}, false
+	}
+	return h.samples[0].at, h.samples[len(h.samples)-1].at, true
+}
+
 // within returns the samples of key in [from, to].
 func (s *session) within(key string, from, to time.Time) []sample {
 	h := s.byKey[key]

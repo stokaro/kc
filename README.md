@@ -157,7 +157,7 @@ The pages are in [`internal/help/topics`](internal/help/topics/index.md) and shi
 | `C-x c`    | Compare what the active panel shows (marked rows, else filtered rows, else the whole list) with their counterparts in another kubeconfig context, picked from a list. kc connects to that context for the read and does not switch to it; neither panel shows it. The Command menu has the whole-list variant. |
 | `C-x p`    | Pin the Describe, Manifest, Logs or Info panel (the active one, else the other) to what it shows, or unpin it. See [Pin, freeze and the investigation window](#pin-freeze-and-the-investigation-window). |
 | `C-x f`    | Freeze the display of that panel at the current time, or return it to live data. |
-| `C-x w`    | Set the investigation window the Logs and Info panels use. |
+| `C-x w`    | Set the investigation window the Logs and Info panels and the dashboard use. |
 | `C-x g`    | Open the full-screen dashboard: CPU and memory over time of the scope, node, workload or pod under the cursor. |
 | `C-x n`    | Explain whether NetworkPolicies let the pod under the active panel's cursor reach the pod under the other panel's cursor, per port, with the policies and rules behind it. See [NetworkPolicy between two pods](internal/help/topics/network-policy.md). |
 | `C-x m`    | Show which metric sources the context has and set its Prometheus backend. |
@@ -244,7 +244,7 @@ The first row of every panel root is `/overview`, a report of checks about the c
 
 ### Pin, freeze and the investigation window
 
-`C-x p` pins a Describe, Manifest, Logs or Info panel to what it shows, `C-x f` freezes its display, and `C-x w` sets one time window for the Logs and Info panels. See [Pin and freeze a panel](internal/help/topics/pin-freeze.md) and [Investigation window](internal/help/topics/investigation-window.md).
+`C-x p` pins a Describe, Manifest, Logs or Info panel to what it shows, `C-x f` freezes its display, and `C-x w` sets one time window for the Logs and Info panels and the dashboard. See [Pin and freeze a panel](internal/help/topics/pin-freeze.md) and [Investigation window](internal/help/topics/investigation-window.md).
 
 ## Read-only mode
 

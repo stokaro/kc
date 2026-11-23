@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/stokaro/kc/internal/investigation"
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/dashboard"
@@ -35,14 +36,17 @@ type fakes struct {
 	ranges   []promhistory.Range
 	canceled int
 	usage    func(promhistory.Scope, promhistory.Range) (promhistory.Usage, error)
+	win      investigation.Window
 }
 
 func (f *fakes) sources(prom bool) dashboard.Sources {
 	src := dashboard.Sources{
-		Context: "kind-test",
-		Now:     func() time.Time { f.mu.Lock(); defer f.mu.Unlock(); return f.now },
-		Loc:     time.UTC,
-		Tick:    func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil },
+		Context:   "kind-test",
+		Now:       func() time.Time { f.mu.Lock(); defer f.mu.Unlock(); return f.now },
+		Loc:       time.UTC,
+		Tick:      func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil },
+		Window:    func() investigation.Window { f.mu.Lock(); defer f.mu.Unlock(); return f.win },
+		SetWindow: func(w investigation.Window) { f.mu.Lock(); defer f.mu.Unlock(); f.win = w },
 		Amounts: func(focus models.UsageFocus, _ int) models.UsageAmounts {
 			f.mu.Lock()
 			defer f.mu.Unlock()
@@ -253,17 +257,18 @@ func TestNoMeasurementIsNotZero(t *testing.T) {
 
 func TestLayoutsAtEverySize(t *testing.T) {
 	t.Parallel()
-	for _, size := range [][2]int{{80, 24}, {120, 30}, {240, 60}, {100, 14}, {40, 10}} {
+	for _, size := range [][2]int{{80, 24}, {120, 30}, {240, 60}, {100, 17}, {100, 16}, {100, 14}, {40, 10}} {
 		f := &fakes{now: t0, amounts: measured()}
 		m := open(t, f, true, web, size[0], size[1])
 		lines := screen(t, m, size[0], size[1])
 		paged := strings.Contains(lines[size[1]-1], "Tab next widget")
-		wantPaged := size[1] < 14
+		// Two charts of four rows, the events and the pods need 17 rows.
+		wantPaged := size[1] < 17
 		if paged != wantPaged {
 			t.Errorf("%v: paged %v, want %v:\n%s", size, paged, wantPaged, strings.Join(lines, "\n"))
 		}
 		if !paged {
-			requireText(t, lines, "CPU cores", "Memory", "Top pods by memory")
+			requireText(t, lines, "CPU cores", "Memory", "Events", "Top pods by memory")
 		}
 		if size[0] >= 120 {
 			// Side by side: both chart titles on one line.
@@ -273,16 +278,16 @@ func TestLayoutsAtEverySize(t *testing.T) {
 		}
 		// Every widget is reachable with Tab.
 		seen := make(map[string]bool)
-		for range 3 {
+		for range 4 {
 			l := screen(t, m, size[0], size[1])
-			for _, name := range []string{"▸ CPU cores", "▸ Memory", "▸ Top pods"} {
+			for _, name := range []string{"▸ CPU cores", "▸ Memory", "▸ Events", "▸ Top pods"} {
 				if contains(l, name) {
 					seen[name] = true
 				}
 			}
 			key(t, m, "tab")
 		}
-		if len(seen) != 3 {
+		if len(seen) != 4 {
 			t.Errorf("%v: Tab reached %v", size, seen)
 		}
 	}
@@ -406,6 +411,7 @@ func TestDrilldownAndOpen(t *testing.T) {
 	}
 	key(t, m, "tab")
 	key(t, m, "tab")
+	key(t, m, "tab")
 	key(t, m, "down")
 	if act := key(t, m, "o"); act.Open == nil || act.Open.GVR.Resource != "pods" || act.Open.Name != "web-2" {
 		t.Errorf("o on a consumer = %+v", act.Open)
@@ -466,6 +472,7 @@ func TestResume(t *testing.T) {
 	f := &fakes{now: t0, amounts: measured()}
 	m := open(t, f, false, web, 80, 24)
 	ticks(t, f, m, 2, 15*time.Second)
+	key(t, m, "tab")
 	key(t, m, "tab")
 	key(t, m, "tab")
 	key(t, m, "enter")
