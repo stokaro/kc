@@ -1,0 +1,5 @@
+apiVersion: v2
+name: banner
+description: A ConfigMap with a shop banner, installed by screenshots/capture.sh for the Helm scenes.
+version: 0.1.0
+appVersion: "1.0"

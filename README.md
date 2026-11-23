@@ -8,6 +8,8 @@
 
 The demo was recorded before the menu bar stayed on the top row (see [Menu Bar](#menu-bar)).
 
+[screenshots/](screenshots/README.md) has a screenshot of every feature, grouped by topic.
+
 A two-panel Kubernetes TUI inspired by Midnight Commander, built with Go 1.27, Bubble Tea v2 and controller-runtime informers. See `TODO.md` for the plan.
 
 ## Highlights
