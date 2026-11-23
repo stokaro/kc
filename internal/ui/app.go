@@ -297,6 +297,7 @@ type App struct {
 	// dash is the full-screen dashboard, kept after closing for C-x g;
 	// promShared joins its identical Prometheus reads.
 	dash               *dashboardState
+	chartGfx           chartGraphics
 	promShared         *promhistory.Shared
 	usage              *models.UsageMetrics  // polls metrics.k8s.io for usage columns
 	portForwards       *portforward.Registry // forwards of this process, across contexts
@@ -3173,7 +3174,12 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		app.cancel()
 	}()
 
-	if _, err := p.Run(); err != nil {
+	_, err := p.Run()
+	// The terminal frees the dashboard's images only when told to.
+	if seq := app.releaseChartImages(); seq != "" {
+		_, _ = os.Stdout.WriteString(seq)
+	}
+	if err != nil {
 		fmt.Printf("Error running application: %v\n", err)
 		return err
 	}

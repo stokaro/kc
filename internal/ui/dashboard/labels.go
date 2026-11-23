@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/stokaro/kc/internal/promhistory"
-	"github.com/stokaro/kc/internal/ui/chart"
 )
 
 // chartTitle is the first line of a chart: the resource and unit, where
@@ -188,11 +187,7 @@ func (m *Model) keysLine(v *view, rects map[widget]rect, w int) string {
 		keys[0][1] = "next widget"
 	}
 	if w >= 100 {
-		mode := "blocks"
-		if m.mode == chart.Blocks {
-			mode = "braille"
-		}
-		keys = append(keys[:6], append([][2]string{{"l", "logs"}, {"w", "window"}, {"b", mode}}, keys[6:]...)...)
+		keys = append(keys[:6], append([][2]string{{"l", "logs"}, {"w", "window"}, {"b", m.nextDrawName()}}, keys[6:]...)...)
 	}
 	parts := make([]string, len(keys))
 	for i, k := range keys {
