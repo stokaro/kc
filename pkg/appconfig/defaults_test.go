@@ -140,6 +140,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	if len(a.Columns) != 0 || len(b.Columns) != 0 {
 		t.Fatalf("columns mismatch: yaml=%v code=%v, want none", a.Columns, b.Columns)
 	}
+	if len(a.Health) != 0 || len(b.Health) != 0 {
+		t.Fatalf("health mismatch: yaml=%v code=%v, want none", a.Health, b.Health)
+	}
 	// Compare the YAML as written: a key missing from the file must fail
 	// here, not be filled in by Normalized.
 	if !reflect.DeepEqual(fromYAML.Overview, fromCode.Overview) {

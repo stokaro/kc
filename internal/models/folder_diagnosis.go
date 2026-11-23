@@ -25,6 +25,11 @@ import (
 func builtinObjectRows(gvr schema.GroupVersionResource) (ObjectRowsFunc, bool) {
 	if gvr == serviceGVR || hasWorkloadDiagnosis(gvr) {
 		return func(deps Deps, namespace, name string, path []string) []table.Row {
+			if namespace == "" {
+				// A configured cluster-scoped type: its pods and events
+				// would need cluster-wide reads.
+				return nil
+			}
 			return []table.Row{diagnosisRow(deps, gvr, namespace, name, path)}
 		}, true
 	}

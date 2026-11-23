@@ -238,8 +238,12 @@ type Config struct {
 	Contexts []ContextColorConfig `json:"contexts"`
 	// Columns adds and hides object list columns per resource type, keyed
 	// by group/version/resource (see ColumnsKey). Empty by default.
-	Columns  map[string][]CustomColumn `json:"columns,omitempty"`
-	Overview OverviewConfig            `json:"overview"`
+	Columns map[string][]CustomColumn `json:"columns,omitempty"`
+	// Health maps the status of custom resource types to row health, keyed
+	// by group/version/resource like Columns. Empty by default; types with
+	// a built-in rule ignore their entry.
+	Health   map[string][]HealthRule `json:"health,omitempty"`
+	Overview OverviewConfig          `json:"overview"`
 	// ReadOnly opens contexts in read-only mode; see ReadOnlyConfig.
 	ReadOnly ReadOnlyConfig `json:"readOnly"`
 }
