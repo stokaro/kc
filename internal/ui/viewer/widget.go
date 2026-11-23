@@ -920,6 +920,22 @@ func (w *Widget) lineMatches(lineIdx int) []displayMatch {
 	return matches
 }
 
+// FocusLine returns the line the user points at: the active search match,
+// else the last line while the view follows the end, else the top line of
+// the view. ok is false when there are no lines.
+func (w *Widget) FocusLine() (line int, ok bool) {
+	if len(w.lines) == 0 {
+		return 0, false
+	}
+	if w.activeMatch >= 0 && w.activeMatch < len(w.searchMatches) {
+		return w.searchMatches[w.activeMatch].line, true
+	}
+	if w.AtEnd() {
+		return len(w.lines) - 1, true
+	}
+	return min(w.offset, len(w.lines)-1), true
+}
+
 func (w *Widget) page() int {
 	if w.height <= 0 {
 		return 1

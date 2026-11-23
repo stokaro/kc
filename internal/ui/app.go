@@ -199,10 +199,12 @@ type App struct {
 	// ctrlXPending is set after C-x, the prefix of mc's two-key commands.
 	ctrlXPending bool
 	// Data providers
-	kubeMgr           *kubeconfig.Manager
-	cl                *kccluster.Cluster
-	clLease           *kccluster.Lease // holds cl in clPool; see docs/adr/0062-cache-ownership.md
-	clPool            *kccluster.Pool
+	kubeMgr *kubeconfig.Manager
+	cl      *kccluster.Cluster
+	clLease *kccluster.Lease // holds cl in clPool; see docs/adr/0062-cache-ownership.md
+	clPool  *kccluster.Pool
+	// setCompareSeq numbers list comparisons; only the newest is shown.
+	setCompareSeq     int
 	ctx               context.Context
 	cancel            context.CancelFunc
 	currentCtx        *kubeconfig.Context
@@ -414,6 +416,7 @@ func (a *App) Init() tea.Cmd {
 	}
 	return tea.Batch(
 		a.loadCommandHotkeys(),
+		a.loadHealthConfig(),
 		lookErr,
 		a.initPanels(),
 		a.terminal.Init(),
@@ -2114,6 +2117,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
 	logsViewer.SetOnFilter(func() tea.Cmd { return a.showLogsFilterModal(logsViewer) })
+	a.setupLogFields(logsViewer)
 	logsViewer.SetOnClose(func() tea.Cmd {
 		a.hideModal()
 		return nil

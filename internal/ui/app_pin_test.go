@@ -13,7 +13,39 @@ import (
 	navui "github.com/stokaro/kc/internal/navigation"
 	"github.com/stokaro/kc/internal/table"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
+
+// Every C-x chord the menus show is one of kc's own keys, so a custom
+// command cannot take it, and the menus show all of kc's chords.
+func TestMenuChordsAreBuiltin(t *testing.T) {
+	app := newMenuTestApp(t)
+	seen := make(map[string]bool)
+	for _, m := range app.menuBarMenus() {
+		for _, it := range m.Items {
+			if !strings.HasPrefix(it.Shortcut, "C-x ") {
+				continue
+			}
+			key, err := appconfig.ParseHotkey(it.Shortcut)
+			if err != nil {
+				t.Fatalf("%q: ParseHotkey(%q): %v", it.Label, it.Shortcut, err)
+			}
+			if _, ok := appconfig.BuiltinHotkey(key); !ok {
+				t.Errorf("%q: %s is not reserved", it.Label, key)
+			}
+			seen[it.Shortcut] = true
+		}
+	}
+	for _, want := range []string{"C-x C-d", "C-x d", "C-x c", "C-x p", "C-x f", "C-x w"} {
+		if !seen[want] {
+			t.Errorf("no menu item shows %s", want)
+		}
+	}
+	// The control: a free chord stays free.
+	if _, ok := appconfig.BuiltinHotkey("C-x 2"); ok {
+		t.Error("C-x 2 is reserved")
+	}
+}
 
 var pinPodsGVR = schema.GroupVersionResource{Version: "v1", Resource: "pods"}
 

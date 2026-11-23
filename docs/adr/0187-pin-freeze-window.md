@@ -31,7 +31,8 @@ What the code offers, checked against main:
   understands `SinceTime`. The panel keeps its lines within
   `viewer.logs.maxLines` and `maxMemoryMiB` (ADR 0179).
 - Info keeps 15 minutes of usage samples per scope, in memory, for the
-  session. There is no older history to show.
+  session. For a workload it can also show Prometheus history over the
+  configured `metricsHistory` window (ADR 0197).
 - The overview and `/diagnosis` count events and restarts over
   `overview.window`.
 
@@ -81,11 +82,12 @@ What the code offers, checked against main:
      lines stamped after the end. The header shows the window, `first line
      HH:MM:SS` when the log starts more than a minute after the window (the
      kubelet no longer has the beginning), and the count of hidden lines.
-   - **Info panels** add a line under the measurement time: covered, `usage
-     history from HH:MM:SS only (incomplete)`, `no usage history for it
-     (incomplete)` or `no usage history yet (incomplete)`. The sparkline
-     still shows its 15 minutes; Info cannot show usage from before kc
-     measured it.
+   - **Info panels** add a line under the measurement time: `covered by
+     the session usage history`, `session usage history from HH:MM:SS only
+     (incomplete)`, `no session usage history for it (incomplete)` or `no
+     session usage history yet (incomplete)`. The sparkline still shows its
+     15 minutes; the session history cannot show usage from before kc
+     measured it. The Prometheus history keeps its configured window.
    - **Describe, Manifest, lists, `/overview` and `/diagnosis`** keep their
      own ranges. Describe shows whatever events the API server still keeps,
      and the overview counts over `overview.window`. They are not
@@ -107,6 +109,11 @@ What the code offers, checked against main:
   panel's list location and list settings. The window spans both panels and
   usually belongs to one incident, so storing it would reopen old windows
   on new data.
+- **The Prometheus history does not follow the window.** Its window is
+  configuration per context with a query cost the operator chose. Following
+  the investigation window would let one keystroke ask the backend for up
+  to seven days per workload. Its section is titled with its own window,
+  so the two ranges are not confused.
 - **Pinning does not start a timeline recording.** Both use the same
   informer handler, but a recording keeps revisions in memory and counts
   against `timeline.maxObjects`. `/timeline` stays an explicit choice.

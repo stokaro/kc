@@ -29,8 +29,13 @@ const (
 // chords first, then the C-x hotkeys of custom commands. Keys without a
 // command are dropped, as mc does.
 func (a *App) handleCtrlXKey(press tea.KeyPressMsg) tea.Cmd {
-	if press.String() == compareKey {
+	switch press.String() {
+	case compareKey:
 		return a.compareSelectedObjects()
+	case compareListsKey:
+		return a.compareLists()
+	case compareContextKey:
+		return a.compareListWithContext()
 	}
 	if cmd, ok := a.handlePinChord(press.String()); ok {
 		return cmd

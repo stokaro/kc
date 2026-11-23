@@ -112,6 +112,8 @@ var builtinHotkeys = map[string]string{
 	"M-x":     "shell in a container",
 	"M-y":     "history back",
 	"C-x C-d": "compare manifests",
+	"C-x d":   "compare lists",
+	"C-x c":   "compare a list with another context",
 	"C-x p":   "pin a panel's target",
 	"C-x f":   "freeze a panel's display",
 	"C-x w":   "investigation window",

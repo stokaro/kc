@@ -2,13 +2,18 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 
+	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/investigation"
 	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/promhistory"
 	infowidget "github.com/stokaro/kc/internal/ui/panelcontent/info"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 var infoNodesGVR = schema.GroupVersionResource{Version: "v1", Resource: "nodes"}
@@ -45,25 +50,74 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 		Key:   key.ContextName + "|" + key.KubeconfigPath + "|" + ns,
 		Label: label,
 	}
-	var item models.Item
 	if pin != nil {
-		item = pin.item
+		narrowInfoTarget(&t, pin.item)
 	} else if op := a.panelByIndex(other); op != nil {
-		item, _ = op.SelectedNavItem(ctx)
-	}
-	if obj, ok := item.(models.ObjectItem); ok {
-		switch gvr := obj.GVR(); {
-		case gvr == infoNodesGVR:
-			t.Node = obj.Name()
-		case models.IsInfoWorkload(gvr) && obj.Namespace() != "":
-			t.Workload = &models.InfoWorkload{GVR: gvr, Namespace: obj.Namespace(), Name: obj.Name()}
+		if item, ok := op.SelectedNavItem(ctx); ok {
+			narrowInfoTarget(&t, item)
 		}
 	}
 	cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
+	if t.Workload != nil && t.Finding == nil && a.cfg != nil {
+		t.PromHistory = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload)
+	}
 	t.Open = func() infowidget.Summarizer {
 		return newGatedInfo(root, cl.CanListWatchAllNamespaces, func() infowidget.Summarizer {
 			return models.NewOverviewInfo(a.makeDeps(cl, cfg, key), ns)
 		})
 	}
 	return t
+}
+
+// infoHistory is the history source of workload wl when metricsHistory
+// names a backend for the context, nil otherwise. The client is built in
+// the read, off the UI goroutine.
+func infoHistory(root context.Context, restConfig func() *rest.Config, key kccluster.Key, mh appconfig.MetricsHistoryConfig, wl models.InfoWorkload) *infowidget.PromHistorySource {
+	backend, ok := mh.BackendFor(key.ContextName)
+	if !ok {
+		return nil
+	}
+	kind, ok := promhistory.KindFor(wl.GVR.Group, wl.GVR.Resource)
+	if !ok {
+		return nil
+	}
+	window, timeout := mh.EffectiveWindow(), mh.EffectiveTimeout()
+	target := promhistory.Target{Kind: kind, Namespace: wl.Namespace, Name: wl.Name}
+	return &infowidget.PromHistorySource{
+		// The cluster key carries the impersonation, which changes what
+		// the proxy lets through.
+		Key:    fmt.Sprintf("%+v|%s/%s|%s|%s/%s|%s", key, backend.Namespace, backend.Service, wl.GVR, wl.Namespace, wl.Name, window),
+		Window: window,
+		Start: func() (func() (promhistory.History, error), func()) {
+			ctx, cancel := context.WithTimeout(root, timeout)
+			return func() (promhistory.History, error) {
+				c, err := promhistory.NewServiceProxyClient(restConfig(), backend)
+				if err != nil {
+					return promhistory.History{}, err
+				}
+				return c.Fetch(ctx, target, promhistory.Options{Window: window})
+			}, cancel
+		},
+	}
+}
+
+// narrowInfoTarget points t at the row under the other panel's cursor: an
+// overview finding, a node or a workload. A finding describes itself from
+// the overview's own report, the one its row shows (ADR 0173).
+func narrowInfoTarget(t *infowidget.Target, item models.Item) {
+	if fp, ok := item.(models.FindingPreviewer); ok {
+		if p, ok := fp.FindingPreview(); ok {
+			t.Finding = &p
+		}
+	}
+	obj, ok := item.(models.ObjectItem)
+	if !ok {
+		return
+	}
+	switch gvr := obj.GVR(); {
+	case gvr == infoNodesGVR:
+		t.Node = obj.Name()
+	case models.IsInfoWorkload(gvr) && obj.Namespace() != "":
+		t.Workload = &models.InfoWorkload{GVR: gvr, Namespace: obj.Namespace(), Name: obj.Name()}
+	}
 }

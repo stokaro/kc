@@ -68,29 +68,47 @@ func (f *OverviewFolder) populate(context.Context) ([]table.Row, error) {
 		}
 		return []table.Row{NewSimpleItem("overview/loading", []string{" " + msg, "", ""}, f.Path(), DimStyle())}, nil
 	}
-	rows := make([]table.Row, 0, len(report.findings)+len(overviewSections))
+	rows := make([]table.Row, 0, len(report.findings)+2*len(overviewSections)+1)
+	// The first row counts the whole report, so one warning among many
+	// quiet checks is seen at once (ADR 0172).
+	rows = append(rows, f.attentionRow(report))
 	for _, section := range overviewSections {
 		// The header names the scope, so cluster capacity next to an
 		// empty namespace does not read as that namespace's figures.
 		scope, mixed := sectionScope(report.findings, section, f.namespace)
-		header := NewSimpleItem("section/"+strings.ToLower(section), []string{" " + section + " · " + scope, "", ""}, f.Path(), overviewSectionStyle())
+		var shown, quiet []overviewFinding
+		for _, finding := range report.findings {
+			switch {
+			case finding.section != section:
+			case quietFinding(finding):
+				quiet = append(quiet, finding)
+			default:
+				shown = append(shown, finding)
+			}
+		}
+		counts := countClasses(append(slices.Clone(shown), quiet...))
+		header := NewSimpleItem("section/"+strings.ToLower(section), []string{" " + section + " · " + scope, counts.problems(), counts.passed()}, f.Path(), overviewSectionStyle())
 		header.SetDetails(section + " covers " + scope + ". " + overviewSwitchHint)
 		rows = append(rows, header)
-		for _, finding := range report.findings {
-			if finding.section != section {
-				continue
-			}
-			rows = append(rows, f.findingRow(finding, mixed))
+		for _, finding := range shown {
+			rows = append(rows, f.findingRow(finding, mixed, f.Path()))
+		}
+		if len(quiet) > 0 {
+			rows = append(rows, f.quietRow(section, quiet))
 		}
 	}
 	return rows, nil
 }
 
-// findingRow is the row of finding. In a section that mixes namespace and
-// cluster findings (mixed), a cluster finding's title says so.
-func (f *OverviewFolder) findingRow(finding overviewFinding, mixed bool) table.Row {
-	path := append(f.Path(), strings.TrimPrefix(finding.title, "/"))
+// findingRow is the row of finding in a folder at parent. In a section
+// that mixes namespace and cluster findings (mixed), a cluster finding's
+// title says so.
+func (f *OverviewFolder) findingRow(finding overviewFinding, mixed bool, parent []string) table.Row {
+	path := append(slices.Clone(parent), strings.TrimPrefix(finding.title, "/"))
 	style := overviewSeverityStyle(finding.severity)
+	if finding.notApplicable != "" {
+		style = DimStyle()
+	}
 	title := finding.title
 	if _, cluster := findingScope(finding.id, f.namespace); cluster && mixed {
 		title += " (cluster)"
@@ -175,6 +193,9 @@ func (f *OverviewFolder) explainFinding(finding overviewFinding) string {
 	fmt.Fprintf(&b, "%s\n\nValue: %s\nState: %s\nScope: %s\n", finding.title, finding.value, finding.state, scope)
 	if finding.unavailable != "" {
 		fmt.Fprintf(&b, "Not available: %s\n", finding.unavailable)
+	}
+	if finding.notApplicable != "" {
+		fmt.Fprintf(&b, "Not applicable: %s; nothing was checked, which is not a pass.\n", finding.notApplicable)
 	}
 	fmt.Fprintf(&b, "\nHow it is computed\n\n%s\n", finding.explain)
 	b.WriteString(`

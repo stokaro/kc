@@ -87,10 +87,10 @@ func TestF9DoesNothingInFullscreenTerminal(t *testing.T) {
 func TestMenuBarTable(t *testing.T) {
 	app := newMenuTestApp(t)
 	// mc notation, as appconfig.ParseHotkey reads it: F-keys, C- and M-
-	// keys, the chords "C-x <char>" and "C-x C-<char>" (mc's own "C-x c"
-	// is one), and the selection keys.
-	shortcut := regexp.MustCompile(`^(F[0-9]+|(C-x )?[CM]-(F[0-9]+|.)|C-x [^ ]|[+*-])$`)
-	for _, bad := range []string{"C-x  p", "x p", "C-x pp", "Ctrl+X p"} {
+	// keys, the chords "C-x <letter>" and "C-x C-<char>", and the
+	// selection keys.
+	shortcut := regexp.MustCompile(`^(F[0-9]+|C-x [a-z]|(C-x )?[CM]-(F[0-9]+|.)|[+*-])$`)
+	for _, bad := range []string{"C-x  p", "x p", "C-x pp", "Ctrl+X p", "C-x P"} {
 		if shortcut.MatchString(bad) {
 			t.Fatalf("the notation check accepts %q", bad)
 		}

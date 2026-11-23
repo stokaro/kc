@@ -58,11 +58,13 @@ func ClassifyRowHealth(gvr schema.GroupVersionResource, u *unstructured.Unstruct
 	if u == nil {
 		return RowHealthUnknown
 	}
-	rule, ok := healthRules[gvr]
-	if !ok {
-		return RowHealthUnknown
+	if rule, ok := healthRules[gvr]; ok {
+		return rule(u)
 	}
-	return rule(u)
+	if a := healthAdapterFor(gvr); a != nil {
+		return a.evaluate(u).Health
+	}
+	return RowHealthUnknown
 }
 
 // podWaitingOK are the waiting reasons of a container that is still starting.

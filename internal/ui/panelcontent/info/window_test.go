@@ -27,12 +27,12 @@ func TestWindowCoverage(t *testing.T) {
 		want string
 	}{
 		{name: "off", win: investigation.Window{}, h: sampled(now.Add(-5 * time.Minute)), want: ""},
-		{name: "no samples", win: investigation.Window{Last: time.Hour}, want: "window last 1h: no usage history yet (incomplete)"},
-		{name: "longer than the history", win: investigation.Window{Last: time.Hour}, h: sampled(now.Add(-5 * time.Minute)), want: "window last 1h: usage history from 11:55:00 only (incomplete)"},
-		{name: "history older than the sparkline", win: investigation.Window{Last: time.Hour}, h: sampled(now.Add(-40 * time.Minute)), want: "window last 1h: usage history from 11:45:00 only (incomplete)"},
-		{name: "covered", win: investigation.Window{Last: 2 * time.Minute}, h: sampled(now.Add(-5 * time.Minute)), want: "window last 2m: covered by the usage history"},
+		{name: "no samples", win: investigation.Window{Last: time.Hour}, want: "window last 1h: no session usage history yet (incomplete)"},
+		{name: "longer than the history", win: investigation.Window{Last: time.Hour}, h: sampled(now.Add(-5 * time.Minute)), want: "window last 1h: session usage history from 11:55:00 only (incomplete)"},
+		{name: "history older than the sparkline", win: investigation.Window{Last: time.Hour}, h: sampled(now.Add(-40 * time.Minute)), want: "window last 1h: session usage history from 11:45:00 only (incomplete)"},
+		{name: "covered", win: investigation.Window{Last: 2 * time.Minute}, h: sampled(now.Add(-5 * time.Minute)), want: "window last 2m: covered by the session usage history"},
 		{name: "ended before the history", win: investigation.Window{Start: now.Add(-3 * time.Hour), End: now.Add(-2 * time.Hour)}, h: sampled(now.Add(-5 * time.Minute)),
-			want: "window 2026-11-23 09:00:00 .. 10:00:00 +00:00: no usage history for it (incomplete)"},
+			want: "window 2026-11-23 09:00:00 .. 10:00:00 +00:00: no session usage history for it (incomplete)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
