@@ -74,7 +74,8 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	cc := planCustomColumns(o.Deps, o.gvr, columnsMode)
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
 		cc.loadObjects(ctx, o.Deps, o.namespace)
-		return o.rowsFromRowList(o.withUsageColumns(rl), columnsMode, order, cc), nil
+		objs := loadRowObjects(ctx, o.Deps, o.gvr, o.namespace)
+		return o.rowsFromRowListWithObjects(o.withUsageColumns(rl), columnsMode, order, cc, objs), nil
 	} else if err != nil && apierrors.IsForbidden(err) {
 		return nil, err
 	}
@@ -118,6 +119,13 @@ func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, b
 }
 
 func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, order string, cc *customColumns) []table.Row {
+	return o.rowsFromRowListWithObjects(rl, columnsMode, order, cc, nil)
+}
+
+// rowsFromRowListWithObjects builds the rows of a server table list. objs
+// holds the full objects the health rules and row stylers read; a row
+// without one falls back to what the table row embeds.
+func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, columnsMode, order string, cc *customColumns, objs rowObjects) []table.Row {
 	namespaced := o.namespace == "" && o.resourceNamespaced()
 	vis := cc.serverColumns(rl.Columns, visibleColumns(rl.Columns, columnsMode))
 	cols := make([]table.Column, len(vis))
@@ -184,7 +192,10 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 			ObjectMeta: rr.ObjectMeta,
 			BaseStyle:  WhiteStyle(),
 		}
-		info.Unstructured = unstructuredFromRow(rr)
+		info.Unstructured = objs.object(rr.ObjectMeta.Namespace, name)
+		if info.Unstructured == nil {
+			info.Unstructured = unstructuredFromRow(rr)
+		}
 		style := applyRowStylers(info)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, ns, name, style)
 		obj.setRowFacts(rowFactsFor(info, id, ns, fc, ii))

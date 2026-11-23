@@ -20,8 +20,10 @@ A panel in List mode starts at its root and goes deeper with `Enter`:
 The first row of a folder is `/..`; `Enter` on it goes back up. The frame
 title shows the path, the bottom border the context and namespace scope
 (`prod : shop`). A list across all namespaces gets a Namespace column.
-Rows kc considers faults are red: a crash looping pod, a Deployment with
-missing replicas, a node that is not Ready.
+Rows kc considers faults are red: a pod that is Pending, not ready, or
+waiting in CrashLoopBackOff, ImagePullBackOff, ErrImagePull or
+CreateContainerConfigError, a Deployment with missing replicas, a node
+that is not Ready.
 
 Above the shell line, the command line shows the kubectl command that
 lists the active panel, for example `kubectl get pods -n shop`. `M-c` or
