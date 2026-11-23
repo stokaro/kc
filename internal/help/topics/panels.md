@@ -24,7 +24,10 @@ which row is which.
 
 The first row of a folder is `/..`; `Enter` on it goes back up. The frame
 title shows the path, the bottom border the context and namespace scope
-(`prod : shop`). A list across all namespaces gets a Namespace column.
+(`prod : shop`), the filter, and on the right the position and the mode
+(`3/9 • 100% • List`). In a narrow panel the position is cut first, so the
+scope and the filter stay readable. A list across all namespaces gets a
+Namespace column.
 Rows kc considers faults are red: a pod that is Pending, not ready, or
 waiting in CrashLoopBackOff, ImagePullBackOff, ErrImagePull or
 CreateContainerConfigError, a Deployment with missing replicas, a node
