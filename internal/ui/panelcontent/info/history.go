@@ -110,18 +110,18 @@ func (s series) render(now time.Time, width int) (sparkView, bool) {
 			inWindow++
 		}
 	}
-	what := "use %"
+	what := "history, use %"
 	if s.base != "" {
-		what = "% of " + s.base
+		what = "history, % of " + s.base
 	}
 	n := min(width, maxCells)
 	switch {
 	case len(s.samples) == 0 || n <= 0:
 		return sparkView{}, false
 	case inWindow == 0:
-		return sparkView{label: fmt.Sprintf("%s: no sample in the last %s", what, shortAge(historyWindow))}, true
+		return sparkView{label: what + ": no sample yet"}, true
 	case inWindow == 1:
-		return sparkView{label: fmt.Sprintf("%s: collecting, 1 sample so far", what)}, true
+		return sparkView{label: fmt.Sprintf("%s: collecting, 1 sample", what)}, true
 	}
 	return sparkView{line: s.cells(now, n), label: s.label(now, what, inWindow)}, true
 }
@@ -198,7 +198,6 @@ func (s series) label(now time.Time, what string, inWindow int) string {
 	if age := now.Sub(s.samples[last].at); age > gapAfter {
 		parts = append(parts, fmt.Sprintf("stale, last %s ago", shortAge(age)))
 	}
-	parts = append(parts, shortAge(historyWindow)+" session")
 	return strings.Join(parts, " · ")
 }
 

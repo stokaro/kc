@@ -32,7 +32,7 @@ func TestHistoryRenderContinuous(t *testing.T) {
 	if !ok {
 		t.Fatal("no view")
 	}
-	if want := "% of allocatable · 21 samples over 5m · 15m session"; view.label != want {
+	if want := "history, % of allocatable · 21 samples over 5m"; view.label != want {
 		t.Fatalf("label = %q, want %q", view.label, want)
 	}
 	if strings.ContainsRune(view.line, gapCell) {
@@ -116,7 +116,7 @@ func TestHistoryRenderKeepsTheIntervalOnResize(t *testing.T) {
 		if n := len([]rune(view.line)); n != min(width, maxCells) {
 			t.Errorf("width %d: %d cells", width, n)
 		}
-		if view.label != "% of allocatable · 25 samples over 6m · 15m session" {
+		if view.label != "history, % of allocatable · 25 samples over 6m" {
 			t.Errorf("width %d: label %q", width, view.label)
 		}
 	}
@@ -130,12 +130,12 @@ func TestHistoryStates(t *testing.T) {
 	}
 	var one series
 	one.add(t0, 10, "limits")
-	if v, _ := one.render(t0, 60); v.line != "" || v.label != "% of limits: collecting, 1 sample so far" {
+	if v, _ := one.render(t0, 60); v.line != "" || v.label != "history, % of limits: collecting, 1 sample" {
 		t.Fatalf("one sample: %+v", v)
 	}
 	var old series
 	fill(&old, 0, time.Minute, pollInterval, 10)
-	if v, _ := old.render(t0.Add(20*time.Minute), 60); v.line != "" || v.label != "% of allocatable: no sample in the last 15m" {
+	if v, _ := old.render(t0.Add(20*time.Minute), 60); v.line != "" || v.label != "history, % of allocatable: no sample yet" {
 		t.Fatalf("only old samples: %+v", v)
 	}
 	// A new base starts the series again.
@@ -179,7 +179,7 @@ func TestWidgetHistoryFollowsItsTarget(t *testing.T) {
 	summary.UsageAt = now
 	_ = w.OnSelectionChanged(ctx, panelcontent.Selection{})
 	view := ansi.Strip(strings.Join(w.lines(60, 40), "\n"))
-	if !strings.Contains(view, "collecting, 1 sample so far") || strings.Contains(view, "samples over") {
+	if !strings.Contains(view, "collecting, 1 sample") || strings.Contains(view, "samples over") {
 		t.Fatalf("context b joined the history of a:\n%s", view)
 	}
 
