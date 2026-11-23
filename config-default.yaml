@@ -195,3 +195,24 @@ readOnly:
   # Context names or globs ("*" any run of characters, "?" one), for
   # example "*prod*". A pattern must match the whole name.
   contexts: []
+
+# Past CPU and memory usage of a workload in the Info panel mode, read from
+# a Prometheus-compatible server through the API server's service proxy
+# with the context's own credentials (get on services/proxy). Off until a
+# backend matches the context. It needs the cAdvisor container metrics and
+# the kube-state-metrics owner series (kube_pod_owner and friends). Example:
+#   backends:
+#     - contexts: ["*prod*"]
+#       namespace: monitoring
+#       service: prometheus-k8s
+#       port: "9090"       # number or name; empty: the only port
+#       scheme: http       # or https
+#       pathPrefix: ""     # e.g. /prometheus
+#       labels:            # exact matchers added to every series
+#         cluster: prod-eu
+metricsHistory:
+  # How far back the history goes (5m to 168h).
+  window: 1h
+  # Bound on one read of the history, all queries together.
+  timeout: 15s
+  backends: []

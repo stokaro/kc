@@ -49,6 +49,10 @@ type Target struct {
 	// cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or
 	// CronJob. It wins over Node.
 	Workload *models.InfoWorkload
+	// History reads the past usage of Workload from a metrics backend. Nil
+	// when no backend is configured for the context or no workload is
+	// selected.
+	History *HistorySource
 	// Open creates the Summarizer for Key.
 	Open func() Summarizer
 	// Hint replaces the summary when Open is nil (no cluster yet).
@@ -83,6 +87,7 @@ type Widget struct {
 	src     Summarizer
 	summary models.InfoSummary
 	history map[string]*history
+	hist    historyState
 }
 
 // history holds the usage samples of one scope and node.
@@ -125,7 +130,7 @@ func (w *Widget) Init(ctx context.Context) tea.Cmd {
 		return nil
 	}
 	w.refresh(ctx)
-	return w.tick()
+	return tea.Batch(w.tick(), w.historyCmd())
 }
 
 func (w *Widget) tick() tea.Cmd {
@@ -135,6 +140,13 @@ func (w *Widget) tick() tea.Cmd {
 
 // Update handles the widget's own ticks.
 func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
+	if m, ok := msg.(historyMsg); ok {
+		if m.w != w {
+			return nil, false
+		}
+		w.takeHistory(m)
+		return nil, true
+	}
 	t, ok := msg.(tickMsg)
 	if !ok || t.w != w {
 		return nil, false
@@ -143,7 +155,7 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	}
 	w.refresh(ctx)
-	return w.tick(), true
+	return tea.Batch(w.tick(), w.historyCmd()), true
 }
 
 // SetFocus starts the widget when its panel enters Info mode and stops the
@@ -171,16 +183,18 @@ func (w *Widget) closeSource() {
 		w.src.Close()
 		w.src = nil
 	}
+	w.stopHistory()
 	w.target = Target{}
 }
 
 // OnSelectionChanged follows the other panel: a new scope or node shows at
 // once instead of on the next tick.
 func (w *Widget) OnSelectionChanged(ctx context.Context, _ panelcontent.Selection) tea.Cmd {
-	if w.active {
-		w.refresh(ctx)
+	if !w.active {
+		return nil
 	}
-	return nil
+	w.refresh(ctx)
+	return w.historyCmd()
 }
 
 // refresh resolves the target, swaps the source when the scope changed and
@@ -270,11 +284,17 @@ func (w *Widget) lines(width, height int) []string {
 		}
 		add(" " + hint)
 		return clip(out, height)
-	case w.summary.Err != "":
-		add(" Overview unavailable: " + w.summary.Err)
-		return clip(out, height)
-	case w.summary.Loading:
-		add(" Loading...")
+	case w.summary.Err != "" || w.summary.Loading:
+		// The history comes from another source and still shows: a user
+		// without cluster-wide reads may read Prometheus.
+		if w.summary.Err != "" {
+			add(" Overview unavailable: " + w.summary.Err)
+		} else {
+			add(" Loading...")
+		}
+		for _, line := range w.historyLines(width) {
+			add(line)
+		}
 		return clip(out, height)
 	}
 	scope := w.target.Label
@@ -299,6 +319,9 @@ func (w *Widget) lines(width, height int) []string {
 		for _, line := range barBlock(b, h, width) {
 			add(line)
 		}
+	}
+	for _, line := range w.historyLines(width) {
+		add(line)
 	}
 	add("")
 	top := w.summary.TopTitle

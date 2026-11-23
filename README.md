@@ -310,6 +310,8 @@ The overview reads its own cluster-wide informer cache. It starts when `/overvie
 
 The Info panel mode (`C-1` / `C-2`, or Info in the `F9` panel menu) is mc's Info panel for kc: it shows bars for CPU, memory, pods and disk of the other panel's namespace scope, or of one node when the other panel's cursor is on a node, a sparkline of the measured CPU and memory usage while it is open, and the five pods that use the most memory. A label above the bars and the top-pods heading name what each covers, for example `Cluster capacity (all nodes, all namespaces)` and `Top pods by memory in namespace shop`, so an empty namespace next to busy cluster capacity is not a contradiction. Under the CPU and memory bars, each line names its base: `pods 2.3/10.4 Gi allocatable, 22%` is the usage of the pods on the nodes (PodMetrics, every namespace) against allocatable, and fills the bar; `node 6.0/14.9 Gi capacity, 40%` is the node's own usage (NodeMetrics, system daemons included) against capacity; `req 25%, lim 116% (overcommitted)` are the pods' requests and limits against allocatable. A state word follows the line it belongs to, so `overcommitted` marks the limits, not the usage. The bar and each line are colored by their own state; when another line needs attention, a mark after the percentage names it (`! lim`, `!! node`: one `!` for a warning, two for a failure), so the cause is readable without color. Without pod usage the bar shows the requests. Percentages are truncated, as `kubectl describe node` prints them. Under the top pods, `no pods in <ns>` means the scope has no pods, and `metrics unavailable: <reason>` means they are not measured. When the other panel's cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob, the bars are about that workload's pods instead: CPU and memory usage of their limits (of their requests when a pod has no limit, `near-limit` and `under-req` flag the extremes), ready pods of the desired replicas, and its pods by memory. Pods are grouped by their controller owner references (a Deployment's pods through its ReplicaSets), not by label selectors. It reads the same data as `/overview` and stops when the panel leaves the mode. The right panel starts in Info mode; `layout.rightPanelMode: list` restores two lists (see [Configuration](#configuration)). Info needs list and watch on nodes and pods in all namespaces; kc asks the API server first (SelfSubjectAccessReview), and a user without that grant sees "not permitted to list and watch nodes and pods in all namespaces" while Info starts no informers and no metrics polls.
 
+With `metricsHistory.backends` set for the context, Info also shows the past CPU and memory of the selected workload from Prometheus, under its bars: one sparkline each for the last `metricsHistory.window` (1h), the time span and step, how many pods belonged to the workload in that time, and the steps without samples. kc asks the Prometheus Service through the API server's service proxy with the context's own credentials (get on `services/proxy`), and ties pods to the workload by the kube-state-metrics owner series of each moment, so replaced pods count. `labels` adds matchers such as `cluster: prod-eu` for a server that holds several clusters. Gaps stay blank, a failed read keeps the last history with the error, and nothing is read until a backend is configured. See `docs/adr/0197-workload-history-from-prometheus.md`.
+
 ## Read-only mode
 
 In read-only mode kc does not change the cluster: `F4` (edit), `F7` (create namespace) and `F8` (delete) are grayed out, the pod filesystem offers no debug helper for a container without a shell, custom commands marked `dangerous: true` are hidden from the `F9` menu, and port forwards (`M-p`), copies into a container (`F5` from a local panel), shell and attach in a container (`M-x`, `M-t`), the node shell and the CronJob actions of the `F2` menu (Run now, Suspend/Resume) are refused. Pressing a grayed key shows "Read-only mode: ... is disabled". The panel frame shows a red `RO` before the context name.
@@ -447,6 +449,7 @@ Read-only mode refuses `M-n` before the menu opens.
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
 - `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, measured pod and node usage, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
 - `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
+- `metricsHistory.window`, `metricsHistory.timeout`, `metricsHistory.backends` – past workload usage from Prometheus in the Info panel mode (off by default; see [Cluster Overview](#cluster-overview)).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -638,6 +641,27 @@ readOnly:
   # Context names or globs ("*" any run of characters, "?" one), for
   # example "*prod*". A pattern must match the whole name.
   contexts: []
+
+# Past CPU and memory usage of a workload in the Info panel mode, read from
+# a Prometheus-compatible server through the API server's service proxy
+# with the context's own credentials (get on services/proxy). Off until a
+# backend matches the context. It needs the cAdvisor container metrics and
+# the kube-state-metrics owner series (kube_pod_owner and friends). Example:
+#   backends:
+#     - contexts: ["*prod*"]
+#       namespace: monitoring
+#       service: prometheus-k8s
+#       port: "9090"       # number or name; empty: the only port
+#       scheme: http       # or https
+#       pathPrefix: ""     # e.g. /prometheus
+#       labels:            # exact matchers added to every series
+#         cluster: prod-eu
+metricsHistory:
+  # How far back the history goes (5m to 168h).
+  window: 1h
+  # Bound on one read of the history, all queries together.
+  timeout: 15s
+  backends: []
 ```
 
 ### Panel colors
