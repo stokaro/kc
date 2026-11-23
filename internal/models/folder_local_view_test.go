@@ -99,6 +99,34 @@ func TestReadLocalTextFileMissing(t *testing.T) {
 	}
 }
 
+func TestLocalFileViewCommand(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, file, quoted string
+	}{
+		{name: "plain path", file: "notes.md", quoted: "notes.md"},
+		{name: "quoted path", file: "on call's notes.md", quoted: `on call'\''s notes.md`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeLocal(t, filepath.Join(dir, tc.file), "text\n", 0o600)
+			row, ok := localRow(t, dir, tc.file).(interface{ ViewCommand() string })
+			if !ok {
+				t.Fatalf("a local file row has no ViewCommand")
+			}
+			want := "cat " + filepath.Join(dir, tc.quoted)
+			if tc.quoted != tc.file {
+				want = "cat '" + filepath.Join(dir, tc.quoted) + "'"
+			}
+			if got := row.ViewCommand(); got != want {
+				t.Fatalf("ViewCommand() = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestCheckLocalEditable(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

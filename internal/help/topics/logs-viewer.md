@@ -23,20 +23,21 @@ Lines that hold one JSON object are shown formatted: time, level
 Other lines are shown as they are. `M-v` switches to the raw lines and
 back; the filter, the search and follow mode stay.
 
-The status line shows the stream options (`tail 200, since 1h,
-timestamps`), the view (`formatted, 12 of 40 lines`), the filter, and
-the stream state: `(connecting)`, `(reconnecting)`, `(ended)` or
-`(failed)`. `(reconnecting)` shows only while a retry is pending; a
-stream that gave up or was refused shows `(failed)`. A merged log starts
-with its coverage, for example
+The status line, at the right end of the top line, shows the stream
+options (`tail 200, since 1h, timestamps`), the view (`formatted, 12 of
+40 lines`), the filter, and the stream state: `(connecting)`,
+`(reconnecting)`, `(ended)` or `(failed)`. `(reconnecting)` shows only
+while a retry is pending; a stream that gave up or was refused shows
+`(failed)`. A merged log starts with its coverage, for example
 `incomplete: 50 streaming, 20 waiting (limit 50)`. While a search is
-applied the status line shows the search (`/timeout (2/7)`) and, after
-`|`, what the search must not hide: missing sources, a stream that is
-not streaming, and dropped lines. A narrow line cuts the search first.
+applied it shows the search (`/timeout (2/7)`) and, after `|`, what
+the search must not hide: missing sources, a stream that is not
+streaming, and dropped lines. A narrow line cuts the search first.
 
-The last line shows the `kubectl logs` command that prints the same
-stream. A merged log shows it with `-l <selector> --all-containers
---prefix`.
+The line above the key bar shows the `kubectl logs` command that
+prints the same stream. A merged log shows it with `-l <selector>
+--all-containers --prefix`. The key bar shows the keys that fit on its
+line, the most used first; this page lists them all.
 
 When a followed stream breaks while the container still runs, kc
 reconnects and goes on after the last line it showed, without repeating

@@ -7,10 +7,13 @@ highlighted by its type. Container logs have their own viewer.
 
 ## How to read it
 
-- After a search the footer shows the text and which match is in
-  view, for example `/image (2/5)`.
-- The last line shows the kubectl command that prints the same
-  content, with a copy button at its right.
+- After a search the right end of the top line shows the text and
+  which match is in view, for example `/image (2/5)`.
+- The line above the key bar shows the kubectl command that prints the
+  same content, with a copy button at its right. For a local file it
+  is `cat` with the file's path.
+- The key bar at the bottom shows the keys that fit on its line; this
+  page lists them all.
 - Binary content is shown as a hex dump of the first 4 KiB, with the
   size, the detected content type and the SHA-256.
 
@@ -45,13 +48,14 @@ with the error.
 - The viewer is read-only; `F4` hands the object or file to an editor.
 - A local file over 2 MiB or a container file over 512 KiB opens in
   pages, as in mc's viewer: kc reads 256 KiB blocks around the visible
-  lines and keeps at most 16 in memory. The status line says so, for
-  example `paged, 1.2 GiB, highlighting off`. A block on its way shows
-  as `~ reading...`.
+  lines and keeps at most 16 in memory. The top line says so at its
+  right, with the position, for example
+  `paged, 1.2 GiB, highlighting off · line 120/4000`. A block on its
+  way shows as `~ reading...`.
 - In a paged file `Home`, `End`, `PgUp` and `PgDn` work on the whole
   file. After `End` the position shows as a share of the bytes (`~97%`)
   until the lines are counted (local files only). `F7` searches from the
-  current position with its progress in the footer; `Esc` cancels it.
+  current position with its progress on the top line; `Esc` cancels it.
 - A paged file has no syntax colors and no mouse selection, and `M-a`
   does not copy it; save it with `F5`.
 - To save the content to a file, press `F5` on the row in the panel.
