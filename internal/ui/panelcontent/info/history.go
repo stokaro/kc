@@ -37,12 +37,19 @@ type sample struct {
 }
 
 // series holds the samples of one bar, oldest first, all of one base.
+// last is the newest measurement time it took, so a reread of the same
+// measurement adds nothing.
 type series struct {
 	base    string
+	last    time.Time
 	samples []sample
 }
 
 func (s *series) add(at time.Time, v float64, base string) {
+	if !at.After(s.last) {
+		return
+	}
+	s.last = at
 	if base != s.base {
 		// Percentages of another base do not compare; start again.
 		s.base, s.samples = base, nil
@@ -60,19 +67,21 @@ func (s *series) add(at time.Time, v float64, base string) {
 	s.samples = s.samples[cut:]
 }
 
-// history holds the usage samples of one scope, node or workload.
+// history holds the usage samples of one scope, node or workload. CPU
+// and memory are recorded apart: a resource without a percentage leaves
+// a gap in its own series only.
 type history struct {
-	last     time.Time
 	cpu, mem series
 }
 
-func (h *history) add(at time.Time, cpu, mem usageSample) {
-	if !at.After(h.last) {
-		return
+// add records the resources that were measured; nil is one that was not.
+func (h *history) add(at time.Time, cpu, mem *usageSample) {
+	if cpu != nil {
+		h.cpu.add(at, cpu.percent, cpu.base)
 	}
-	h.last = at
-	h.cpu.add(at, cpu.percent, cpu.base)
-	h.mem.add(at, mem.percent, mem.base)
+	if mem != nil {
+		h.mem.add(at, mem.percent, mem.base)
+	}
 }
 
 // usageSample is one bar's measured percentage and its base.

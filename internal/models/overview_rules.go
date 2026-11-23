@@ -108,7 +108,10 @@ type overviewReport struct {
 	// usageWindow and usageReadAt go with usageAt; see overviewMeasured.
 	usageWindow time.Duration
 	usageReadAt time.Time
-	findings    []overviewFinding
+	// podsTiming dates the pod usage of the scope, which the workload
+	// summaries are made of; see overviewMeasured.
+	podsTiming podsTiming
+	findings   []overviewFinding
 	// nodes, pods and workloads feed the Info panel mode.
 	nodes     []overviewNodeSummary
 	pods      []overviewPodUsage
@@ -147,7 +150,7 @@ func computeOverviewWith(in *overviewInput, cfg appconfig.OverviewConfig, now ti
 		m = &overviewMeasured{nodesReason: "not measured", podsReason: "not measured", clusterPodsReason: "not measured", statsReason: "not measured"}
 	}
 	rc := ruleContext{in: in, cfg: cfg, now: now, m: m, life: life}
-	report := &overviewReport{at: now, usageAt: m.usageAt, usageWindow: m.usageWindow, usageReadAt: m.usageReadAt}
+	report := &overviewReport{at: now, usageAt: m.usageAt, usageWindow: m.usageWindow, usageReadAt: m.usageReadAt, podsTiming: m.podsTiming}
 	for _, rule := range overviewRules {
 		report.findings = append(report.findings, rule(&rc))
 	}

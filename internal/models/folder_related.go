@@ -241,6 +241,9 @@ func (f *RelatedObjectsFolder) KubectlCommand() string {
 		if hasGitOpsDiagnosis(f.gvr) {
 			return kubectlCommand(f.Deps, "get", kubectlResource(f.gvr), f.name, "-n", f.namespace, "-o", "yaml") + "  # and its source and dependencies"
 		}
+		if hasRouteDiagnosis(f.gvr) {
+			return kubectlCommand(f.Deps, "describe", kubectlResource(f.gvr), f.name, "-n", f.namespace) + "  # and its backend services"
+		}
 		if f.gvr != serviceGVR {
 			return kubectlCommand(f.Deps, "describe", kubectlResource(f.gvr), f.name, "-n", f.namespace) + "  # and its pods, events and claims"
 		}
