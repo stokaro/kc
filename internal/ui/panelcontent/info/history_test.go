@@ -101,23 +101,53 @@ func TestHistoryRenderKeepsTheIntervalOnResize(t *testing.T) {
 	var s series
 	fill(&s, 0, 6*time.Minute, pollInterval, 40)
 	now := t0.Add(6 * time.Minute)
-	collected := func(width int) float64 {
-		view, _ := s.render(now, width)
-		cells := []rune(view.line)
-		return float64(len([]rune(strings.TrimLeft(view.line, string(pendingCell))))) / float64(len(cells))
-	}
-	// Six of fifteen minutes, at any width; wider than one cell per poll
-	// the line stays at maxCells.
+	// Six of fifteen minutes, at any width: the line starts at the oldest
+	// sample, its cells keep historyWindow/width each (one per poll at
+	// most), and the span says how much of the window it covers.
 	for _, width := range []int{15, 30, 60, 90, 200} {
-		if got := collected(width); got < 0.36 || got > 0.48 {
-			t.Errorf("width %d: %0.2f of the cells hold samples, want about 0.4", width, got)
-		}
 		view, _ := s.render(now, width)
-		if n := len([]rune(view.line)); n != min(width, maxCells) {
-			t.Errorf("width %d: %d cells", width, n)
+		n := len([]rune(view.line))
+		if want := 0.4 * float64(min(width, maxCells)); float64(n) < want-1.5 || float64(n) > want+1.5 {
+			t.Errorf("width %d: %d cells, want about %.0f", width, n, want)
+		}
+		if strings.ContainsRune(view.line, pendingCell) {
+			t.Errorf("width %d: blank cells before the first sample: %q", width, view.line)
+		}
+		if view.span < 5*time.Minute || view.span > 7*time.Minute {
+			t.Errorf("width %d: span %s, want about 6m", width, view.span)
 		}
 		if view.label != "history, % of allocatable · 25 samples over 6m" {
 			t.Errorf("width %d: label %q", width, view.label)
+		}
+	}
+}
+
+func TestHistoryRenderScalesToThePeak(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		peak    float64
+		top     float64
+		newCell rune
+	}{
+		{peak: 4, top: 10, newCell: '▄'},
+		{peak: 6, top: 10, newCell: '▅'},
+		{peak: 20, top: 25, newCell: '▇'},
+		{peak: 30, top: 50, newCell: '▅'},
+		{peak: 80, top: 100, newCell: '▇'},
+	} {
+		var s series
+		fill(&s, 0, time.Minute, pollInterval, 0)
+		s.add(t0.Add(time.Minute+pollInterval), tc.peak, "allocatable")
+		view, _ := s.render(t0.Add(time.Minute+pollInterval), 60)
+		if view.top != tc.top {
+			t.Errorf("peak %v: top %v, want %v", tc.peak, view.top, tc.top)
+		}
+		line := []rune(view.line)
+		if got := line[len(line)-1]; got != tc.newCell {
+			t.Errorf("peak %v: newest cell %q, want %q in %q", tc.peak, got, tc.newCell, view.line)
+		}
+		if line[0] != '▁' {
+			t.Errorf("peak %v: oldest cell %q, want the floor", tc.peak, line[0])
 		}
 	}
 }
