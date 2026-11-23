@@ -112,6 +112,34 @@ portForward:
 #       wide: true
 columns: {}
 
+# Health of custom resource types, keyed by group/version/resource like
+# columns. Rules are tried in order; the first that matches sets the row
+# health (ok, succeeded, notReady or failed), and an object no rule matches
+# stays unknown. A rule matches a status condition (condition, with status
+# True by default) or a field (jsonPath, value). A status written for an
+# older generation (status.observedGeneration, or the observedGeneration of
+# the matched condition, below metadata.generation) turns ok into notReady.
+# Types with a built-in rule (pods, nodes, claims, volumes, workloads)
+# ignore their entry. Example:
+#
+# health:
+#   kustomize.toolkit.fluxcd.io/v1/kustomizations:
+#     - condition: Stalled
+#       health: failed
+#     - condition: Ready
+#       health: ok
+#     - condition: Ready
+#       status: "False"
+#       health: notReady
+#   argoproj.io/v1alpha1/applications:
+#     - jsonPath: .status.health.status
+#       value: Healthy
+#       health: ok
+#     - jsonPath: .status.health.status
+#       value: Degraded
+#       health: failed
+health: {}
+
 # Object timelines (/timeline inside an object): kc records the revisions
 # it observes from the shared cache while a recording runs.
 timeline:

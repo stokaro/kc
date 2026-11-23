@@ -44,18 +44,11 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 	}
 	if op := a.panelByIndex(other); op != nil {
 		if item, ok := op.SelectedNavItem(ctx); ok {
-			if obj, ok := item.(models.ObjectItem); ok {
-				switch gvr := obj.GVR(); {
-				case gvr == infoNodesGVR:
-					t.Node = obj.Name()
-				case models.IsInfoWorkload(gvr) && obj.Namespace() != "":
-					t.Workload = &models.InfoWorkload{GVR: gvr, Namespace: obj.Namespace(), Name: obj.Name()}
-				}
-			}
+			narrowInfoTarget(&t, item)
 		}
 	}
 	cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
-	if t.Workload != nil && a.cfg != nil {
+	if t.Workload != nil && t.Finding == nil && a.cfg != nil {
 		t.PromHistory = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload)
 	}
 	t.Open = func() infowidget.Summarizer {
@@ -95,5 +88,26 @@ func infoHistory(root context.Context, restConfig func() *rest.Config, key kcclu
 				return c.Fetch(ctx, target, promhistory.Options{Window: window})
 			}, cancel
 		},
+	}
+}
+
+// narrowInfoTarget points t at the row under the other panel's cursor: an
+// overview finding, a node or a workload. A finding describes itself from
+// the overview's own report, the one its row shows (ADR 0173).
+func narrowInfoTarget(t *infowidget.Target, item models.Item) {
+	if fp, ok := item.(models.FindingPreviewer); ok {
+		if p, ok := fp.FindingPreview(); ok {
+			t.Finding = &p
+		}
+	}
+	obj, ok := item.(models.ObjectItem)
+	if !ok {
+		return
+	}
+	switch gvr := obj.GVR(); {
+	case gvr == infoNodesGVR:
+		t.Node = obj.Name()
+	case models.IsInfoWorkload(gvr) && obj.Namespace() != "":
+		t.Workload = &models.InfoWorkload{GVR: gvr, Namespace: obj.Namespace(), Name: obj.Name()}
 	}
 }

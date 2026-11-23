@@ -28,13 +28,14 @@ const (
 	restartWindow = time.Hour
 )
 
-// workloadDiagnosisGVRs are the types with a workload /diagnosis.
+// workloadDiagnosisGVRs are the built-in types with a workload
+// /diagnosis. Types with a health config entry have one too.
 var workloadDiagnosisGVRs = []schema.GroupVersionResource{
 	podGVR, relDeploymentsGVR, relReplicaSetsGVR, relStatefulSetsGVR, relDaemonSetsGVR, relJobsGVR,
 }
 
 func hasWorkloadDiagnosis(gvr schema.GroupVersionResource) bool {
-	return slices.Contains(workloadDiagnosisGVRs, gvr)
+	return slices.Contains(workloadDiagnosisGVRs, gvr) || healthAdapterFor(gvr) != nil
 }
 
 var (
@@ -64,6 +65,17 @@ type workloadInput struct {
 	EventsErr      error
 	Claims         []corev1.PersistentVolumeClaim // of the namespace
 	ClaimsErr      error
+
+	health healthVerdict // of a type with a health config entry
+}
+
+// adapter returns the health config of a type kc has no built-in
+// diagnosis for, or nil.
+func (in *workloadInput) adapter() *healthAdapter {
+	if slices.Contains(workloadDiagnosisGVRs, in.GVR) {
+		return nil
+	}
+	return healthAdapterFor(in.GVR)
 }
 
 // diagnoseWorkload explains what the workload's status, its pods, their
@@ -80,6 +92,11 @@ func diagnoseWorkload(in workloadInput) (diagReport, error) {
 	d.Summary = append(d.Summary,
 		fmt.Sprintf("object: %s/%s, uid %s", kubectlResource(in.GVR), name, uid),
 		"read at: "+in.Now.UTC().Format(time.RFC3339))
+	if a := in.adapter(); a != nil {
+		in.health = a.evaluate(in.Object)
+		d.Summary = append(d.Summary, in.health.summary(a.key))
+		d.Note = healthDiagnosisNote + " " + workloadDiagnosisNote
+	}
 	status, ownerUIDs, err := workloadStatusFindings(in)
 	if err != nil {
 		return d, err
@@ -161,6 +178,10 @@ func workloadStatusFindings(in workloadInput) ([]diagFinding, map[types.UID]bool
 		var job batchv1.Job
 		if err = fromUnstructured(in.Object, &job); err == nil {
 			out = in.jobFindings(&job)
+		}
+	default:
+		if a := in.adapter(); a != nil {
+			out = in.healthFindings(a, in.health)
 		}
 	}
 	return out, owners, err

@@ -47,9 +47,13 @@ type Target struct {
 	// CronJob. It wins over Node.
 	Workload *models.InfoWorkload
 	// PromHistory reads the past usage of Workload from a metrics backend. Nil
-	// when no backend is configured for the context or no workload is
-	// selected.
+	// when no backend is configured for the context, no workload is
+	// selected, or the row is a finding (Finding wins).
 	PromHistory *PromHistorySource
+	// Finding replaces the summary when the other panel's cursor is on an
+	// overview finding. Resolve builds it from the overview's latest report,
+	// so it is never older than the row it describes.
+	Finding *models.FindingPreview
 	// Open creates the Summarizer for Key.
 	Open func() Summarizer
 	// Hint replaces the summary when Open is nil (no cluster yet).
@@ -248,6 +252,9 @@ func (w *Widget) View(_ context.Context, frame panelcontent.Frame) tea.View {
 func (w *Widget) lines(width, height int) []string {
 	if width <= 0 || height <= 0 {
 		return nil
+	}
+	if p := w.target.Finding; p != nil {
+		return clip(findingLines(*p, width), height)
 	}
 	var out []string
 	add := func(s string) { out = append(out, ansi.Truncate(s, width, "")) }

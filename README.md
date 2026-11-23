@@ -320,7 +320,7 @@ Each row has a value and a state, colored like rows of object lists: normal is o
 
 The overview reads its own cluster-wide informer cache. It starts when `/overview` is opened, recomputes at most once a second after a change, stops reading once nothing has shown it for `kubernetes.clusters.ttl`, and the cache is released one TTL later. While it is open it lists NodeMetrics and PodMetrics every 15 seconds and reads `/api/v1/nodes/<node>/proxy/stats/summary` once a minute, at most five nodes at a time; that needs get on `nodes/proxy`, is skipped on clusters with more than `overview.statsMaxNodes` nodes, and stops after a round in which every node answers forbidden. A metrics list that is forbidden is asked again after five minutes instead of every 15 seconds. Thresholds are set under `overview:` in the configuration.
 
-The Info panel mode (`C-1` / `C-2`, or Info in the `F9` panel menu) is mc's Info panel for kc: it shows bars for CPU, memory, pods and disk of the other panel's namespace scope, or of one node when the other panel's cursor is on a node, a sparkline of the measured CPU and memory usage while it is open, and the five pods that use the most memory. A label above the bars and the top-pods heading name what each covers, for example `Cluster capacity (all nodes, all namespaces)` and `Top pods by memory in namespace shop`, so an empty namespace next to busy cluster capacity is not a contradiction. Under the CPU and memory bars, each line names its base: `pods 2.3/10.4 Gi allocatable, 22%` is the usage of the pods on the nodes (PodMetrics, every namespace) against allocatable, and fills the bar; `node 6.0/14.9 Gi capacity, 40%` is the node's own usage (NodeMetrics, system daemons included) against capacity; `req 25%, lim 116% (overcommitted)` are the pods' requests and limits against allocatable. A state word follows the line it belongs to, so `overcommitted` marks the limits, not the usage. The bar and each line are colored by their own state; when another line needs attention, a mark after the percentage names it (`! lim`, `!! node`: one `!` for a warning, two for a failure), so the cause is readable without color. Without pod usage the bar shows the requests. Percentages are truncated, as `kubectl describe node` prints them. The sparkline under the CPU and memory bars covers the last 15 minutes at any pane width, one cell per 15-second metrics poll at most (a narrower pane shows the peak of several polls in one cell), with the newest sample at the right. The line under it names what it shows and how much was collected, for example `% of allocatable · 21 samples over 5m · 15m session`; with one sample it says `collecting`. Cells before the first sample stay blank, and a stretch without measurements (a missed poll, metrics unavailable) shows as `·` and is counted as a gap instead of being joined to the next sample. When no sample arrived for a while the line adds `stale, last 3m ago`. Each scope, node and workload has its own history, and a history restarts when the base of the percentage changes (a workload gets a limit). kc records samples only while the panel is in Info mode and keeps them in memory for this session; it is not a stored monitoring history. Under the top pods, `no pods in <ns>` means the scope has no pods, and `metrics unavailable: <reason>` means they are not measured. When the other panel's cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob, the bars are about that workload's pods instead: CPU and memory usage of their limits (of their requests when a pod has no limit, `near-limit` and `under-req` flag the extremes), ready pods of the desired replicas, and its pods by memory. Pods are grouped by their controller owner references (a Deployment's pods through its ReplicaSets), not by label selectors. It reads the same data as `/overview` and stops when the panel leaves the mode. The right panel starts in Info mode; `layout.rightPanelMode: list` restores two lists (see [Configuration](#configuration)). Info needs list and watch on nodes and pods in all namespaces; kc asks the API server first (SelfSubjectAccessReview), and a user without that grant sees "not permitted to list and watch nodes and pods in all namespaces" while Info starts no informers and no metrics polls.
+The Info panel mode (`C-1` / `C-2`, or Info in the `F9` panel menu) is mc's Info panel for kc: it shows bars for CPU, memory, pods and disk of the other panel's namespace scope, or of one node when the other panel's cursor is on a node, a sparkline of the measured CPU and memory usage while it is open, and the five pods that use the most memory. A label above the bars and the top-pods heading name what each covers, for example `Cluster capacity (all nodes, all namespaces)` and `Top pods by memory in namespace shop`, so an empty namespace next to busy cluster capacity is not a contradiction. Under the CPU and memory bars, each line names its base: `pods 2.3/10.4 Gi allocatable, 22%` is the usage of the pods on the nodes (PodMetrics, every namespace) against allocatable, and fills the bar; `node 6.0/14.9 Gi capacity, 40%` is the node's own usage (NodeMetrics, system daemons included) against capacity; `req 25%, lim 116% (overcommitted)` are the pods' requests and limits against allocatable. A state word follows the line it belongs to, so `overcommitted` marks the limits, not the usage. The bar and each line are colored by their own state; when another line needs attention, a mark after the percentage names it (`! lim`, `!! node`: one `!` for a warning, two for a failure), so the cause is readable without color. Without pod usage the bar shows the requests. Percentages are truncated, as `kubectl describe node` prints them. The sparkline under the CPU and memory bars covers the last 15 minutes at any pane width, one cell per 15-second metrics poll at most (a narrower pane shows the peak of several polls in one cell), with the newest sample at the right. The line under it names what it shows and how much was collected, for example `% of allocatable · 21 samples over 5m · 15m session`; with one sample it says `collecting`. Cells before the first sample stay blank, and a stretch without measurements (a missed poll, metrics unavailable) shows as `·` and is counted as a gap instead of being joined to the next sample. When no sample arrived for a while the line adds `stale, last 3m ago`. Each scope, node and workload has its own history, and a history restarts when the base of the percentage changes (a workload gets a limit). kc records samples only while the panel is in Info mode and keeps them in memory for this session; it is not a stored monitoring history. Under the top pods, `no pods in <ns>` means the scope has no pods, and `metrics unavailable: <reason>` means they are not measured. When the other panel's cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob, the bars are about that workload's pods instead: CPU and memory usage of their limits (of their requests when a pod has no limit, `near-limit` and `under-req` flag the extremes), ready pods of the desired replicas, and its pods by memory. Pods are grouped by their controller owner references (a Deployment's pods through its ReplicaSets), not by label selectors. When the other panel's cursor is on an `/overview` finding, Info describes that finding instead: its scope, value and state, the first lines of how it is computed, and the first objects behind it in the order `Enter` lists them, with a count. A finding with no objects says what was checked, and one with nothing to check (n/a) says why. This works in `/attention` and the quiet checks folders too. A finding that cannot be computed names the missing source and read-only commands that show it, such as `kubectl auth can-i list resourcequotas -n shop` when the read is forbidden. The keys act in the list: `Enter` lists the objects, `F3` shows the calculation, `M-c` copies the input commands. Moving back to an ordinary list brings the bars back. It reads the same data as `/overview` and stops when the panel leaves the mode. The right panel starts in Info mode; `layout.rightPanelMode: list` restores two lists (see [Configuration](#configuration)). Info needs list and watch on nodes and pods in all namespaces; kc asks the API server first (SelfSubjectAccessReview), and a user without that grant sees "not permitted to list and watch nodes and pods in all namespaces" while Info starts no informers and no metrics polls.
 
 With `metricsHistory.backends` set for the context, Info also shows the past CPU and memory of the selected workload from Prometheus, under its bars: one sparkline each for the last `metricsHistory.window` (1h), the time span and step, how many pods belonged to the workload in that time, and the steps without samples. kc asks the Prometheus Service through the API server's service proxy with the context's own credentials (get on `services/proxy`), and ties pods to the workload by the kube-state-metrics owner series of each moment, so replaced pods count. `labels` adds matchers such as `cluster: prod-eu` for a server that holds several clusters. Gaps stay blank, a failed read keeps the last history with the error, and nothing is read until a backend is configured. See `docs/adr/0197-workload-history-from-prometheus.md`.
 
@@ -481,6 +481,7 @@ Read-only mode refuses `M-n` before the menu opens.
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
 - `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
+- `health` – row health of custom resource types from their status, see [Custom Resource Health](#custom-resource-health). Empty by default.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation, and how long a cluster cache stays running after the last open folder that uses it is closed.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 - `nodeShell.enabled`, `nodeShell.contexts`, `nodeShell.image`, `nodeShell.namespace`, `nodeShell.maxDuration` – the node shell (off by default); see below.
@@ -515,6 +516,59 @@ columns:
 - `hide: true` hides the server column of that name (case does not matter). `name: "*"` with `hide: true` hides every server column except Name, so the list shows only your columns. Name is never hidden.
 - A bad entry is reported once on the command line when the first list opens; its column stays empty.
 - When added columns are shown, the command line shows the matching `kubectl get ... -o custom-columns=...` command.
+
+### Custom Resource Health
+
+kc colors the rows of pods, nodes, claims, volumes and workloads by their health, and the faults filter (`C-z`) keeps the unhealthy ones. The `health` section does the same for your own resource types, from their status:
+
+```yaml
+health:
+  # Ready, Reconciling and Stalled conditions (Flux, Cluster API, kstatus).
+  kustomize.toolkit.fluxcd.io/v1/kustomizations:
+    - condition: Stalled
+      health: failed
+    - condition: Reconciling
+      health: notReady
+    - condition: Ready
+      health: ok
+    - condition: Ready
+      status: "False"
+      health: notReady
+  # Synced and Ready conditions (Crossplane).
+  database.example.org/v1alpha1/postgresinstances:
+    - condition: Synced
+      status: "False"
+      health: failed
+    - condition: Ready
+      health: ok
+  # A status field instead of conditions (Argo CD).
+  argoproj.io/v1alpha1/applications:
+    - jsonPath: .status.health.status
+      value: Healthy
+      health: ok
+    - jsonPath: .status.health.status
+      value: Progressing
+      health: notReady
+    - jsonPath: .status.health.status
+      value: Degraded
+      health: failed
+  # An operator that runs pods itself (CloudNativePG).
+  postgresql.cnpg.io/v1/clusters:
+    - condition: Ready
+      health: ok
+    - condition: Ready
+      status: "False"
+      health: notReady
+```
+
+- Keys are `group/version/resource`, as for `columns`. A key for one version does not apply to another.
+- Rules are tried in order; the first that matches sets the health: `ok`, `succeeded` (finished work, like a completed Job), `notReady` (yellow, a fault) or `failed` (red, a fault). An object no rule matches stays unknown and keeps its color.
+- A `condition` rule matches the entry of `status.conditions` with that type (case-sensitive, as in Kubernetes) and `status` (`True` by default, or `False` or `Unknown`).
+- A `jsonPath` rule matches when the field, printed as text, equals `value`. It takes the expressions of `kubectl get -o custom-columns`; a missing field matches nothing. Quote values YAML would read as a boolean (`"yes"`, `"on"`).
+- A status written for an older generation is not current: when `status.observedGeneration`, or the `observedGeneration` of the matched condition, is below `metadata.generation`, an `ok` or `succeeded` row shows as `notReady`.
+- A field of the wrong type (conditions that are not a list, an object where the rule wants a value) makes the health unknown, and `/diagnosis` names the problem.
+- Rows, the faults filter and `/diagnosis` read the same result. Inside a configured namespaced object, `/diagnosis` shows the health, the rule and the condition's reason and message, a status that lags the spec, the object's warning events, and the problems of the pods whose controller owner is the object (by UID, never by name). Pods of a StatefulSet or Deployment the object creates are not followed.
+- kc checks the section when it starts and reports problems on the command line: a bad key, an unknown health, a bad JSONPath, a rule that sets both or neither of `condition` and `jsonPath`, and a rule that matches what an earlier rule already matches. An entry with a problem is not used at all. Types with a built-in rule (pods, nodes, claims, volumes, Deployments, StatefulSets, ReplicaSets, DaemonSets, Jobs) ignore their entry; the built-in rule wins.
 
 `C-s` ("Save as defaults") in an option dialog reads the file again and writes only the settings that dialog shows, so custom commands and keys kc does not know stay as they are. The file is replaced atomically and keeps its permissions; a symbolic link is written through to its target. The command line says whether the settings were saved or apply to this session only.
 
@@ -637,6 +691,34 @@ portForward:
 # Columns per resource type, keyed by group/version/resource (v1/pods for
 # the core group). See "Custom Columns" above.
 columns: {}
+
+# Health of custom resource types, keyed by group/version/resource like
+# columns. Rules are tried in order; the first that matches sets the row
+# health (ok, succeeded, notReady or failed), and an object no rule matches
+# stays unknown. A rule matches a status condition (condition, with status
+# True by default) or a field (jsonPath, value). A status written for an
+# older generation (status.observedGeneration, or the observedGeneration of
+# the matched condition, below metadata.generation) turns ok into notReady.
+# Types with a built-in rule (pods, nodes, claims, volumes, workloads)
+# ignore their entry. Example:
+#
+# health:
+#   kustomize.toolkit.fluxcd.io/v1/kustomizations:
+#     - condition: Stalled
+#       health: failed
+#     - condition: Ready
+#       health: ok
+#     - condition: Ready
+#       status: "False"
+#       health: notReady
+#   argoproj.io/v1alpha1/applications:
+#     - jsonPath: .status.health.status
+#       value: Healthy
+#       health: ok
+#     - jsonPath: .status.health.status
+#       value: Degraded
+#       health: failed
+health: {}
 
 # Object timelines (/timeline inside an object): kc records the revisions
 # it observes from the shared cache while a recording runs.

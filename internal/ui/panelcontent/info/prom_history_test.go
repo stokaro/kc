@@ -233,3 +233,19 @@ func TestPromHistoryShownWhenOverviewRefused(t *testing.T) {
 		t.Errorf("view:\n%s", got)
 	}
 }
+
+// A finding row shows its preview instead of the bars, and the Prometheus
+// block belongs to the workload view only.
+func TestPromHistoryNotOnFindingRows(t *testing.T) {
+	t.Parallel()
+	h, _ := promHarness(t)
+	runPromRead(t, h.w, h.w.OnSelectionChanged(t.Context(), panelcontent.Selection{}))
+	if got := promScreen(h.w); !strings.Contains(got, "Prometheus history") {
+		t.Fatalf("workload view lacks the block:\n%s", got)
+	}
+	h.target.Finding = &models.FindingPreview{ID: "health/pods-pending", Title: "/pods pending"}
+	_ = h.w.OnSelectionChanged(t.Context(), panelcontent.Selection{})
+	if got := promScreen(h.w); !strings.Contains(got, "/pods pending") || strings.Contains(got, "Prometheus history") {
+		t.Errorf("finding view:\n%s", got)
+	}
+}
