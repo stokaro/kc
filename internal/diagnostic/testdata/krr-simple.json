@@ -1,0 +1,128 @@
+{
+  "scans": [
+    {
+      "object": {
+        "cluster": "kind-dev",
+        "name": "web",
+        "container": "app",
+        "pods": [
+          {"name": "web-7d4b9c8f5-abcde", "deleted": false},
+          {"name": "web-7d4b9c8f5-fghij", "deleted": false},
+          {"name": "web-6c5d8b7a4-old01", "deleted": true}
+        ],
+        "hpa": null,
+        "namespace": "prod",
+        "kind": "Deployment",
+        "allocations": {
+          "requests": {"cpu": 0.1, "memory": 134217728.0},
+          "limits": {"cpu": null, "memory": 268435456.0},
+          "info": {}
+        },
+        "warnings": [],
+        "labels": {"app": "web"},
+        "annotations": {}
+      },
+      "recommended": {
+        "requests": {
+          "cpu": {"value": 0.25, "severity": "WARNING"},
+          "memory": {"value": 104857600.0, "severity": "OK"}
+        },
+        "limits": {
+          "cpu": {"value": null, "severity": "GOOD"},
+          "memory": {"value": 104857600.0, "severity": "OK"}
+        },
+        "info": {"cpu": null, "memory": null}
+      },
+      "severity": "WARNING"
+    },
+    {
+      "object": {
+        "cluster": "kind-dev",
+        "name": "web",
+        "container": "sidecar",
+        "pods": [
+          {"name": "web-7d4b9c8f5-abcde", "deleted": false},
+          {"name": "web-7d4b9c8f5-fghij", "deleted": false}
+        ],
+        "hpa": {
+          "min_replicas": 2,
+          "max_replicas": 5,
+          "current_replicas": 2,
+          "desired_replicas": 2,
+          "target_cpu_utilization_percentage": 80.0,
+          "target_memory_utilization_percentage": null
+        },
+        "namespace": "prod",
+        "kind": "Deployment",
+        "allocations": {
+          "requests": {"cpu": 1.5, "memory": 2147483648.0},
+          "limits": {"cpu": 2.0, "memory": 2147483648.0},
+          "info": {}
+        },
+        "warnings": [],
+        "labels": {},
+        "annotations": {}
+      },
+      "recommended": {
+        "requests": {
+          "cpu": {"value": "?", "severity": "UNKNOWN"},
+          "memory": {"value": "?", "severity": "UNKNOWN"}
+        },
+        "limits": {
+          "cpu": {"value": "?", "severity": "UNKNOWN"},
+          "memory": {"value": "?", "severity": "UNKNOWN"}
+        },
+        "info": {"cpu": "Not enough data", "memory": "Not enough data"}
+      },
+      "severity": "UNKNOWN"
+    },
+    {
+      "object": {
+        "cluster": "kind-dev",
+        "name": "db",
+        "container": "postgres",
+        "pods": [{"name": "db-0", "deleted": false}],
+        "hpa": null,
+        "namespace": "prod",
+        "kind": "StatefulSet",
+        "allocations": {
+          "requests": {"cpu": 0.5, "memory": 1073741824.0},
+          "limits": {"cpu": 1.0, "memory": 1073741824.0},
+          "info": {}
+        },
+        "warnings": [],
+        "labels": {},
+        "annotations": {}
+      },
+      "recommended": {
+        "requests": {
+          "cpu": {"value": 0.2, "severity": "OK"},
+          "memory": {"value": 805306368.0, "severity": "OK"}
+        },
+        "limits": {
+          "cpu": {"value": null, "severity": "OK"},
+          "memory": {"value": 805306368.0, "severity": "OK"}
+        },
+        "info": {}
+      },
+      "severity": "OK"
+    }
+  ],
+  "score": 76,
+  "resources": ["cpu", "memory"],
+  "description": "CPU request: 95.0% percentile, limit: unset\nMemory request: max + 15.0%, limit: max + 15.0%\nHistory: 336.0 hours\nStep: 1.25 minutes",
+  "strategy": {
+    "name": "simple",
+    "settings": {
+      "history_duration": 336.0,
+      "timeframe_duration": 1.25,
+      "cpu_percentile": 95.0,
+      "memory_buffer_percentage": 15.0,
+      "points_required": 100,
+      "allow_hpa": false,
+      "use_oomkill_data": false
+    }
+  },
+  "errors": [],
+  "clusterSummary": {}
+}

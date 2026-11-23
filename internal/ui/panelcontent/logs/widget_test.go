@@ -67,6 +67,8 @@ type fakeSource struct {
 	opened   []models.LogsSpec
 	requests []logswidget.Request
 	canceled map[string]bool
+	// wrap, when set, wraps every body, for example to report coverage.
+	wrap func(*chanBody) io.ReadCloser
 }
 
 func newFakeSource(bodies map[string]*chanBody) *fakeSource {
@@ -84,10 +86,14 @@ func (s *fakeSource) Source(req logswidget.Request) logswidget.Open {
 		s.requests = append(s.requests, req)
 		s.opened = append(s.opened, spec)
 		pod := spec.Pod
+		var body io.ReadCloser = s.bodies[pod]
+		if s.wrap != nil {
+			body = s.wrap(s.bodies[pod])
+		}
 		return logswidget.Stream{
 			Spec:       spec,
 			Containers: []string{"app", "sidecar"},
-			Body:       s.bodies[pod],
+			Body:       body,
 			Cancel: func() {
 				s.mu.Lock()
 				defer s.mu.Unlock()
@@ -314,6 +320,39 @@ func TestEndedStreamIsMarked(t *testing.T) {
 	// Choosing the mode again restarts an ended stream for the same pod.
 	if cmd := w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: podItem("ns", "pod-a"), Force: true}); cmd == nil {
 		t.Fatal("a forced selection should restart an ended stream")
+	}
+}
+
+// coveredBody is a merged stream body that reports its coverage.
+type coveredBody struct {
+	*chanBody
+	coverage string
+}
+
+func (b coveredBody) Coverage() string { return b.coverage }
+
+// TestMergedStreamShowsCoverage checks that the header of a merged stream
+// names its coverage, also next to another state.
+func TestMergedStreamShowsCoverage(t *testing.T) {
+	t.Parallel()
+	src := newFakeSource(map[string]*chanBody{"pod-a": newChanBody("a1")})
+	src.wrap = func(b *chanBody) io.ReadCloser {
+		return coveredBody{chanBody: b, coverage: "incomplete: 1 streaming, 1 failed"}
+	}
+	w := newWidget(t, src)
+	read := open(t, w, podItem("ns", "pod-a"))
+	update(t, w, run(t, read)) // a1
+	info := w.FrameInfo(t.Context(), panelcontent.FrameInfoRequest{Width: 80})
+	if info.HeaderStatus != "incomplete: 1 streaming, 1 failed" {
+		t.Fatalf("HeaderStatus = %q, want the coverage", info.HeaderStatus)
+	}
+
+	plain := newFakeSource(map[string]*chanBody{"pod-a": newChanBody("a1")})
+	w = newWidget(t, plain)
+	read = open(t, w, podItem("ns", "pod-a"))
+	update(t, w, run(t, read))
+	if info := w.FrameInfo(t.Context(), panelcontent.FrameInfoRequest{Width: 80}); info.HeaderStatus != "" {
+		t.Fatalf("HeaderStatus = %q for a single container stream, want none", info.HeaderStatus)
 	}
 }
 

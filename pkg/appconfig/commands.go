@@ -297,7 +297,16 @@ func ValidateCommand(cmd CommandConfig) error {
 		}
 		names = append(names, p.Name)
 	}
-	for _, tmpl := range []struct{ field, text string }{{"command", cmd.Command}, {"confirm", cmd.Confirm.Message}} {
+	templates := []struct{ field, text string }{{"command", cmd.Command}, {"confirm", cmd.Confirm.Message}}
+	if d := cmd.Diagnostic; d != nil {
+		if err := validateDiagnostic(cmd, *d); err != nil {
+			return fmt.Errorf("diagnostic: %w", err)
+		}
+		for j, arg := range d.Args[1:] {
+			templates = append(templates, struct{ field, text string }{fmt.Sprintf("diagnostic.args[%d]", j+1), arg})
+		}
+	}
+	for _, tmpl := range templates {
 		refs, err := cmdtemplate.InputRefs(tmpl.text)
 		if err != nil {
 			return fmt.Errorf("%s: %w", tmpl.field, err)
@@ -316,6 +325,30 @@ func ValidateCommand(cmd CommandConfig) error {
 		if cmd.WatchInterval.Duration > 0 {
 			return errors.New("confirm does not work with watchInterval, which reruns the command")
 		}
+	}
+	return nil
+}
+
+// validateDiagnostic checks a `diagnostic:` block. A diagnostic runs once
+// and is parsed, so the terminal settings of a command do not apply.
+func validateDiagnostic(cmd CommandConfig, d DiagnosticConfig) error {
+	switch {
+	case !slices.Contains(DiagnosticAdapters, d.Adapter):
+		return fmt.Errorf("adapter %q is unknown; kc has %s", d.Adapter, strings.Join(DiagnosticAdapters, ", "))
+	case len(d.Args) == 0 || strings.TrimSpace(d.Args[0]) == "":
+		return errors.New("args must start with the executable")
+	case strings.Contains(d.Args[0], "{{"):
+		return errors.New("args[0], the executable, cannot be a template")
+	case d.Timeout.Duration < 0:
+		return errors.New("timeout cannot be negative")
+	case strings.TrimSpace(cmd.Command) != "":
+		return errors.New("a diagnostic runs args, not command; leave command empty")
+	case cmd.Interactive:
+		return errors.New("interactive does not apply to a diagnostic")
+	case cmd.WatchInterval.Duration > 0:
+		return errors.New("watchInterval does not apply to a diagnostic, which runs once")
+	case cmd.Type == CommandTypeNamespace:
+		return errors.New("type namespace reruns on namespace changes; use sticky or global")
 	}
 	return nil
 }

@@ -246,3 +246,92 @@ commands:
 		t.Fatalf("confirm = %+v", c)
 	}
 }
+
+func TestValidateDiagnosticCommands(t *testing.T) {
+	t.Parallel()
+	krr := func(mut func(*appconfig.CommandConfig)) appconfig.CommandConfig {
+		c := appconfig.CommandConfig{
+			Name: "KRR", Type: appconfig.CommandTypeSticky,
+			Diagnostic: &appconfig.DiagnosticConfig{Adapter: "krr", Args: []string{"krr", "simple", "-f", "json", "-n", "{{.Namespace}}"}},
+		}
+		if mut != nil {
+			mut(&c)
+		}
+		return c
+	}
+	tests := []struct {
+		name    string
+		cmd     appconfig.CommandConfig
+		wantErr string
+	}{
+		{name: "valid", cmd: krr(nil)},
+		{name: "prompt in args", cmd: krr(func(c *appconfig.CommandConfig) {
+			c.Prompts = []appconfig.CommandPrompt{{Name: "days"}}
+			c.Diagnostic.Args = append(c.Diagnostic.Args, "--history_duration={{.Input.days}}")
+		})},
+		{name: "unknown adapter", cmd: krr(func(c *appconfig.CommandConfig) { c.Diagnostic.Adapter = "gadget" }), wantErr: `adapter "gadget" is unknown; kc has krr`},
+		{name: "no args", cmd: krr(func(c *appconfig.CommandConfig) { c.Diagnostic.Args = nil }), wantErr: "args must start with the executable"},
+		{name: "templated executable", cmd: krr(func(c *appconfig.CommandConfig) { c.Diagnostic.Args[0] = "{{.Name}}" }), wantErr: "cannot be a template"},
+		{name: "with command", cmd: krr(func(c *appconfig.CommandConfig) { c.Command = "krr simple" }), wantErr: "leave command empty"},
+		{name: "interactive", cmd: krr(func(c *appconfig.CommandConfig) { c.Interactive = true }), wantErr: "interactive does not apply"},
+		{name: "watch", cmd: krr(func(c *appconfig.CommandConfig) { c.WatchInterval = metav1.Duration{Duration: time.Second} }), wantErr: "runs once"},
+		{name: "namespace type", cmd: krr(func(c *appconfig.CommandConfig) { c.Type = appconfig.CommandTypeNamespace }), wantErr: "use sticky or global"},
+		{name: "negative timeout", cmd: krr(func(c *appconfig.CommandConfig) { c.Diagnostic.Timeout = metav1.Duration{Duration: -time.Second} }), wantErr: "negative"},
+		{name: "unknown prompt in args", cmd: krr(func(c *appconfig.CommandConfig) {
+			c.Diagnostic.Args = append(c.Diagnostic.Args, "{{.Input.nope}}")
+		}), wantErr: `diagnostic.args[6] reads .Input.nope but there is no prompt "nope"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := appconfig.ValidateCommand(tc.cmd)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestDiagnosticTimeoutDefault(t *testing.T) {
+	t.Parallel()
+	if got := (appconfig.DiagnosticConfig{}).EffectiveTimeout(); got != appconfig.DefaultDiagnosticTimeout {
+		t.Fatalf("default timeout = %s", got)
+	}
+	if got := (appconfig.DiagnosticConfig{Timeout: metav1.Duration{Duration: time.Minute}}).EffectiveTimeout(); got != time.Minute {
+		t.Fatalf("timeout = %s", got)
+	}
+}
+
+// TestReadmeDiagnosticExampleValidates keeps the README KRR example valid.
+func TestReadmeDiagnosticExampleValidates(t *testing.T) {
+	t.Parallel()
+	const example = `
+commands:
+  - name: "KRR recommendations"
+    type: "sticky"
+    showFor:
+      resources: ["deployments", "statefulsets", "daemonsets", "namespaces"]
+    hotkey: "C-x k"
+    diagnostic:
+      adapter: krr
+      args: ["krr", "simple", "-f", "json", "--logtostderr", "-n", "{{.Namespace}}"]
+      timeout: 10m
+`
+	var cfg appconfig.Config
+	if err := yaml.UnmarshalStrict([]byte(example), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, err := appconfig.ValidateCommands(cfg.Commands); err != nil {
+		t.Fatal(err)
+	}
+	d := cfg.Commands[0].Diagnostic
+	if d == nil || d.Adapter != "krr" || d.EffectiveTimeout() != 10*time.Minute || len(d.Args) != 7 {
+		t.Fatalf("diagnostic = %+v", d)
+	}
+}

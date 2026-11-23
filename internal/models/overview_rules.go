@@ -85,7 +85,12 @@ type overviewFinding struct {
 	unavailable string
 	explain     string     // how the value is computed (F3)
 	kubectl     [][]string // kubectl arguments that show the inputs (F3)
-	targets     []overviewTarget
+	// supplies says what each kubectl command gives the calculation; it is
+	// parallel to kubectl and required when there is more than one.
+	// Arguments may hold placeholders that a target resolves (<node>,
+	// <workload>); see overview_commands.go.
+	supplies []string
+	targets  []overviewTarget
 }
 
 // overviewReport is the result of one recompute.
@@ -429,6 +434,13 @@ nodes, the worst first, each with its own figures and state.`, resource, rc.cfg.
 			{"top", "nodes"},
 			{"get", "nodes", "-o", "custom-columns=NAME:.metadata.name,CAPACITY:.status.capacity." + resource + ",ALLOCATABLE:.status.allocatable." + resource},
 		},
+		supplies: []string{
+			"req and lim: the requests and limits of the pods on each node, against allocatable",
+			"pods: the measured usage of every pod, in every namespace (a recent window, not this instant)",
+			"pods: the node each pod that has not terminated is bound to",
+			"node: the measured usage of each node (kubectl top prints it against allocatable, kc against capacity)",
+			"the capacity and allocatable of each node",
+		},
 	}
 	if reason := rc.in.missingReason(ovNodesGVR, ovPodsGVR); reason != "" {
 		f.unavailable, f.value, f.state = reason, "n/a", severityUnknown.String()
@@ -505,6 +517,10 @@ reaches podsWarnPercent (%d%%). Enter lists the nodes, the fullest first.`, rc.c
 		kubectl: [][]string{
 			{"get", "pods", "-A", "--field-selector", "status.phase!=Succeeded,status.phase!=Failed", "-o", "custom-columns=NODE:.spec.nodeName", "--no-headers"},
 			{"get", "nodes", "-o", "custom-columns=NAME:.metadata.name,PODS:.status.allocatable.pods"},
+		},
+		supplies: []string{
+			"the node of each pod that has not terminated, in every namespace",
+			"the allocatable pods of each node",
 		},
 	}
 	if reason := rc.in.missingReason(ovNodesGVR, ovPodsGVR); reason != "" {
@@ -885,7 +901,11 @@ yet on the current template, and Deployments whose Progressing condition is
 False (for example ProgressDeadlineExceeded), which fails the row.`,
 		kubectl: [][]string{
 			{"get", "deployments,statefulsets,daemonsets"},
-			{"rollout", "status", "deployment/<name>"},
+			{"rollout", "status", placeholderWorkload},
+		},
+		supplies: []string{
+			"the updated and desired replicas of each workload",
+			"the rollout of one workload",
 		},
 	}
 	f.kubectl[0] = append(f.kubectl[0], rc.nsArgs()...)
@@ -966,6 +986,10 @@ the condition Failed=True.`,
 		kubectl: [][]string{
 			kubectlGet("cronjobs", rc.nsArgs()...),
 			kubectlGet("jobs", append(rc.nsArgs(), "--sort-by", ".metadata.creationTimestamp")...),
+		},
+		supplies: []string{
+			"the CronJobs in scope",
+			"their Jobs, the newest last, whose outcome decides the row",
 		},
 	}
 	return countFinding(rc, f, []schema.GroupVersionResource{ovCronJobsGVR, ovJobsGVR}, func() []overviewTarget {
@@ -1183,6 +1207,10 @@ takes them down without warning.`,
 		kubectl: [][]string{
 			kubectlGet("deployments,statefulsets", rc.nsArgs()...),
 			kubectlGet("poddisruptionbudgets", append(rc.nsArgs(), "-o", "wide")...),
+		},
+		supplies: []string{
+			"the replicas of each Deployment and StatefulSet",
+			"the PodDisruptionBudgets whose selectors may cover them",
 		},
 	}
 	needs := []schema.GroupVersionResource{ovDeploymentsGVR, ovStatefulSetsGVR, ovPDBsGVR}

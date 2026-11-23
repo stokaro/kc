@@ -263,7 +263,7 @@ A node is "full" when a filesystem reaches diskFailPercent (%d%%) and
 "high" when it reaches diskWarnPercent (%d%%). The kubelet evicts pods
 when a filesystem runs low. Enter lists the nodes, the fullest first.`,
 			overviewStatsInFlight, rc.cfg.StatsMaxNodes, rc.cfg.DiskFailPercent, rc.cfg.DiskWarnPercent),
-		kubectl: [][]string{{"get", "--raw", "/api/v1/nodes/<node>/proxy/stats/summary"}},
+		kubectl: [][]string{{"get", "--raw", "/api/v1/nodes/" + placeholderNode + "/proxy/stats/summary"}},
 	}
 	if statsUnavailable(rc, &f) {
 		return f
@@ -341,8 +341,12 @@ volume (kubelet stats summary, see "/nodes disk"). A full volume fails the
 row. Some provisioners (local-path, hostPath) report the node filesystem
 as the volume's capacity, so their percentages say little.`, rc.cfg.VolumeWarnPercent),
 		kubectl: [][]string{
-			{"get", "--raw", "/api/v1/nodes/<node>/proxy/stats/summary"},
+			{"get", "--raw", "/api/v1/nodes/" + placeholderNode + "/proxy/stats/summary"},
 			kubectlGet("persistentvolumeclaims", rc.nsArgs()...),
+		},
+		supplies: []string{
+			"the used and capacity bytes of each mounted volume, from the node that runs its pod (kubectl get pods -o wide names it)",
+			"the claims in scope",
 		},
 	}
 	if statsUnavailable(rc, &f) {

@@ -113,6 +113,7 @@ type LogsViewer struct {
 	onOptions  func() tea.Cmd
 	onClose    func() tea.Cmd
 	onFilter   func() tea.Cmd
+	onSources  func() tea.Cmd
 	bar        viewerCommandBar
 	// log keeps every line read; the widget shows log's display lines.
 	log *logview.Log
@@ -146,8 +147,14 @@ func (v *LogsViewer) SetStyledLines(on bool) {
 // builds it for the current spec.
 func (v *LogsViewer) SetCommandBuilder(fn func(models.LogsSpec) string) {
 	v.commandFor = fn
-	if fn != nil {
-		v.bar.command = fn(v.spec)
+	v.refreshCommand()
+}
+
+// refreshCommand builds the command line again, for a builder that reads
+// more than the spec.
+func (v *LogsViewer) refreshCommand() {
+	if v.commandFor != nil {
+		v.bar.command = v.commandFor(v.spec)
 	}
 }
 
@@ -350,9 +357,13 @@ func (v *LogsViewer) FooterStatus(width int) string {
 	return lipgloss.NewStyle().Width(width).Render(truncateStringToWidth(v.statusText(), width))
 }
 
-// statusText is the stream options followed by the stream state.
+// statusText is the stream options followed by the stream state. A merged
+// log starts with its coverage, so a view that misses sources says so.
 func (v *LogsViewer) statusText() string {
 	text := v.LogOptions().summary() + ", " + v.logViewStatus()
+	if mux := v.Mux(); mux != nil {
+		text = mux.Stats().String() + "; " + text
+	}
 	switch {
 	case v.opening:
 		text += " (connecting)"

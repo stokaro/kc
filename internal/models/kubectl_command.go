@@ -14,6 +14,27 @@ type KubectlCommander interface {
 	KubectlCommand() string
 }
 
+// CommandLine is what the command line shows for a selected row, and what
+// M-c copies.
+type CommandLine struct {
+	// Label precedes the command: "Command" for an equivalent command,
+	// "Inputs (5)" for the queries behind a result kc computes.
+	Label string
+	// Show is the command on the line.
+	Show string
+	// Copy is what M-c copies; Show when empty.
+	Copy string
+	// What names the copied text in the confirmation; Show when empty.
+	What string
+}
+
+// SelectionCommander is a folder whose command line follows the selected
+// row. ok is false when the row has no command of its own; the folder's
+// KubectlCommand is shown then.
+type SelectionCommander interface {
+	CommandLineFor(item Item) (line CommandLine, ok bool)
+}
+
 var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:=@%+,-]+$`)
 
 func shellQuote(s string) string {
@@ -29,6 +50,19 @@ func kubectlCommand(deps Deps, args ...string) string {
 	parts := []string{"kubectl"}
 	if deps.CtxName != "" && deps.CtxName != deps.KubectlContext {
 		parts = append(parts, "--context", shellQuote(deps.CtxName))
+	}
+	// The identity kc impersonates (kc --as) reads the same objects only
+	// when kubectl impersonates it too.
+	if u := strings.TrimSpace(deps.ClusterKey.ImpersonateUser); u != "" {
+		parts = append(parts, "--as", shellQuote(u))
+	}
+	if uid := strings.TrimSpace(deps.ClusterKey.ImpersonateUID); uid != "" {
+		parts = append(parts, "--as-uid", shellQuote(uid))
+	}
+	if groups := strings.TrimSpace(deps.ClusterKey.ImpersonateGroupsKey); groups != "" {
+		for g := range strings.SplitSeq(groups, ",") {
+			parts = append(parts, "--as-group", shellQuote(g))
+		}
 	}
 	for _, a := range args {
 		parts = append(parts, shellQuote(a))

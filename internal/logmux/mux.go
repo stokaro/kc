@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,13 +89,100 @@ type stream struct {
 	cancel  context.CancelFunc
 	removed bool
 	timer   *time.Timer
+	// excluded is set when the filter dropped the running stream.
+	excluded bool
+	// reconnecting is set while a resumed stream waits to reconnect.
+	reconnecting bool
+	// err is why the stream failed; nil for a stream that ended cleanly.
+	err error
+	// fresh opens the stream with no earlier lines: the target streamed
+	// before, was excluded and is selected again.
+	fresh bool
+	// pos is where the stream continues; a retry resumes from it.
+	pos *logresume.Position
 }
 
-// Stats is a snapshot of the mux streams.
+// Stats is a snapshot of the mux streams. Running streams include the
+// reconnecting ones and the streams of removed targets that still finish;
+// Ended does not count the failed streams.
 type Stats struct {
-	Running int
-	Waiting int
-	Ended   int
+	Running      int
+	Reconnecting int
+	Waiting      int
+	Ended        int
+	Failed       int
+	// Excluded counts the targets the filter leaves out.
+	Excluded int
+	// Limit is the number of streams that run at once.
+	Limit int
+}
+
+// Incomplete reports a selection whose sources are not all followed: some
+// wait for a slot, wait to reconnect, or failed.
+func (s Stats) Incomplete() bool { return s.Waiting > 0 || s.Reconnecting > 0 || s.Failed > 0 }
+
+// String describes the coverage for a status line, for example
+// "incomplete: 50 streaming, 20 waiting (limit 50), 2 failed".
+func (s Stats) String() string {
+	parts := []string{fmt.Sprintf("%d streaming", s.Running-s.Reconnecting)}
+	if s.Reconnecting > 0 {
+		parts = append(parts, fmt.Sprintf("%d reconnecting", s.Reconnecting))
+	}
+	if s.Waiting > 0 {
+		parts = append(parts, fmt.Sprintf("%d waiting (limit %d)", s.Waiting, s.Limit))
+	}
+	if s.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", s.Failed))
+	}
+	if s.Ended > 0 {
+		parts = append(parts, fmt.Sprintf("%d ended", s.Ended))
+	}
+	if s.Excluded > 0 {
+		parts = append(parts, fmt.Sprintf("%d excluded", s.Excluded))
+	}
+	text := strings.Join(parts, ", ")
+	if s.Incomplete() {
+		text = "incomplete: " + text
+	}
+	return text
+}
+
+// SourceState is what a source of a merged log does now.
+type SourceState int
+
+const (
+	SourceStreaming SourceState = iota
+	SourceReconnecting
+	SourceWaiting
+	SourceFailed
+	SourceEnded
+	SourceExcluded
+)
+
+func (s SourceState) String() string {
+	switch s {
+	case SourceStreaming:
+		return "streaming"
+	case SourceReconnecting:
+		return "reconnecting"
+	case SourceWaiting:
+		return "waiting"
+	case SourceFailed:
+		return "failed"
+	case SourceEnded:
+		return "ended"
+	case SourceExcluded:
+		return "excluded"
+	}
+	return "unknown"
+}
+
+// Source is one target of the set and what its stream does.
+type Source struct {
+	Target Target
+	State  SourceState
+	// Err is the last failure of a failed source.
+	Err error
 }
 
 // Mux merges the log streams of a set of targets. SetTargets changes the
@@ -103,8 +191,13 @@ type Stats struct {
 // A target keeps one stream for its lifetime. A followed stream that fails,
 // or ends while Options.Check says the container still runs, reconnects
 // where it stopped, without repeating the tail (see logresume). Once the
-// stream has ended it is not reopened. A restarted container or a
-// recreated pod is a new target (see Target) and gets a new stream.
+// stream has ended it is not reopened, unless Retry asks for a failed
+// one. A restarted container or a recreated pod is a new target (see
+// Target) and gets a new stream.
+//
+// SetFilter narrows the set by pod and container name. An excluded target
+// stops at once; selected again, it streams from that moment on, so the
+// lines already shown are not repeated. The other streams are untouched.
 type Mux struct {
 	open   Opener
 	opts   Options
@@ -118,7 +211,14 @@ type Mux struct {
 	queue    []Target
 	running  int
 	reported int // waiting count last reported in a notice
-	wg       sync.WaitGroup
+	limit    int
+	filter   Filter
+	// candidates is the last target set, sorted, before the filter.
+	candidates []Target
+	// positions keeps where each candidate's stream got to, so that a
+	// target streamed before is not read from its start again.
+	positions map[Target]*logresume.Position
+	wg        sync.WaitGroup
 }
 
 // New returns a mux that opens streams with open. The streams live until
@@ -126,12 +226,14 @@ type Mux struct {
 func New(ctx context.Context, open Opener, opts Options) *Mux {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Mux{
-		open:    open,
-		opts:    opts,
-		ctx:     ctx,
-		cancel:  cancel,
-		out:     make(chan Line, outBuffer),
-		streams: make(map[Target]*stream),
+		open:      open,
+		opts:      opts,
+		ctx:       ctx,
+		cancel:    cancel,
+		out:       make(chan Line, outBuffer),
+		streams:   make(map[Target]*stream),
+		limit:     opts.maxStreams(),
+		positions: make(map[Target]*logresume.Position),
 	}
 }
 
@@ -142,36 +244,142 @@ func (m *Mux) Lines() <-chan Line { return m.out }
 // Done is closed when the mux is closed.
 func (m *Mux) Done() <-chan struct{} { return m.ctx.Done() }
 
-// Stats returns how many streams run, wait for a slot, and have ended.
+// Stats returns how many streams run, wait for a slot, have ended or
+// failed, and how many targets the filter leaves out.
 func (m *Mux) Stats() Stats {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var s Stats
+	s := Stats{Limit: m.limit}
 	for _, st := range m.streams {
 		switch st.state {
 		case stateQueued:
 			s.Waiting++
 		case stateRunning:
 			s.Running++
+			if st.reconnecting {
+				s.Reconnecting++
+			}
 		case stateEnded:
-			s.Ended++
+			if st.err != nil {
+				s.Failed++
+			} else {
+				s.Ended++
+			}
+		}
+	}
+	for _, t := range m.candidates {
+		if !m.filter.Match(t) {
+			s.Excluded++
 		}
 	}
 	return s
 }
 
+// Sources returns every target of the set, in order, with its state. The
+// streams of removed targets that still finish are left out.
+func (m *Mux) Sources() []Source {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Source, 0, len(m.candidates))
+	for _, t := range m.candidates {
+		src := Source{Target: t, State: SourceExcluded}
+		if s, ok := m.streams[t]; ok && m.filter.Match(t) {
+			src.State = s.sourceState()
+			src.Err = s.err
+		}
+		out = append(out, src)
+	}
+	return out
+}
+
+func (s *stream) sourceState() SourceState {
+	switch {
+	case s.state == stateQueued:
+		return SourceWaiting
+	case s.state == stateEnded && s.err != nil:
+		return SourceFailed
+	case s.state == stateEnded:
+		return SourceEnded
+	case s.reconnecting:
+		return SourceReconnecting
+	}
+	return SourceStreaming
+}
+
+// Filter returns the current filter.
+func (m *Mux) Filter() Filter {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.filter
+}
+
+// SetFilter selects the targets f matches. Targets it excludes stop at
+// once; targets it selects again stream from now on. Streams of targets
+// that stay selected are untouched. The same filter again changes nothing.
+func (m *Mux) SetFilter(f Filter) {
+	m.mu.Lock()
+	if m.closed || f.String() == m.filter.String() {
+		m.mu.Unlock()
+		return
+	}
+	m.filter = f
+	text := "source filter cleared"
+	if !f.IsZero() {
+		text = "source filter: " + f.String()
+	}
+	notices := append([]Line{{Notice: true, Text: text}}, m.applyLocked()...)
+	m.emitUnlock(notices)
+}
+
+// SetMaxStreams changes how many streams run at once; zero or less means
+// DefaultMaxStreams. A lower limit lets running streams go on and starts
+// no new ones until the count is below it.
+func (m *Mux) SetMaxStreams(n int) {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
+	m.limit = Options{MaxStreams: n}.maxStreams()
+	m.reported = -1 // report the waiting streams with the new limit
+	m.emitUnlock(m.fillLocked())
+}
+
+// Retry queues the failed streams again; each continues after the last
+// line it delivered. It returns how many it queued.
+func (m *Mux) Retry() int {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return 0
+	}
+	n := 0
+	for _, t := range m.candidates {
+		s, ok := m.streams[t]
+		if !ok || s.state != stateEnded || s.err == nil {
+			continue
+		}
+		s.state, s.err, s.fresh = stateQueued, nil, false
+		m.queue = append(m.queue, t)
+		n++
+	}
+	m.emitUnlock(m.fillLocked())
+	return n
+}
+
 // SetTargets replaces the target set. New targets are queued and start as
 // slots free up; targets that left the set are dropped from the queue, and
 // their running streams stop after the remove grace unless they end first.
-// It is safe to call from any goroutine.
+// The filter applies to the new set as well. It is safe to call from any
+// goroutine.
 func (m *Mux) SetTargets(targets []Target) {
-	want := make(map[Target]bool, len(targets))
+	seen := make(map[Target]bool, len(targets))
 	sorted := make([]Target, 0, len(targets))
 	for _, t := range targets {
-		if want[t] {
+		if seen[t] {
 			continue
 		}
-		want[t] = true
+		seen[t] = true
 		sorted = append(sorted, t)
 	}
 	sortTargets(sorted)
@@ -181,9 +389,25 @@ func (m *Mux) SetTargets(targets []Target) {
 		m.mu.Unlock()
 		return
 	}
+	m.candidates = sorted
+	for t := range m.positions {
+		if !seen[t] {
+			delete(m.positions, t)
+		}
+	}
+	m.emitUnlock(m.applyLocked())
+}
+
+// applyLocked brings the streams in step with the candidates and the
+// filter, and returns the notices to emit.
+func (m *Mux) applyLocked() []Line {
+	candidate := make(map[Target]bool, len(m.candidates))
+	for _, t := range m.candidates {
+		candidate[t] = true
+	}
 	for t, s := range m.streams {
-		if want[t] {
-			if s.removed {
+		if candidate[t] && m.filter.Match(t) {
+			if s.removed && !s.excluded {
 				s.removed = false
 				stopTimer(s)
 			}
@@ -196,21 +420,27 @@ func (m *Mux) SetTargets(targets []Target) {
 		case stateEnded:
 			delete(m.streams, t)
 		case stateRunning:
-			if !s.removed {
+			switch {
+			case candidate[t]:
+				// The user excluded it: stop now, not after a grace.
+				stopTimer(s)
+				s.removed, s.excluded = true, true
+				s.cancel()
+			case !s.removed:
 				s.removed = true
 				s.timer = time.AfterFunc(m.opts.removeGrace(), s.cancel)
 			}
 		}
 	}
-	for _, t := range sorted {
-		if _, ok := m.streams[t]; ok {
+	for _, t := range m.candidates {
+		if _, ok := m.streams[t]; ok || !m.filter.Match(t) {
 			continue
 		}
-		m.streams[t] = &stream{target: t, state: stateQueued}
+		_, before := m.positions[t]
+		m.streams[t] = &stream{target: t, state: stateQueued, fresh: before}
 		m.queue = append(m.queue, t)
 	}
-	notices := m.fillLocked()
-	m.emitUnlock(notices)
+	return m.fillLocked()
 }
 
 // Notify adds a notice line to the merged stream.
@@ -278,7 +508,7 @@ func (m *Mux) fillLocked() []Line {
 		return nil
 	}
 	var notices []Line
-	limit := m.opts.maxStreams()
+	limit := m.limit
 	for m.running < limit && len(m.queue) > 0 {
 		t := m.queue[0]
 		m.queue = m.queue[1:]
@@ -286,6 +516,10 @@ func (m *Mux) fillLocked() []Line {
 		ctx, cancel := context.WithCancel(m.ctx)
 		s.state = stateRunning
 		s.cancel = cancel
+		if s.fresh || m.positions[t] == nil {
+			m.positions[t] = &logresume.Position{}
+		}
+		s.pos = m.positions[t]
 		m.running++
 		m.wg.Add(1)
 		go m.run(ctx, s)
@@ -305,9 +539,24 @@ func (m *Mux) run(ctx context.Context, s *stream) {
 	t := s.target
 	opts := m.opts.LogOptions
 	opts.Container = t.Container
-	err := m.stream(ctx, t, &opts)
-	ended := Line{Notice: true, Text: "- " + t.Name()}
+	if s.fresh {
+		// Selected again: only the lines from now on, as `--tail=0 -f`.
+		zero := int64(0)
+		opts.TailLines, opts.SinceSeconds, opts.SinceTime = &zero, nil, nil
+	}
+	err := m.stream(ctx, s, &opts)
+	m.mu.Lock()
+	excluded := s.excluded
 	if err != nil && ctx.Err() == nil {
+		s.err = err
+	}
+	s.reconnecting = false
+	m.mu.Unlock()
+	ended := Line{Notice: true, Text: "- " + t.Name()}
+	switch {
+	case excluded:
+		ended.Text += " (excluded)"
+	case err != nil && ctx.Err() == nil:
 		ended.Text = fmt.Sprintf("- %s: %v", t.Name(), err)
 	}
 	// Report the end before the slot goes to the next target, so that
@@ -321,7 +570,8 @@ func (m *Mux) run(ctx context.Context, s *stream) {
 // stream reads the log of t until it ends. A followed stream that fails
 // while the container still runs is reopened where it stopped (see
 // logresume); the first open's error is returned.
-func (m *Mux) stream(ctx context.Context, t Target, opts *corev1.PodLogOptions) error {
+func (m *Mux) stream(ctx context.Context, s *stream, opts *corev1.PodLogOptions) error {
+	t := s.target
 	opened := false
 	cfg := logresume.Config{
 		Options: *opts,
@@ -333,7 +583,8 @@ func (m *Mux) stream(ctx context.Context, t Target, opts *corev1.PodLogOptions) 
 			}
 			return rc, err
 		},
-		Start: logresume.Instance{PodUID: t.PodUID, Restarts: t.Restarts, Running: true},
+		Start:    logresume.Instance{PodUID: t.PodUID, Restarts: t.Restarts, Running: true},
+		Position: s.pos,
 	}
 	if m.opts.Check != nil {
 		cfg.Check = func(context.Context) (logresume.Instance, bool) { return m.opts.Check(t) }
@@ -341,6 +592,11 @@ func (m *Mux) stream(ctx context.Context, t Target, opts *corev1.PodLogOptions) 
 	return logresume.Run(ctx, cfg, logresume.Sink{
 		Line:   func(text string) bool { return m.send(Line{Target: t, Text: text}) },
 		Notice: func(text string) { m.emit([]Line{{Notice: true, Text: "~ " + t.Name() + ": " + text}}) },
+		State: func(st logresume.State) {
+			m.mu.Lock()
+			s.reconnecting = st == logresume.StateReconnecting
+			m.mu.Unlock()
+		},
 	})
 }
 
@@ -354,7 +610,12 @@ func (m *Mux) finish(s *stream) {
 	} else {
 		s.state = stateEnded
 	}
-	notices := m.fillLocked()
+	var notices []Line
+	if !m.closed {
+		// applyLocked also restarts a target that was selected again
+		// while its excluded stream was still stopping.
+		notices = m.applyLocked()
+	}
 	m.mu.Unlock()
 	m.emit(notices)
 }
