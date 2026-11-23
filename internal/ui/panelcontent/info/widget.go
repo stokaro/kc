@@ -57,6 +57,10 @@ type Target struct {
 	// cursor is on a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or
 	// CronJob. It wins over Node.
 	Workload *models.InfoWorkload
+	// PromHistory reads the past usage of Workload from a metrics backend. Nil
+	// when no backend is configured for the context, no workload is
+	// selected, or the row is a finding (Finding wins).
+	PromHistory *PromHistorySource
 	// Finding replaces the summary when the other panel's cursor is on an
 	// overview finding. Resolve builds it from the overview's latest report,
 	// so it is never older than the row it describes.
@@ -95,6 +99,7 @@ type Widget struct {
 	src     Summarizer
 	summary models.InfoSummary
 	history map[string]*history
+	prom    promHistoryState
 
 	// width and height are the last content size; offset is the first
 	// line shown. focus is the namespace/name of the selected top pod, ""
@@ -121,7 +126,7 @@ func (w *Widget) Init(ctx context.Context) tea.Cmd {
 		return nil
 	}
 	w.refresh(ctx)
-	return w.tick()
+	return tea.Batch(w.tick(), w.promHistoryCmd())
 }
 
 func (w *Widget) tick() tea.Cmd {
@@ -133,6 +138,12 @@ func (w *Widget) tick() tea.Cmd {
 // events that scroll it and select a top pod.
 func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	switch m := msg.(type) {
+	case promHistoryMsg:
+		if m.w != w {
+			return nil, false
+		}
+		w.takePromHistory(m)
+		return nil, true
 	case tickMsg:
 		if m.w != w {
 			return nil, false
@@ -141,7 +152,7 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		w.refresh(ctx)
-		return w.tick(), true
+		return tea.Batch(w.tick(), w.promHistoryCmd()), true
 	case tea.WindowSizeMsg:
 		w.width, w.height = m.Width, m.Height
 		return nil, true
@@ -178,16 +189,18 @@ func (w *Widget) closeSource() {
 		w.src.Close()
 		w.src = nil
 	}
+	w.stopPromHistory()
 	w.target = Target{}
 }
 
 // OnSelectionChanged follows the other panel: a new scope or node shows at
 // once instead of on the next tick.
 func (w *Widget) OnSelectionChanged(ctx context.Context, _ panelcontent.Selection) tea.Cmd {
-	if w.active {
-		w.refresh(ctx)
+	if !w.active {
+		return nil
 	}
-	return nil
+	w.refresh(ctx)
+	return w.promHistoryCmd()
 }
 
 // refresh resolves the target, swaps the source when the scope changed and
@@ -345,26 +358,21 @@ func (w *Widget) content(width int) []infoLine {
 		}
 		para(" ", hint)
 		return out
-	case w.summary.Err != "":
-		para(" ", "Overview unavailable: "+w.summary.Err)
+	case w.summary.Err != "" || w.summary.Loading:
+		// The history comes from another source and still shows: a user
+		// without cluster-wide reads may read Prometheus.
+		if w.summary.Err != "" {
+			para(" ", "Overview unavailable: "+w.summary.Err)
+		} else {
+			add(" Loading...")
+		}
+		for _, line := range w.promHistoryLines(width) {
+			para(leadingSpaces(line), strings.TrimLeft(line, " "))
+		}
 		return out
-	case w.summary.Loading:
-		add(" Loading...")
-		return out
 	}
-	scope := w.target.Label
-	switch {
-	case w.target.Workload != nil:
-		scope = w.target.Workload.String()
-	case w.target.Node != "":
-		scope = "node " + w.target.Node
-	}
-	para(" ", scope)
-	if at := w.summary.UsageAt; !at.IsZero() {
-		add(fmt.Sprintf(" usage measured %s ago", shortAge(w.opts.Now().Sub(at))))
-	} else {
-		add(" usage not measured")
-	}
+	para(" ", w.scopeText())
+	add(w.usageText())
 	add("")
 	h := w.history[w.historyKey()]
 	if t := w.summary.BarsTitle; t != "" {
@@ -376,12 +384,11 @@ func (w *Widget) content(width int) []infoLine {
 			add(line)
 		}
 	}
-	add("")
-	top := w.summary.TopTitle
-	if top == "" {
-		top = "Top pods by memory"
+	for _, line := range w.promHistoryLines(width) {
+		para(leadingSpaces(line), strings.TrimLeft(line, " "))
 	}
-	para(" ", top)
+	add("")
+	para(" ", w.topTitle())
 	if len(w.summary.Top) == 0 {
 		para("   ", w.summary.TopNote)
 	}
@@ -391,6 +398,34 @@ func (w *Widget) content(width int) []infoLine {
 		}
 	}
 	return out
+}
+
+// scopeText names what the summary is about: the workload or node under
+// the other panel's cursor, or its scope.
+func (w *Widget) scopeText() string {
+	switch {
+	case w.target.Workload != nil:
+		return w.target.Workload.String()
+	case w.target.Node != "":
+		return "node " + w.target.Node
+	}
+	return w.target.Label
+}
+
+// usageText says how old the usage measurement is.
+func (w *Widget) usageText() string {
+	if at := w.summary.UsageAt; !at.IsZero() {
+		return fmt.Sprintf(" usage measured %s ago", shortAge(w.opts.Now().Sub(at)))
+	}
+	return " usage not measured"
+}
+
+// topTitle heads the top pods.
+func (w *Widget) topTitle() string {
+	if w.summary.TopTitle != "" {
+		return w.summary.TopTitle
+	}
+	return "Top pods by memory"
 }
 
 // consumerLines renders a top pod as "  2048Mi   120m  db/postgres-0".
@@ -413,6 +448,11 @@ func consumerLines(c models.InfoConsumer, width int) []string {
 		out = append(out, strings.Repeat(" ", len(prefix))+part)
 	}
 	return out
+}
+
+// leadingSpaces is the indent of line, which its wrapped lines keep.
+func leadingSpaces(line string) string {
+	return line[:len(line)-len(strings.TrimLeft(line, " "))]
 }
 
 // wrapText splits plain text into lines of at most width cells, at spaces
