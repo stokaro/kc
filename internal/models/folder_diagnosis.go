@@ -17,6 +17,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // builtinObjectRows are rows models itself adds inside objects, next to
@@ -139,7 +140,10 @@ func (f *RelatedObjectsFolder) workloadDiagnosisRows(ctx context.Context) ([]tab
 	if err != nil {
 		return nil, err
 	}
-	in := workloadInput{GVR: f.gvr, Object: obj, Now: time.Now()}
+	in := workloadInput{GVR: f.gvr, Object: obj, Now: time.Now(), Grace: appconfig.DefaultOverview().StartupGrace.Duration}
+	if f.Deps.AppConfig != nil {
+		in.Grace = f.Deps.AppConfig.Overview.Normalized().StartupGrace.Duration
+	}
 	if f.gvr != podGVR {
 		in.Pods, in.PodsErr = listTyped[corev1.Pod](ctx, f.reader, podGVR, f.namespace)
 	}
