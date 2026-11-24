@@ -9,8 +9,9 @@
 #   PORT         API server port on 127.0.0.1
 #   REPO         repository root
 #   WORK         work directory (kubeconfig, temporary HOME, binaries)
-#   SSH_DEST     ssh destination of a Linux Docker host, or empty for local Docker
-#   REMOTE_KIND  local path of a Linux kind binary to upload when the host has none
+#   SSH_DEST     ssh destination of a Docker host (Linux or macOS, docker on the
+#                PATH of a non-interactive ssh session), or empty for local Docker
+#   REMOTE_KIND  local path of a kind binary for that host to upload when it has none
 #   COLS, ROWS   terminal size kc runs in
 #   LOCAL        directory kc starts in
 # Optional:
