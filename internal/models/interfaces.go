@@ -217,6 +217,13 @@ type ResourceViewConfigurable interface {
 	ApplyResourceViewOptions(showNonEmpty bool, order appconfig.ResourcesViewOrder, favorites []string)
 }
 
+// ColumnsModeConfigurable folders show the columns mode of the panel that
+// lists them (appconfig.ColumnsModeNormal or ColumnsModeWide) rather than
+// the one in the configuration.
+type ColumnsModeConfigurable interface {
+	ApplyColumnsMode(mode string)
+}
+
 // ObjectOrderConfigurable allows folders to override object ordering at runtime.
 type ObjectOrderConfigurable interface {
 	ApplyObjectOrder(order string)

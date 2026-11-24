@@ -453,6 +453,7 @@ func (w *Widget) SetColumnsMode(ctx context.Context, mode string) {
 	} else {
 		w.columnsMode = "normal"
 	}
+	w.applyObjectOrderToFolder()
 	w.RefreshFolder(ctx)
 }
 
@@ -527,6 +528,9 @@ func (w *Widget) applyObjectOrderToFolder() {
 	}
 	if configurable, ok := w.folder.(models.ObjectOrderConfigurable); ok {
 		configurable.ApplyObjectOrder(w.objOrder)
+	}
+	if c, ok := w.folder.(models.ColumnsModeConfigurable); ok {
+		c.ApplyColumnsMode(w.columnsMode)
 	}
 	if g, ok := w.folder.(models.NamespaceGroupingConfigurable); ok {
 		g.ApplyNamespaceGrouping(w.groupNamespaces)
