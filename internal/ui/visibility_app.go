@@ -158,7 +158,7 @@ func (a *App) saveVisibilityProfile(idx int, req visibilitySaveRequest) tea.Cmd 
 	a.hideModalName(visibilitySaveModalKey)
 	a.hideModalName(visibilityEditorModalKey)
 	a.reloadPanelTypes(idx)
-	return a.saveDefaults(change)
+	return a.saveSettings(req.summary(), change)
 }
 
 // showVisibilityProfiles lists the saved profiles; the chosen one replaces

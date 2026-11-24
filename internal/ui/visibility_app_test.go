@@ -80,6 +80,9 @@ func TestSaveVisibilityProfile(t *testing.T) {
 	if !ok || saved.err != nil {
 		t.Fatalf("save = %+v, %v", saved, ok)
 	}
+	if saved.what != "profile platform for context kind-dev" {
+		t.Fatalf("the toast names %q", saved.what)
+	}
 	got := app.panelVisibility(app.leftPanel)
 	if got.Name != "platform" || got.Source != appconfig.VisibilityFromContext || got.Edited {
 		t.Fatalf("left after save = %+v, want platform through the binding", got)

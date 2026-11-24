@@ -57,6 +57,23 @@ func (r visibilitySaveRequest) change(v *appconfig.ResourcesVisibilityConfig) {
 	}
 }
 
+// summary names what r saves, for the toast: "profile shop for context
+// kind-dev and as the default".
+func (r visibilitySaveRequest) summary() string {
+	var uses []string
+	if r.bindContext && r.context != "" {
+		uses = append(uses, "for context "+r.context)
+	}
+	if r.globalDefault {
+		uses = append(uses, "as the default")
+	}
+	s := "profile " + r.name
+	if len(uses) > 0 {
+		s += " " + strings.Join(uses, " and ")
+	}
+	return s
+}
+
 // VisibilitySaveModel is the "Save profile" dialog of the visibility
 // editor: the name, whether the context uses the profile, and whether it
 // is the global default.

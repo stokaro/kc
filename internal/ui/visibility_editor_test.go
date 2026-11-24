@@ -462,6 +462,28 @@ func TestVisibilitySaveRequestChange(t *testing.T) {
 	}
 }
 
+func TestVisibilitySaveRequestSummary(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		req  visibilitySaveRequest
+		want string
+	}{
+		{name: "profile only", req: visibilitySaveRequest{name: "shop", context: "kind-dev"}, want: "profile shop"},
+		{name: "context", req: visibilitySaveRequest{name: "shop", context: "kind-dev", bindContext: true}, want: "profile shop for context kind-dev"},
+		{name: "default", req: visibilitySaveRequest{name: "shop", globalDefault: true}, want: "profile shop as the default"},
+		{name: "both", req: visibilitySaveRequest{name: "shop", context: "kind-dev", bindContext: true, globalDefault: true}, want: "profile shop for context kind-dev and as the default"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.req.summary(); got != tc.want {
+				t.Fatalf("summary() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestVisibilitySaveDialog(t *testing.T) {
 	t.Parallel()
 	only := visibility.Profile{Mode: visibility.ModeOnly, Show: []schema.GroupResource{grPods}}

@@ -11,8 +11,10 @@ import (
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
-// configSavedMsg reports the outcome of a "Save as defaults".
+// configSavedMsg reports the outcome of a save to the configuration file;
+// what names the change for the toast ("as defaults", "profile shop").
 type configSavedMsg struct {
+	what string
 	path string
 	err  error
 }
@@ -52,17 +54,23 @@ func (a *App) loadConfig() tea.Cmd {
 // The store reads the file again first, so only the fields change sets are
 // written and a file that does not load is never replaced.
 func (a *App) saveDefaults(change func(*appconfig.Config)) tea.Cmd {
+	return a.saveSettings("as defaults", change)
+}
+
+// saveSettings is saveDefaults for a change that is not a default, such
+// as a saved profile; the toast says "Saved <what> to <path>".
+func (a *App) saveSettings(what string, change func(*appconfig.Config)) tea.Cmd {
 	store := a.configStore()
 	return func() tea.Msg {
 		_, err := store.Update(change)
-		return configSavedMsg{path: store.Path(), err: err}
+		return configSavedMsg{what: what, path: store.Path(), err: err}
 	}
 }
 
 // handleConfigSaved tells the user whether the settings reached the file.
 func (a *App) handleConfigSaved(msg configSavedMsg) tea.Cmd {
 	if msg.err == nil {
-		return a.ShowInfo("Saved as defaults to "+msg.path, configToastTTL)
+		return a.ShowInfo("Saved "+msg.what+" to "+msg.path, configToastTTL)
 	}
 	log := ctrllog.FromContext(a.ctx).WithName("config")
 	log.Error(msg.err, "saving defaults failed", "path", msg.path)
