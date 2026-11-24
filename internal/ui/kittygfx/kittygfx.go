@@ -115,6 +115,21 @@ func Rows(cols, rows int) []string {
 	return out
 }
 
+// Cells are the placeholders of row, columns [from, to), uncolored; ""
+// when out of range.
+func Cells(row, from, to int) string {
+	if row < 0 || row >= MaxCells || from < 0 || to > MaxCells || from >= to {
+		return ""
+	}
+	var b strings.Builder
+	for c := from; c < to; c++ {
+		b.WriteRune(Placeholder)
+		b.WriteRune(diacritics[row])
+		b.WriteRune(diacritics[c])
+	}
+	return b.String()
+}
+
 // Color is the SGR foreground of image id: the 256-color index, which
 // carries an 8-bit ID. It survives a 256-color profile, which a 24-bit ID
 // would not under tmux without true color. Callers keep IDs at 16 or

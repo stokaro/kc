@@ -67,6 +67,13 @@ type UsageAmounts struct {
 	// Top lists the measured pods by memory, most first, at most the n
 	// asked for.
 	Top []UsageConsumer
+	// Rows break the focus down: by top workload for the scope or a node,
+	// by pod for a workload or a pod; most memory first.
+	Rows []UsageRow
+	// PodRows are the rows of each pod when Rows are workloads, so the
+	// pods of a workload can be shown without drilling down; nil
+	// otherwise.
+	PodRows []UsageRow
 	// Events are the retained Kubernetes Events about the focus.
 	Events UsageEvents
 }
@@ -83,6 +90,7 @@ type overviewPodAmount struct {
 	cpuReq, cpuLim             int64 // millicores
 	memReq, memLim             int64 // bytes
 	cpuUnlimited, memUnlimited bool
+	health                     usagePodHealth
 }
 
 // objectStamp is the identity of a listed workload.
@@ -126,6 +134,7 @@ func summarizeAmounts(rc *ruleContext, byPod map[string][]InfoWorkload) overview
 			memReq: req.Memory().Value(), memLim: lim.Memory().Value(),
 			cpuUnlimited: podUnlimited(p, corev1.ResourceCPU),
 			memUnlimited: podUnlimited(p, corev1.ResourceMemory),
+			health:       healthOf(p),
 		}
 		if used, ok := rc.m.pods[key]; ok {
 			a.measured = true
@@ -198,6 +207,12 @@ func usageAmounts(report *overviewReport, err error, focus UsageFocus, topN int)
 		if len(out.Top) < topN {
 			out.Top = append(out.Top, UsageConsumer{Namespace: p.namespace, Name: p.name, Node: p.node, CPU: cores(p.cpu), Memory: float64(p.mem)})
 		}
+	}
+	if byWorkload := focus.Pod == "" && focus.Workload == nil; byWorkload {
+		out.Rows = usageRows(report.amounts.pods, in, true)
+		out.PodRows = usageRows(report.amounts.pods, in, false)
+	} else {
+		out.Rows = usageRows(report.amounts.pods, in, false)
 	}
 	out.CPU.Used, out.CPU.Requests, out.CPU.Limits = cores(cpuUse), cores(cpuReq), cores(cpuLim)
 	out.Memory.Used, out.Memory.Requests, out.Memory.Limits = float64(memUse), float64(memReq), float64(memLim)

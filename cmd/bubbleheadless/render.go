@@ -201,6 +201,21 @@ func drawShape(img *image.RGBA, rect image.Rectangle, r rune, fg, bg color.Color
 	case r >= '▉' && r <= '▏': // left seven to one eighths
 		n := 8 - int(r-'▉') - 1
 		fill(0, 0, (w*n+7)/8, h, fg)
+	case r >= 0x2800 && r <= 0x28ff: // braille: two columns of four dots
+		drawBraille(r, w, h, fg, fill)
+	case r == '┄' || r == '┈' || r == '╌':
+		// Dashes of a light horizontal line, as many as the glyph has.
+		n := map[rune]int{'┄': 3, '┈': 4, '╌': 2}[r]
+		for i := range n {
+			fill(w*i/n, h/2, w*i/n+max(1, w/(2*n)), h/2+1, fg)
+		}
+	case r == '◆':
+		// A diamond as wide as the cell, one row of pixels at a time.
+		cx, cy, rx := w/2, h/2, max(1, w*2/5)
+		for y := cy - rx; y <= cy+rx; y++ {
+			half := rx - abs(y-cy)
+			fill(cx-half, y, cx+half+1, y+1, fg)
+		}
 	case r == '░':
 		fill(0, 0, w, h, blend(bg, fg, 0.25))
 	case r == '▒':
@@ -211,6 +226,27 @@ func drawShape(img *image.RGBA, rect image.Rectangle, r rune, fg, bg color.Color
 		return false
 	}
 	return true
+}
+
+// brailleBits are the dot bits of a braille cell: left column then right,
+// top to bottom.
+var brailleBits = [2][4]rune{{0x01, 0x02, 0x04, 0x40}, {0x08, 0x10, 0x20, 0x80}}
+
+// drawBraille draws the dots of braille pattern r as squares on a 2x4 grid,
+// so a chart in braille shows in a snapshot without a braille font.
+func drawBraille(r rune, w, h int, fg color.Color, fill func(x0, y0, x1, y1 int, c color.Color)) {
+	bits := r - 0x2800
+	dot := max(1, min(w/2, h/4)-1)
+	for col := range 2 {
+		for row := range 4 {
+			if bits&brailleBits[col][row] == 0 {
+				continue
+			}
+			x0 := w*col/2 + (w/2-dot)/2
+			y0 := h*row/4 + (h/4-dot)/2
+			fill(x0, y0, x0+dot, y0+dot, fg)
+		}
+	}
 }
 
 // drawBox draws the arms of a box-drawing character from the cell center.
@@ -364,4 +400,11 @@ func colorSnapshotToPNG(cells [][]uv.Cell, caption, position, path string) error
 		return fmt.Errorf("rename snapshot: %w", err)
 	}
 	return nil
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }

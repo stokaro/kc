@@ -137,18 +137,27 @@ func TestDashboardOpensOverUnchangedPanelsEnvtest(t *testing.T) {
 	if got := app.dash.model.Root(); got.Kind != dashboard.KindWorkload || got.Name != "web" || got.Workload != deployments {
 		t.Fatalf("target = %+v, want the Deployment under the cursor", got)
 	}
-	s := waitDashboard(t, app, "no Prometheus (C-x m)")
-	if !strings.Contains(s, "Deployment "+ns+"/web") {
-		t.Fatalf("title lacks the target:\n%s", s)
+	s := waitDashboard(t, app, "Metrics API, no samples yet")
+	if !strings.Contains(s, "› Deployment web") || !strings.Contains(s, "Pods of Deployment web") {
+		t.Fatalf("the top bar or the list lacks the target:\n%s", s)
 	}
-	s = waitDashboard(t, app, "now no pods that have not terminated")
+	s = waitDashboard(t, app, "usage no pods that have not t")
 	for l := range strings.SplitSeq(s, "\n") {
-		if strings.Contains(l, "│") && strings.ContainsAny(l, "⡀⣀⣿▁█") {
+		if strings.Contains(l, "│") && strings.ContainsAny(l, "⡀⣀⣿▁█") && !strings.Contains(l, "usage") {
 			t.Fatalf("a line is drawn without measurements: %q\n%s", l, s)
 		}
 	}
 	if lines := strings.Split(s, "\n"); len(lines) != 24 {
 		t.Fatalf("%d lines at 80x24", len(lines))
+	}
+	// After a resize the frame is the window's height to the row, with
+	// the F-key bar last, at every size.
+	for _, size := range [][2]int{{150, 42}, {100, 30}, {80, 24}} {
+		_, _ = app.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		lines := strings.Split(dashboardScreen(app), "\n")
+		if len(lines) != size[1] || !strings.Contains(lines[len(lines)-1], "10Close") {
+			t.Fatalf("%d lines at %dx%d, last %q", len(lines), size[0], size[1], lines[len(lines)-1])
+		}
 	}
 
 	// F1 shows the dashboard's help over it; Esc closes the help only.
@@ -161,6 +170,20 @@ func TestDashboardOpensOverUnchangedPanelsEnvtest(t *testing.T) {
 		t.Fatal("Esc in the help must close the help and keep the dashboard")
 	}
 
+	// F2 drops down the Range menu over the dashboard; Esc closes the
+	// menu only. The F-key bar is the last row.
+	if lines := strings.Split(dashboardScreen(app), "\n"); !strings.Contains(lines[len(lines)-1], "10Close") {
+		t.Fatalf("no F-key bar: %q", lines[len(lines)-1])
+	}
+	_, _ = app.Update(tea.KeyPressMsg{Code: tea.KeyF2})
+	if !app.menuBar.IsOpen() || !strings.Contains(dashboardScreen(app), "Last 1 hour") {
+		t.Fatalf("F2 did not open the Range menu:\n%s", dashboardScreen(app))
+	}
+	_, _ = app.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if !app.dashboardOpen() || app.menuBar.IsOpen() {
+		t.Fatal("Esc in the menu must close the menu and keep the dashboard")
+	}
+
 	_, _ = app.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if app.dashboardOpen() {
 		t.Fatal("Esc did not close the dashboard")
@@ -168,7 +191,7 @@ func TestDashboardOpensOverUnchangedPanelsEnvtest(t *testing.T) {
 	if after := panelsOf(app); after != before {
 		t.Fatalf("panels changed: %+v, want %+v", after, before)
 	}
-	if strings.Contains(dashboardScreen(app), "no Prometheus (C-x m)") {
+	if strings.Contains(dashboardScreen(app), "Metrics API, no samples yet") {
 		t.Fatal("the dashboard still shows after closing")
 	}
 	// A message of the closed dashboard does nothing.
@@ -185,7 +208,7 @@ func TestDashboardOpensOverUnchangedPanelsEnvtest(t *testing.T) {
 	if !app.dashboardOpen() {
 		t.Fatal("C-x g did not reopen the dashboard")
 	}
-	waitDashboard(t, app, "Deployment "+ns+"/web")
+	waitDashboard(t, app, "Pods of Deployment web")
 	_, cmd := app.Update(tea.KeyPressMsg{Code: 'o', Text: "o"})
 	runLinkCmds(t, app, cmd)
 	if app.dashboardOpen() {
@@ -253,15 +276,13 @@ func TestDashboardEventsAndLogsAroundEnvtest(t *testing.T) {
 		}
 	}
 	openDash()
-	s := waitDashboard(t, app, "ScalingReplicaSet Deployment web")
-	if !strings.Contains(s, "Events · 1 in range") {
+	s := waitDashboard(t, app, "◆ Rollout ScalingReplicaSet")
+	if !strings.Contains(s, "Events in the last 15 minutes: 1") {
 		t.Fatalf("events title:\n%s", s)
 	}
-	for range 2 {
-		_, _ = app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	}
-	if !strings.Contains(dashboardScreen(app), "▸ Events") {
-		t.Fatalf("Tab did not reach the Events:\n%s", dashboardScreen(app))
+	_, _ = app.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if !app.dash.model.EventsFocused() {
+		t.Fatalf("S-Tab did not reach the Events:\n%s", dashboardScreen(app))
 	}
 
 	_, cmd := app.Update(tea.KeyPressMsg{Code: 'o', Text: "o"})
@@ -276,7 +297,7 @@ func TestDashboardEventsAndLogsAroundEnvtest(t *testing.T) {
 	// From the left panel, C-x g on the same row restores the dashboard
 	// with the Events in focus; l asks for the logs around the Event.
 	openDash()
-	if s := waitDashboard(t, app, "ScalingReplicaSet Deployment web"); !strings.Contains(s, "▸ Events") {
+	if s := waitDashboard(t, app, "◆ Rollout ScalingReplicaSet"); !app.dash.model.EventsFocused() {
 		t.Fatalf("the restored dashboard lost the focus:\n%s", s)
 	}
 	_, _ = app.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})

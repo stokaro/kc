@@ -135,6 +135,57 @@ func TestDrawShapeLeavesOtherRunes(t *testing.T) {
 	}
 }
 
+// A braille cell draws its dots, so a chart shows in a snapshot without a
+// braille font: ⠁ is the top-left dot only, ⢀ the bottom-right one.
+func TestRenderCellsBrailleDots(t *testing.T) {
+	img, err := renderCells(cellsOf("⠁⢀"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inked := func(x0, y0, x1, y1 int) bool {
+		for y := y0; y < y1; y++ {
+			for x := x0; x < x1; x++ {
+				if !sameColor(img.At(x, y), defaultBg) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	w, h := colorCellWidth, colorCellHeight
+	checks := []struct {
+		name           string
+		x0, y0, x1, y1 int
+		ink            bool
+	}{
+		{"⠁ top left", 0, 0, w / 2, h / 4, true},
+		{"⠁ bottom right", w / 2, 3 * h / 4, w, h, false},
+		{"⢀ bottom right", w + w/2, 3 * h / 4, 2 * w, h, true},
+		{"⢀ top left", w, 0, w + w/2, h / 4, false},
+	}
+	for _, c := range checks {
+		if got := inked(c.x0, c.y0, c.x1, c.y1); got != c.ink {
+			t.Errorf("%s: ink = %v, want %v", c.name, got, c.ink)
+		}
+	}
+}
+
+// TestRenderCellsDiamond: the rollout mark ◆ is drawn, inked at its center
+// and blank in its corners, without the font having the glyph.
+func TestRenderCellsDiamond(t *testing.T) {
+	img, err := renderCells(cellsOf("◆"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, h := colorCellWidth, colorCellHeight
+	if sameColor(img.At(w/2, h/2), defaultBg) {
+		t.Error("the center of ◆ is blank")
+	}
+	if !sameColor(img.At(0, 0), defaultBg) || !sameColor(img.At(w-1, h-1), defaultBg) {
+		t.Error("the corners of ◆ are inked")
+	}
+}
+
 func TestColorSnapshotToPNG(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "frame.png")
 	if err := colorSnapshotToPNG(cellsOf("ok"), "a caption", captionBottom, path); err != nil {

@@ -23,7 +23,8 @@ type Point struct {
 type Mode int
 
 const (
-	// Braille draws two samples per cell with four dots of height each.
+	// Braille draws two samples per cell with four dots of height each
+	// at the edge of the area; the cells under it are solid blocks.
 	Braille Mode = iota
 	// Blocks draws one sample per cell with eight steps of height. It is
 	// the fallback for fonts without braille.
@@ -87,12 +88,25 @@ type Chart struct {
 	// charts that share a cursor need the same cells. Zero fits the plot
 	// to the labels.
 	PlotCells int
+	// GapStyle draws plot columns without a sample; a run of them wide
+	// enough says "no data". Its zero value leaves them blank.
+	GapStyle lipgloss.Style
 }
 
+// RefFit is how far above the usage a reference line may be and still
+// set the scale. A line further above is off the scale: the plot draws it
+// as arrows on its top row, so a small usage is not flattened by a large
+// request.
+const RefFit = 3
+
+// usageHeadroom is how much room the scale leaves above the usage.
+const usageHeadroom = 1.1
+
 const (
-	gapAxis  = '·'
 	axisLine = '─'
 	refLine  = '┄'
+	refAbove = '↑'
+	gapLabel = "no data"
 )
 
 // PlotWidth is how many cells the plot of a chart width wide has, after
@@ -120,8 +134,10 @@ type layout struct {
 	cols              []column
 	top               float64
 	// refRows is the plot row of each reference line per plot cell, -1
-	// where it is not drawn.
+	// where it is not drawn; refOff marks the cells where it is above the
+	// scale.
 	refRows [][]int
+	refOff  [][]bool
 }
 
 func (c Chart) format(v float64) string {
@@ -138,7 +154,7 @@ func (c Chart) layout() layout {
 	if scale == nil {
 		scale = NiceTop
 	}
-	l.top = scale(c.maxValue())
+	l.top = scale(c.scaleValue())
 	if l.top <= 0 || math.IsNaN(l.top) || math.IsInf(l.top, 0) {
 		l.top = 1
 	}
@@ -153,16 +169,19 @@ func (c Chart) layout() layout {
 	}
 	l.cols = c.pool(Samples(l.plot, c.Mode))
 	l.refRows = make([][]int, len(c.Refs))
+	l.refOff = make([][]bool, len(c.Refs))
 	for i, ref := range c.Refs {
 		rows := make([]int, max(0, l.plot))
+		off := make([]bool, max(0, l.plot))
 		for x := range rows {
 			rows[x] = -1
 			from, to := c.cellSpan(l, x)
 			if v, ok := ref.at(from, to, x == l.plot-1); ok {
 				rows[x] = refRow(l, v)
+				off[x] = v > l.top*(1+1e-9)
 			}
 		}
-		l.refRows[i] = rows
+		l.refRows[i], l.refOff[i] = rows, off
 	}
 	return l
 }
@@ -184,19 +203,68 @@ func (c Chart) RefAt(ref, x int) (float64, bool) {
 	return c.Refs[ref].at(from, to, x == l.plot-1)
 }
 
-func (c Chart) maxValue() float64 {
+// OffScale reports whether reference line ref is above the scale
+// somewhere in the range (see RefFit).
+func (c Chart) OffScale(ref int) bool {
+	if ref < 0 || ref >= len(c.Refs) {
+		return false
+	}
+	return slices.Contains(c.layout().refOff[ref], true)
+}
+
+// OffScaleAt reports whether reference line ref is above the scale in
+// cell x.
+func (c Chart) OffScaleAt(ref, x int) bool {
+	if ref < 0 || ref >= len(c.Refs) {
+		return false
+	}
+	off := c.layout().refOff[ref]
+	return x >= 0 && x < len(off) && off[x]
+}
+
+// usageMax is the largest sample in the range.
+func (c Chart) usageMax() float64 {
 	top := 0.0
 	for _, p := range c.Points {
 		if p.V > top && !p.At.Before(c.Start) && !p.At.After(c.End) {
 			top = p.V
 		}
 	}
+	return top
+}
+
+// refMax is the largest value of r in the range.
+func (c Chart) refMax(r Ref) float64 {
+	top := r.V
+	for _, p := range r.Points {
+		if !p.At.After(c.End) && c.Start.Sub(p.At) <= r.Hold {
+			top = max(top, p.V)
+		}
+	}
+	return top
+}
+
+// maxValue is the largest value of the samples and the reference lines.
+func (c Chart) maxValue() float64 {
+	top := c.usageMax()
 	for _, r := range c.Refs {
-		top = max(top, r.V)
-		for _, p := range r.Points {
-			if !p.At.After(c.End) && c.Start.Sub(p.At) <= r.Hold {
-				top = max(top, p.V)
-			}
+		top = max(top, c.refMax(r))
+	}
+	return top
+}
+
+// scaleValue is what the scale fits: the usage, and the reference lines
+// up to RefFit times above it. Without usage, everything.
+func (c Chart) scaleValue() float64 {
+	use := c.usageMax()
+	if use <= 0 {
+		return c.maxValue()
+	}
+	// Headroom keeps a steady usage off the top border.
+	top := use * usageHeadroom
+	for _, r := range c.Refs {
+		if v := c.refMax(r); v <= RefFit*use {
+			top = max(top, v)
 		}
 	}
 	return top
@@ -302,6 +370,8 @@ func (c Chart) Render() []string {
 	}
 	lines := make([]string, 0, c.Height)
 	cursor := lipgloss.NewStyle().Reverse(true)
+	gaps := c.gapCells(l)
+	labelRow := l.rows / 2
 	for row := range l.rows {
 		var b strings.Builder
 		b.WriteString(c.axisLabel(l, row))
@@ -312,6 +382,12 @@ func (c Chart) Render() []string {
 			if ref != nil {
 				st = ref.Style
 			}
+			if gaps[x] != 0 {
+				st = c.GapStyle
+				if row == labelRow && gaps[x] > 0 {
+					r = gaps[x]
+				}
+			}
 			if x == c.Cursor {
 				st = cursor
 			}
@@ -320,6 +396,37 @@ func (c Chart) Render() []string {
 		lines = append(lines, b.String())
 	}
 	return append(lines, c.timeAxis(l))
+}
+
+// gapCells marks the plot cells without a sample: -1 for a plain gap
+// cell, a rune of "no data" where a run is wide enough to say so.
+func (c Chart) gapCells(l layout) []rune {
+	out := make([]rune, l.plot)
+	per := len(l.cols) / l.plot
+	for x := range out {
+		out[x] = -1
+		for _, col := range l.cols[x*per : (x+1)*per] {
+			if col.ok {
+				out[x] = 0
+			}
+		}
+	}
+	label := []rune(gapLabel)
+	for x := 0; x < len(out); {
+		if out[x] == 0 {
+			x++
+			continue
+		}
+		end := x
+		for end < len(out) && out[end] != 0 {
+			end++
+		}
+		if end-x >= len(label)+2 {
+			copy(out[x+(end-x-len(label))/2:], label)
+		}
+		x = end
+	}
+	return out
 }
 
 // axisLabel is the value label of a plot row: the top, the middle and
@@ -358,6 +465,12 @@ func (c Chart) cellRune(l layout, row, x int) (rune, *Ref) {
 	for i := range c.Refs {
 		ref := &c.Refs[i]
 		if l.refRows[i][x] != row {
+			continue
+		}
+		if l.refOff[i][x] {
+			if (r == ' ' || r == brailleBlank) && x == l.plot-1 {
+				return refAbove, ref
+			}
 			continue
 		}
 		if r == ' ' || r == brailleBlank {
@@ -405,8 +518,13 @@ func brailleCell(l layout, row, x int) rune {
 			}
 		}
 	}
-	if bits == 0 {
+	switch bits {
+	case 0:
 		return ' '
+	case 0xff:
+		// A cell under the edge is solid: in most fonts a full braille
+		// cell is a grid of dots with gaps, which reads as a texture.
+		return '█'
 	}
 	return brailleBlank + bits
 }
@@ -419,18 +537,12 @@ func blockCell(l layout, row, x int) rune {
 	return eighths[fill]
 }
 
-// timeAxis is the last line: a rule with · under gap cells, the start time
-// at the left and the end time at the right.
+// timeAxis is the last line: a rule with the start time at the left, the
+// middle time in the middle and the end time at the right.
 func (c Chart) timeAxis(l layout) string {
 	cells := make([]rune, l.plot)
-	per := len(l.cols) / l.plot
 	for x := range cells {
-		cells[x] = gapAxis
-		for _, col := range l.cols[x*per : (x+1)*per] {
-			if col.ok {
-				cells[x] = axisLine
-			}
-		}
+		cells[x] = axisLine
 	}
 	layoutFmt := "15:04"
 	if c.End.Sub(c.Start) >= 24*time.Hour {
@@ -440,10 +552,18 @@ func (c Chart) timeAxis(l layout) string {
 	if loc == nil {
 		loc = time.UTC
 	}
+	span := c.End.Sub(c.Start)
+	if span < 10*time.Minute {
+		layoutFmt = "15:04:05"
+	}
 	from, to := c.Start.In(loc).Format(layoutFmt), c.End.In(loc).Format(layoutFmt)
+	mid := c.Start.Add(span / 2).In(loc).Format(layoutFmt)
 	if len(from)+len(to)+2 <= l.plot {
 		copy(cells, []rune(from))
 		copy(cells[l.plot-len(to):], []rune(to))
+	}
+	if at := (l.plot - len(mid)) / 2; len(from)+len(mid)+len(to)+4 <= l.plot {
+		copy(cells[at:], []rune(mid))
 	}
 	return strings.Repeat(" ", l.label) + "└" + string(cells)
 }

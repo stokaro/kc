@@ -1,6 +1,7 @@
 package chart_test
 
 import (
+	"bytes"
 	"image"
 	"image/color"
 	"testing"
@@ -128,16 +129,68 @@ func TestRasterDashesReferenceLines(t *testing.T) {
 	}
 }
 
-func TestRasterLightensTheCursorCell(t *testing.T) {
+// TestCursorIsTextOverTheImage: the cursor changes neither the picture
+// nor its key, so moving it sends no image; its column is a text cell.
+func TestCursorIsTextOverTheImage(t *testing.T) {
 	t.Parallel()
 	c := rasterChart(steady(5, 0, 10))
-	plain := c.Raster(6, 10)
+	plain, key := c.Raster(6, 10), c.RasterKey(6, 10)
 	c.Cursor = 2
-	img := c.Raster(6, 10)
-	if got := img.RGBAAt(2*6, 0); got.R <= plain.RGBAAt(2*6, 0).R {
-		t.Errorf("cursor cell %v is not lighter than %v", got, plain.RGBAAt(2*6, 0))
+	if !bytes.Equal(c.Raster(6, 10).Pix, plain.Pix) || c.RasterKey(6, 10) != key {
+		t.Error("the cursor changed the picture")
 	}
-	if img.RGBAAt(3*6, 0) != plain.RGBAAt(3*6, 0) || img.RGBAAt(2*6-1, 0) != plain.RGBAAt(2*6-1, 0) {
-		t.Error("the cursor reaches beyond its cell")
+	for row, cells := range c.TextCells() {
+		if !cells[2] || cells[3] {
+			t.Errorf("row %d: text cells %v, want the cursor column only", row, cells)
+		}
+	}
+	// The data and the size do change the key.
+	if c.RasterKey(7, 10) == key {
+		t.Error("another cell size has the same key")
+	}
+	c.Points = c.Points[:len(c.Points)-1]
+	if c.RasterKey(6, 10) == key {
+		t.Error("other points have the same key")
+	}
+}
+
+// TestTextCellsKeepTheBandAndTheArrows: an image of the plot leaves the
+// "no data" band and the arrows of a line above the scale to the text,
+// and draws no line above the scale itself.
+func TestTextCellsKeepTheBandAndTheArrows(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+	var pts []chart.Point
+	for i := range 5 {
+		pts = append(pts, chart.Point{At: start.Add(time.Duration(i) * time.Minute), V: 1})
+	}
+	c := chart.Chart{
+		Start: start, End: start.Add(30 * time.Minute), Mode: chart.Blocks, Width: 31, Height: 5, Cursor: -1,
+		Points: pts, Hold: 90 * time.Second, Format: func(float64) string { return "" },
+		Style: lipgloss.NewStyle().Foreground(lipgloss.Green),
+		Refs:  []chart.Ref{{V: 50, Style: lipgloss.NewStyle().Foreground(lipgloss.Red)}},
+	}
+	cols, rows := c.PlotSize()
+	text := c.TextCells()
+	if len(text) != rows || len(text[0]) != cols {
+		t.Fatalf("TextCells is %dx%d, want %dx%d", len(text), len(text[0]), rows, cols)
+	}
+	if text[rows-1][0] {
+		t.Error("a cell with samples is left to text")
+	}
+	if !text[rows-1][cols-2] {
+		t.Error("a cell without samples is not left to text")
+	}
+	if !c.OffScale(0) || !text[0][cols-1] {
+		t.Errorf("the arrow of the line above the scale (off %v) is not left to text", c.OffScale(0))
+	}
+	img := c.Raster(4, 8)
+	red := rgba(lipgloss.BrightRed)
+	for y := range img.Bounds().Dy() {
+		for x := range img.Bounds().Dx() {
+			if img.RGBAAt(x, y) == red {
+				t.Fatalf("the line above the scale is drawn at pixel %d,%d", x, y)
+			}
+		}
 	}
 }

@@ -123,7 +123,7 @@ func TestUsageAmounts(t *testing.T) {
 			if got.Note != tc.wantNote {
 				t.Errorf("note = %q, want %q", got.Note, tc.wantNote)
 			}
-			got.Top, got.Note, got.At, got.ReadAt = nil, "", time.Time{}, time.Time{}
+			got.Top, got.Rows, got.PodRows, got.Note, got.At, got.ReadAt = nil, nil, nil, "", time.Time{}, time.Time{}
 			if !got.Created.Equal(tc.want.Created) {
 				t.Errorf("created = %v, want %v", got.Created, tc.want.Created)
 			}

@@ -48,6 +48,25 @@ Unicode placeholders, and keeps everything else as text.
   the bytes in the output buffer, which is written before the next frame
   of cells. Only then do the placeholders switch. A picture the terminal
   still holds (the cursor moved back) switches without sending.
+- **A transmit coming back sends nothing.** The live range moves with
+  the clock, so a raster made when the transmit returns differs from the
+  one just sent. Sending it would bring another return and another
+  raster: a loop of about ten PNGs a second that kept the event loop
+  seconds behind a resize, so frames of an old size landed in a smaller
+  terminal. Only the messages that change the frame (a tick, a read, a
+  key, a settled resize, a new cell size) send pictures.
+- **A resize deletes the images and waits.** A size change deletes all
+  of them, clears the screen, and draws the plots as text until the size
+  has stayed put for 300 ms; then the cell size is asked again and the
+  pictures of the new size go out. A drag sends no image per step, and
+  no placement of an old size is left on the screen.
+- **Pictures are made off the event loop.** The raster and the PNG run
+  in a command on a copy of the chart's samples; the result comes back
+  to Update, which sends it. Each chart has at most one picture in
+  flight; a change meanwhile starts the next one when it returns. A
+  result made before a resize, for another dashboard, or for a plot
+  size the chart no longer has is dropped, so it never paints an old
+  size.
 - **Bounded.** Four IDs (240 to 243), PNG at the terminal's cell size
   (CSI 16 t, answered as an input event; 10x20 until then), at most 1.5
   million pixels per image, sent only when the pixels change. Leaving

@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -19,6 +20,9 @@ import (
 type Sources struct {
 	// Context names the kube context for the title bar.
 	Context string
+	// Scope is the namespace scope of the engine (models.AllNamespaces for
+	// the cluster): where Backspace ends.
+	Scope string
 	// Amounts returns the Metrics API measurement of a focus from the
 	// overview engine. It runs on the UI goroutine and does no I/O.
 	Amounts func(focus models.UsageFocus, topN int) models.UsageAmounts
@@ -72,7 +76,7 @@ type widget int
 const (
 	widgetCPU widget = iota
 	widgetMemory
-	widgetTop
+	widgetTargets
 	widgetEvents
 )
 
@@ -96,7 +100,8 @@ type view struct {
 	expanded bool
 	// cursor is the plot cell under the cursor; -1 when there is none.
 	cursor int
-	// sel is the selected consumer, evSel the selected Event.
+	// sel is the selected item of the target list, evSel the selected
+	// Event.
 	sel, evSel int
 	// now is the last measurement; it stays as it was while paused. seen
 	// is false until the engine was read once.
@@ -130,11 +135,21 @@ type Model struct {
 	mode  chart.Mode
 	// pixels draws the plots as images while Sources.Images is set.
 	pixels bool
-	seq    int
+	// resizes counts the size changes; settling is set from a change
+	// until resizeSettle passes without another one (see resized).
+	resizes  int
+	settling bool
+	// rasterKeys are the RasterKey of the picture last sent per image key,
+	// so a cursor move rasterizes nothing.
+	rasterKeys [ImageKeys]uint64
+	seq        int
 	// rects is where the last frame put each widget, for the mouse.
 	rects map[widget]rect
 	// cells is the plot width of the charts in the last frame.
 	cells int
+	// itemAt is the target list item of each line inside its frame in the
+	// last frame, -1 for none.
+	itemAt []int
 	// lastWin is the investigation window the views were last pointed at.
 	lastWin investigation.Window
 }
@@ -170,7 +185,7 @@ type usageMsg struct {
 // that arrives when no dashboard is open.
 func IsMsg(msg tea.Msg) bool {
 	switch msg.(type) {
-	case TickMsg, usageMsg:
+	case TickMsg, usageMsg, settledMsg, encodedMsg:
 		return true
 	}
 	return kittygfx.IsMsg(msg)
@@ -178,13 +193,14 @@ func IsMsg(msg tea.Msg) bool {
 
 // New opens a dashboard of t.
 func New(src Sources, t Target) *Model {
-	m := &Model{src: src, sess: newSession(), mode: chart.Braille, pixels: true}
+	m := &Model{src: src, sess: newSession(), mode: chart.Blocks, pixels: true}
 	m.stack = []*view{m.newView(t, nil)}
+	m.firstRow(m.stack[0])
 	return m
 }
 
 func (m *Model) newView(t Target, from *view) *view {
-	v := &view{target: t, cursor: -1, promIdx: defaultPromSpan, sessionIdx: defaultSessionSpan}
+	v := &view{target: t, cursor: -1, promIdx: defaultPromSpan, sessionIdx: defaultSessionSpan, focus: widgetTargets}
 	switch {
 	case from != nil:
 		// A drilldown keeps the time: the range, and the paused end.
@@ -207,6 +223,7 @@ func (m *Model) Resume(src Sources, t Target) *Model {
 	if src.Context != m.src.Context || (src.Usage == nil) != (m.src.Usage == nil) {
 		m.src = src
 		m.stack = []*view{m.newView(t, nil)}
+		m.firstRow(m.stack[0])
 		return m
 	}
 	m.src = src
@@ -319,22 +336,27 @@ func (m *Model) shownEnd(v *view) time.Time {
 func (m *Model) refresh() {
 	v := m.top()
 	a := m.src.Amounts(v.target.Focus(), topN)
-	m.sess.add(v.target.Key(), a)
+	m.sess.add(v.target.Key(), a, func(r models.UsageRow) string { return rowTarget(r).Key() })
 	if !v.paused || !v.seen || v.now.Loading {
 		v.now = a
 	}
 	v.seen = true
-	v.sel = min(v.sel, max(0, len(v.now.Top)-1))
 }
 
 // Update handles a message for the open dashboard. With images on, it
 // also sends the pictures of the next frame the terminal does not have.
 func (m *Model) Update(msg tea.Msg) (tea.Cmd, Action) {
 	if kittygfx.IsMsg(msg) {
-		if m.src.Images != nil {
-			m.src.Images.Handle(msg)
+		// A transmit coming back sends nothing: the live range moves
+		// with the clock, so a new raster would differ and go out again,
+		// and its return would start the next one, without end.
+		if m.src.Images != nil && m.src.Images.Handle(msg) {
+			return m.syncImages(), Action{}
 		}
-		return m.syncImages(), Action{}
+		return nil, Action{}
+	}
+	if msg, ok := msg.(encodedMsg); ok {
+		return m.showEncoded(msg), Action{}
 	}
 	cmd, act := m.update(msg)
 	if act.Close || act.Open != nil || act.Logs != nil {
@@ -347,12 +369,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Cmd, Action) {
 func (m *Model) update(msg tea.Msg) (tea.Cmd, Action) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		changed := m.w != 0 && (m.w != msg.Width || m.h != msg.Height)
 		m.w, m.h = msg.Width, msg.Height
-		if m.images() {
-			// A new font size comes with a resize.
-			return tea.Batch(m.maybeRead(), kittygfx.QueryCellSize()), Action{}
+		if changed {
+			return tea.Batch(m.maybeRead(), m.resized()), Action{}
 		}
 		return m.maybeRead(), Action{}
+	case settledMsg:
+		if msg.id != m.id || msg.seq != m.resizes || !m.settling {
+			return nil, Action{}
+		}
+		m.settling = false
+		if m.images() {
+			// A new font size comes with a resize.
+			return kittygfx.QueryCellSize(), Action{}
+		}
+		return nil, Action{}
 	case TickMsg:
 		if msg.id != m.id {
 			return nil, Action{}
@@ -363,7 +395,7 @@ func (m *Model) update(msg tea.Msg) (tea.Cmd, Action) {
 	case usageMsg:
 		return m.handleUsage(msg), Action{}
 	case tea.KeyPressMsg:
-		return m.handleKey(msg)
+		return m.Key(msg.String())
 	case tea.MouseClickMsg:
 		return m.handleClick(msg.Mouse()), Action{}
 	case tea.MouseWheelMsg:
@@ -377,7 +409,12 @@ func (m *Model) readRange(v *view) promhistory.Range {
 	end := m.shownEnd(v)
 	cells := m.cells
 	if cells <= 0 {
-		cells = chart.PlotWidth(max(m.w, 40), labelWidth)
+		// Before the first frame: the plot width the layout will give.
+		w := max(m.w, 40)
+		if r, ok := layout(v, w, max(m.h, 24))[widgetCPU]; ok {
+			w = r.w - 2
+		}
+		cells = chart.PlotWidth(w, labelWidth)
 	}
 	return promhistory.RangeFor(end.Add(-v.promSpan(m)), end, chart.Samples(cells, m.mode))
 }
@@ -448,10 +485,7 @@ func (m *Model) handleUsage(msg usageMsg) tea.Cmd {
 
 // widgets are the widgets of v in focus order.
 func (v *view) widgets() []widget {
-	if v.target.Kind == KindPod {
-		return []widget{widgetCPU, widgetMemory, widgetEvents}
-	}
-	return []widget{widgetCPU, widgetMemory, widgetEvents, widgetTop}
+	return []widget{widgetTargets, widgetCPU, widgetMemory, widgetEvents}
 }
 
 func (v *view) moveFocus(step int) {
@@ -475,21 +509,48 @@ func (m *Model) pause(v *view) {
 	v.paused, v.end = true, m.now()
 }
 
-func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, Action) {
+// Key runs a key of the dashboard, as typed or chosen from its menu bar
+// or F-key bar (see Menus and FunctionKeys).
+//
+//nolint:gocyclo // one short case per key
+func (m *Model) Key(key string) (tea.Cmd, Action) {
 	v := m.top()
-	switch msg.String() {
+	if d, ok := strings.CutPrefix(key, rangeKey); ok {
+		if span, ok := parseShort(d); ok {
+			m.setRange(v, span)
+		}
+		return m.maybeRead(), Action{}
+	}
+	if d, ok := strings.CutPrefix(key, drawKey); ok {
+		mode, pixels, ok := m.drawNamed(d)
+		if !ok {
+			return nil, Action{}
+		}
+		return tea.Batch(m.drawAs(mode, pixels), m.maybeRead()), Action{}
+	}
+	switch key {
 	case "esc":
 		return m.back()
+	case "f10":
+		return nil, Action{Close: true}
+	case "backspace", "ctrl+h": // terminals send DEL or ^H
+		m.up()
+	case "f4":
+		v.expanded = !v.expanded
 	case "tab":
 		v.moveFocus(1)
 	case "shift+tab":
 		v.moveFocus(-1)
 	case "enter":
-		if v.focus == widgetEvents {
+		switch v.focus {
+		case widgetEvents:
 			return nil, m.open(v)
+		case widgetTargets:
+			m.drill(v)
+		default:
+			v.expanded = !v.expanded
 		}
-		return m.enter(v), Action{}
-	case "space", " ":
+	case "space", " ", "f3":
 		if v.paused {
 			m.detach(v)
 			v.paused, v.cursor = false, -1
@@ -498,7 +559,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, Action) {
 			m.pause(v)
 		}
 	case "left", "right", "home", "end":
-		m.moveCursor(v, msg.String())
+		m.moveCursor(v, key)
 	case "up":
 		m.moveSelection(v, -1)
 	case "down":
@@ -507,15 +568,16 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, Action) {
 		m.zoom(v, -1)
 	case "-":
 		m.zoom(v, 1)
-	case "b":
-		return tea.Batch(m.switchDraw(), m.maybeRead()), Action{}
+	case "b", "f6":
+		mode, pixels := m.nextDraw()
+		return tea.Batch(m.drawAs(mode, pixels), m.maybeRead()), Action{}
 	case "r":
 		v.prom.key, v.prom.at = "", time.Time{}
 	case "o":
 		return nil, m.open(v)
-	case "w":
+	case "w", "f5":
 		m.useAsWindow(v)
-	case "l":
+	case "l", "f7":
 		return nil, m.eventLogs(v)
 	default:
 		return nil, Action{}
@@ -526,8 +588,8 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Cmd, Action) {
 // moveSelection moves the selection of the focused list by step.
 func (m *Model) moveSelection(v *view, step int) {
 	switch v.focus {
-	case widgetTop:
-		v.sel = min(max(0, len(v.now.Top)-1), max(0, v.sel+step))
+	case widgetTargets:
+		v.sel = min(max(0, len(m.targetItems(v))-1), max(0, v.sel+step))
 	case widgetEvents:
 		v.evSel = min(max(0, len(m.shownEvents(v))-1), max(0, v.evSel+step))
 	}
@@ -553,26 +615,6 @@ func (m *Model) back() (tea.Cmd, Action) {
 	return nil, Action{}
 }
 
-// enter expands or collapses a chart, and opens the dashboard of the
-// selected pod from the consumers.
-func (m *Model) enter(v *view) tea.Cmd {
-	if v.focus == widgetEvents {
-		return nil
-	}
-	if v.focus != widgetTop {
-		v.expanded = !v.expanded
-		return nil
-	}
-	if v.sel >= len(v.now.Top) {
-		return nil
-	}
-	c := v.now.Top[v.sel]
-	next := m.newView(v.target.PodTarget(c.Namespace, c.Name), v)
-	m.stack = append(m.stack, next)
-	m.refresh()
-	return m.maybeRead()
-}
-
 // open shows the selected consumer, else the target, in Commander.
 func (m *Model) open(v *view) Action {
 	var ref models.ObjectRef
@@ -585,9 +627,13 @@ func (m *Model) open(v *view) Action {
 		}
 		return Action{Open: &ref, Event: &e}
 	}
-	if v.focus == widgetTop && v.sel < len(v.now.Top) {
-		c := v.now.Top[v.sel]
-		ref, ok = v.target.PodTarget(c.Namespace, c.Name).Object(types.UID(""))
+	if items := m.targetItems(v); v.focus == widgetTargets && v.sel < len(items) && !items[v.sel].up {
+		it := items[v.sel]
+		uid := types.UID("")
+		if it.target == v.target {
+			uid = v.now.UID
+		}
+		ref, ok = it.target.Object(uid)
 	} else {
 		ref, ok = v.target.Object(v.now.UID)
 	}
@@ -602,9 +648,6 @@ func (m *Model) open(v *view) Action {
 // paused range by a quarter.
 func (m *Model) moveCursor(v *view, key string) {
 	cells := max(1, m.cells)
-	if v.focus == widgetTop {
-		v.focus = widgetCPU
-	}
 	v.evSel = 0
 	if v.cursor < 0 {
 		m.pause(v)
@@ -614,7 +657,7 @@ func (m *Model) moveCursor(v *view, key string) {
 		}
 		return
 	}
-	pan := v.span(m) / 4
+	pan := m.shownSpan(v) / 4
 	switch key {
 	case "left":
 		if v.cursor == 0 {
@@ -650,19 +693,22 @@ func (m *Model) handleClick(mouse tea.Mouse) tea.Cmd {
 		}
 		v.focus = w
 		switch w {
-		case widgetTop:
-			row := mouse.Y - r.y - 1
-			if row < 0 || row >= len(v.now.Top) {
+		case widgetTargets:
+			line := mouse.Y - r.y - 1
+			if line < 0 || line >= len(m.itemAt) || m.itemAt[line] < 0 {
 				return nil
 			}
-			if row == v.sel {
-				return m.enter(v)
+			if item := m.itemAt[line]; item == v.sel {
+				m.drill(v)
+			} else {
+				v.sel = item
 			}
-			v.sel = row
+			return m.maybeRead()
 		case widgetEvents:
-			if row := mouse.Y - r.y - 2; row >= 0 && row < len(m.shownEvents(v)) {
+			line := mouse.Y - r.y - 1
+			if row := line - eventsListAt; row >= 0 && row < len(m.shownEvents(v)) {
 				v.evSel = row
-			} else if cell := mouse.X - (r.x + r.w - m.cells); row == -1 && cell >= 0 && cell < m.cells {
+			} else if cell := mouse.X - r.plotX; line < eventsListAt && cell >= 0 && cell < m.cells {
 				m.pause(v)
 				v.cursor, v.evSel = cell, 0
 			}
@@ -680,7 +726,7 @@ func (m *Model) handleClick(mouse tea.Mouse) tea.Cmd {
 func (m *Model) handleWheel(mouse tea.Mouse) tea.Cmd {
 	v := m.top()
 	for w, r := range m.rects {
-		if w == widgetTop || w == widgetEvents || !r.contains(mouse.X, mouse.Y) {
+		if w == widgetTargets || w == widgetEvents || !r.contains(mouse.X, mouse.Y) {
 			continue
 		}
 		switch mouse.Button {
@@ -697,6 +743,10 @@ func (m *Model) handleWheel(mouse tea.Mouse) tea.Cmd {
 // Root is the target the dashboard was opened for.
 func (m *Model) Root() Target { return m.stack[0].target }
 
+// EventsFocused reports whether the Events list has the keyboard focus,
+// so o, Enter and l act on the selected Event.
+func (m *Model) EventsFocused() bool { return m.top().focus == widgetEvents }
+
 // Context is the kube context the dashboard reads.
 func (m *Model) Context() string { return m.src.Context }
 
@@ -707,5 +757,6 @@ func (m *Model) Retarget(t Target) *Model {
 		v.cancelRead()
 	}
 	m.stack = []*view{m.newView(t, nil)}
+	m.firstRow(m.stack[0])
 	return m
 }

@@ -98,26 +98,75 @@ func TestImagesReplaceThePlotCells(t *testing.T) {
 func TestDrawKeyCyclesThroughImages(t *testing.T) {
 	t.Parallel()
 	m, _, _ := openWithImages(t, 140, 40)
-	press := func() string {
-		cmd, _ := m.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	press := func(k string) string {
+		cmd, _ := m.Key(k)
 		return gfxRun(t, m, cmd)
 	}
 	hasPlaceholders := func() bool { return strings.ContainsRune(m.View(), kittygfx.Placeholder) }
-	if !hasPlaceholders() {
-		t.Fatal("images are not drawn first")
+	next := func() string { return m.FunctionKeys()[5].Label }
+	if !hasPlaceholders() || next() != "Blocks" {
+		t.Fatalf("images are not drawn first (F6 offers %q)", next())
 	}
-	if out := press(); !strings.Contains(out, "a=d,d=I") || hasPlaceholders() {
-		t.Errorf("b from images: deletes %v, placeholders %v; want braille without images", strings.Contains(out, "a=d"), hasPlaceholders())
+	if out := press("b"); !strings.Contains(out, "a=d,d=I") || hasPlaceholders() {
+		t.Errorf("b from images: deletes %v, placeholders %v; want blocks without images", strings.Contains(out, "a=d"), hasPlaceholders())
 	}
-	if !strings.Contains(m.View(), "b blocks") && !strings.Contains(ansi.Strip(m.View()), "b blocks") {
-		t.Errorf("the key line does not offer blocks next")
+	if next() != "Braille" {
+		t.Errorf("F6 offers %q after images, want Braille", next())
 	}
-	press() // blocks
-	if !strings.Contains(ansi.Strip(m.View()), "b images") {
-		t.Errorf("the key line does not offer images after blocks")
+	press("f6")
+	if next() != "Images" {
+		t.Errorf("F6 offers %q after braille, want Images", next())
 	}
-	if out := press(); !strings.Contains(out, "a=T") || !hasPlaceholders() {
-		t.Error("b from blocks does not bring the images back")
+	if out := press("f6"); !strings.Contains(out, "a=T") || !hasPlaceholders() {
+		t.Error("F6 from braille does not bring the images back")
+	}
+}
+
+// TestViewMenuPicksTheDrawing: the View menu checks the drawing in use
+// and switches to the one picked.
+func TestViewMenuPicksTheDrawing(t *testing.T) {
+	t.Parallel()
+	m, _, _ := openWithImages(t, 140, 40)
+	var ran []string
+	checked := func() []string {
+		var out []string
+		for _, it := range m.Menus(func(k string) tea.Cmd { ran = append(ran, k); return nil })[2].Items {
+			if it.Checked {
+				out = append(out, it.Label)
+			}
+		}
+		return out
+	}
+	if c := checked(); len(c) != 1 || !strings.Contains(c[0], "images") {
+		t.Fatalf("checked %q, want the images", c)
+	}
+	out := gfxRun(t, m, func() tea.Msg { cmd, _ := m.Key("draw:blocks"); return cmd() })
+	if !strings.Contains(out, "a=d,d=I") || strings.ContainsRune(m.View(), kittygfx.Placeholder) {
+		t.Error("picking blocks keeps the images")
+	}
+	if c := checked(); len(c) != 1 || !strings.Contains(c[0], "blocks") {
+		t.Errorf("checked %q, want the blocks", c)
+	}
+}
+
+// TestNoDataBandStaysText: with images on, a chart without samples keeps
+// its "no data" band in text and shows no placeholder over it.
+func TestNoDataBandStaysText(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	a.CPU.Used, a.CPU.UsedKnown, a.Memory.Used, a.Memory.UsedKnown, a.Top, a.Rows = 0, false, 0, false, nil, nil
+	f := &fakes{now: t0, amounts: a}
+	src := f.sources(false)
+	src.Images = kittygfx.NewImages(kittygfx.Encoder{}, 240, dashboard.ImageKeys)
+	m := dashboard.New(src, web)
+	gfxRun(t, m, func() tea.Msg { return tea.WindowSizeMsg{Width: 120, Height: 30} })
+	gfxRun(t, m, m.Start())
+	view := m.View()
+	if !strings.Contains(ansi.Strip(view), "no data") {
+		t.Fatalf("no \"no data\" band:\n%s", ansi.Strip(view))
+	}
+	if strings.ContainsRune(view, kittygfx.Placeholder) {
+		t.Error("placeholders over a plot without samples")
 	}
 }
 
@@ -129,9 +178,13 @@ func TestNoImagesWithoutTheSource(t *testing.T) {
 		t.Fatal("placeholders without images")
 	}
 	key(t, m, "b")
-	key(t, m, "b")
-	if v := ansi.Strip(m.View()); strings.Contains(v, "b images") || strings.ContainsRune(v, kittygfx.Placeholder) {
-		t.Error("b offers images the terminal cannot show")
+	if l := m.FunctionKeys()[5].Label; l != "Blocks" || strings.ContainsRune(m.View(), kittygfx.Placeholder) {
+		t.Errorf("F6 offers %q from braille without images, want Blocks", l)
+	}
+	for _, it := range m.Menus(nil)[2].Items {
+		if strings.Contains(it.Label, "images") {
+			t.Error("the View menu offers images the terminal cannot show")
+		}
 	}
 }
 
@@ -146,5 +199,30 @@ func TestLiveViewSendsNewPixelsOnly(t *testing.T) {
 			t.Fatal("a paused view sends images on a tick")
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestCursorMovesSendNoImage: the cursor is text over the placeholders,
+// so moving it sends no picture; new data does.
+func TestCursorMovesSendNoImage(t *testing.T) {
+	t.Parallel()
+	const w, h = 140, 40
+	m, _, _ := openWithImages(t, w, h)
+	// The first press pauses, which may redraw once; the moves after it
+	// stay inside the range.
+	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	gfxRun(t, m, cmd)
+	var out string
+	for _, k := range []rune{tea.KeyLeft, tea.KeyLeft, tea.KeyRight, tea.KeyLeft} {
+		cmd, _ := m.Update(tea.KeyPressMsg{Code: k})
+		out += gfxRun(t, m, cmd)
+	}
+	if n := strings.Count(out, "\x1b_G"); n != 0 {
+		t.Fatalf("cursor moves sent %d images", n)
+	}
+	// The cursor column is drawn as text inside the image's cells.
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, string(kittygfx.Placeholder)) {
+		t.Fatal("no placeholders under the cursor")
 	}
 }

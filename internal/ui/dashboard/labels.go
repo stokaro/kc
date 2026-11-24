@@ -7,43 +7,188 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/stokaro/kc/internal/promhistory"
+	"github.com/stokaro/kc/internal/ui/chart"
 )
 
-// chartTitle is the first line of a chart: the resource and unit, where
-// the line comes from, and how much of the range it covers.
-func (m *Model) chartTitle(v *view, wd widget, w int) string {
-	name := "CPU cores"
+// legend is the first line inside a chart's frame: in words, what each
+// line is and its value now, or in the cursor cell; the share of the
+// request in use and how close the usage is to the limit.
+//
+//nolint:gocyclo // one short case per state of the legend
+func (m *Model) legend(v *view, wd widget, c chart.Chart) []string {
+	a := v.now.CPU
 	if wd == widgetMemory {
-		name = "Memory"
+		a = v.now.Memory
 	}
-	mark := "  "
-	if v.focus == wd {
-		mark = "▸ "
+	switch {
+	case v.now.Loading:
+		return []string{noteStyle().Render("Loading the cluster's objects…")}
+	case v.now.Err != "":
+		return []string{badStyle().Render("Metrics API: " + v.now.Err)}
+	case !v.now.Found && v.now.Note == "":
+		return []string{badStyle().Render(v.target.Title() + " is not in the lists kc reads; it may be gone")}
 	}
-	head := mark + name
-	if v.focus == wd {
-		head = focusStyle.Render(head)
+	use, useKnown := a.Used, a.UsedKnown
+	req, lim := a.Requests, a.Limits
+	limKnown := !a.LimitsPartial
+	at := "Now"
+	if v.paused {
+		at = "At pause"
 	}
-	return fit(head+" · "+m.sourceLabel(v, wd)+m.legend(v, wd), w)
-}
-
-// legend names the lines of a chart, or why the requests and limits have
-// no history to draw.
-func (m *Model) legend(v *view, wd widget) string {
-	legend := " " + useStyle.Render("█use")
+	if v.cursor >= 0 {
+		cv := c.Cell(v.cursor)
+		at = "At " + cv.From.In(m.loc()).Format("15:04:05")
+		use, useKnown = cv.V, cv.OK
+		var ok bool
+		if req, ok = c.RefAt(refRequests, v.cursor); !ok {
+			req = 0
+		}
+		// A history has a limit only where every container had one.
+		lim, limKnown = c.RefAt(refLimits, v.cursor)
+		limKnown = limKnown && lim > 0
+	}
+	parts := []string{valStyle().Render(at + ":")}
+	swatch := func(st lipgloss.Style, r string) string {
+		return on(lipgloss.NewStyle().Foreground(st.GetForeground()).Bold(true)).Render(r)
+	}
+	useText := "no data"
+	switch {
+	case v.cursor >= 0 && !useKnown:
+		useText = "no sample"
+	case v.cursor >= 0 && use <= 0:
+		useText = "none"
+	case v.cursor >= 0:
+		// A cell pools several samples; the chart draws their peak.
+		useText = c.Format(use) + " (highest)"
+	case useKnown:
+		useText = c.Format(use)
+	case v.now.Note != "":
+		useText = v.now.Note
+	}
+	parts = append(parts, swatch(useStyle, "█")+" usage "+valStyle().Render(useText))
 	if u := v.prom.usage; m.usesProm(v) && !u.Resources.Known() {
 		why := "no kube-state-metrics container series"
 		if u.ResourcesErr != "" {
 			why = u.ResourcesErr
 		}
-		return legend + dimStyle.Render(" · no req/lim history: "+why)
+		return append(parts, noteStyle().Render("no request or limit history: "+why))
 	}
-	legend += " " + reqStyle.Render("┄req") + " " + limStyle.Render("┄lim")
-	if (wd == widgetCPU && v.now.CPU.Capacity > 0) || (wd == widgetMemory && v.now.Memory.Capacity > 0) {
-		legend += " " + allocStyle.Render("┄alloc")
+	share := func(ref float64, of string) string {
+		if !useKnown || ref <= 0 {
+			return ""
+		}
+		return " (" + strconv.Itoa(int(use/ref*100+0.5)) + "% " + of + ")"
 	}
-	return legend
+	above := func(i int) string {
+		x := v.cursor
+		if x < 0 {
+			x = c.Cells() - 1
+		}
+		if c.OffScaleAt(i, x) {
+			return " ↑ above"
+		}
+		return ""
+	}
+	reqText := "none set"
+	if req > 0 {
+		reqText = c.Format(req) + share(req, "used") + above(refRequests)
+	}
+	reqPart := swatch(reqStyle, "┄") + " request " + reqText
+	if useKnown && req > 0 && use > req {
+		reqPart = swatch(reqStyle, "┄") + overStyle().Render(" over the request "+c.Format(req)+share(req, "of it"))
+	}
+	parts = append(parts, reqPart)
+	limPart := swatch(limStyle, "┄") + " limit "
+	switch {
+	case !limKnown && v.target.Kind == KindPod:
+		limPart += "missing on some containers"
+	case !limKnown:
+		limPart += "missing on some pods"
+	case lim <= 0:
+		limPart += "none set"
+	case useKnown && use >= limitNear*lim:
+		limPart = swatch(limStyle, "┄") + badStyle().Render(" near the limit "+c.Format(lim)+share(lim, "of it"))
+	default:
+		limPart += c.Format(lim) + above(refLimits)
+	}
+	parts = append(parts, limPart)
+	if a.Capacity > 0 {
+		parts = append(parts, swatch(allocStyle, "┄")+" allocatable "+c.Format(a.Capacity)+above(refCapacity))
+	}
+	return parts
+}
+
+// legendLines packs the parts of a legend into lines of width w, three
+// at most: a narrow chart gives up plot rows rather than cut the legend.
+func legendLines(parts []string, w int) []string {
+	var lines []string
+	cur := ""
+	for _, p := range parts {
+		switch {
+		case cur == "":
+			cur = p
+		case ansi.StringWidth(cur)+2+ansi.StringWidth(p) <= w:
+			cur += "  " + p
+		default:
+			lines = append(lines, cur)
+			cur = "      " + p
+		}
+	}
+	lines = append(lines, cur)
+	if len(lines) > 3 {
+		lines = append(lines[:2], strings.Join(lines[2:], "  "))
+	}
+	return lines
+}
+
+// minFit is the least range a live session chart narrows to.
+const minFit = 30 * time.Second
+
+// fits reports whether v's chart starts at its first session sample, and
+// where: the session history is shorter than the range, and no window or
+// pan set the range.
+func (m *Model) fits(v *view) (time.Time, bool) {
+	if !m.sessionShown(v) || v.follow || v.custom > 0 {
+		return time.Time{}, false
+	}
+	first, _, ok := m.sess.kept(v.target.Key())
+	end := m.shownEnd(v)
+	if !ok || !first.After(end.Add(-v.span(m))) || !first.Before(end) {
+		return time.Time{}, false
+	}
+	return minTime(first, end.Add(-minFit)), true
+}
+
+// shownStart is the start of the range v shows: the zoom range, or the
+// first session sample while the session is shorter (fits).
+func (m *Model) shownStart(v *view) time.Time {
+	if start, ok := m.fits(v); ok {
+		return start
+	}
+	return m.shownEnd(v).Add(-v.span(m))
+}
+
+// shownSpan is how long the range v shows is.
+func (m *Model) shownSpan(v *view) time.Duration { return m.shownEnd(v).Sub(m.shownStart(v)) }
+
+// rangeNote is the chart title's note on a range narrowed to the data.
+func (m *Model) rangeNote(v *view) string {
+	if _, ok := m.fits(v); !ok {
+		return ""
+	}
+	return roughDuration(m.shownSpan(v)) + " of " + shortDuration(v.span(m)) + " collected so far"
+}
+
+// roughDuration writes a duration in whole minutes, or seconds below one.
+func roughDuration(d time.Duration) string {
+	if d < time.Minute {
+		return strconv.Itoa(int(d/time.Second)) + "s"
+	}
+	return strconv.Itoa(int(d/time.Minute)) + "m"
 }
 
 // sourceLabel says where a chart's line comes from and what it covers:
@@ -64,7 +209,11 @@ func (m *Model) sourceLabel(v *view, wd widget) string {
 		}
 		return label
 	}
-	return "session: " + m.sessionCoverage(v)
+	label := "Metrics API, " + m.sessionCoverage(v)
+	if t := m.sourceTitle(v); t != "Metrics API session" {
+		label += " · " + t
+	}
+	return label
 }
 
 // seriesLabel says what one Prometheus sample of the chart is: the CPU
@@ -127,73 +276,21 @@ func coverageLabel(c promhistory.Coverage) string {
 // says how many pods the newest one measured.
 func (m *Model) sessionCoverage(v *view) string {
 	end := m.shownEnd(v)
-	in := m.sess.within(v.target.Key(), end.Add(-v.span(m)), end)
+	in := m.sess.within(v.target.Key(), m.shownStart(v), end)
 	if len(in) == 0 {
 		// A range outside what was kept stays where it is; it does not
 		// move to the samples there are.
 		if first, last, ok := m.sess.kept(v.target.Key()); ok {
-			return "nothing recorded in this range; kept " + first.In(m.loc()).Format("15:04:05") + "–" + last.In(m.loc()).Format("15:04:05")
+			return "nothing recorded in this range (kept " + first.In(m.loc()).Format("15:04:05") + "–" + last.In(m.loc()).Format("15:04:05") + ")"
 		}
 		return "no samples yet"
 	}
 	last := in[len(in)-1]
-	text := fmt.Sprintf("%d samples from %s", len(in), in[0].at.In(m.loc()).Format("15:04:05"))
-	if last.expected > 0 && last.measured < last.expected {
-		text += fmt.Sprintf(" · partial: %d of %d pods measured", last.measured, last.expected)
+	text := plural(len(in), "sample")
+	if last.expected > 0 {
+		text += fmt.Sprintf(" · %d of %d pods measured", last.measured, last.expected)
 	}
 	return text
-}
-
-// topLines lists the pods that use the most memory, now.
-func (m *Model) topLines(v *view, w, h int) []string {
-	head := "  Top pods by memory, now (Metrics API)"
-	if v.focus == widgetTop {
-		head = focusStyle.Render("▸ Top pods by memory, now (Metrics API)") + dimStyle.Render("  Enter: dashboard  o: open")
-	}
-	lines := []string{fit(head, w)}
-	if len(v.now.Top) == 0 {
-		note := v.now.Note
-		if note == "" {
-			note = "no measured pods"
-		}
-		return append(lines, fit("  "+note, w))
-	}
-	nameW := max(10, w-24)
-	first := 0
-	if rows := h - 1; v.sel >= rows {
-		first = v.sel - rows + 1
-	}
-	for i := first; i < len(v.now.Top) && len(lines) < h; i++ {
-		c := v.now.Top[i]
-		name := c.Namespace + "/" + c.Name
-		if v.target.Kind != KindScope || v.target.Namespace != "" {
-			name = c.Name
-		}
-		row := fmt.Sprintf("  %-*s %9s %10s", nameW, truncate(name, nameW), formatCores(c.CPU), formatBytes(c.Memory))
-		if v.focus == widgetTop && i == v.sel {
-			row = selStyle.Render(fit(row, w))
-		}
-		lines = append(lines, fit(row, w))
-	}
-	return lines
-}
-
-// keysLine lists the keys, the key bold and its action dim; a paged
-// layout says Tab shows the next widget. The draw mode key shows from
-// 100 columns; F1 lists it at every width.
-func (m *Model) keysLine(v *view, rects map[widget]rect, w int) string {
-	keys := [][2]string{{"Tab", "focus"}, {"Enter", "expand"}, {"←→", "cursor"}, {"Space", "pause"}, {"+-", "zoom"}, {"o", "open"}, {"F1", "help"}, {"Esc", "back"}}
-	if len(rects) == 1 && !v.expanded {
-		keys[0][1] = "next widget"
-	}
-	if w >= 100 {
-		keys = append(keys[:6], append([][2]string{{"l", "logs"}, {"w", "window"}, {"b", m.nextDrawName()}}, keys[6:]...)...)
-	}
-	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = focusStyle.Render(k[0]) + " " + dimStyle.Render(k[1])
-	}
-	return fit(" "+strings.Join(parts, " "), w)
 }
 
 func truncate(s string, w int) string {

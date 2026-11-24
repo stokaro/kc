@@ -3,14 +3,16 @@ package dashboard_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/promhistory"
+	"github.com/stokaro/kc/internal/ui/dashboard"
 )
 
 // raisedRequest is a Prometheus usage whose CPU request was 0.5 until
 // the middle of r and 1 after, and whose limit was 2 throughout but for
-// one step where a container had none.
+// three steps where a container had none.
 func raisedRequest(s promhistory.Scope, r promhistory.Range) promhistory.Usage {
 	u := steadyUsage(s, r, 0.25)
 	res := &promhistory.Resources{}
@@ -21,7 +23,7 @@ func raisedRequest(s promhistory.Scope, r promhistory.Range) promhistory.Usage {
 		if !at.Before(mid) {
 			req = 1
 		}
-		if i == 3 {
+		if i >= 3 && i <= 5 {
 			limited = 1
 		}
 		pt := func(v float64) promhistory.Point { return promhistory.Point{At: at, Value: v} }
@@ -48,16 +50,14 @@ func TestRequestsFromHistoryNotToday(t *testing.T) {
 	f := &fakes{now: t0, amounts: a, usage: func(s promhistory.Scope, r promhistory.Range) (promhistory.Usage, error) {
 		return raisedRequest(s, r), nil
 	}}
-	m := open(t, f, true, web, 100, 30)
-	lines := screen(t, m, 100, 30)
-	requireText(t, lines, "┄req ┄lim")
+	m := open(t, f, true, web, 240, 42)
 	key(t, m, "home")
-	requireText(t, screen(t, m, 100, 30), "CPU 0.25 req 0.5 lim 2")
+	requireText(t, screen(t, m, 240, 42), "█ usage 0.25 (highest)  ┄ request 0.5 (50% used)  ┄ limit 2 ↑ above")
 	key(t, m, "end")
-	lines = screen(t, m, 100, 30)
-	requireText(t, lines, "CPU 0.25 req 1 lim 2")
+	lines := screen(t, m, 240, 42)
+	requireText(t, lines, "█ usage 0.25 (highest)  ┄ request 1 (25% used) ↑ above  ┄ limit 2 ↑ above")
 	for _, l := range lines {
-		if strings.Contains(l, "req 3") || strings.Contains(l, "lim 4") {
+		if strings.Contains(l, "request 3") || strings.Contains(l, "limit 4") {
 			t.Fatalf("today's spec drawn over the past: %q", l)
 		}
 	}
@@ -65,7 +65,7 @@ func TestRequestsFromHistoryNotToday(t *testing.T) {
 	unlimited := false
 	key(t, m, "home")
 	for range 20 {
-		if l := screen(t, m, 100, 30); contains(l, "req 0.5  ·") || contains(l, "req 0.5 ·") {
+		if l := screen(t, m, 240, 42); contains(l, "request 0.5 (50% used)  ┄ limit missing on some pods") {
 			unlimited = true
 			break
 		}
@@ -86,8 +86,8 @@ func TestNoResourcesHistorySaysWhy(t *testing.T) {
 		err  string
 		want string
 	}{
-		{name: "no series", want: "no req/lim history: no kube-state-metri"},
-		{name: "failed read", err: "prometheus monitoring/prometheus: two series for sum/cpu", want: "no req/lim history: prometheus monitori"},
+		{name: "no series", want: "no request or limit history: no kube-state-metrics"},
+		{name: "failed read", err: "prometheus monitoring/prometheus: two series for sum/cpu", want: "no request or limit history: prometheus monitoring"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -97,8 +97,8 @@ func TestNoResourcesHistorySaysWhy(t *testing.T) {
 				u.ResourcesErr = tc.err
 				return u, nil
 			}}
-			m := open(t, f, true, web, 160, 30)
-			lines := screen(t, m, 160, 30)
+			m := open(t, f, true, web, 240, 42)
+			lines := screen(t, m, 240, 42)
 			requireText(t, lines, tc.want)
 			for _, l := range lines {
 				if strings.Contains(l, "│") && strings.Contains(l, "┄") {
@@ -116,19 +116,19 @@ func TestSessionRequestsAsSampled(t *testing.T) {
 	a := measured()
 	a.CPU.Requests = 0.5
 	f := &fakes{now: t0, amounts: a}
-	m := open(t, f, false, web, 100, 30)
+	m := open(t, f, false, web, 150, 42)
 	ticks(t, f, m, 30, models.UsagePollInterval)
 	f.mu.Lock()
 	f.amounts.CPU.Requests = 1.5
 	f.mu.Unlock()
 	ticks(t, f, m, 30, models.UsagePollInterval)
-	screen(t, m, 100, 30) // lay out the cells before moving the cursor
+	screen(t, m, 150, 42) // lay out the cells before moving the cursor
 	key(t, m, "end")
-	requireText(t, screen(t, m, 100, 30), "req 1.5")
+	requireText(t, screen(t, m, 150, 42), "request 1.5")
 	seen := false
 	for range 60 {
 		key(t, m, "left")
-		if contains(screen(t, m, 100, 30), "CPU 0.4 req 0.5") {
+		if contains(screen(t, m, 150, 42), "usage 0.4 (highest)  ┄ request 0.5") {
 			seen = true
 			break
 		}
@@ -136,4 +136,36 @@ func TestSessionRequestsAsSampled(t *testing.T) {
 	if !seen {
 		t.Error("no past cell showed the request sampled then")
 	}
+}
+
+// TestNarrowLegendWraps: at 100 columns the charts are side by side;
+// a legend with an off-scale request and a partial limit wraps instead
+// of ending in "…", and so does no source note.
+func TestNarrowLegendWraps(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	a.CPU.Requests = 40
+	a.Memory.LimitsPartial = true
+	a.CPU.LimitsPartial = true
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, web, 100, 30)
+	ticks(t, f, m, 4, 15*time.Second)
+	lines := screen(t, m, 100, 30)
+	requireText(t, lines, "↑ above", "limit missing on some pods", "Metrics API, 5 samples")
+	for _, l := range lines {
+		if strings.Contains(l, "…") {
+			t.Errorf("a cut line: %q", l)
+		}
+	}
+}
+
+// TestPodLimitMissingOnContainers: a pod's partial limit is about its
+// containers, not pods.
+func TestPodLimitMissingOnContainers(t *testing.T) {
+	t.Parallel()
+	a := measured()
+	a.Memory.LimitsPartial = true
+	f := &fakes{now: t0, amounts: a}
+	m := open(t, f, false, dashboard.Target{Kind: dashboard.KindPod, Namespace: "shop", Name: "web-1"}, 150, 42)
+	requireText(t, screen(t, m, 150, 42), "limit missing on some containers")
 }
