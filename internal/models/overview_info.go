@@ -156,6 +156,27 @@ type InfoBar struct {
 	// percentage.
 	Attention     RowHealth
 	AttentionText string
+	// Marks are the requests and the limits on the bar's scale, where kc
+	// knows them on the same base as Percent. The text bar leaves them
+	// out; a bar drawn as an image shows them as ticks.
+	Marks []InfoMark
+}
+
+// InfoMarkKind is what an InfoMark stands for.
+type InfoMarkKind int
+
+const (
+	// InfoMarkRequest marks the requests.
+	InfoMarkRequest InfoMarkKind = iota
+	// InfoMarkLimit marks the limits.
+	InfoMarkLimit
+)
+
+// InfoMark is the requests or the limits at Percent of a bar's base. It
+// can be above 100: limits overcommit allocatable.
+type InfoMark struct {
+	Kind    InfoMarkKind
+	Percent float64
 }
 
 // InfoConsumer is one of the pods that use the most memory.
@@ -372,8 +393,11 @@ func capacityBar(cfg appconfig.OverviewConfig, label string, a capacityAmounts, 
 		bar.DetailHealth = bar.Health
 		bar.More = []string{nodeLine, fmt.Sprintf("req %s%s, %s", percentText(j.reqPct), j.req.suffix(), limLine)}
 		bar.MoreHealth = []RowHealth{nodeHealth, max(j.req.sev, j.lim.sev).RowHealth()}
+		bar.Marks = []InfoMark{{InfoMarkRequest, j.reqPct}, {InfoMarkLimit, j.limPct}}
 		return withAttention(bar, j, "pods")
 	}
+	// The bar shows the requests: only the limits are a mark.
+	bar.Marks = []InfoMark{{InfoMarkLimit, j.limPct}}
 	bar.Percent, bar.Flag = j.reqPct, j.req.flag
 	bar.Health = j.req.sev.RowHealth()
 	bar.Detail = fmt.Sprintf("req %s/%s %s allocatable, %s%s", format(a.req), format(a.alloc), unit, percentText(j.reqPct), j.req.suffix())
