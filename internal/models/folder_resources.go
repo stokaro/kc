@@ -242,6 +242,22 @@ func (f *ResourcesFolder) TypeItem(gr schema.GroupResource) (item Item, id strin
 	return item, id, ok
 }
 
+// ExplicitItemByID returns the row of the known resource type with row ID
+// id, shown or hidden. A type the folder hides (empty, emptiness not known
+// yet, forbidden) is still served, so an explicit jump opens it; its object
+// list then reports what the apiserver allows. ok is false for an ID that
+// is not a type the cluster serves now, for example a version no longer
+// served or a removed CRD.
+func (f *ResourcesFolder) ExplicitItemByID(_ context.Context, id string) (Item, bool) {
+	f.itemsMu.RLock()
+	item, ok := f.items[id]
+	f.itemsMu.RUnlock()
+	if !ok || item == nil {
+		return nil, false
+	}
+	return item, true
+}
+
 // closeDropped closes items that are no longer part of the folder.
 func (f *ResourcesFolder) closeDropped(keep map[string]*ResourceGroupItem) {
 	for id, item := range f.items {

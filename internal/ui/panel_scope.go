@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"image/color"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/stokaro/kc/internal/models"
 	navui "github.com/stokaro/kc/internal/navigation"
@@ -219,8 +221,7 @@ func (a *App) showNamespacePicker(msg namespacesLoadedMsg) tea.Cmd {
 	}
 	picker := NewScopePickerModel(namespaceChoices(names, current), current, func(c scopeChoice) tea.Cmd {
 		a.hideModal()
-		a.setPanelScope(idx, c.Value)
-		return nil
+		return a.setPanelScope(idx, c.Value)
 	}, func() tea.Cmd {
 		a.hideModal()
 		return nil
@@ -239,11 +240,13 @@ func (a *App) showNamespacePicker(msg namespacesLoadedMsg) tea.Cmd {
 }
 
 // setPanelScope changes one panel's namespace scope. A panel showing a
-// namespaced resource list stays on that resource in the new scope; anything
-// deeper is specific to the old namespace, so the panel goes to its root.
-func (a *App) setPanelScope(idx int, ns string) {
+// namespaced resource list stays on that resource in the new scope, even
+// when the root hides the type as empty there; anything deeper is specific
+// to the old namespace, so the panel goes to its root. The returned command
+// says so when the type cannot be opened in the new scope.
+func (a *App) setPanelScope(idx int, ns string) tea.Cmd {
 	if idx < 0 || idx > 1 {
-		return
+		return nil
 	}
 	nav := a.navigatorFor(idx)
 	var keep *schema.GroupVersionResource
@@ -260,10 +263,15 @@ func (a *App) setPanelScope(idx int, ns string) {
 	a.rememberPanelNamespace(ns)
 	newNav := a.newScopedNavigator(idx)
 	a.replaceNavigator(idx, newNav)
+	var toast tea.Cmd
 	if keep != nil {
 		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
-		_, _ = navui.GoTo(ctx, newNav, []navui.GoToStep{{SelectionID: resourceRowID(ns, *keep, true), Enter: true}})
+		_, err := navui.GoTo(ctx, newNav, []navui.GoToStep{{SelectionID: resourceRowID(ns, *keep, true), Enter: true}})
 		cancel()
+		if err != nil {
+			ctrllog.FromContext(a.ctx).WithName("scope").Info("resource list not kept", "gvr", keep.String(), "namespace", ns, "error", err.Error())
+			toast = a.ShowToast(fmt.Sprintf("Cannot open %s in %s: %v", keep.Resource, namespaceScopeLabel(ns), keepTypeError(err)), 4*time.Second)
+		}
 	}
 	a.cancelJump(idx)
 	a.showNavigatorRoot(idx)
@@ -272,6 +280,15 @@ func (a *App) setPanelScope(idx int, ns string) {
 		a.updateTermContextNamespace(ns)
 	}
 	a.recordHistory(idx)
+	return toast
+}
+
+// keepTypeError words why a namespace change could not keep the open type.
+func keepTypeError(err error) string {
+	if _, ok := errors.AsType[*navui.ItemNotFoundError](err); ok {
+		return "the cluster no longer serves this type"
+	}
+	return err.Error()
 }
 
 // syncPanelScopeLabels updates the scope drawn in both panel frames.

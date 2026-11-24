@@ -210,6 +210,11 @@ func (a *App) continueJump(j pathJump) tea.Cmd {
 	if err != nil {
 		ctrllog.FromContext(a.ctx).WithName("jump").Info("jump stopped", "path", j.target.Path, "error", err.Error())
 		msg := fmt.Sprintf("Cannot open %s: %v", j.target.Path, err)
+		if notFound != nil {
+			// The ID names the exact row, version included, so the
+			// message says which one is gone.
+			msg = fmt.Sprintf("Cannot open %s: %s is not there", j.target.Path, notFound.ID)
+		}
 		if j.view != nil {
 			msg += "; the view settings were not applied"
 		}

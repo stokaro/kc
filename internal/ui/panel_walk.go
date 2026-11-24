@@ -138,9 +138,9 @@ func (w *pathWalk) find(ctx context.Context, folder models.Folder, elem PathElem
 		if item, ok := folder.ItemByID(ctx, elem.ID); ok {
 			return item, elem.ID, nil
 		}
-		if tf, ok := folder.(typeFolder); ok {
-			if item, id, ok := typeItemByID(tf, folder, elem.ID); ok {
-				return item, id, nil
+		if ef, ok := folder.(models.ExplicitFinder); ok {
+			if item, ok := ef.ExplicitItemByID(ctx, elem.ID); ok {
+				return item, elem.ID, nil
 			}
 		}
 		return nil, "", nil
@@ -185,26 +185,6 @@ func (w *pathWalk) resolveType(name string) (schema.GroupResource, error) {
 	}
 	w.resolved[w.idx] = gr
 	return gr, nil
-}
-
-// typeItemByID finds a hidden type row by its ID. Type row IDs end in
-// group/version/resource.
-func typeItemByID(tf typeFolder, folder models.Folder, id string) (models.Item, string, bool) {
-	parts := strings.Split(id, "/")
-	var gr schema.GroupResource
-	switch {
-	case len(parts) >= 3:
-		gr = schema.GroupResource{Group: parts[len(parts)-3], Resource: parts[len(parts)-1]}
-	case id == "namespaces":
-		gr = schema.GroupResource{Resource: "namespaces"}
-	default:
-		return nil, "", false
-	}
-	item, got, ok := tf.TypeItem(gr)
-	if !ok || got != id {
-		return nil, "", false
-	}
-	return item, got, true
 }
 
 // findRowByName matches a row ID or the text of the first column, which

@@ -182,13 +182,13 @@ func TestJumpGivesUpOnMissingRow(t *testing.T) {
 	t.Parallel()
 	tr := newJumpTree(true)
 	a := newJumpApp(t, tr)
-	j := pathJump{panel: 0, token: a.jumpToken[0], nav: a.leftNav, target: navui.Location{Steps: []string{"missing"}}, attempt: jumpAttempts - 1}
+	j := pathJump{panel: 0, token: a.jumpToken[0], nav: a.leftNav, target: navui.Location{Steps: []string{"missing"}, Path: "/missing"}, attempt: jumpAttempts - 1}
 	cmd := a.continueJump(j)
 	if cmd == nil {
 		t.Fatalf("a failed jump should report the error")
 	}
-	if msg, ok := cmd().(showToastMsg); !ok || msg.info {
-		t.Fatalf("got %#v, want an error toast", msg)
+	if msg, ok := cmd().(showToastMsg); !ok || msg.info || msg.text != "Cannot open /missing: missing is not there" {
+		t.Fatalf("got %#v, want an error toast that names the missing row", msg)
 	}
 }
 

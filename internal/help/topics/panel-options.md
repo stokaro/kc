@@ -17,7 +17,9 @@ Panel section, always first:
 Resources section, on the root and other lists of resource types:
 
 - Include empty: Yes also lists types that have no objects. No is the
-  "non-empty only" setting (`resources.showNonEmptyOnly`).
+  "non-empty only" setting (`resources.showNonEmptyOnly`). A hidden type
+  still opens when you name it: `cd jobs`, a hotlist entry, a history
+  entry or a namespace change that keeps the open list.
 - Order: Alphabetic, Group (by API group) or Favorites.
 - Table mode: Scroll pans across all columns with `Left` and `Right`;
   Fit squeezes the columns into the panel width.

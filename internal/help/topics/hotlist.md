@@ -39,6 +39,10 @@ A saved view also stores:
 - The hotlist is saved in `~/.kc/hotlist.yaml` (mode 0600) after every
   change. Your config file is not touched.
 - A jump waits up to ten seconds for rows that are still loading.
+- A jump opens a resource type the root hides as empty, at the exact
+  group, version and resource it saved. A version or type the cluster
+  no longer serves is reported; kc never opens another group or
+  version of the same name instead.
 - A view stores settings, never objects, so it shows the cluster as it
   is now. Columns, sort and grouping become the panel's settings.
 - View names are unique, in any case.
