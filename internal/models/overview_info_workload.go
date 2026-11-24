@@ -29,6 +29,7 @@ func workloadInfoSummary(report *overviewReport, err error, cfgIn appconfig.Over
 	pt := report.podsTiming
 	out.UsageAt, out.UsageWindow, out.UsageReadAt = pt.newest, pt.window, pt.readAt
 	out.BarsTitle, out.TopTitle = "Pods of "+w.String(), "Top pods of "+w.String()+" by memory"
+	out.TopNamespace = w.Namespace
 	note := ""
 	switch {
 	case report.workloadsReason != "":

@@ -190,6 +190,9 @@ type InfoSummary struct {
 	// differ in a namespace scope: the bars sum every node of the cluster,
 	// the top pods are those of the namespace.
 	BarsTitle, TopTitle string
+	// TopNamespace is the one namespace every top pod is in, which
+	// TopTitle names; empty when they may come from several.
+	TopNamespace string
 }
 
 // infoTitles names the scope of the bars and of the top pods: the cluster
@@ -258,6 +261,7 @@ func infoSummary(report *overviewReport, err error, cfgIn appconfig.OverviewConf
 	}
 	out.UsageAt, out.UsageWindow, out.UsageReadAt = report.usageAt, report.usageWindow, report.usageReadAt
 	out.BarsTitle, out.TopTitle = infoTitles(report.info.namespace, node)
+	out.TopNamespace = report.info.namespace
 	var sum overviewNodeSummary
 	var cpus, mems []capacityAmounts
 	anyDisk := false
