@@ -10,9 +10,9 @@ kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://gith
 
 ## Screenshots
 
-The dashboard (`C-x g`) in iTerm2, where kc draws the charts as images. Other terminals get the same charts in text:
+The dashboard (`C-x g`) of a namespace. In iTerm2 3.7+, kitty and Ghostty kc draws the charts as images, as here; other terminals get the same charts in text:
 
-![The full-screen dashboard of a namespace in iTerm2: the workloads with their pods and containers on the left, CPU and memory charts drawn as images with a line per workload, the request and limit, and the Events of the last 15 minutes on a timeline](docs/images/dashboard-iterm2.png)
+![The full-screen dashboard of a namespace: the workloads with their pods and containers on the left, one with an OOMKilled container, CPU and memory charts drawn as images with a line per workload, the request and limit, and the Events of the last 15 minutes on a timeline](docs/images/dashboard.png)
 
 The cluster overview (`M-i`) with the cluster capacity in the Info panel:
 
