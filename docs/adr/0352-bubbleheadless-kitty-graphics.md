@@ -1,8 +1,8 @@
-# 0348. Kitty graphics in the headless driver
+# 0352. Kitty graphics in the headless driver
 
 - Status: Accepted
 - Date: 2026-11-24
-- PR: #348
+- PR: #352
 
 ## Context
 
