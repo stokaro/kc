@@ -149,9 +149,9 @@ func TestViewMenuPicksTheDrawing(t *testing.T) {
 	}
 }
 
-// TestNoDataBandStaysText: with images on, a chart without samples keeps
-// its "no data" band in text and shows no placeholder over it.
-func TestNoDataBandStaysText(t *testing.T) {
+// TestNoDataWordsStayText: with images on, a chart without samples is an
+// empty plot in the image with the words "no data" as text over it.
+func TestNoDataWordsStayText(t *testing.T) {
 	t.Parallel()
 	a := measured()
 	a.CPU.Used, a.CPU.UsedKnown, a.Memory.Used, a.Memory.UsedKnown, a.Top, a.Rows = 0, false, 0, false, nil, nil
@@ -165,8 +165,8 @@ func TestNoDataBandStaysText(t *testing.T) {
 	if !strings.Contains(ansi.Strip(view), "no data") {
 		t.Fatalf("no \"no data\" band:\n%s", ansi.Strip(view))
 	}
-	if strings.ContainsRune(view, kittygfx.Placeholder) {
-		t.Error("placeholders over a plot without samples")
+	if !strings.ContainsRune(view, kittygfx.Placeholder) {
+		t.Error("no placeholders around the words")
 	}
 }
 
@@ -224,5 +224,25 @@ func TestCursorMovesSendNoImage(t *testing.T) {
 	view := ansi.Strip(m.View())
 	if !strings.Contains(view, string(kittygfx.Placeholder)) {
 		t.Fatal("no placeholders under the cursor")
+	}
+}
+
+// TestImagesDrawALinePerPod: with images and session samples, a
+// workload's charts draw a line per pod under the usage, and the legend
+// says so; text charts do not.
+func TestImagesDrawALinePerPod(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: measured()}
+	src := f.sources(false)
+	src.Images = kittygfx.NewImages(kittygfx.Encoder{}, 240, dashboard.ImageKeys)
+	m := dashboard.New(src, web)
+	gfxRun(t, m, func() tea.Msg { return tea.WindowSizeMsg{Width: 140, Height: 40} })
+	gfxRun(t, m, m.Start())
+	if view := ansi.Strip(m.View()); strings.Count(view, "── 2 pods  ┄ request") != 2 {
+		t.Errorf("want a \"2 pods\" legend on both charts:\n%s", view)
+	}
+	text := open(t, &fakes{now: t0, amounts: measured()}, false, web, 140, 40)
+	if view := ansi.Strip(text.View()); strings.Contains(view, "2 pods  ┄") {
+		t.Errorf("text charts promise lines per pod:\n%s", view)
 	}
 }

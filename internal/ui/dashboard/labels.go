@@ -52,9 +52,7 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) []string {
 		limKnown = limKnown && lim > 0
 	}
 	parts := []string{valStyle().Render(at + ":")}
-	swatch := func(st lipgloss.Style, r string) string {
-		return on(lipgloss.NewStyle().Foreground(st.GetForeground()).Bold(true)).Render(r)
-	}
+	swatch := m.swatch
 	useText := "no data"
 	switch {
 	case v.cursor >= 0 && !useKnown:
@@ -70,6 +68,9 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) []string {
 		useText = v.now.Note
 	}
 	parts = append(parts, swatch(useStyle, "█")+" usage "+valStyle().Render(useText))
+	if len(c.Series) > 0 {
+		parts = append(parts, m.seriesPart(v, c))
+	}
 	if u := v.prom.usage; m.usesProm(v) && !u.Resources.Known() {
 		why := "no kube-state-metrics container series"
 		if u.ResourcesErr != "" {
@@ -120,6 +121,30 @@ func (m *Model) legend(v *view, wd widget, c chart.Chart) []string {
 		parts = append(parts, swatch(allocStyle, "┄")+" allocatable "+c.Format(a.Capacity)+above(refCapacity))
 	}
 	return parts
+}
+
+// swatch is r in the color of the lines of style st: the picture's
+// palette when the charts are images.
+func (m *Model) swatch(st lipgloss.Style, r string) string {
+	fg := st.GetForeground()
+	if m.images() {
+		fg = chart.ImageColor(st)
+	}
+	return on(lipgloss.NewStyle().Foreground(fg).Bold(true)).Render(r)
+}
+
+// seriesPart names the lines of the rows (chart.Series) in the legend: a
+// swatch of each and their count, "── 2 pods".
+func (m *Model) seriesPart(v *view, c chart.Chart) string {
+	var lines strings.Builder
+	for _, sr := range c.Series {
+		lines.WriteString(m.swatch(sr.Style, "─"))
+	}
+	what := "workloads"
+	if v.target.Kind == KindWorkload {
+		what = "pods"
+	}
+	return lines.String() + " " + strconv.Itoa(len(c.Series)) + " " + what
 }
 
 // legendLines packs the parts of a legend into lines of width w, three
