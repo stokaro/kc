@@ -29,6 +29,10 @@ Context:
 - The picker lists every context of the kubeconfig files kc loaded. The
   current one is marked; a name defined in several files shows the
   file.
+- The files of `$KUBECONFIG` (or `--kubeconfig a:b`) are one kubeconfig,
+  as for kubectl: a context may use a cluster or user from another file
+  of the list, and a name defined in several of them comes from the
+  first. The other files kc finds under `~/.kube` stand alone.
 - After a switch both panels show the new cluster, each at its root in
   the context's namespace (else `default`). Pinned panels are released.
 

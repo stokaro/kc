@@ -119,7 +119,7 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 
 Startup scope flags work as in kubectl, before or after the subcommand:
 
-- `kc --context staging` – start in the `staging` context instead of the current one. kc reads the context from the kubeconfig files it loads (`--kubeconfig`, `$KUBECONFIG` or `~/.kube`); an unknown name stops kc with an error before the UI opens. kubeconfig is not changed.
+- `kc --context staging` – start in the `staging` context instead of the current one. kc reads the context from the kubeconfig files it loads (`--kubeconfig`, `$KUBECONFIG` or `~/.kube`; the files of `$KUBECONFIG` are merged as kubectl merges them); an unknown name stops kc with an error before the UI opens. kubeconfig is not changed.
 - `kc -A`, `kc --context staging -A get pods` – start both panels in the all-namespaces scope, with the Namespace column. `-A` wins over `-n`, as in kubectl.
 - `kc get -A` takes types only: `kc get pods -A web` fails, like kubectl, because a name is only unique in one namespace. `kc logs` does not take `-A`.
 - `--as`, `--as-group` and `--as-uid` keep working with all of these.
@@ -403,7 +403,7 @@ In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain
 - `viewer.logs.traceURL` – URL template for `M-d` `t`, for example `https://tempo.example/trace/{trace}`; empty (the default) means no trace link.
 - `viewer.logs.maxLines`, `viewer.logs.maxMemoryMiB` – how many lines, and about how much memory, one logs viewer or Logs panel keeps (defaults 100000 and 64); older lines are dropped, see [JSON logs](#json-logs).
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering (`scroll`, the default, or `fit`) and panning behavior.
-- `terminal.follow`, `terminal.mode` – whether the shell line follows the active panel's context and namespace (default `true`), and how its `KUBECONFIG` points there: `overlay` (default, a small file before your own kubeconfig files) or `copy` (a full copy of the file that defines the context).
+- `terminal.follow`, `terminal.mode` – whether the shell line follows the active panel's context and namespace (default `true`), and how its `KUBECONFIG` points there: `overlay` (default, a small file before your own kubeconfig files) or `copy` (a full copy of the kubeconfig kc loaded for the context: the file that defines it, or the merged `$KUBECONFIG` files).
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. In an Events list, `last-seen` and `first-seen` use the Event's own times (`series.lastObservedTime`, `lastTimestamp`, `firstTimestamp`, `eventTime`), most recent first, and these cells count on with the clock like AGE; `name` sorts by the Event name, the wide Name column. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
 - `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
@@ -593,7 +593,8 @@ terminal:
   follow: true
   # How the shell's KUBECONFIG reaches that context: overlay puts a small
   # file before your own kubeconfig files, copy writes a full copy of the
-  # file that defines the context.
+  # kubeconfig kc loaded for the context (with $KUBECONFIG, all its files
+  # merged).
   mode: overlay
 
 # Tint the panel frame and the context label per kubeconfig context. The

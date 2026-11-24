@@ -7,6 +7,7 @@ package execctx
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -43,7 +44,12 @@ func (i Impersonation) IsZero() bool {
 type Context struct {
 	// Kubeconfig is the file that defines Context.
 	Kubeconfig string
-	// Config is Kubeconfig as kc loaded it. It is read, never changed.
+	// Load is what kc loads for Context: Kubeconfig, or the files of
+	// $KUBECONFIG when the context came from that list. Empty means
+	// Kubeconfig.
+	Load string
+	// Config is Load as kc loaded it, several files merged the way
+	// kubectl merges them. It is read, never changed.
 	Config *clientcmdapi.Config
 	// Context is the kubeconfig context name.
 	Context string
@@ -58,14 +64,28 @@ type Context struct {
 // IsZero reports whether no context is selected.
 func (c Context) IsZero() bool { return c.Context == "" }
 
+// KubeconfigEnv is the KUBECONFIG value with which kubectl loads what kc
+// loads for the context.
+func (c Context) KubeconfigEnv() string {
+	if c.Load != "" {
+		return c.Load
+	}
+	return c.Kubeconfig
+}
+
+// isList reports whether path names several files.
+func isList(path string) bool { return len(filepath.SplitList(path)) > 1 }
+
 // KubectlArgs returns the kubectl flags that select this context. They
 // come after the subcommand, for example "kubectl edit pod/x <args>".
 // Flags change only the impersonation fields, so kubectl still
 // authenticates with the context's own credentials.
 func (c Context) KubectlArgs() []string {
 	var args []string
-	if c.Kubeconfig != "" {
-		args = append(args, "--kubeconfig", c.Kubeconfig)
+	// --kubeconfig takes one file; a merged list goes in KUBECONFIG
+	// (KubeconfigEnv) instead.
+	if load := c.KubeconfigEnv(); load != "" && !isList(load) {
+		args = append(args, "--kubeconfig", load)
 	}
 	if c.Context != "" {
 		args = append(args, "--context", c.Context)

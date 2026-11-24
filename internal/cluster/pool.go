@@ -11,10 +11,14 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
 // Key identifies a controller-runtime Cluster by kubeconfig path and context name.
 type Key struct {
+	// KubeconfigPath is the kubeconfig to load: one file, or a $KUBECONFIG
+	// list that is merged as kubectl merges it (kubeconfig.Source).
 	KubeconfigPath       string
 	ContextName          string
 	Namespace            string
@@ -161,7 +165,7 @@ func (p *Pool) startCluster(ctx context.Context, k Key, selectors map[schema.Gro
 		override.AuthInfo.ImpersonateGroups = strings.Split(g, ",")
 	}
 	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: k.KubeconfigPath},
+		kubeconfig.LoadingRules(k.KubeconfigPath),
 		&override,
 	).ClientConfig()
 	if err != nil {
