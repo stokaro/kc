@@ -723,17 +723,30 @@ func (m *Model) handleClick(mouse tea.Mouse) tea.Cmd {
 	return nil
 }
 
+// handleWheel zooms a chart under the pointer. Over the target list or
+// the Events list it focuses that list and moves its selection, as the
+// wheel does in the panels.
 func (m *Model) handleWheel(mouse tea.Mouse) tea.Cmd {
+	var step int
+	switch mouse.Button {
+	case tea.MouseWheelUp:
+		step = -1
+	case tea.MouseWheelDown:
+		step = 1
+	default:
+		return nil
+	}
 	v := m.top()
 	for w, r := range m.rects {
-		if w == widgetTargets || w == widgetEvents || !r.contains(mouse.X, mouse.Y) {
+		if !r.contains(mouse.X, mouse.Y) {
 			continue
 		}
-		switch mouse.Button {
-		case tea.MouseWheelUp:
-			m.zoom(v, -1)
-		case tea.MouseWheelDown:
-			m.zoom(v, 1)
+		switch w {
+		case widgetTargets, widgetEvents:
+			v.focus = w
+			m.moveSelection(v, step)
+		default:
+			m.zoom(v, step)
 		}
 		return m.maybeRead()
 	}
