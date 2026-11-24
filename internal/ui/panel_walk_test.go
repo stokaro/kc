@@ -77,6 +77,17 @@ func (f *typeLateFolder) TypeItem(gr schema.GroupResource) (models.Item, string,
 	return item, f.ids[gr], ok
 }
 
+func (f *typeLateFolder) ExplicitItemByID(_ context.Context, id string) (models.Item, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for gr, got := range f.ids {
+		if got == id {
+			return f.types[gr], true
+		}
+	}
+	return nil, false
+}
+
 func enterRow(id, name string, next models.Folder) *modeltesting.EnterableItem {
 	return modeltesting.NewEnterableItem(id, []string{"/" + name}, nil, func() (models.Folder, error) { return next, nil }, models.WhiteStyle())
 }

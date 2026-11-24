@@ -31,9 +31,10 @@ func (e *ItemNotFoundError) Error() string {
 }
 
 // GoTo walks the navigator through the provided steps by selecting rows and, if
-// requested, entering the selected row to push a child folder. It returns an
-// error if any step cannot be satisfied (missing row, non-enterable row, or
-// nil navigator/folder).
+// requested, entering the selected row to push a child folder. A step may
+// enter a row the folder knows but hides (see models.ExplicitFinder). It
+// returns an error if any step cannot be satisfied (missing row,
+// non-enterable row, or nil navigator/folder).
 func GoTo(ctx context.Context, nav *Navigator, steps []GoToStep) (GoToResult, error) {
 	var res GoToResult
 	if nav == nil {
@@ -56,7 +57,7 @@ func GoTo(ctx context.Context, nav *Navigator, steps []GoToStep) (GoToResult, er
 		if !step.Enter {
 			continue
 		}
-		item, ok := cur.ItemByID(ctx, step.SelectionID)
+		item, ok := lookupStep(ctx, cur, step.SelectionID)
 		if !ok {
 			return res, &ItemNotFoundError{ID: step.SelectionID}
 		}
@@ -76,4 +77,17 @@ func GoTo(ctx context.Context, nav *Navigator, steps []GoToStep) (GoToResult, er
 		cur = next
 	}
 	return res, nil
+}
+
+// lookupStep finds the row a step enters. A step names its row on purpose,
+// so a row the folder knows but does not list (an empty resource type in a
+// root that shows non-empty types only) is entered too.
+func lookupStep(ctx context.Context, folder models.Folder, id string) (models.Item, bool) {
+	if item, ok := folder.ItemByID(ctx, id); ok {
+		return item, true
+	}
+	if ef, ok := folder.(models.ExplicitFinder); ok {
+		return ef.ExplicitItemByID(ctx, id)
+	}
+	return nil, false
 }

@@ -49,3 +49,44 @@ func TestResourcesFolderTypeItem(t *testing.T) {
 		})
 	}
 }
+
+// White-box for the same reason: ExplicitItemByID reads the type map that
+// populate fills.
+func TestResourcesFolderExplicitItemByID(t *testing.T) {
+	t.Parallel()
+	f := NewResourcesFolder(NewBaseFolder(Deps{}, nil, nil))
+	jobs := &ResourceGroupItem{gvr: schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}}
+	betaJobs := &ResourceGroupItem{gvr: schema.GroupVersionResource{Group: "batch", Version: "v1beta1", Resource: "jobs"}}
+	otherJobs := &ResourceGroupItem{gvr: schema.GroupVersionResource{Group: "example.com", Version: "v1", Resource: "jobs"}}
+	f.setItems(map[string]*ResourceGroupItem{
+		"default/batch/v1/jobs":       jobs,
+		"default/batch/v1beta1/jobs":  betaJobs,
+		"default/example.com/v1/jobs": otherJobs,
+	})
+	tests := []struct {
+		id   string
+		want *ResourceGroupItem
+	}{
+		{id: "default/batch/v1/jobs", want: jobs},
+		{id: "default/batch/v1beta1/jobs", want: betaJobs},
+		{id: "default/example.com/v1/jobs", want: otherJobs},
+		{id: "default/batch/v2/jobs"},
+		{id: "other/batch/v1/jobs"},
+		{id: "jobs"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.id, func(t *testing.T) {
+			t.Parallel()
+			item, ok := f.ExplicitItemByID(t.Context(), tc.id)
+			if tc.want == nil {
+				if ok {
+					t.Fatalf("ExplicitItemByID(%q) found %v, want not found", tc.id, item)
+				}
+				return
+			}
+			if !ok || item != Item(tc.want) {
+				t.Fatalf("ExplicitItemByID(%q) = %v, %v; want %v", tc.id, item, ok, tc.want.gvr)
+			}
+		})
+	}
+}

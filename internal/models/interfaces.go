@@ -156,6 +156,17 @@ type Folder interface {
 	ItemByID(context.Context, string) (Item, bool)
 }
 
+// ExplicitFinder is a folder that knows rows it does not list, such as the
+// resource types a root hides as empty or not yet counted. ItemByID finds
+// only listed rows, which is right for browsing; a jump that names a row on
+// purpose (a hotlist entry, a history entry, a namespace change that keeps
+// the open type) looks it up here when ItemByID misses. The ID must match
+// exactly: a hidden row is never replaced by a row of another group or
+// version.
+type ExplicitFinder interface {
+	ExplicitItemByID(ctx context.Context, id string) (Item, bool)
+}
+
 // Rereader is a folder the user can ask to read again (C-r, mc's Reread).
 // Refresh only marks the rows dirty; Reread also drops what the folder keeps
 // between reads and events do not keep current: the API discovery of a list

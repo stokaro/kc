@@ -15,8 +15,10 @@ Namespace scope:
 - The picker lists "All namespaces" first, then every namespace. The
   current one is marked `current`.
 - The panel root then lists the types of that scope. A panel on a
-  resource list stays on that resource in the new scope; a panel deeper
-  down goes back to its root.
+  resource list stays on that resource in the new scope, even when the
+  root hides the type there as empty; a panel deeper down goes back to
+  its root. When the cluster no longer serves the type, kc says so and
+  the panel goes to its root.
 - Lists across all namespaces get a Namespace column, and the root
   shows no object counts, since counting would watch every object.
 - `/namespaces/<name>` still browses one namespace without changing the
