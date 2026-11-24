@@ -67,6 +67,8 @@ scene_menus_create_namespace() {
 	fresh
 	shell_line "cd /namespaces"
 	wait_for "/staging"
+	# The Info panel of a cluster-scoped list reads all namespaces.
+	wait_for "Top pods by memory in all namespaces" 30
 	key f7
 	wait_for "namespace"
 	shot
