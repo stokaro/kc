@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -172,17 +173,33 @@ func (s *session) setPTYSize(cols, rows int) error {
 	if err := checkSize(cols, rows); err != nil {
 		return err
 	}
-	// checkSize keeps every field below 2000*colorCellHeight, inside uint16.
-	ws := &pty.Winsize{
-		Cols: uint16(cols),                   // #nosec G115 -- bounded by checkSize
-		Rows: uint16(rows),                   // #nosec G115 -- bounded by checkSize
-		X:    uint16(cols * colorCellWidth),  // #nosec G115 -- bounded by checkSize
-		Y:    uint16(rows * colorCellHeight), // #nosec G115 -- bounded by checkSize
+	var ws pty.Winsize
+	var err error
+	if ws.Cols, err = toUint16(cols); err != nil {
+		return err
 	}
-	if err := pty.Setsize(s.ptmx, ws); err != nil {
+	if ws.Rows, err = toUint16(rows); err != nil {
+		return err
+	}
+	if ws.X, err = toUint16(cols * colorCellWidth); err != nil {
+		return err
+	}
+	if ws.Y, err = toUint16(rows * colorCellHeight); err != nil {
+		return err
+	}
+	if err := pty.Setsize(s.ptmx, &ws); err != nil {
 		return fmt.Errorf("set pty size: %w", err)
 	}
 	return nil
+}
+
+// toUint16 converts a PTY window size field. checkSize keeps the fields in
+// range; the check here keeps the conversion safe on its own.
+func toUint16(n int) (uint16, error) {
+	if n < 0 || n > math.MaxUint16 {
+		return 0, fmt.Errorf("window size %d out of range", n)
+	}
+	return uint16(n), nil
 }
 
 // size is the emulator's size in cells.

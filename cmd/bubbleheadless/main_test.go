@@ -75,3 +75,29 @@ func TestParseKeyTokenHex(t *testing.T) {
 		})
 	}
 }
+
+func TestToUint16(t *testing.T) {
+	t.Parallel()
+	const largest = maxSize * max(colorCellWidth, colorCellHeight)
+	for _, tt := range []struct {
+		name    string
+		n       int
+		want    uint16
+		wantErr bool
+	}{
+		{name: "negative", n: -1, wantErr: true},
+		{name: "zero", n: 0, want: 0},
+		{name: "max", n: 65535, want: 65535},
+		{name: "past max", n: 65536, wantErr: true},
+		// The largest window checkSize allows fits in pixels too.
+		{name: "largest window in pixels", n: largest, want: uint16(largest)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := toUint16(tt.n)
+			if (err != nil) != tt.wantErr || got != tt.want {
+				t.Errorf("toUint16(%d) = %d, %v; want %d, error %v", tt.n, got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
