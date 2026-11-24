@@ -410,16 +410,15 @@ func NewApp() *App {
 	return app
 }
 
-// Init initializes the application
+// Init initializes the application. Run has read the configuration file
+// before initData (initConfigAndData); Init keeps the panel
+// configurations, since the folders initData built read them.
 func (a *App) Init() tea.Cmd {
-	loadToast := a.loadConfig()
 	cfg := a.cfg
 	a.modalManager.SyncEscTimeout()
 	leftPercent, rightPercent := normalizePanelWidthPercents(cfg.Panel.Width.LeftPercent, cfg.Panel.Width.RightPercent)
 	a.leftPanelWidthPercent = leftPercent
 	a.rightPanelWidthPercent = rightPercent
-	a.leftConfig = cloneConfig(cfg)
-	a.rightConfig = cloneConfig(cfg)
 	var lookErr tea.Cmd
 	skinsDir, _ := skin.DefaultDir() // no home dir: only built-in skins
 	if err := a.applyLook(cfg, skinsDir); err != nil {
@@ -450,7 +449,6 @@ func (a *App) Init() tea.Cmd {
 		a.waitFolderDirtyEvents(),
 		a.waitReadErrors(),
 		a.loadHotlist(),
-		loadToast,
 	)
 }
 
@@ -3149,7 +3147,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Initialize data model (best-effort; UI can still run without it)
 	log.Info("initializing data")
-	if err := app.initData(ctx); err != nil {
+	if err := app.initConfigAndData(ctx); err != nil {
 		if errors.Is(err, ErrUnknownContext) {
 			// A wrong --context is a usage error: stop before the UI
 			// takes over the terminal.
@@ -3217,6 +3215,16 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	}
 
 	return nil
+}
+
+// initConfigAndData reads the configuration file, then builds the data
+// model. initData makes the clusters, the panels and their folders with
+// the settings of that moment, and a folder keeps the panel configuration
+// it was given, so the file comes first. A file that does not load leaves
+// the defaults; its toast shows once the UI runs.
+func (a *App) initConfigAndData(ctx context.Context) error {
+	a.enqueueCmd(a.loadConfig())
+	return a.initData(ctx)
 }
 
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
