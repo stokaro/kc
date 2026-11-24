@@ -183,6 +183,8 @@ scene_panels_history() {
 	wait_for "/servicecidrs"
 	enter /nodes "/nodes "
 	wait_for "Roles"
+	# The Info panel of a cluster-scoped list reads all namespaces.
+	wait_for "Top pods by memory in all namespaces" 30
 	meta H
 	wait_for "current"
 	shot

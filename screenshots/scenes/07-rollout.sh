@@ -38,7 +38,8 @@ scene_rollout_timeline() {
 	shell_line "cd deploy/web"
 	wait_for "/rollout"
 	enter /tim "/deployments/web/timeline "
-	wait_for "first observed revision" 30
+	# The column shows "first observed re…" until widen.
+	wait_for "first observed re" 30
 	widen
 	kk kubectl -n shop scale deploy/web --replicas=3 >/dev/null
 	wait_for "spec.replicas" 60
