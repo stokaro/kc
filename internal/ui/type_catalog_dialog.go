@@ -10,6 +10,7 @@ import (
 
 	"github.com/stokaro/kc/internal/models"
 	navui "github.com/stokaro/kc/internal/navigation"
+	"github.com/stokaro/kc/internal/visibility"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -64,7 +65,7 @@ func outsideProfileMark(nav *navui.Navigator) string {
 		if !ok || d.Included {
 			return ""
 		}
-		return "outside " + models.ProfileTitle(profile)
+		return "outside " + profile.Title()
 	}
 	return ""
 }
@@ -98,7 +99,7 @@ func (a *App) showTypeCatalog(idx int, otherOnly bool) tea.Cmd {
 	}
 	if len(entries) == 0 {
 		if otherOnly {
-			return a.ShowInfo("The "+models.ProfileTitle(catalog.Profile)+" profile lists every type here", 2*time.Second)
+			return a.ShowInfo("The "+catalog.Profile.Title()+" profile lists every type here", 2*time.Second)
 		}
 		return a.ShowToast("No resource types here yet", 2*time.Second)
 	}
@@ -142,18 +143,19 @@ func typeCatalogHeight(n int) int { return min(max(n, 4)+3, 30) }
 
 // typeCatalogChoices shows each type as its plural name with the API
 // group/version as the detail; the note says "cluster" for a
-// cluster-scoped type and, in the list of all types under Work, whether
-// Work lists it. The filter also matches the kind and the short names.
-func typeCatalogChoices(entries []models.TypeEntry, profile string, otherOnly bool) []scopeChoice {
+// cluster-scoped type and, in the list of all types under a profile that
+// leaves types out, whether the profile lists it. The filter also matches
+// the kind and the short names.
+func typeCatalogChoices(entries []models.TypeEntry, profile appconfig.EffectiveVisibility, otherOnly bool) []scopeChoice {
 	out := make([]scopeChoice, 0, len(entries))
 	for _, e := range entries {
 		var notes []string
 		if !e.Namespaced {
 			notes = append(notes, "cluster")
 		}
-		if !otherOnly && profile != appconfig.VisibilityProfileAll {
+		if !otherOnly && profile.Profile.Mode != visibility.ModeAll {
 			if e.Decision.Included {
-				notes = append(notes, models.ProfileTitle(profile))
+				notes = append(notes, profile.Title())
 			} else {
 				notes = append(notes, "other")
 			}
@@ -167,16 +169,4 @@ func typeCatalogChoices(entries []models.TypeEntry, profile string, otherOnly bo
 		})
 	}
 	return out
-}
-
-// setPanelTypeProfile makes panel list resource types under the built-in
-// profile ("work" or "all"). Its folders read the panel's configuration,
-// so the folders it opens next use the profile from their first rows;
-// applyResourceOptions rebuilds the folder it shows.
-func (a *App) setPanelTypeProfile(panel *Panel, profile string) {
-	cfg := a.ensurePanelConfig(panel)
-	profile = appconfig.NormalizeVisibilityProfile(profile)
-	if cfg.Resources.Visibility.DefaultProfile != profile {
-		cfg.Resources.Visibility.DefaultProfile = profile
-	}
 }

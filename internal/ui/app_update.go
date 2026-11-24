@@ -308,6 +308,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 					resMsg := ResourcesOptionsChangedMsg{
 						HasTypes:         m.Resources.HasTypes,
 						TypeProfile:      m.Resources.TypeProfile,
+						TypeChanged:      m.Resources.TypeChanged,
 						ShowNonEmptyOnly: !m.Resources.IncludeEmpty,
 						Order:            m.Resources.Order,
 						TableMode:        tableMode,
@@ -373,10 +374,14 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 				if m.Close && !closedBySubMsg {
 					a.hideModal()
 				}
+				if m.Resources != nil && m.Resources.OpenVisibility {
+					subCmds = append(subCmds, a.showVisibilityEditor(targetIdx))
+				}
 				return a, tea.Batch(subCmds...)
 			case ResourcesOptionsChangedMsg:
 				var saveCmd tea.Cmd
 				if m.SaveDefault {
+					saveTypes := a.typeProfileSaver(m)
 					// Persist current dialog values to config defaults
 					change := func(c *appconfig.Config) {
 						if m.HasInclude {
@@ -385,9 +390,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 						if m.HasOrder {
 							c.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
 						}
-						if m.HasTypes {
-							c.Resources.Visibility.DefaultProfile = appconfig.NormalizeVisibilityProfile(m.TypeProfile)
-						}
+						saveTypes(&c.Resources.Visibility)
 						c.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
 					}
 					change(a.cfg)
@@ -404,9 +407,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 						if m.HasInclude || m.HasOrder {
 							a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
 						}
-						if m.HasTypes {
-							a.setPanelTypeProfile(a.leftPanel, m.TypeProfile)
-						}
+						saveCmd = tea.Batch(saveCmd, a.applyTypeChoice(a.leftPanel, m))
 						a.syncPanelConfig(a.leftPanel)
 						a.applyResourceOptions(a.leftPanel)
 					} else {
@@ -416,9 +417,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 						if m.HasInclude || m.HasOrder {
 							a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
 						}
-						if m.HasTypes {
-							a.setPanelTypeProfile(a.rightPanel, m.TypeProfile)
-						}
+						saveCmd = tea.Batch(saveCmd, a.applyTypeChoice(a.rightPanel, m))
 						a.syncPanelConfig(a.rightPanel)
 						a.applyResourceOptions(a.rightPanel)
 					}

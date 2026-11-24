@@ -16,16 +16,17 @@ const (
 	ModeCommand  ID = "mode-command"
 
 	// Options, locations and navigation.
-	PanelOptions     ID = "panel-options"
-	ViewerOptions    ID = "viewer-options"
-	ContextNamespace ID = "context-namespace"
-	NamespaceCreate  ID = "namespace-create"
-	Hotlist          ID = "hotlist"
-	ResourceTypes    ID = "resource-types"
-	History          ID = "history"
-	MenuBar          ID = "menu-bar"
-	ReadOnly         ID = "read-only"
-	Shell            ID = "shell"
+	PanelOptions       ID = "panel-options"
+	ViewerOptions      ID = "viewer-options"
+	ContextNamespace   ID = "context-namespace"
+	NamespaceCreate    ID = "namespace-create"
+	Hotlist            ID = "hotlist"
+	ResourceTypes      ID = "resource-types"
+	ResourceVisibility ID = "resource-visibility"
+	History            ID = "history"
+	MenuBar            ID = "menu-bar"
+	ReadOnly           ID = "read-only"
+	Shell              ID = "shell"
 
 	// Dialogs and actions.
 	RowFilter           ID = "row-filter"

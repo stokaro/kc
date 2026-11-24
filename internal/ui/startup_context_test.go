@@ -46,6 +46,8 @@ func writeStartupKubeconfig(t *testing.T) (string, []byte) {
 		t.Fatalf("write kubeconfig: %v", err)
 	}
 	t.Setenv("KUBECONFIG", path)
+	// Run reads ~/.kc/config.yaml before it reads the kubeconfig.
+	t.Setenv("HOME", filepath.Dir(path))
 	return path, data
 }
 

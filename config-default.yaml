@@ -66,10 +66,24 @@ resources:
   # Favorites are used when order=favorites; leave empty to follow discovery's "all" category.
   favorites: []
   visibility:
-    # Which resource types the root and the other type lists show:
-    # work (kc's Work list of daily types; the rest is under "Other types")
-    # or all (every discovered type)
+    # Which resource types the root and the other type lists show: the
+    # profile of the current kube context (contexts), else defaultProfile:
+    # work (kc's Work list of daily types; the rest is under "Other types"),
+    # all (every discovered type) or a name from profiles
     defaultProfile: work
+    # Your own profiles. mode: work (Work plus show, minus hide), hide
+    # (every type but hide), only (only show) or all. A selector is an API
+    # group ("" for core) and a plural resource name. For example:
+    # profiles:
+    #   app:
+    #     mode: only
+    #     show:
+    #       - {group: "", resource: pods}
+    #       - {group: apps, resource: deployments}
+    #     hide: []
+    # Profiles per kube context, by exact context name. For example:
+    # contexts:
+    #   production: app
 
 objects:
   # Object list sort: a column key (name, age, status, restarts, ...) or creation; "-" sorts descending

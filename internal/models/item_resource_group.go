@@ -916,6 +916,14 @@ func (r *ResourceGroupItem) logPeekForbiddenLocked(err error) {
 	r.peekForbiddenLogged = true
 }
 
+// countFailed reports whether the count is not known and the last peek
+// failed: a failure, not evidence of zero objects.
+func (r *ResourceGroupItem) countFailed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return !r.countKnown && !r.lastError.IsZero()
+}
+
 // Forbidden reports whether peeks are suppressed due to a forbidden response.
 func (r *ResourceGroupItem) Forbidden() bool {
 	r.mu.Lock()

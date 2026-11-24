@@ -1,6 +1,6 @@
 # 0354. Resource type lists under the Work profile
 
-- Status: Accepted
+- Status: Accepted; decision 5 and the note that quick search finds listed rows only are superseded by [0357](0357-resource-visibility-editor.md)
 - Date: 2026-11-24
 - Issue: #319
 

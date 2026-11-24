@@ -40,6 +40,13 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	// Quick search takes every key while it runs; a key it does not use ends
 	// it and is handled as usual.
 	if p := a.activePanelRef(); p != nil && !a.showTerminal && p.QuickSearchActive() {
+		if e, ok := p.HiddenTypeMatch(); ok && press.String() == "enter" {
+			// The text names a type the list does not show: open it as
+			// "other types" would.
+			p.StopQuickSearch()
+			a.invalidateView("quick search open hidden type")
+			return a, a.openHiddenType(a.activePanel, e)
+		}
 		handled := p.QuickSearchKey(press)
 		a.invalidateView("quick search")
 		if handled {

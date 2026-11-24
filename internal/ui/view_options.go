@@ -37,9 +37,14 @@ type ViewOptionsCommittedMsg struct {
 // ViewOptionsResourcesPayload carries Resources section toggles.
 type ViewOptionsResourcesPayload struct {
 	// HasTypes is set when the dialog offered Types; TypeProfile is then
-	// the chosen built-in profile, "work" or "all".
-	HasTypes        bool
-	TypeProfile     string
+	// the chosen profile name, "" for the panel's unsaved changes, and
+	// TypeChanged says whether the user picked another one.
+	HasTypes    bool
+	TypeProfile string
+	TypeChanged bool
+	// OpenVisibility asks for the resource visibility editor after the
+	// options are applied.
+	OpenVisibility  bool
 	HasInclude      bool
 	IncludeEmpty    bool
 	HasOrder        bool
@@ -121,9 +126,13 @@ type ViewOptionsChoice struct {
 
 // ViewOptionsResourcesConfig configures the Resources section.
 type ViewOptionsResourcesConfig struct {
-	// ShowTypes offers the Types row: which profile lists the types.
+	// ShowTypes offers the Types row, which profile lists the types, and
+	// the row that opens the resource visibility editor. TypeChoices are
+	// the profiles (Work and All when empty); TypeProfile is the current
+	// one's value.
 	ShowTypes     bool
 	TypeProfile   string
+	TypeChoices   []ViewOptionsChoice
 	ShowInclude   bool
 	IncludeEmpty  bool
 	ShowOrder     bool
@@ -289,6 +298,7 @@ const (
 	viewOptionObjectFaultsOnly
 	viewOptionObjectGroupNamespaces
 	viewOptionResourceTypes
+	viewOptionResourceVisibility
 )
 
 type viewOptionEntry struct {
@@ -318,14 +328,18 @@ type ViewOptionsModel struct {
 	hasTableMode   bool
 
 	resources struct {
-		enabled    bool
-		hasTypes   bool
-		allTypes   bool
-		hasInclude bool
-		include    bool
-		hasOrder   bool
-		orderIndex int
-		showTable  bool
+		enabled  bool
+		hasTypes bool
+		// typeChoices are the profiles the Types row cycles through;
+		// typeIdx is the chosen one and typeIdx0 the one the dialog
+		// opened with.
+		typeChoices       []ViewOptionsChoice
+		typeIdx, typeIdx0 int
+		hasInclude        bool
+		include           bool
+		hasOrder          bool
+		orderIndex        int
+		showTable         bool
 	}
 
 	objects struct {
@@ -405,7 +419,8 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 	if cfg.Resources != nil {
 		model.resources.enabled = true
 		model.resources.hasTypes = cfg.Resources.ShowTypes
-		model.resources.allTypes = appconfig.NormalizeVisibilityProfile(cfg.Resources.TypeProfile) == appconfig.VisibilityProfileAll
+		model.resources.typeChoices, model.resources.typeIdx = typeProfileChoices(cfg.Resources.TypeChoices, cfg.Resources.TypeProfile)
+		model.resources.typeIdx0 = model.resources.typeIdx
 		model.resources.hasInclude = cfg.Resources.ShowInclude
 		model.resources.include = cfg.Resources.IncludeEmpty
 		model.resources.hasOrder = cfg.Resources.ShowOrder
@@ -418,10 +433,10 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 			title: "Resources:",
 		})
 		if model.resources.hasTypes {
-			model.entries = append(model.entries, viewOptionEntry{
-				kind:   viewOptionEntryOption,
-				option: viewOptionResourceTypes,
-			})
+			model.entries = append(model.entries,
+				viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionResourceTypes},
+				viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionResourceVisibility},
+			)
 		}
 		if model.resources.hasInclude {
 			model.entries = append(model.entries, viewOptionEntry{
@@ -812,17 +827,27 @@ func (m *ViewOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveFocus(1)
 		case "left":
 			m.adjustCurrent(-1)
-		case "right":
-			m.adjustCurrent(1)
-		case " ", "space":
-			m.adjustCurrent(0)
+		case "right", " ", "space", "enter":
+			if entry, ok := m.currentEntry(); ok && entry.option == viewOptionResourceVisibility {
+				// The editor row is an action: apply the options and
+				// open the editor.
+				msg := m.commit(true, false)
+				msg.Resources.OpenVisibility = true
+				return m, func() tea.Msg { return msg }
+			}
+			if t.String() == "enter" {
+				return m, func() tea.Msg {
+					return m.commit(true, false)
+				}
+			}
+			delta := 1
+			if t.String() != "right" {
+				delta = 0
+			}
+			m.adjustCurrent(delta)
 		case "ctrl+s":
 			return m, func() tea.Msg {
 				return m.commit(false, true)
-			}
-		case "enter":
-			return m, func() tea.Msg {
-				return m.commit(true, false)
 			}
 		}
 	}
@@ -867,7 +892,7 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 	case viewOptionIncludeEmpty:
 		m.resources.include = !m.resources.include
 	case viewOptionResourceTypes:
-		m.resources.allTypes = !m.resources.allTypes
+		m.resources.typeIdx = cycleIndex(m.resources.typeIdx, len(m.resources.typeChoices), delta)
 	case viewOptionResourceOrder:
 		if len(orderKeys) == 0 {
 			return
@@ -997,13 +1022,10 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 		msg.Close = accept
 	}
 	if m.resources.enabled {
-		profile := appconfig.VisibilityProfileWork
-		if m.resources.allTypes {
-			profile = appconfig.VisibilityProfileAll
-		}
 		msg.Resources = &ViewOptionsResourcesPayload{
 			HasTypes:        m.resources.hasTypes,
-			TypeProfile:     profile,
+			TypeProfile:     m.resources.typeChoices[m.resources.typeIdx].Value,
+			TypeChanged:     m.resources.typeIdx != m.resources.typeIdx0,
 			HasInclude:      m.resources.hasInclude,
 			IncludeEmpty:    m.resources.include,
 			HasOrder:        m.resources.hasOrder,
@@ -1079,10 +1101,7 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (label, value
 		}
 		return "Include empty", val
 	case viewOptionResourceTypes:
-		if m.resources.allTypes {
-			return "Types", "All"
-		}
-		return "Types", "Work"
+		return "Types", m.resources.typeChoices[m.resources.typeIdx].Label
 	case viewOptionResourceOrder:
 		return "Order", orderLabels[m.resources.orderIndex]
 	case viewOptionResourceTableMode, viewOptionObjectTableMode:
@@ -1150,7 +1169,7 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (label, value
 func (m *ViewOptionsModel) maxLabelWidth() int {
 	maxWidth := 0
 	for _, entry := range m.entries {
-		if entry.kind != viewOptionEntryOption {
+		if entry.kind != viewOptionEntryOption || entry.option == viewOptionResourceVisibility {
 			continue
 		}
 		label, _ := m.optionLabelAndValue(entry.option)
@@ -1203,6 +1222,10 @@ func (m *ViewOptionsModel) View() tea.View {
 				marker = ">"
 				st = focusStyle
 			}
+			if entry.option == viewOptionResourceVisibility {
+				lines = append(lines, st.Width(m.width).Render(marker+" Resource visibility..."))
+				continue
+			}
 			if w := lipgloss.Width(label); w < maxLabel {
 				label += strings.Repeat(" ", maxLabel-w)
 			}
@@ -1222,6 +1245,23 @@ func (m *ViewOptionsModel) FooterHints() []FooterHint {
 		{Key: "Enter", Label: "Apply & Close", Enabled: true},
 		{Key: "Esc", Label: "Cancel", Enabled: true},
 	}
+}
+
+// typeProfileChoices returns the profiles of the Types row, Work and All
+// when choices is empty, and the index of current. A current value that is
+// not a choice is added, so the dialog never changes the profile unasked.
+func typeProfileChoices(choices []ViewOptionsChoice, current string) ([]ViewOptionsChoice, int) {
+	if len(choices) == 0 {
+		choices = []ViewOptionsChoice{{Value: appconfig.VisibilityProfileWork, Label: "Work"}, {Value: appconfig.VisibilityProfileAll, Label: "All"}}
+		current = appconfig.NormalizeVisibilityProfile(current)
+	}
+	choices = slices.Clone(choices)
+	for i, c := range choices {
+		if c.Value == current {
+			return choices, i
+		}
+	}
+	return append(choices, ViewOptionsChoice{Value: current, Label: current}), len(choices)
 }
 
 // PanelIndex identifies the panel the dialog was opened for.

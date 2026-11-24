@@ -16,9 +16,12 @@ Panel section, always first:
 
 Resources section, on the root and other lists of resource types:
 
-- Types: Work lists the types of daily work and puts the rest under
-  "other types"; All lists every discovered type. See
-  [Resource types](resource-types.md).
+- Types: the profile the panel lists types under. Work lists the types
+  of daily work and puts the rest under "other types"; All lists every
+  discovered type; your saved profiles follow, and a name with `*` is
+  the panel's unsaved changes. See [Resource types](resource-types.md).
+- Resource visibility...: `Enter` applies the dialog and opens the
+  editor, see [Resource visibility](resource-visibility.md).
 - Include empty: Yes also lists types that have no objects. No is the
   "non-empty only" setting (`resources.showNonEmptyOnly`). A hidden type
   still opens when you name it: `cd jobs`, a hotlist entry, a history
@@ -56,7 +59,9 @@ In Logs mode the dialog adds the viewer and log options, see
   not save it.
 - `C-s` saves Table mode, Columns, the sort, Group by namespace,
   Types, Include empty, Order and the panel widths as the defaults kc
-  starts with.
+  starts with. Types is saved for the context when the context has a
+  profile of its own, else as the global default; unsaved changes from
+  the editor are saved with `F2` there.
 - `M-o`, `M-r` and `C-w` change the sort and columns without the dialog.
 - The panel mode is not saved; use `layout.leftPanelMode` and
   `layout.rightPanelMode` for the start mode.

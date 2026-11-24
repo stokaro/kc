@@ -52,7 +52,9 @@ the copy button at its right copies it.
   `Backspace` removes a character, `Esc` ends it, and any other key ends
   it and does its usual job (`M-n` acts on the found node). Text typed
   while the list is still loading is kept and applied when the rows
-  arrive.
+  arrive. In a list of resource types, text that matches no row finds a
+  type the list does not show, and `Enter` opens it (see
+  [Resource visibility](resource-visibility.md)).
 - `M-o` sorts by the next column, `M-r` reverses the sort. The sorted
   column title ends in an up or down arrow. In an Events list, Last Seen
   and First Seen sort by the Event's own times, most recent first, and

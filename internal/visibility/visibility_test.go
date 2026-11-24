@@ -377,3 +377,26 @@ func TestReasonStrings(t *testing.T) {
 		seen[s] = true
 	}
 }
+
+func TestProfileEqual(t *testing.T) {
+	t.Parallel()
+	base := visibility.Profile{Mode: visibility.ModeWork, Show: grs("leases.coordination.k8s.io", "endpointslices.discovery.k8s.io"), Hide: grs("events")}
+	tests := []struct {
+		name  string
+		other visibility.Profile
+		want  bool
+	}{
+		{name: "same selectors in another order", other: visibility.Profile{Mode: visibility.ModeWork, Show: grs("endpointslices.discovery.k8s.io", "leases.coordination.k8s.io"), Hide: grs("events")}, want: true},
+		{name: "another mode", other: visibility.Profile{Mode: visibility.ModeOnly, Show: base.Show, Hide: base.Hide}},
+		{name: "a selector less", other: visibility.Profile{Mode: visibility.ModeWork, Show: grs("leases.coordination.k8s.io"), Hide: grs("events")}},
+		{name: "show and hide swapped", other: visibility.Profile{Mode: visibility.ModeWork, Show: grs("events"), Hide: base.Show}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := base.Equal(tc.other); got != tc.want {
+				t.Fatalf("Equal = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

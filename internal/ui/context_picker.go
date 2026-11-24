@@ -150,6 +150,9 @@ func (a *App) applyContextSwitch(msg contextSwitchedMsg) tea.Cmd {
 	a.ensureTermContext()
 	// Pinned objects belong to the old cluster.
 	a.dropPins()
+	// A panel's own visibility profile was chosen for the old context; the
+	// new one lists under its binding or the global default.
+	a.resetPanelVisibility()
 	a.goToNamespace(contextNamespace(msg.target))
 	// Read-only mode follows the context: redraw the RO marker and the keys.
 	a.syncPanelScopeLabels()

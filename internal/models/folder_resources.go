@@ -14,6 +14,7 @@ import (
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
 	table "github.com/stokaro/kc/internal/table"
+	"github.com/stokaro/kc/internal/visibility"
 	"github.com/stokaro/kc/pkg/appconfig"
 )
 
@@ -28,8 +29,10 @@ type ResourcesFolder struct {
 	lastSpecs map[string]resourceGroupSignature
 	overrides *resourceViewOptions
 	// catalog is every type of the last population with the profile's
-	// decision; itemsMu guards it.
-	catalog TypeCatalog
+	// decision; catalogBuilt is set once a population stored it. itemsMu
+	// guards both.
+	catalog      TypeCatalog
+	catalogBuilt bool
 	// active marks the items whose count or emptiness peek was started.
 	// Only types the profile lists are started; finalize alone uses it.
 	active map[string]bool
@@ -152,6 +155,7 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 	for idx, spec := range specs {
 		decision, _ := set.Decide(spec.gvr.GroupResource())
 		item := f.typeItem(spec, decision.Included)
+		visible, hidden := typeRowVisible(item, spec, decision, showNonEmpty)
 		entries = append(entries, TypeEntry{
 			ID:         spec.id,
 			GVR:        spec.gvr,
@@ -160,15 +164,15 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 			Namespaced: spec.namespaced,
 			Path:       slices.Clone(spec.path),
 			Decision:   decision,
+			Hidden:     hidden,
 		})
 		seen[spec.id] = item
-		visible := decision.Included && resourceGroupVisible(item, spec, showNonEmpty)
 		sig := makeResourceGroupSignature(spec, decision.Included, visible, idx)
 		sigs[spec.id] = sig
 		if prev, ok := f.lastSpecs[spec.id]; !ok || prev != sig {
 			changed = true
 		}
-		refreshCountCell(item)
+		refreshCountCell(item, decision.Explicit && !spec.uncounted)
 		if !visible {
 			continue
 		}
@@ -230,14 +234,45 @@ func resourceGroupVisible(item *ResourceGroupItem, spec resourceGroupSpec, showN
 	return !showNonEmpty || spec.uncounted || (!empty && !pending)
 }
 
+// typeRowVisible says whether a type gets a row and, for a type the
+// profile lists without one, why (HiddenEmpty, HiddenNoAccess). Only a
+// listed type may peek: EmptyState starts one. A type the user selected
+// by name stays listed when it is empty, still counting or forbidden; its
+// count cell says which.
+func typeRowVisible(item *ResourceGroupItem, spec resourceGroupSpec, decision visibility.Decision, showNonEmpty bool) (visible bool, hidden string) {
+	if !decision.Included {
+		return false, ""
+	}
+	if resourceGroupVisible(item, spec, showNonEmpty) || decision.Explicit {
+		return true, ""
+	}
+	if item.Forbidden() {
+		return false, HiddenNoAccess
+	}
+	return false, HiddenEmpty
+}
+
 // refreshCountCell shows the cached object count, or an empty cell while the
-// count is unknown.
-func refreshCountCell(item *ResourceGroupItem) {
+// count is unknown. A type selected by name (states) is listed whatever its
+// count, so its cell tells a count still loading ("…"), one that failed
+// ("n/a") and a type the user may not list ("denied") from a real 0.
+func refreshCountCell(item *ResourceGroupItem, states bool) {
 	if count, ok := item.TryCount(); ok {
 		item.setCountCell(fmt.Sprintf("%d", count))
 		return
 	}
-	item.setCountCell("")
+	if !states {
+		item.setCountCell("")
+		return
+	}
+	switch {
+	case item.Forbidden():
+		item.setCountCell("denied")
+	case item.countFailed():
+		item.setCountCell("n/a")
+	default:
+		item.setCountCell("…")
+	}
 }
 
 func (f *ResourcesFolder) setItems(items map[string]*ResourceGroupItem) {
