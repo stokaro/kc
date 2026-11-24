@@ -4,6 +4,10 @@
 
 > **Origin:** kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) (upstream). This repository is developed independently and has diverged a lot from it: key bindings, features and internals differ. Report issues for this version at [stokaro/kc](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE) for attribution.
 
+![The full-screen dashboard of a namespace in iTerm2: the workloads with their pods and containers on the left, CPU and memory charts drawn as images with a line per workload, the request and limit, and the Events of the last 15 minutes on a timeline](docs/images/dashboard-iterm2.png)
+
+The dashboard (`C-x g`) in iTerm2, where kc draws the charts as images (Kitty graphics; see [`charts.graphics`](#configuration)). Other terminals get the same charts in text.
+
 ![kc demo with a caption per scene: two panels and quick search, the cluster overview and diagnosis of broken objects, the menu bar, draining a node, scaling a Deployment and its timeline, YAML, comparing two objects, filtered JSON logs, copying a file out of a container, the hotlist, the terminal](docs/demo.gif)
 
 The demo was recorded before the menu bar stayed on the top row (see [Menu Bar](#menu-bar)).
@@ -27,10 +31,6 @@ A Deployment list next to the Describe of the selected Deployment:
 Draining a node: what it evicts, the PodDisruptionBudgets and the same kubectl command, before anything happens:
 
 ![The drain confirmation for a node, with the pods to evict, the budgets and the kubectl drain command](screenshots/drain/03-confirm.png)
-
-The CPU dashboard of a Deployment (`C-x g`) with the cursor in the past, from the redesign in #321:
-
-![A full-screen CPU chart of a Deployment over five minutes, with the request and limit lines and the cursor on one cell](screenshots/dashboard/04-expanded.png)
 
 More in the [screenshot catalog](screenshots/README.md), one page per topic.
 
