@@ -98,7 +98,7 @@ go build -o kc ./cmd/kc    # or build a binary
 ./kc
 ```
 
-Or install with Go: `go install github.com/stokaro/kc/cmd/kc@main`. The tags up to `v0.8.0` come from upstream and use its module path, so `@latest` works only once a release above `v0.8.0` exists.
+Or install with Go 1.27 or later: `go install github.com/stokaro/kc/cmd/kc@latest` for the latest release, or `@main` for the current development version.
 
 ### Check the installed version
 
