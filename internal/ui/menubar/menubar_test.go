@@ -548,3 +548,109 @@ func TestMouseWheelCancelsPress(t *testing.T) {
 		t.Fatalf("ran %v selected=%d; a release after the wheel must not run the pressed item", r.ran, b.Selected())
 	}
 }
+
+// TestAnchoredDropdown: OpenAnchored hangs a menu under a cell of the bar
+// row that ends at a column, clamped to the screen, and the bar row is
+// the caller's while it does; moving to another menu drops that one under
+// its title again.
+func TestAnchoredDropdown(t *testing.T) {
+	t.Parallel()
+	t.Run("the right edge is at the anchor, on the screen", func(t *testing.T) {
+		t.Parallel()
+		for _, tc := range []struct {
+			name             string
+			width, end, want int // want: the column after the right edge
+		}{
+			{"at the screen edge", 80, 80, 80},
+			{"left of the edge", 80, 60, 60},
+			{"past the edge", 80, 95, 80},
+		} {
+			r := &recorder{}
+			var b menubar.Bar
+			b.OpenAnchored(r.menus(), tc.width, 1, tc.end)
+			x, y, w, _ := b.DropdownBounds()
+			if !b.Anchored() || b.Current() != 1 || y != 1 || x+w != tc.want {
+				t.Errorf("%s: anchored=%t cur=%d bounds x=%d y=%d w=%d, want menu 1 at row 1 ending at %d", tc.name, b.Anchored(), b.Current(), x, y, w, tc.want)
+			}
+		}
+		r := &recorder{}
+		var b menubar.Bar
+		b.OpenAnchored(r.menus(), 80, 1, 3)
+		if x, _, _, _ := b.DropdownBounds(); x != 0 {
+			t.Errorf("a drop-down wider than its anchor starts at x=%d, want 0", x)
+		}
+	})
+	t.Run("Left and Right drop the neighbor under its title", func(t *testing.T) {
+		t.Parallel()
+		r := &recorder{}
+		var b menubar.Bar
+		b.OpenAnchored(r.menus(), 80, 1, 80)
+		b.HandleKey(key("left"))
+		if x, _, _, _ := b.DropdownBounds(); b.Anchored() || !b.Dropped() || b.Current() != 0 || x != 0 {
+			t.Errorf("after Left: anchored=%t dropped=%t cur=%d x=%d, want Left under its title at 0", b.Anchored(), b.Dropped(), b.Current(), x)
+		}
+		b.OpenAnchored(r.menus(), 80, 1, 80)
+		b.HandleKey(key("right"))
+		if x, _, _, _ := b.DropdownBounds(); b.Anchored() || b.Current() != 2 || x != 18 {
+			t.Errorf("after Right: anchored=%t cur=%d x=%d, want Command under its title at 18", b.Anchored(), b.Current(), x)
+		}
+	})
+	t.Run("keys work as in any drop-down", func(t *testing.T) {
+		t.Parallel()
+		r := &recorder{}
+		var b menubar.Bar
+		b.OpenAnchored(r.menus(), 80, 1, 80)
+		b.HandleKey(key("x"))
+		if strings.Join(r.ran, ",") != "E&xit" || b.IsOpen() || b.Anchored() {
+			t.Errorf("hotkey ran %v, open=%t anchored=%t; want E&xit and closed", r.ran, b.IsOpen(), b.Anchored())
+		}
+		b.OpenAnchored(r.menus(), 80, 1, 80)
+		b.HandleKey(key("down"))
+		b.HandleKey(key("enter"))
+		if strings.Join(r.ran, ",") != "E&xit,E&xit" {
+			t.Errorf("Down, Enter ran %v, want E&xit again", r.ran)
+		}
+		b.OpenAnchored(r.menus(), 80, 1, 80)
+		b.HandleKey(key("esc"))
+		if b.IsOpen() || b.Anchored() {
+			t.Error("Esc left the anchored drop-down open")
+		}
+		// A later open is under the title again.
+		b.OpenAt(r.menus(), 80, 1)
+		if x, _, _, _ := b.DropdownBounds(); b.Anchored() || x != 9 {
+			t.Errorf("OpenAt after an anchored one: anchored=%t x=%d, want under File at 9", b.Anchored(), x)
+		}
+	})
+	t.Run("the mouse works as in any drop-down", func(t *testing.T) {
+		t.Parallel()
+		r := &recorder{}
+		var b menubar.Bar
+		b.OpenAnchored(r.menus(), 80, 0, 80)
+		x, y, _, _ := b.DropdownBounds()
+		b.HandleMouse(wheel(tea.MouseWheelDown, x+2, y+1))
+		if b.Selected() != 1 {
+			t.Errorf("the wheel selected %d, want 1", b.Selected())
+		}
+		b.HandleMouse(click(x+2, y+4))
+		b.HandleMouse(release(x+2, y+4))
+		if strings.Join(r.ran, ",") != "&Reread" || b.IsOpen() {
+			t.Errorf("click ran %v open=%t, want &Reread and closed", r.ran, b.IsOpen())
+		}
+		// A click on the bar row away from the titles (the caller's cell)
+		// closes, and so does one outside.
+		for _, at := range [][2]int{{70, 0}, {5, 15}} {
+			b.OpenAnchored(r.menus(), 80, 0, 80)
+			b.HandleMouse(click(at[0], at[1]))
+			if b.IsOpen() {
+				t.Errorf("a click at %v left the drop-down open", at)
+			}
+		}
+		// A click on the title of the anchored menu moves it under the
+		// title rather than closing it.
+		b.OpenAnchored(r.menus(), 80, 0, 80)
+		b.HandleMouse(click(2, 0))
+		if !b.Dropped() || b.Anchored() || b.Current() != 0 {
+			t.Errorf("click on its title: dropped=%t anchored=%t cur=%d, want it under the title", b.Dropped(), b.Anchored(), b.Current())
+		}
+	})
+}

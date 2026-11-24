@@ -74,6 +74,10 @@ type Bar struct {
 	// the button is released over it.
 	pressed int
 	width   int
+	// anchor, when above zero, is the column after the right edge of the
+	// drop-down, which then hangs there instead of under its title (see
+	// OpenAnchored).
+	anchor int
 }
 
 // Open shows the bar with menus and highlights the title that was selected
@@ -97,6 +101,24 @@ func (b *Bar) OpenAt(menus []Menu, width, i int) {
 	b.dropped = b.open
 }
 
+// OpenAnchored drops down menu i as a pop-up under a cell the caller
+// draws on the bar row, rather than under the menu's title: the
+// drop-down's right edge is at column end (exclusive), shifted to fit the
+// screen. The bar row is not drawn while it is anchored (see Anchored),
+// so the caller's cell stays in view above it. Keys, hotkeys and the
+// mouse work as in any drop-down; moving to another menu with Left,
+// Right or its title drops that one down under its title as usual.
+func (b *Bar) OpenAnchored(menus []Menu, width, i, end int) {
+	b.OpenAt(menus, width, i)
+	if b.open {
+		b.anchor = max(1, end)
+	}
+}
+
+// Anchored reports whether the drop-down hangs under the caller's cell
+// (OpenAnchored), so the caller's bar row stays on screen.
+func (b *Bar) Anchored() bool { return b.Dropped() && b.anchor > 0 }
+
 // Close hides the bar. The selected menu is remembered for the next Open.
 func (b *Bar) Close() {
 	b.open = false
@@ -119,10 +141,12 @@ func (b *Bar) Current() int { return b.cur }
 // Selected returns the index of the highlighted item, or -1.
 func (b *Bar) Selected() int { return b.sel }
 
+// selectMenu highlights menu i, which drops down under its title.
 func (b *Bar) selectMenu(i int) {
 	b.cur = i
 	b.sel = b.nextSelectable(-1, 1)
 	b.pressed = -1
+	b.anchor = 0
 }
 
 // Items returns the entries of the selected menu, or nil when the bar is
@@ -287,7 +311,7 @@ func (b *Bar) HandleMouse(msg tea.MouseMsg) tea.Cmd {
 	case tea.MouseClickMsg:
 		if m.Y == 0 {
 			if i := b.TitleAt(m.X); i >= 0 {
-				if i == b.cur && b.dropped {
+				if i == b.cur && b.dropped && b.anchor == 0 {
 					b.Close()
 				} else {
 					b.selectMenu(i)
@@ -402,8 +426,9 @@ func (b *Bar) dropdownSize() (w, h, shortW int) {
 }
 
 // DropdownBounds returns the screen rectangle of the drop-down, frame
-// included. The drop-down hangs under its title and is shifted left when it
-// would run past the right edge of the screen.
+// included. The drop-down hangs under its title, or ends at the anchor
+// column of OpenAnchored, and is shifted left when it would run past the
+// right edge of the screen.
 //
 //revive:disable-next-line:function-result-limit a rectangle is four named coordinates
 func (b *Bar) DropdownBounds() (x, y, w, h int) {
@@ -411,8 +436,12 @@ func (b *Bar) DropdownBounds() (x, y, w, h int) {
 		return 0, 0, 0, 0
 	}
 	w, h, _ = b.dropdownSize()
-	x, _ = b.titleCell(b.cur)
-	x--
+	if b.anchor > 0 {
+		x = b.anchor - w
+	} else {
+		x, _ = b.titleCell(b.cur)
+		x--
+	}
 	if b.width > 0 && x+w > b.width {
 		x = b.width - w
 	}

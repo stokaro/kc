@@ -128,6 +128,20 @@ func (m *Model) useAsWindow(v *view) {
 	}
 }
 
+// rejoinWindow points every view at the investigation window again, when
+// one is set, and cancels their reads of the ranges they showed.
+func (m *Model) rejoinWindow() {
+	w := m.window()
+	if w.Off() {
+		return
+	}
+	m.lastWin = w
+	for _, v := range m.stack {
+		v.cancelRead()
+		m.follow(v, w)
+	}
+}
+
 // windowState is the title's state of a view that follows the window, or
 // "" when it does not.
 func (m *Model) windowState(v *view) string {

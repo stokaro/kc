@@ -11,7 +11,8 @@ all of them). `Esc` or `F10` returns to the panels as you left them.
 - **The top bar**: the dashboard's menus (`F9`), where you are
   (`kind-dev › namespace shop › Deployment web › pod web-2`), and the
   state: `LIVE · last 15 minutes`, or `PAUSED at 10:01:05 · 15m` when
-  the charts stopped.
+  the charts stopped. Click the state to choose what the dashboard
+  shows (see "Live, paused or a window" below).
 - **The list** on the left: what the target is made of, with its usage
   now. A namespace or all namespaces list their workloads, a node its
   pods, a workload its pods. Each row has the ready pods, the CPU and
@@ -130,6 +131,24 @@ rather than moving to now.
 The list and the line `Now:` stay those of now: the dashboard has no
 snapshot of the cluster at another time.
 
+## Live, paused or a window
+
+A click on the state at the right end of the top bar opens the Range
+menu under it; `F2` and the Range title open it under the title. Its
+first items say what the dashboard shows, with that one checked:
+
+- `Live`: the range ends now and moves with the clock.
+- `Pause here` (`Space`), or `Paused at 10:01:05` while paused: the
+  range stops at that time. On an investigation window it leaves the
+  window and keeps its end.
+- `Follow the investigation window`: show the window again after you
+  left it. It is dim while no window is set.
+- `Set the investigation window to this range` (`w`).
+
+Then come the ranges by name (15 minutes to 7 days with Prometheus, 5
+minutes to 1 hour for the session history) and zooming in and out.
+`Esc`, or a click on the state again, closes the menu.
+
 ## Keys
 
 - `Enter`: On a list row, open its dashboard. `..` goes up. On an Event, the same as `o`. On a chart, expand it to the whole screen, or collapse it.
@@ -140,7 +159,7 @@ snapshot of the cluster at another time.
 - `Home`, `End`: Cursor to the first or last cell.
 - `Space`, `F3`: Pause or go live again. Live removes the cursor.
 - `+`, `-`: Zoom in or out: 15m, 1h, 3h, 12h, 1d, 7d with Prometheus; 5m, 15m, 1h for the session history.
-- `F2`: The Range menu: pick the range by name.
+- `F2`: The Range menu: live, paused or the investigation window, and the range by name.
 - `F4`: Expand the focused widget, or restore the layout.
 - `o`: Show the selected row or the object of the selected Event, else the target, in the other panel, and leave the dashboard. An Event about a kind kc cannot open shows the Event. For a rollout step kc says where its revisions are: the Deployment's `/rollout`, else the object's `/timeline` if kc recorded it.
 - `l`, `F7`: Show the logs around the selected Event, or around the cursor: the investigation window becomes five minutes either side, the object goes to the other panel, and this panel turns to Logs mode.
@@ -156,7 +175,8 @@ The bar at the bottom shows the function keys that work now.
 
 With the mouse: click a chart to put the cursor there, turn the wheel
 over a chart to zoom, click a row to select it and click it again to
-open its dashboard, click a menu title or a function key.
+open its dashboard, click a menu title or a function key, click the
+state at the right of the top bar for the Range menu.
 
 `C-x g` on the same row reopens the last dashboard with its range, its
 pause and the drilldown. The session history is kept until kc exits.
