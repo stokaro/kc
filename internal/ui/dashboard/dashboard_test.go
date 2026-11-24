@@ -632,6 +632,40 @@ func TestMouse(t *testing.T) {
 	requireText(t, screen(t, m, 150, 42), "› pod web-2")
 }
 
+// TestWheelScrollsLists: over the target list and the Events list the
+// wheel focuses the list and moves its selection instead of zooming.
+func TestWheelScrollsLists(t *testing.T) {
+	t.Parallel()
+	f := &fakes{now: t0, amounts: measured()}
+	m := open(t, f, true, web, 150, 42)
+	key(t, m, "tab")
+	var podRow, eventsRow int
+	for i, l := range screen(t, m, 150, 42) {
+		switch {
+		case podRow == 0 && strings.Contains(l, "web-1"):
+			podRow = i
+		case eventsRow == 0 && strings.Contains(l, "Events in the last"):
+			eventsRow = i
+		}
+	}
+	if podRow == 0 || eventsRow == 0 {
+		t.Fatalf("rows not found: pod %d, events %d", podRow, eventsRow)
+	}
+	cmd, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown, X: 5, Y: podRow})
+	run(t, m, cmd)
+	if act := key(t, m, "o"); act.Open == nil || act.Open.Name != "web-2" {
+		t.Errorf("o after the wheel over the pods = %+v, want web-2", act.Open)
+	}
+	if m.EventsFocused() {
+		t.Error("the Events list has the focus after the wheel over the pods")
+	}
+	cmd, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown, X: 140, Y: eventsRow + 2})
+	run(t, m, cmd)
+	if !m.EventsFocused() {
+		t.Error("the wheel over the Events list did not focus it")
+	}
+}
+
 func TestBlocksToggle(t *testing.T) {
 	t.Parallel()
 	f := &fakes{now: t0, amounts: measured()}
