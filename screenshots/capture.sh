@@ -259,8 +259,10 @@ current=
 last_done=
 
 # shot writes the PNG of the current scene, after the given pause (default
-# half a second) for the screen to settle. A palette of 128 colors without
-# dithering keeps the terminal colors exact and the file about a quarter of
+# half a second) for the screen to settle. A palette of 256 colors has room
+# for the terminal colors and the shades of the chart and gauge images, and
+# Floyd-Steinberg dithering keeps their gradients smooth (with 128 colors
+# and no dithering they show bands). The file is about a third of
 # the driver's RGB PNG.
 shot() {
 	local file
@@ -270,7 +272,7 @@ shot() {
 	settle_images
 	write_png "$WORK/shot.png"
 	ffmpeg -loglevel error -y -i "$WORK/shot.png" \
-		-vf "split[a][b];[a]palettegen=max_colors=128:reserve_transparent=0[p];[b][p]paletteuse=dither=none" \
+		-vf "split[a][b];[a]palettegen=max_colors=256:reserve_transparent=0[p];[b][p]paletteuse=dither=floyd_steinberg" \
 		"$file"
 	log "wrote ${file#"$REPO"/}"
 }

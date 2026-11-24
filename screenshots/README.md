@@ -30,7 +30,7 @@ Each page has one line per image: what it shows and which keys lead there. `C-x 
 screenshots/capture.sh all
 ```
 
-It needs what [`docs/demo/record.sh`](../docs/demo/README.md) needs: Go, Docker and kind (here or on a Linux host over ssh), kubectl, Helm and ffmpeg. ffmpeg cuts every PNG to 128 colors, which keeps the folder small. kc and kubectl run with a temporary `HOME` and a kubeconfig that holds only the kind cluster, and every kubectl call first checks the context and the server, so your own clusters are never touched.
+It needs what [`docs/demo/record.sh`](../docs/demo/README.md) needs: Go, Docker and kind (here or on a Linux host over ssh), kubectl, Helm and ffmpeg. ffmpeg cuts every PNG to 256 colors, dithered so the gradients of the chart images stay smooth, which keeps the folder small. kc and kubectl run with a temporary `HOME` and a kubeconfig that holds only the kind cluster, and every kubectl call first checks the context and the server, so your own clusters are never touched.
 
 The steps also run one by one, which is quicker when you change a scene:
 
