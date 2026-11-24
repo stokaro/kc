@@ -119,6 +119,44 @@ func looks() []look {
 	lowDPI := base(every(30, 30, burst))
 	lowDPI.Refs = []chart.Ref{lim(0.5), req(0.25)}
 
+	// A live chart as the Metrics API fills it: the newest measurement is
+	// 25 seconds old, and the request and the limit are known at the
+	// samples only, as the session records them. The samples hold to the
+	// end of the plot.
+	ago := func(pts []chart.Point, sec int) []chart.Point {
+		out := make([]chart.Point, len(pts))
+		for i, p := range pts {
+			out[i] = chart.Point{At: p.At.Add(-time.Duration(sec) * time.Second), V: p.V}
+		}
+		return out
+	}
+	sessionRefs := func(c *chart.Chart, refs ...chart.Ref) {
+		c.Refs = refs
+		for i := range c.Refs {
+			c.Refs[i].Points = make([]chart.Point, len(c.Points))
+			for j, p := range c.Points {
+				c.Refs[i].Points[j] = chart.Point{At: p.At, V: c.Refs[i].V}
+			}
+			c.Refs[i].Hold = c.Hold
+		}
+	}
+	live := base(ago(every(30, 30, burst), 25))
+	sessionRefs(&live, lim(0.5), req(0.25))
+
+	// The pods above, measured 25 seconds ago: each pod's line holds to
+	// the end of the plot with the sum.
+	livePods := many
+	livePods.Points = ago(many.Points, 25)
+	livePods.Series = nil
+	for _, sr := range many.Series {
+		livePods.Series = append(livePods.Series, chart.Series{Points: ago(sr.Points, 25), Style: sr.Style})
+	}
+
+	// Measurements that stopped four minutes ago: the newest sample holds
+	// for Hold, then the plot is empty.
+	stale := base(ago(every(22, 30, burst), 240))
+	sessionRefs(&stale, lim(0.5), req(0.25))
+
 	return []look{
 		{name: "two-samples", c: two},
 		{name: "bursts", c: bursts},
@@ -128,6 +166,9 @@ func looks() []look {
 		{name: "dense", c: dense},
 		{name: "pods", c: many},
 		{name: "low-dpi", c: lowDPI, cellW: 8, cellH: 17},
+		{name: "live-end", c: live},
+		{name: "live-pods", c: livePods},
+		{name: "stale-end", c: stale},
 	}
 }
 

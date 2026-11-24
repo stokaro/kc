@@ -169,10 +169,14 @@ panel: a dark plot with grid lines through the value labels and at
 round times of the clock, the usage as a smooth line from sample to
 sample with a fading area under it, and the requests, limits and
 allocatable as thin dashed lines. The plot above the limit is shaded
-faintly red. Samples further apart than a reading interval are not
-joined, so time kc has no samples for is an empty plot with the words
-"no data"; a sample without neighbors is a dot, and so is each sample
-when they are far apart. On a workload, a namespace or a node, with the
+faintly red. As in the text charts, each sample also stands for a short
+time after it, about two readings: the line runs on flat from the
+newest sample to the right edge (the Metrics API measures some seconds
+before kc reads it), and stops that long after a sample with nothing
+after it. Samples further apart than that are not joined, so time kc
+has no samples for is an empty plot with the words "no data"; a sample
+without neighbors is a dot with a short flat line after it, and each
+sample is a dot when they are far apart. On a workload, a namespace or a node, with the
 samples of this kc session, thin lines in other colors show the first
 eight rows of the list (pods of a workload, workloads otherwise) under
 their sum; the legend counts them. Prometheus reads have no history per

@@ -108,12 +108,14 @@ func (g geom) x(t time.Time) float64 {
 // pixels each, as a Grafana time series panel: grid lines through the
 // value labels and the middle time, the usage as an antialiased line
 // through the samples with an area under it that fades out towards zero,
-// and the reference lines dashed. Samples further apart than Hold are
-// not joined, so a gap shows the empty grid; a sample without a
-// neighbor is a point. The scale and the reference line values are those
-// of Render. The cursor is not drawn: it is a text cell over the image
-// (TextCells), so moving it changes no picture. It is nil when the chart
-// has no plot.
+// and the reference lines dashed. As in the text plot, a sample stands
+// for Hold after it: the line runs on flat from the newest sample towards
+// End, and from the last one before a gap, for up to Hold. Samples
+// further apart than Hold are not joined, so a gap shows the empty grid;
+// a sample without a neighbor is a point. The scale and the reference
+// line values are those of Render. The cursor is not drawn: it is a text
+// cell over the image (TextCells), so moving it changes no picture. It is
+// nil when the chart has no plot.
 func (c Chart) Raster(cellW, cellH int) *image.RGBA {
 	if cols, _ := c.PlotSize(); cols == 0 || cellW < 1 || cellH < 1 {
 		return nil
@@ -177,20 +179,27 @@ func snap(v, width float64) float64 {
 	return math.Round(v)
 }
 
-// vertex is a sample in pixels.
-type vertex struct{ x, y float64 }
+// vertex is a sample in pixels. A held vertex is where the hold of the
+// sample before it ends: the line goes on to it, but it is no sample.
+type vertex struct {
+	x, y float64
+	held bool
+}
 
 // runs are the samples as pixels, cut where two are further apart than
-// Hold. With more samples than half the pixel columns, they are pooled
-// per column first, as Render pools them per cell.
+// Hold. Each run ends with its last sample held flat for Hold, as the
+// text plot holds it over the cells after it. With more samples than
+// half the pixel columns, they are pooled per column first, as Render
+// pools and holds them per cell.
 func (c Chart) runs(g geom) [][]vertex {
 	in, before, after := c.inRange()
 	if len(in) > g.w/2 {
 		return c.pooledRuns(g)
 	}
 	slices.SortStableFunc(in, func(a, b Point) int { return a.At.Compare(b.At) })
-	// The samples just outside the range continue a line into it.
-	if before != nil && len(in) > 0 && in[0].At.Sub(before.At) <= c.Hold {
+	// The samples just outside the range continue a line into it; the one
+	// before also when only its hold reaches into the range.
+	if before != nil && c.Start.Sub(before.At) <= c.Hold {
 		in = slices.Insert(in, 0, *before)
 	}
 	if after != nil && len(in) > 0 && after.At.Sub(in[len(in)-1].At) <= c.Hold {
@@ -198,14 +207,22 @@ func (c Chart) runs(g geom) [][]vertex {
 	}
 	var out [][]vertex
 	var run []vertex
+	// A run ends with the hold of its last sample; the plot cuts what is
+	// after End.
+	end := func(last Point) {
+		if c.Hold > 0 {
+			run = append(run, vertex{x: g.x(last.At.Add(c.Hold)), y: g.y(last.V), held: true})
+		}
+		out, run = append(out, run), nil
+	}
 	for i, pt := range in {
 		if i > 0 && pt.At.Sub(in[i-1].At) > c.Hold {
-			out, run = append(out, run), nil
+			end(in[i-1])
 		}
-		run = append(run, vertex{g.x(pt.At), g.y(pt.V)})
+		run = append(run, vertex{x: g.x(pt.At), y: g.y(pt.V)})
 	}
 	if len(run) > 0 {
-		out = append(out, run)
+		end(in[len(in)-1])
 	}
 	return out
 }
@@ -244,7 +261,7 @@ func (c Chart) pooledRuns(g geom) [][]vertex {
 			}
 			continue
 		}
-		run = append(run, vertex{float64(x) + 0.5, g.y(col.v)})
+		run = append(run, vertex{x: float64(x) + 0.5, y: g.y(col.v)})
 	}
 	if len(run) > 0 {
 		out = append(out, run)
@@ -287,17 +304,20 @@ func fillUnder(p *painter, g geom, run []vertex, col color.RGBA) {
 }
 
 // strokeRuns draws the line of each run, width pixels wide at ratio 1,
-// and points where the samples are few or far apart.
+// and points where the samples are few or far apart. A held vertex is no
+// sample: it gets no point and does not count.
 func strokeRuns(p *painter, g geom, runs [][]vertex, col color.RGBA, width float64) {
 	hw := width * g.ratio / 2
 	for _, run := range runs {
 		for i := 1; i < len(run); i++ {
 			p.segment(run[i-1], run[i], hw)
 		}
-		sparse := len(run) <= fewPoints ||
-			(run[len(run)-1].x-run[0].x)/float64(len(run)-1) >= pointSpacing*g.ratio
+		samples := slices.DeleteFunc(slices.Clone(run), func(v vertex) bool { return v.held })
+		n := len(samples) // a run starts with a sample
+		sparse := n <= fewPoints ||
+			(samples[n-1].x-samples[0].x)/float64(n-1) >= pointSpacing*g.ratio
 		if sparse {
-			for _, v := range run {
+			for _, v := range samples {
 				p.disk(v.x, v.y, pointRadius*width/lineWidth*g.ratio)
 			}
 		}
