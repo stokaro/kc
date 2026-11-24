@@ -260,6 +260,20 @@ wait_for() {
 	done
 }
 
+# wait_gone waits until the screen no longer shows the text (fixed string)
+# or the timeout in seconds runs out, then fails the script.
+wait_gone() {
+	local text=$1 timeout=${2:-20} start
+	start=$(date +%s)
+	while shows "$text"; do
+		if [ $(($(date +%s) - start)) -ge "$timeout" ]; then
+			screen >&2
+			die "timed out after ${timeout}s waiting for \"$text\" to leave the screen"
+		fi
+		sleep 0.3
+	done
+}
+
 # shows reports whether the screen shows the text now. The screen is read
 # first so that grep -q cannot cut the pipe and fail it under pipefail.
 shows() {
