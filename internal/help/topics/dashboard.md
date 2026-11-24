@@ -174,9 +174,10 @@ minutes to 1 hour for the session history) and zooming in and out.
 The bar at the bottom shows the function keys that work now.
 
 With the mouse: click a chart to put the cursor there, turn the wheel
-over a chart to zoom, click a row to select it and click it again to
-open its dashboard, click a menu title or a function key, click the
-state at the right of the top bar for the Range menu.
+over a chart to zoom, turn it over the list or the Events to move the
+selection, click a row to select it and click it again to open its
+dashboard, click a menu title or a function key, click the state at
+the right of the top bar for the Range menu.
 
 `C-x g` on the same row reopens the last dashboard with its range, its
 pause and the drilldown. The session history is kept until kc exits.
