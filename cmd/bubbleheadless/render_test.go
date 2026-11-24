@@ -55,7 +55,7 @@ func cellsOf(rows ...string) [][]uv.Cell {
 func TestRenderCellsSizeAndColors(t *testing.T) {
 	cells := cellsOf("ab ", "   ")
 	cells[1][2].Style = uv.Style{Bg: ansi.BasicColor(4)}
-	img, err := renderCells(cells)
+	img, err := renderCells(cells, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestRenderCellsSizeAndColors(t *testing.T) {
 // Box-drawing lines must reach the cell edges so that frames join across
 // cells; a font glyph usually stops short of them.
 func TestRenderCellsBoxLinesJoin(t *testing.T) {
-	img, err := renderCells(cellsOf("┌─┐", "│ │", "└─┘"))
+	img, err := renderCells(cellsOf("┌─┐", "│ │", "└─┘"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestRenderCellsBoxLinesJoin(t *testing.T) {
 }
 
 func TestDrawShapeLeavesOtherRunes(t *testing.T) {
-	img, err := renderCells(cellsOf("█"))
+	img, err := renderCells(cellsOf("█"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestDrawShapeLeavesOtherRunes(t *testing.T) {
 // A braille cell draws its dots, so a chart shows in a snapshot without a
 // braille font: ⠁ is the top-left dot only, ⢀ the bottom-right one.
 func TestRenderCellsBrailleDots(t *testing.T) {
-	img, err := renderCells(cellsOf("⠁⢀"))
+	img, err := renderCells(cellsOf("⠁⢀"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestRenderCellsBrailleDots(t *testing.T) {
 // TestRenderCellsDiamond: the rollout mark ◆ is drawn, inked at its center
 // and blank in its corners, without the font having the glyph.
 func TestRenderCellsDiamond(t *testing.T) {
-	img, err := renderCells(cellsOf("◆"))
+	img, err := renderCells(cellsOf("◆"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestRenderCellsDiamond(t *testing.T) {
 
 func TestColorSnapshotToPNG(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sub", "frame.png")
-	if err := colorSnapshotToPNG(cellsOf("ok"), "a caption", captionBottom, path); err != nil {
+	if err := colorSnapshotToPNG(cellsOf("ok"), nil, "a caption", captionBottom, path); err != nil {
 		t.Fatal(err)
 	}
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), "*"))
@@ -205,7 +205,7 @@ func TestDrawCaption(t *testing.T) {
 	for i := range rows {
 		rows[i] = strings.Repeat("x", 80)
 	}
-	plain, err := renderCells(cellsOf(rows...))
+	plain, err := renderCells(cellsOf(rows...), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestDrawCaption(t *testing.T) {
 	centerX := bounds.Dx() / 2
 
 	t.Run("no caption keeps the frame unchanged", func(t *testing.T) {
-		img, err := renderCells(cellsOf(rows...))
+		img, err := renderCells(cellsOf(rows...), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -234,7 +234,7 @@ func TestDrawCaption(t *testing.T) {
 		{position: captionTop, boxTop: 0},
 	} {
 		t.Run(tt.position, func(t *testing.T) {
-			img, err := renderCells(cellsOf(rows...))
+			img, err := renderCells(cellsOf(rows...), nil)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/taigrr/bubbleterm/emulator"
 )
 
 // TestChildEnvHidesTheOuterTerminal: the child sees the emulator, not the
@@ -18,6 +23,31 @@ func TestChildEnvHidesTheOuterTerminal(t *testing.T) {
 	want := []string{"HOME=/tmp/h", "LANG=en_US.UTF-8", "COLUMNS=120", "LINES=40", "TERM=xterm-256color"}
 	if !slices.Equal(got, want) {
 		t.Errorf("childEnv = %q, want %q", got, want)
+	}
+}
+
+// A Kitty placeholder is one cell in the plain snapshot: blank, with its
+// diacritics on it, so the text after it stays in its column.
+func TestSnapshotToPNGKeepsColumnsAfterPlaceholders(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	read := func(name string, rows ...string) []byte {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := snapshotToPNG(emulator.EmittedFrame{Rows: rows}, path); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	marks := string([]rune{0x0305, 0x030D})
+	got := read("placeholders.png", "\U0010EEEE"+marks+"\U0010EEEE"+marks+"x")
+	want := read("blanks.png", "  x")
+	if !bytes.Equal(got, want) {
+		t.Fatal("the plain snapshot of placeholders and x differs from two blanks and x")
 	}
 }
 
@@ -41,6 +71,32 @@ func TestParseKeyTokenHex(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestToUint16(t *testing.T) {
+	t.Parallel()
+	const largest = maxSize * max(colorCellWidth, colorCellHeight)
+	for _, tt := range []struct {
+		name    string
+		n       int
+		want    uint16
+		wantErr bool
+	}{
+		{name: "negative", n: -1, wantErr: true},
+		{name: "zero", n: 0, want: 0},
+		{name: "max", n: 65535, want: 65535},
+		{name: "past max", n: 65536, wantErr: true},
+		// The largest window checkSize allows fits in pixels too.
+		{name: "largest window in pixels", n: largest, want: uint16(largest)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := toUint16(tt.n)
+			if (err != nil) != tt.wantErr || got != tt.want {
+				t.Errorf("toUint16(%d) = %d, %v; want %d, error %v", tt.n, got, err, tt.want, tt.wantErr)
 			}
 		})
 	}

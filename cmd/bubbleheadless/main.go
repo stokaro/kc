@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/png"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,13 +19,17 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/creack/pty"
 	"github.com/taigrr/bubbleterm/emulator"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
+
+	"github.com/stokaro/kc/internal/ui/kittygfx"
 )
 
 const (
@@ -93,12 +98,24 @@ var keyAliases = map[string]string{
 	"ctrl+z":    "\x1a",
 }
 
+// maxSize bounds the columns and rows of the emulator, so that its size in
+// pixels fits the PTY's window size fields.
+const maxSize = 2000
+
 type session struct {
-	mu     sync.Mutex
-	emu    *emulator.Emulator
-	cmd    *exec.Cmd
-	exited bool
-	exitCh chan struct{}
+	emu *emulator.Emulator
+	// ptmx is the PTY's controlling side: the emulator reads the child's
+	// output from it through an outputFilter and writes keys to it. tty is
+	// the child's side until the child holds it.
+	ptmx, tty *os.File
+	gfx       *graphics
+	filter    *outputFilter
+
+	mu         sync.Mutex
+	cols, rows int
+	cmd        *exec.Cmd
+	exited     bool
+	exitCh     chan struct{}
 
 	// caption is drawn over color snapshots at captionAt (top or bottom)
 	// until it is cleared.
@@ -106,34 +123,106 @@ type session struct {
 	captionAt string
 }
 
+// newSession opens a PTY of cols by rows cells and an emulator that reads
+// it. The emulator gets the output through an outputFilter, which keeps the
+// Kitty graphics commands for the color snapshots.
 func newSession(cols, rows int) (*session, error) {
-	if cols <= 0 || rows <= 0 {
-		return nil, fmt.Errorf("invalid dimensions %dx%d", cols, rows)
+	if err := checkSize(cols, rows); err != nil {
+		return nil, err
 	}
-
-	emu, err := emulator.New(cols, rows)
+	ptmx, tty, err := pty.Open()
 	if err != nil {
-		return nil, fmt.Errorf("create emulator: %w", err)
+		return nil, fmt.Errorf("open pty: %w", err)
 	}
-
 	s := &session{
-		emu:       emu,
+		ptmx:      ptmx,
+		tty:       tty,
+		gfx:       newGraphics(colorCellWidth, colorCellHeight),
+		cols:      cols,
+		rows:      rows,
 		exitCh:    make(chan struct{}),
 		captionAt: captionBottom,
 	}
-	emu.SetOnExit(func(string) {
-		s.mu.Lock()
-		s.exited = true
-		s.mu.Unlock()
-		close(s.exitCh)
-	})
+	if err := s.setPTYSize(cols, rows); err != nil {
+		_ = ptmx.Close()
+		_ = tty.Close()
+		return nil, err
+	}
+	s.filter = newOutputFilter(ptmx, ptmx, s.gfx, s.size)
+	emu, err := emulator.NewFromPipes(cols, rows, s.filter, ptmx)
+	if err != nil {
+		_ = ptmx.Close()
+		_ = tty.Close()
+		_ = s.filter.Close()
+		return nil, fmt.Errorf("create emulator: %w", err)
+	}
+	s.emu = emu
 	return s, nil
 }
 
+func checkSize(cols, rows int) error {
+	if cols <= 0 || rows <= 0 || cols > maxSize || rows > maxSize {
+		return fmt.Errorf("invalid dimensions %dx%d", cols, rows)
+	}
+	return nil
+}
+
+// setPTYSize sets the PTY's window size, in cells and in the pixels of a
+// color snapshot.
+func (s *session) setPTYSize(cols, rows int) error {
+	if err := checkSize(cols, rows); err != nil {
+		return err
+	}
+	var ws pty.Winsize
+	var err error
+	if ws.Cols, err = toUint16(cols); err != nil {
+		return err
+	}
+	if ws.Rows, err = toUint16(rows); err != nil {
+		return err
+	}
+	if ws.X, err = toUint16(cols * colorCellWidth); err != nil {
+		return err
+	}
+	if ws.Y, err = toUint16(rows * colorCellHeight); err != nil {
+		return err
+	}
+	if err := pty.Setsize(s.ptmx, &ws); err != nil {
+		return fmt.Errorf("set pty size: %w", err)
+	}
+	return nil
+}
+
+// toUint16 converts a PTY window size field. checkSize keeps the fields in
+// range; the check here keeps the conversion safe on its own.
+func toUint16(n int) (uint16, error) {
+	if n < 0 || n > math.MaxUint16 {
+		return 0, fmt.Errorf("window size %d out of range", n)
+	}
+	return uint16(n), nil
+}
+
+// size is the emulator's size in cells.
+func (s *session) size() (cols, rows int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cols, s.rows
+}
+
+// close stops the emulator, which closes the PTY, the filter's reading of
+// it, and the child's side of the PTY if the child never took it.
+func (s *session) close() {
+	_ = s.emu.Close()
+	_ = s.filter.Close()
+	if s.tty != nil {
+		_ = s.tty.Close()
+	}
+}
+
 // terminalVars name the terminal kc runs in. The emulator here is none of
-// those terminals and draws no images, so the child must not see them:
-// with them, kc's charts.graphics: auto would send Kitty graphics and
-// draw placeholders in place of the text charts.
+// those terminals, so the child must not see them: kc's charts.graphics:
+// auto goes by them and draws text charts here. With charts.graphics: kitty
+// kc sends images, and the color snapshots show them (kitty.go).
 var terminalVars = []string{
 	"TERM_PROGRAM", "TERM_PROGRAM_VERSION", "LC_TERMINAL", "LC_TERMINAL_VERSION",
 	"KITTY_WINDOW_ID", "TMUX", "TMUX_PANE",
@@ -158,45 +247,36 @@ func (s *session) startCommand(command []string) error {
 		return errors.New("missing command to run")
 	}
 
-	// #nosec G204 -- the driver runs the command line it was started with.
+	// #nosec G204 G702 -- the driver runs the command line it was started with.
 	cmd := exec.Command(command[0], command[1:]...)
-	cmd.Env = childEnv(os.Environ(), s.emuWidth(), s.emuHeight())
+	cols, rows := s.size()
+	cmd.Env = childEnv(os.Environ(), cols, rows)
 	if wd, err := os.Getwd(); err == nil {
 		cmd.Dir = wd
 	}
-
-	if err := s.emu.StartCommand(cmd); err != nil {
+	// The PTY is the child's controlling terminal, in a session of its own,
+	// so it gets SIGWINCH on a resize and SIGHUP when the PTY closes.
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.tty, s.tty, s.tty
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start command: %w", err)
 	}
+	// Only the child holds its side now, so the emulator reads the end of
+	// the output when the child exits.
+	_ = s.tty.Close()
+	s.tty = nil
 
 	s.mu.Lock()
 	s.cmd = cmd
 	s.mu.Unlock()
-
+	go func() {
+		_ = cmd.Wait()
+		s.mu.Lock()
+		s.exited = true
+		s.mu.Unlock()
+		close(s.exitCh)
+	}()
 	return nil
-}
-
-func (s *session) emuWidth() int {
-	frame := s.emu.GetScreen()
-	maxWidth := 0
-	for _, row := range frame.Rows {
-		w := ansi.StringWidth(ansi.Strip(row))
-		if w > maxWidth {
-			maxWidth = w
-		}
-	}
-	if maxWidth == 0 {
-		maxWidth = defaultCols
-	}
-	return maxWidth
-}
-
-func (s *session) emuHeight() int {
-	frame := s.emu.GetScreen()
-	if len(frame.Rows) == 0 {
-		return defaultRows
-	}
-	return len(frame.Rows)
 }
 
 func (s *session) ensureRunning() error {
@@ -234,11 +314,19 @@ func (s *session) sendMouse(button, x, y int, pressed, motion bool) error {
 	return nil
 }
 
+// resize resizes the emulator, then the PTY, which signals the child, so
+// the child draws its new frame into a screen of the new size.
 func (s *session) resize(cols, rows int) error {
-	if cols <= 0 || rows <= 0 {
-		return fmt.Errorf("invalid dimensions %dx%d", cols, rows)
+	if err := checkSize(cols, rows); err != nil {
+		return err
 	}
 	if err := s.emu.Resize(cols, rows); err != nil {
+		return fmt.Errorf("resize: %w", err)
+	}
+	s.mu.Lock()
+	s.cols, s.rows = cols, rows
+	s.mu.Unlock()
+	if err := s.setPTYSize(cols, rows); err != nil {
 		return fmt.Errorf("resize: %w", err)
 	}
 	return nil
@@ -258,7 +346,7 @@ func (s *session) terminate() error {
 func printWelcome(command []string, cols, rows int) {
 	fmt.Printf("bubbleheadless ready (cols=%d rows=%d)\n", cols, rows)
 	fmt.Printf("running command: %s\n", strings.Join(command, " "))
-	fmt.Println("commands: help, key <token>, text <value>, enter, screen [ansi|plain], snapshot <file> [color], caption [text], caption-at <top|bottom>, mouse <button> <x> <y> <press|release|motion>, resize <cols> <rows>, wait, exit")
+	fmt.Println("commands: help, key <token>, text <value>, enter, screen [ansi|plain], snapshot <file> [color], images, caption [text], caption-at <top|bottom>, mouse <button> <x> <y> <press|release|motion>, resize <cols> <rows>, wait, exit")
 }
 
 func parseKeyToken(token string) (string, error) {
@@ -325,11 +413,19 @@ func snapshotToPNG(frame emulator.EmittedFrame, path string) error {
 	for rowIdx, line := range stripped {
 		x := 0
 		for _, r := range line {
-			drawer.Dot = fixed.Point26_6{
-				X: fixed.I(x),
-				Y: fixed.I(rowIdx*snapshotCellHeight + baseline),
+			// A combining mark, such as the diacritics of a Kitty
+			// placeholder, belongs to the cell before it. The plain
+			// snapshot draws no images, so a placeholder stays blank.
+			if unicode.In(r, unicode.Mn, unicode.Me) {
+				continue
 			}
-			drawer.DrawString(string(r))
+			if r != kittygfx.Placeholder {
+				drawer.Dot = fixed.Point26_6{
+					X: fixed.I(x),
+					Y: fixed.I(rowIdx*snapshotCellHeight + baseline),
+				}
+				drawer.DrawString(string(r))
+			}
 			x += snapshotCellWidth
 		}
 	}
@@ -374,7 +470,7 @@ func run(args []string, cols, rows int) error {
 	if err != nil {
 		return fmt.Errorf("init session: %w", err)
 	}
-	defer session.emu.Close()
+	defer session.close()
 
 	if err := session.resize(cols, rows); err != nil {
 		return fmt.Errorf("resize emulator: %w", err)
@@ -428,6 +524,8 @@ func (s *session) handleLine(line string, help func()) bool {
 		s.cmdScreen(parts)
 	case "snapshot":
 		s.cmdSnapshot(parts)
+	case "images":
+		s.cmdImages()
 	case "caption":
 		s.caption = strings.TrimSpace(strings.TrimPrefix(line, parts[0]))
 	case "caption-at":
@@ -518,7 +616,7 @@ func (s *session) cmdSnapshot(parts []string) {
 	}
 	var err error
 	if len(parts) == 3 {
-		err = colorSnapshotToPNG(s.emu.GetCells(), s.caption, s.captionAt, path)
+		err = colorSnapshotToPNG(s.emu.GetCells(), s.gfx, s.caption, s.captionAt, path)
 	} else {
 		err = snapshotToPNG(s.emu.GetScreen(), path)
 	}
@@ -526,6 +624,19 @@ func (s *session) cmdSnapshot(parts []string) {
 		fmt.Printf("error: %v\n", err)
 	} else {
 		fmt.Printf("saved snapshot: %s\n", path)
+	}
+}
+
+// cmdImages lists the Kitty graphics images the child sent, which a color
+// snapshot draws, and marks those the screen shows.
+func (s *session) cmdImages() {
+	lines := s.gfx.describe(shownImages(s.emu.GetCells()))
+	if len(lines) == 0 {
+		fmt.Println("no images")
+		return
+	}
+	for _, l := range lines {
+		fmt.Println(l)
 	}
 }
 

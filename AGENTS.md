@@ -72,10 +72,11 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
   - `key <token>` / `text <string>` to feed keystrokes,
   - `mouse <button> <x> <y> <press|release|motion>` for mouse events,
   - `screen [ansi|plain]` to dump the current framebuffer,
-  - `snapshot <file.png>` to write a PNG render of the terminal (plain text; `snapshot <file.png> color` keeps the colors and draws box lines, as used by `docs/demo/record.sh`),
+  - `snapshot <file.png>` to write a PNG render of the terminal (plain text; `snapshot <file.png> color` keeps the colors, draws box lines and the Kitty graphics images the child sent, as used by `docs/demo/record.sh` and `screenshots/capture.sh`),
+  - `images` to list the Kitty graphics images the child sent, with `shown` for those on the screen and `scaled` for those not sized to the snapshot's cells,
   - `caption <text>` to draw a caption box over the following color snapshots (a bare `caption` clears it) and `caption-at <top|bottom>` to move it (bottom by default, over the shell line and function-key bar),
   - `resize <cols> <rows>` and `wait` / `exit` for session control.
-- The child does not see the outer terminal's `TERM_PROGRAM`, `LC_TERMINAL`, `KITTY_WINDOW_ID` or `TMUX`, so kc's `charts.graphics: auto` draws text charts there.
+- The child does not see the outer terminal's `TERM_PROGRAM`, `LC_TERMINAL`, `KITTY_WINDOW_ID` or `TMUX`, so kc's `charts.graphics: auto` draws text charts and Info bars there. With `charts.graphics: kitty` kc sends its chart and Info images, and color snapshots draw them as a terminal with Kitty Unicode placeholders does; the driver answers kc's cell size query with the snapshot's 9x18 pixel cells. See `docs/adr/0352-bubbleheadless-kitty-graphics.md`.
 - Designed for CI/e2e test harnesses—script it from shell pipelines or expect-like drivers without allocating a PTY.
 - Run it only against an envtest kubeconfig; see "No Live Clusters" below.
 

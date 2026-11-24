@@ -1,6 +1,6 @@
 # Screenshots
 
-Screenshots of kc's features, one page per topic, grouped as the [help index](../internal/help/topics/index.md) groups them. Every image comes from [`capture.sh`](capture.sh), which runs kc against a throwaway kind cluster seeded with [`docs/demo/seed.yaml`](../docs/demo/seed.yaml) and [`seed.yaml`](seed.yaml), so the objects and the problems on screen are the same each time. kc runs at 150x42 in UTC.
+Screenshots of kc's features, one page per topic, grouped as the [help index](../internal/help/topics/index.md) groups them. Every image comes from [`capture.sh`](capture.sh), which runs kc against a throwaway kind cluster seeded with [`docs/demo/seed.yaml`](../docs/demo/seed.yaml) and [`seed.yaml`](seed.yaml), so the objects and the problems on screen are the same each time. kc runs at 150x42 in UTC, with `charts.graphics: kitty`: the dashboard charts and the Info bars and history are the images that iTerm2 3.7, kitty and Ghostty show, which the capture driver draws into the PNGs.
 
 ![kc at its root: resource groups with their API version and object count on the left, Info with the cluster capacity on the right](panels/01-root.png)
 
@@ -11,7 +11,7 @@ Each page has one line per image: what it shows and which keys lead there. `C-x 
 - [Panels and navigation](panels/README.md): Contexts, namespaces, object lists, filters, marks, related objects, the hotlist, history and Helm releases.
 - [Viewers and editing](viewer/README.md): The YAML, Describe, Manifest and Logs views, merged JSON logs with filters, local files, F4 and the copy dialog.
 - [Info and the cluster overview](info/README.md): Info mode for workloads and nodes, the cluster overview and its findings.
-- [Dashboard](dashboard/README.md): The full-screen CPU and memory dashboard (C-x g) of a namespace, a workload and a pod, as redesigned in PR #321.
+- [Dashboard](dashboard/README.md): The full-screen CPU and memory dashboard (C-x g) of a namespace, a workload and a pod.
 - [Investigation window](investigation/README.md): One time window for the Logs and Info panels and the dashboard (C-x w).
 - [Diagnosis](diagnosis/README.md): /diagnosis of broken workloads, Services, claims, pending and crash-looping pods.
 - [Rollout, Events and timeline](rollout/README.md): /rollout revisions, Events, the /timeline recorder and the Scale dialog.
@@ -30,7 +30,7 @@ Each page has one line per image: what it shows and which keys lead there. `C-x 
 screenshots/capture.sh all
 ```
 
-It needs what [`docs/demo/record.sh`](../docs/demo/README.md) needs: Go, Docker and kind (here or on a Linux host over ssh), kubectl, Helm and ffmpeg. ffmpeg cuts every PNG to 128 colors, which keeps the folder small. kc and kubectl run with a temporary `HOME` and a kubeconfig that holds only the kind cluster, and every kubectl call first checks the context and the server, so your own clusters are never touched.
+It needs what [`docs/demo/record.sh`](../docs/demo/README.md) needs: Go, Docker and kind (here or on a Linux host over ssh), kubectl, Helm and ffmpeg. ffmpeg cuts every PNG to 256 colors, dithered so the gradients of the chart images stay smooth, which keeps the folder small. kc and kubectl run with a temporary `HOME` and a kubeconfig that holds only the kind cluster, and every kubectl call first checks the context and the server, so your own clusters are never touched.
 
 The steps also run one by one, which is quicker when you change a scene:
 
@@ -45,4 +45,4 @@ screenshots/capture.sh down
 
 The cluster name, the API server port, an ssh host for Docker and the dashboard wait are set through `KC_SHOTS_*` variables; the header of `capture.sh` lists them. Run kind elsewhere with, for example, `KC_SHOTS_SSH=user@docker-host`.
 
-The scenes are shell functions in [`scenes/`](scenes), one file per group. A function `scene_<group>_<name>` becomes `<group>/NN-<name>.png`, numbered in the order of the file. A scene that continues another one calls `after <group>/<name>`. The dashboard scenes collect samples first: five minutes for the namespace and half of that for each drilldown. They use the keys of the dashboard in PR #321; until it merges, capture them with kc built from that branch. The drain scenes cordon and uncordon `kc-shots-worker2`, and the timeline scenes scale `shop/web` and set it back, so a capture can run again on the same cluster.
+The scenes are shell functions in [`scenes/`](scenes), one file per group. A function `scene_<group>_<name>` becomes `<group>/NN-<name>.png`, numbered in the order of the file. A scene that continues another one calls `after <group>/<name>`. The dashboard scenes collect samples first: five minutes for the namespace and half of that for each drilldown. Each of them waits until the screen shows the chart images, sent at the cell size of the PNG, and fails when they do not come; `screenshots/capture.sh capture dashboard` captures the group again after a change to the charts. Before each screenshot the capture waits until the images kc sends have stopped changing, so an Info bar is not caught as text while its image is on its way. The drain scenes cordon and uncordon `kc-shots-worker2`, and the timeline scenes scale `shop/web` and set it back, so a capture can run again on the same cluster.

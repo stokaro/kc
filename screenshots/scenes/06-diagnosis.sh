@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# /diagnosis of a broken workload, a Service without endpoints, a pod whose
-# claim names a missing StorageClass, a pod no node can take and a
+# /diagnosis of a broken workload, a Service without endpoints, a claim
+# that names a missing StorageClass, a pod no node can take and a
 # crash-looping pod.
 
 # diagnose opens the /diagnosis row of the object the shell line path names
@@ -28,10 +28,8 @@ scene_diagnosis_service() {
 }
 
 scene_diagnosis_claim() {
-	# A PersistentVolumeClaim object cannot be entered from its list, so the
-	# claim is explained through the pod that mounts it.
 	fresh
-	diagnose pods/uploader
+	diagnose pvc/uploads
 	wait_for "fast-ssd" 30
 	shot 1
 }

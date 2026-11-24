@@ -194,6 +194,18 @@ entries:
 EOF
 }
 
+# kc_config prints the settings every scene runs with. The dashboard draws
+# its charts, and Info mode its bars and history, as Kitty graphics images,
+# as in iTerm2 3.7, kitty and Ghostty; the driver's color snapshots show
+# them. With auto kc would draw text, since the driver hides the outer
+# terminal from it.
+kc_config() {
+	cat <<'EOF'
+charts:
+  graphics: kitty
+EOF
+}
+
 kc_running=
 
 stop_kc_if_running() {
@@ -204,12 +216,14 @@ stop_kc_if_running() {
 }
 
 # fresh starts a new kc session for a scene: without saved settings or
-# history, apart from the hotlist entries, with the arguments given (default:
-# the shop namespace). It waits until API discovery has listed the types.
+# history, apart from kc_config and the hotlist entries, with the arguments
+# given (default: the shop namespace). It waits until API discovery has
+# listed the types.
 fresh() {
 	stop_kc_if_running
 	rm -rf "$WORK/home/.kc"
 	mkdir -p "$WORK/home/.kc"
+	kc_config >"$WORK/home/.kc/config.yaml"
 	hotlist >"$WORK/home/.kc/hotlist.yaml"
 	marker_no=0
 	if [ $# -eq 0 ]; then
@@ -245,17 +259,20 @@ current=
 last_done=
 
 # shot writes the PNG of the current scene, after the given pause (default
-# half a second) for the screen to settle. A palette of 128 colors without
-# dithering keeps the terminal colors exact and the file about a quarter of
+# half a second) for the screen to settle. A palette of 256 colors has room
+# for the terminal colors and the shades of the chart and gauge images, and
+# Floyd-Steinberg dithering keeps their gradients smooth (with 128 colors
+# and no dithering they show bands). The file is about a third of
 # the driver's RGB PNG.
 shot() {
 	local file
 	file=$(scene_file "$current")
 	mkdir -p "$(dirname "$file")"
 	sleep "${1:-0.5}"
+	settle_images
 	write_png "$WORK/shot.png"
 	ffmpeg -loglevel error -y -i "$WORK/shot.png" \
-		-vf "split[a][b];[a]palettegen=max_colors=128:reserve_transparent=0[p];[b][p]paletteuse=dither=none" \
+		-vf "split[a][b];[a]palettegen=max_colors=256:reserve_transparent=0[p];[b][p]paletteuse=dither=floyd_steinberg" \
 		"$file"
 	log "wrote ${file#"$REPO"/}"
 }

@@ -1,9 +1,10 @@
 # shellcheck shell=bash
 # The full-screen dashboard (C-x g): the namespace, a drilldown to a
-# workload and a pod, the chart cursor and the Range menu. Captured from the
-# redesigned dashboard of PR #321. kc draws the samples it collects while a
-# dashboard is open, per target, so the namespace waits $DASH_WAIT seconds
-# and each drilldown half of that.
+# workload and a pod, the chart cursor and the Range menu. kc draws the
+# samples it collects while a dashboard is open, per target, so the
+# namespace waits $DASH_WAIT seconds and each drilldown half of that. The
+# charts are Kitty graphics images (kc_config in capture.sh); each shot
+# waits until the screen shows them.
 
 # select_workload moves the list selection to the workload whose pods the
 # list then shows under the workloads. The list sorts by usage, so the row
@@ -29,6 +30,7 @@ scene_dashboard_namespace() {
 	wait_for "last 5 minutes"
 	log "collecting dashboard samples for ${DASH_WAIT}s"
 	sleep "$DASH_WAIT"
+	wait_for_images 2
 	shot
 }
 
@@ -39,6 +41,7 @@ scene_dashboard_workload() {
 	wait_for "› Deployment loadgen  LIVE"
 	log "collecting workload samples for $((DASH_WAIT / 2))s"
 	sleep $((DASH_WAIT / 2))
+	wait_for_images 2
 	shot
 }
 
@@ -51,6 +54,7 @@ scene_dashboard_cursor() {
 		key left
 	done
 	wait_for "PAUSED"
+	wait_for_images 2
 	shot
 }
 
@@ -58,6 +62,8 @@ scene_dashboard_expanded() {
 	after dashboard/cursor
 	key f4
 	wait_for "4Restore"
+	# The expanded chart is a new image, of the new plot size.
+	wait_for_images 1
 	shot
 }
 
@@ -78,6 +84,7 @@ scene_dashboard_pod() {
 	wait_for "› pod loadgen-"
 	log "collecting pod samples for $((DASH_WAIT / 2))s"
 	sleep $((DASH_WAIT / 2))
+	wait_for_images 2
 	shot
 }
 
@@ -85,6 +92,7 @@ scene_dashboard_range_menu() {
 	after dashboard/pod
 	key f2
 	wait_for "Last 15 minutes"
+	wait_for_images 2
 	shot
 	esc
 }
