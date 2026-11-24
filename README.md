@@ -63,7 +63,7 @@ The tap is [`stokaro/homebrew-kc`](https://github.com/stokaro/homebrew-kc). It w
 brew install --cask stokaro/kc/kc
 ```
 
-The tap starts with the first release of this fork. Until then, use a source build.
+The cask installs the latest release and removes the macOS quarantine attribute, so kc starts although its macOS binaries are not notarized yet.
 
 ### Download a release binary
 
@@ -77,6 +77,14 @@ shasum -a 256 --check --ignore-missing kc_checksums.txt
 tar -xzf "kc_${VERSION}_linux_amd64.tar.gz" kc
 ./kc --version
 ```
+
+The macOS binaries are not notarized by Apple yet. An archive downloaded with a browser carries the quarantine attribute, and macOS then refuses to start kc ("cannot verify the developer"). Remove the attribute after unpacking:
+
+```bash
+xattr -d com.apple.quarantine kc
+```
+
+`curl` and Homebrew do not set it.
 
 The checksum file is signed with [cosign](https://docs.sigstore.dev/) by the release workflow. To check the signature, also download `kc_checksums.txt.sigstore.json` and run:
 
