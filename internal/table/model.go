@@ -16,6 +16,12 @@ type Column struct {
 	// before the line needs horizontal panning, so the columns after it
 	// stay visible. A cell cut this way ends in "…". Zero never shrinks.
 	MinWidth int
+	// Fill marks a free-text column, such as a message or a description.
+	// In ModeScroll it takes the spare width of the line, and when the
+	// line is too wide it gives up width before the other columns, down
+	// to MinWidth or, without one, the width of its title. The columns
+	// that name things then keep their natural width.
+	Fill bool
 }
 
 // Row represents a single logical row in the table.

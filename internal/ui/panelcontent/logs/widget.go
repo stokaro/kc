@@ -19,7 +19,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
+	"github.com/stokaro/kc/internal/logmux"
 	"github.com/stokaro/kc/internal/logview"
 	models "github.com/stokaro/kc/internal/models"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
@@ -140,6 +142,9 @@ type Widget struct {
 	// lines the user was reading went; the next scroll clears it.
 	window    *logview.Window
 	lostPlace bool
+	// raw holds the lines as read, parallel to the viewer's lines, which
+	// show them formatted; an expanded viewer starts from raw.
+	raw []string
 	// body is the open stream's body; a resumed stream reports when it
 	// waits to reconnect (docs/adr/0180-resume-live-logs.md).
 	body io.ReadCloser
@@ -458,23 +463,63 @@ func (w *Widget) append(lines []string) {
 	}
 	for i, line := range lines {
 		lines[i] = logview.TruncateLine(line, logview.ReadLimit)
-		w.window.Add(logview.Cost(len(lines[i]), false))
 	}
 	w.feedFollowers(lines)
-	if w.hasLines {
-		w.viewer.AppendLines(lines)
-	} else {
-		// SetContent keeps the viewer from starting with an empty line.
-		w.viewer.SetContent(strings.Join(lines, "\n"), w.viewer.Metadata())
+	text, styled := w.display(lines)
+	for i := range lines {
+		// The original line is kept as well as the shown one.
+		w.window.Add(logview.Cost(len(lines[i]), false) + int64(len(text[i])))
+	}
+	if !w.hasLines {
+		// Start from no lines, so the log does not begin with the empty
+		// line of the hint text.
+		w.viewer.SetContent("", w.viewer.Metadata())
+		w.viewer.SetLines(nil)
+		w.raw = nil
 		w.hasLines = true
 	}
-	if n := w.window.Trim(); n > 0 && w.viewer.DropFirstLines(n) && !w.follow {
-		w.lostPlace = true
+	w.raw = append(w.raw, lines...)
+	w.viewer.AppendStyledLines(text, styled)
+	if n := w.window.Trim(); n > 0 {
+		n = min(n, len(w.raw))
+		clear(w.raw[:n])
+		w.raw = w.raw[n:]
+		if w.viewer.DropFirstLines(n) && !w.follow {
+			w.lostPlace = true
+		}
 	}
 	if w.follow || w.viewer.AtEnd() {
 		w.viewer.ScrollToEnd()
 		w.follow = true
 	}
+}
+
+// display renders lines as the logs viewer's formatted view does: a JSON
+// line shows its time, level (colored by severity) and message, then its
+// other fields as key=value; other lines stay as they are. A line of all
+// containers keeps its colored [pod/container] source in front. text is
+// the shown lines without colors, which search and copy use.
+func (w *Widget) display(lines []string) (text, styled []string) {
+	format := logview.DefaultFormat()
+	text, styled = make([]string, len(lines)), make([]string, len(lines))
+	for i, line := range lines {
+		src := logview.Source{}
+		if w.req.AllContainers {
+			if t, rest, ok := logmux.ParseFormatted(line); ok {
+				src, line = logview.Source{Pod: t.Pod, Container: t.Container}, rest
+				format.SourceStyle = styledSource
+			}
+		}
+		r := logview.NewRecord(line, src)
+		styled[i] = format.Formatted(&r, nil)
+		text[i] = ansi.Strip(styled[i])
+	}
+	return text, styled
+}
+
+// styledSource colors a source prefix as logmux.Format does.
+func styledSource(src logview.Source) string {
+	return logmux.StyledPrefix(logmux.Target{Pod: src.Pod, Container: src.Container})
 }
 
 // read returns a command that reads the next lines of s. Only one read of a

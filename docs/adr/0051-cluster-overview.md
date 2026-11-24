@@ -1,6 +1,6 @@
 # 0051. Cluster overview folder
 
-- Status: Accepted
+- Status: Accepted; the pause while a dialog is open amended for Info by 0342
 - Date: 2026-11-22
 - Issue: #51
 

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/models"
 )
@@ -52,13 +53,14 @@ func (p *Panel) SetRowFilter(ctx context.Context, filter models.RowFilter) bool 
 	return true
 }
 
-// renderRowFilter is the frame label of an active filter.
+// renderRowFilter is the frame label of an active filter. A label cut to
+// maxWidth ends in "…".
 func renderRowFilter(label, dash string, maxWidth int) string {
-	text := truncateStringToWidth(" Filter: "+label+" ", max(0, maxWidth-lipgloss.Width(dash)))
-	if text == "" {
+	room := maxWidth - lipgloss.Width(dash) - 2
+	if room < 1 {
 		return ""
 	}
-	return dash + rowFilterStyle.Render(text)
+	return dash + rowFilterStyle.Render(" "+ansi.Truncate("Filter: "+label, room, "…")+" ")
 }
 
 // panelKeysFree reports whether a panel shortcut may take a key: the

@@ -21,7 +21,13 @@ var overviewTestScheme = func() *runtime.Scheme {
 }()
 
 // newOverviewFakeClient returns a fake client that lists every overview
-// kind, holding objs.
+// kind, holding copies of objs. Build sets the resourceVersion of the
+// objects it is given, so parallel subtests that share objs would write
+// the same maps at once.
 func newOverviewFakeClient(objs ...crclient.Object) crclient.WithWatch {
-	return fake.NewClientBuilder().WithScheme(overviewTestScheme).WithObjects(objs...).Build()
+	copies := make([]crclient.Object, len(objs))
+	for i, o := range objs {
+		copies[i] = o.DeepCopyObject().(crclient.Object)
+	}
+	return fake.NewClientBuilder().WithScheme(overviewTestScheme).WithObjects(copies...).Build()
 }

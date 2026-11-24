@@ -73,6 +73,11 @@ type overviewEngine struct {
 	// life follows the targets across recomputes (overview_lifecycle.go).
 	// Only recompute uses it, one at a time.
 	life *overviewLifecycle
+	// computeBehindDialogs keeps recomputes going while a dialog is open
+	// (deps.Activity paused). The Info panel sets it: it stays in view
+	// beside a dialog, and a drain or a delete made there must show in it
+	// at once. A recompute reads the cache only.
+	computeBehindDialogs bool
 
 	dirty atomic.Bool
 
@@ -245,7 +250,7 @@ func (e *overviewEngine) run(stop <-chan struct{}) {
 		if e.now().Sub(lastCompute) >= e.refresh {
 			e.dirty.Store(true)
 		}
-		if !e.deps.Activity.Paused() && e.dirty.Swap(false) {
+		if (e.computeBehindDialogs || !e.deps.Activity.Paused()) && e.dirty.Swap(false) {
 			pending := e.recompute(ctx, conn)
 			lastCompute = e.now()
 			if pending {
@@ -327,7 +332,9 @@ func (e *overviewEngine) refreshMeasured(ctx context.Context) {
 	e.lastMeasure = m
 	due := !e.statsBusy && !e.statsDenied && e.statsFetch != nil && len(e.lastNodes) > 0 &&
 		(e.statsLast.IsZero() || e.now().Sub(e.statsLast) >= e.statsEvery)
-	if due && e.deps.Activity.Paused() {
+	// A dialog holds back later rounds only: without a first one the disk
+	// says "loading" for as long as the dialog stays open.
+	if due && e.deps.Activity.Paused() && e.statsRes != nil {
 		due = false
 	}
 	var nodes []string

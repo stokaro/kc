@@ -42,7 +42,7 @@ Settings, all optional:
 
 ## What it records
 
-The scenes are shell functions near the end of `record.sh` and run in the order of `SCENES`. Each scene starts where the one before it ends. `KC_DEMO_SCENES="intro search"` records only some of them, which is quicker when you change one. Every scene sets a caption that the driver draws over its frames:
+The cluster steps and the functions that drive kc (`kk`, `wait_for`, `search`, `enter` and so on) are in `lib.sh`, which [`screenshots/capture.sh`](../../screenshots/README.md) uses too. The scenes are shell functions near the end of `record.sh` and run in the order of `SCENES`. Each scene starts where the one before it ends. `KC_DEMO_SCENES="intro search"` records only some of them, which is quicker when you change one. Every scene sets a caption that the driver draws over its frames:
 
 | Scene | Captions |
 |---|---|

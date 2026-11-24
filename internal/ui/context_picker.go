@@ -97,7 +97,7 @@ func (a *App) switchContext(target *kubeconfig.Context) tea.Cmd {
 		return nil
 	}
 	key := kccluster.Key{
-		KubeconfigPath:       target.Kubeconfig.Path,
+		KubeconfigPath:       target.LoadPath(),
 		ContextName:          target.Name,
 		ImpersonateUser:      a.currentClusterKey().ImpersonateUser,
 		ImpersonateUID:       a.currentClusterKey().ImpersonateUID,

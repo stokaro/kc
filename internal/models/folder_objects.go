@@ -30,6 +30,7 @@ type ObjectsFolder struct {
 	rows               *liveObjectRowSource
 	objectOrder        string
 	hasObjOrder        bool
+	columnsMode        string // set by ApplyColumnsMode; "" reads the configuration
 	groupNamespaces    bool
 	hasGroupNamespaces bool
 	filterCols         *filterColumns
@@ -72,8 +73,7 @@ func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace stri
 }
 
 func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
-	cfg := o.Deps.AppConfig
-	columnsMode := cfg.Objects.Columns
+	columnsMode := o.requestedColumnsMode()
 	order := o.requestedOrder()
 	cc := planCustomColumns(o.Deps, o.gvr, columnsMode)
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
@@ -140,7 +140,7 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 	cols := make([]table.Column, len(vis))
 	for i := range vis {
 		c := rl.Columns[vis[i]]
-		cols[i] = table.Column{Title: c.Name}
+		cols[i] = serverTableColumn(c)
 	}
 	// The name column sorts by the object name. It is found by its
 	// format, not its place: the Event table starts with Last Seen.
@@ -200,6 +200,9 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 		name := rowName(rr)
 		ns, id := o.objectNamespaceAndID(namespaced, rr.ObjectMeta.Namespace, name)
 		cells := buildCells(rr.Cells, vis, hasChild)
+		if columnsMode != appconfig.ColumnsModeWide {
+			compactRestarts(cells, vis, rl.Columns)
+		}
 		cells = append(cells, customCells[ii]...)
 		if namespaced {
 			cells = withNamespaceColumn(cells, ns)
@@ -224,6 +227,7 @@ func (o *ObjectsFolder) rowsFromRowListWithObjects(rl *tablecache.RowList, colum
 		obj.WithManifest(o.Deps.CtxName, objectManifest(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
+		obj.SetKind(kind)
 		if hook := rowTimeHook(ageCols, rr.ObjectMeta.CreationTimestamp.Time, timeCols, timeSrc, times, ii); hook != nil {
 			obj.RowItem.SetCellsHook(hook.apply)
 			hooks = append(hooks, hook)
@@ -328,6 +332,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		obj.WithManifest(o.Deps.CtxName, objectManifest(o.Deps, o.gvr, ns, name))
 		obj.SetViewCommand(o.objectViewCommand(ns, name))
 		obj.RowItem.details = objectDetails(ns, name, kind, gvStr)
+		obj.SetKind(kind)
 		if hasChild && ctor != nil {
 			nm := name
 			rows = append(rows, NewObjectWithChildItem(obj, func() (Folder, error) {
@@ -395,6 +400,39 @@ func (o *ObjectsFolder) kindString() string {
 
 func (o *ObjectsFolder) childConstructor() (ChildConstructor, bool) {
 	return ChildFor(o.gvr)
+}
+
+// ApplyColumnsMode shows the normal or the wide columns until changed again.
+func (o *ObjectsFolder) ApplyColumnsMode(mode string) {
+	mode = normalizeColumnsMode(mode)
+	o.sortMu.Lock()
+	changed := o.columnsMode != mode
+	o.columnsMode = mode
+	o.sortMu.Unlock()
+	if changed {
+		o.Refresh()
+	}
+}
+
+// requestedColumnsMode returns the columns mode the panel asked for, else
+// the configured one.
+func (o *ObjectsFolder) requestedColumnsMode() string {
+	o.sortMu.Lock()
+	defer o.sortMu.Unlock()
+	if o.columnsMode != "" {
+		return o.columnsMode
+	}
+	if o.Deps.AppConfig != nil {
+		return normalizeColumnsMode(o.Deps.AppConfig.Objects.Columns)
+	}
+	return appconfig.ColumnsModeNormal
+}
+
+func normalizeColumnsMode(mode string) string {
+	if strings.EqualFold(mode, appconfig.ColumnsModeWide) {
+		return appconfig.ColumnsModeWide
+	}
+	return appconfig.ColumnsModeNormal
 }
 
 // ApplyObjectOrder overrides the object ordering strategy until changed again.
@@ -515,6 +553,16 @@ func (o *ObjectsFolder) SortMark() (SortMark, bool) {
 	return SortMark{}, false
 }
 
+// serverTableColumn returns the panel column of a server table column. A
+// Message column (Events, many custom resources) is free text: it takes the
+// rest of the line and gives up width before the columns that name things.
+func serverTableColumn(c metav1.TableColumnDefinition) table.Column {
+	if strings.EqualFold(c.Name, "Message") {
+		return table.Column{Title: c.Name, Fill: true, MinWidth: reasonMinWidth}
+	}
+	return table.Column{Title: c.Name}
+}
+
 func visibleColumns(cols []metav1.TableColumnDefinition, mode string) []int {
 	vis := make([]int, 0, len(cols))
 	for i, c := range cols {
@@ -559,6 +607,22 @@ func buildCells(cells []any, vis []int, hasChild bool) []string {
 		out[0] = "/" + name
 	}
 	return out
+}
+
+// compactRestarts cuts a pod's Restarts cell to the count in the normal
+// columns mode: "8 (5m58s ago)" becomes "8". The time of the last restart
+// made the column wide enough to push Age and the usage columns out of a
+// half panel; the wide mode keeps it, and filters and sorting read the
+// whole cell either way.
+func compactRestarts(cells []string, vis []int, cols []metav1.TableColumnDefinition) {
+	for i, ci := range vis {
+		if i >= len(cells) || ci >= len(cols) || !strings.EqualFold(cols[ci].Name, "Restarts") {
+			continue
+		}
+		if count, _, ok := strings.Cut(cells[i], " ("); ok {
+			cells[i] = count
+		}
+	}
 }
 
 // rowName extracts the name from a row item, falling back to metadata/name when missing.

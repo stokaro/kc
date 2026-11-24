@@ -70,7 +70,7 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 		cellsCopy := append([]string(nil), cells...)
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
-		detail := fmt.Sprintf("%s (%s)", entry.info.Resource, gvLabel)
+		detail := resourceDetail(entry, entries)
 		style := nameStyle
 		if highlightFavorites && favSet[strings.ToLower(entry.info.Resource)] {
 			style = favoriteStyle

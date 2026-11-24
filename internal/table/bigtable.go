@@ -92,21 +92,11 @@ func (m *BigTable) SetStyles(s Styles) { m.styles = s }
 // NewBigTable constructs a table with the given columns, data provider and
 // initial size (content width and height). Titles are plain text; runes count as one cell each (sort marks such as "↓").
 func NewBigTable(cols []Column, list List, w, h int) BigTable {
-	desired := make([]int, len(cols))
-	for i := range cols {
-		if cols[i].Width <= 0 {
-			cols[i].Width = 14
-		}
-		desired[i] = cols[i].Width
-	}
-
 	bt := BigTable{
 		mode:      ModeScroll,
 		w:         max(20, w),
 		h:         max(6, h),
-		cols:      append([]Column(nil), cols...),
 		list:      list,
-		desired:   desired,
 		selected:  make(map[string]struct{}),
 		top:       0,
 		cursor:    0,
@@ -118,7 +108,29 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 		hStep:     4,
 		focused:   true,
 	}
+	bt.setColumns(cols)
 	return bt
+}
+
+// SetColumns replaces the columns and keeps the rows' state: the cursor
+// stays on the same row at the same place in the window, and marked rows
+// stay marked. The horizontal scroll goes back to the first column, since
+// the old offset belongs to the old columns.
+func (m *BigTable) SetColumns(ctx context.Context, cols []Column) {
+	m.setColumns(cols)
+	m.xOff = 0
+	m.rebuildWindow(ctx)
+}
+
+func (m *BigTable) setColumns(cols []Column) {
+	m.cols = append([]Column(nil), cols...)
+	m.desired = make([]int, len(m.cols))
+	for i := range m.cols {
+		if m.cols[i].Width <= 0 {
+			m.cols[i].Width = 14
+		}
+		m.desired[i] = m.cols[i].Width
+	}
 }
 
 // SetHorizontalStep sets the number of characters to pan left/right in
@@ -473,18 +485,23 @@ func (m *BigTable) scrollContent() (idx []int, headers []string, rows [][]string
 	idx, cuts, widths := m.slicePlanForScroll(m.xOff, m.w)
 	base := m.computeScrollBaseWidths()
 	// When the columns are narrower than the viewport, give the spare
-	// room to the first column, like the Name column of a file manager.
-	// Otherwise lipgloss.table spreads it evenly over all columns.
-	if slack := m.w - scrollPlanWidth(widths); slack > 0 && len(idx) > 0 && idx[0] == 0 && cuts[0] == 0 {
-		widths[0] += slack
-		base = append([]int(nil), base...)
-		base[0] += slack
+	// room to one column (slackColumn). Otherwise lipgloss.table spreads
+	// it evenly over all columns.
+	if slack := m.w - scrollPlanWidth(widths); slack > 0 {
+		if j := m.slackColumn(idx, cuts); j >= 0 {
+			widths[j] += slack
+			base = append([]int(nil), base...)
+			base[idx[j]] += slack
+		}
 	}
 	headerAlign := m.styles.Header.GetAlignHorizontal()
 	headers = make([]string, len(idx))
 	for i, col := range idx {
-		title := alignTitle(m.cols[col].Title, base[col], headerAlign)
-		h := titleSlicePad(title, cuts[i], widths[i])
+		// The title is placed within the visible part of the column. A
+		// column wider than the viewport would otherwise center its title
+		// beyond the right edge, out of sight.
+		title := alignTitle(m.cols[col].Title, widths[i], headerAlign)
+		h := titleSlicePad(title, 0, widths[i])
 		if !m.bColumn && i < len(idx)-1 {
 			h = ensureTrailingSpace(h)
 		}
@@ -904,23 +921,86 @@ func (m *BigTable) computeScrollBaseWidths() []int {
 	return w
 }
 
-// shrinkToViewport narrows the columns with a MinWidth, the widest first,
-// until the line fits the viewport or each is at its MinWidth.
+// shrinkToViewport narrows the columns until the line fits the viewport,
+// in this order:
+//
+//  1. a column with a MinWidth that is wider than capWidth narrows to it,
+//     so one long name cannot take most of the line;
+//  2. Fill columns narrow, down to their floor (fillFloor);
+//  3. the columns with a MinWidth narrow, the widest first, down to it.
+//
+// A line that is still too wide pans.
 func (m *BigTable) shrinkToViewport(w []int) {
 	excess := scrollPlanWidth(w) - m.w
+	if excess <= 0 {
+		return
+	}
+	capWidth := m.w * 2 / 5
+	excess = m.shrinkWidest(w, excess, func(i int) int {
+		if m.cols[i].Fill || m.cols[i].MinWidth <= 0 {
+			return w[i]
+		}
+		return max(capWidth, m.cols[i].MinWidth)
+	})
+	excess = m.shrinkWidest(w, excess, func(i int) int {
+		if !m.cols[i].Fill {
+			return w[i]
+		}
+		return m.fillFloor(i)
+	})
+	m.shrinkWidest(w, excess, func(i int) int {
+		if m.cols[i].Fill || m.cols[i].MinWidth <= 0 {
+			return w[i]
+		}
+		return m.cols[i].MinWidth
+	})
+}
+
+// shrinkWidest takes up to excess cells from the columns, one at a time
+// from the widest column above its floor, and returns the excess left.
+func (m *BigTable) shrinkWidest(w []int, excess int, floor func(i int) int) int {
 	for excess > 0 {
 		widest := -1
 		for i := range w {
-			if minW := m.cols[i].MinWidth; minW > 0 && w[i] > minW && (widest < 0 || w[i] > w[widest]) {
+			if w[i] > floor(i) && (widest < 0 || w[i] > w[widest]) {
 				widest = i
 			}
 		}
 		if widest < 0 {
-			return
+			return excess
 		}
 		w[widest]--
 		excess--
 	}
+	return 0
+}
+
+// fillFloor is the narrowest a Fill column gets: its MinWidth, or the
+// width of its title.
+func (m *BigTable) fillFloor(i int) int {
+	if m.cols[i].MinWidth > 0 {
+		return m.cols[i].MinWidth
+	}
+	return max(1, utf8.RuneCountInString(m.cols[i].Title))
+}
+
+// slackColumn returns the plan position of the column that takes the
+// spare width of a line narrower than the viewport: the first Fill column,
+// else the first column, like the Name column of a file manager. It
+// returns -1 when that column is cut by horizontal panning.
+func (m *BigTable) slackColumn(idx, cuts []int) int {
+	for j, col := range idx {
+		if m.cols[col].Fill {
+			if cuts[j] != 0 {
+				return -1
+			}
+			return j
+		}
+	}
+	if len(idx) > 0 && idx[0] == 0 && cuts[0] == 0 {
+		return 0
+	}
+	return -1
 }
 
 func asciiSlicePad(s string, start, width int) string {

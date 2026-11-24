@@ -27,6 +27,7 @@ type ObjectRow struct {
 	hasFacts  bool
 	uid       types.UID
 	origin    ObjectOrigin
+	kind      string
 }
 
 func NewObjectRow(id string, cells, path []string, gvr schema.GroupVersionResource, namespace, name string, style *lipgloss.Style) *ObjectRow {
@@ -48,6 +49,13 @@ func (o *ObjectRow) UID() types.UID { return o.uid }
 
 // Origin returns the cluster connection the row was read from.
 func (o *ObjectRow) Origin() ObjectOrigin { return o.origin }
+
+// Kind returns the object's kind, such as Pod, when the list that built
+// the row knew it, or "".
+func (o *ObjectRow) Kind() string { return o.kind }
+
+// SetKind records the object's kind.
+func (o *ObjectRow) SetKind(kind string) { o.kind = kind }
 
 // SetInstance records the object instance the row shows and where it was read.
 func (o *ObjectRow) SetInstance(uid types.UID, origin ObjectOrigin) {

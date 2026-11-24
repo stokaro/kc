@@ -169,11 +169,11 @@ func TestWorkloadInfoSummaryBars(t *testing.T) {
 	cfg := appconfig.DefaultOverview()
 
 	web := workloadInfoSummary(r, nil, cfg, wlDeployment)
-	if b := bar(web, "CPU"); !b.Known || b.Percent != 50 || b.Flag != "ok" || !strings.HasPrefix(b.Detail, "use 200m of lim 400m") {
+	if b := bar(web, "CPU"); !b.Known || b.Percent != 50 || b.Flag != "ok" || !strings.HasPrefix(b.Detail, "2 pods use 200m of lim 400m") {
 		t.Fatalf("web CPU = %+v, want 50%% of the limits", b)
 	}
 	// 140Mi of 256Mi is 55%; below memoryLimitWarnPercent.
-	if b := bar(web, "Memory"); !b.Known || b.Flag != "ok" || !strings.HasPrefix(b.Detail, "use 140Mi of lim 256Mi") {
+	if b := bar(web, "Memory"); !b.Known || b.Flag != "ok" || !strings.HasPrefix(b.Detail, "2 pods use 140Mi of lim 256Mi") {
 		t.Fatalf("web memory = %+v", b)
 	}
 	if b := bar(web, "Pods"); b.Percent != 50 || b.Flag != "not ready" || b.Detail != "1/2 ready, 2 pods" {

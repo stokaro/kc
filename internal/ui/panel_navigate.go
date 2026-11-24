@@ -38,6 +38,7 @@ type panelNavigation struct {
 // panel, ends the walk without calling onDone.
 //
 // The location the panel had before the call becomes the target of cd -.
+// Where the walk ends is recorded in the panel history (C-x h, M-, M-.).
 func (a *App) NavigatePanel(idx int, p PanelPath, onDone func(error) tea.Cmd) tea.Cmd {
 	if onDone == nil {
 		onDone = func(err error) tea.Cmd {
@@ -120,6 +121,8 @@ func (a *App) continuePanelNavigation(idx int, gen uint64) tea.Cmd {
 	case err != nil:
 		a.panelNavs[idx] = nil
 		ctrllog.FromContext(a.ctx).WithName("navigatePanel").Info("navigation failed", "panel", idx, "path", pn.path.String(), "error", err.Error())
+		// The panel stays where the walk stopped; that is a place it went.
+		a.recordHistory(idx)
 		return pn.onDone(err)
 	case done:
 		a.panelNavs[idx] = nil
@@ -128,6 +131,9 @@ func (a *App) continuePanelNavigation(idx int, gen uint64) tea.Cmd {
 			a.panelByIndex(idx).SelectByRowID(ctxSel, id)
 			cancelSel()
 		}
+		// A cd, an overview open or a startup intent lands in the panel
+		// history like a move made with Enter.
+		a.recordHistory(idx)
 		return pn.onDone(nil)
 	}
 	return tea.Tick(pathWaitInterval, func(time.Time) tea.Msg {

@@ -17,9 +17,17 @@ A panel in List mode starts at its root and goes deeper with `Enter`:
   ReplicaSets, `/owners`, `/used-by`, `/requires`, `/diagnosis`,
   `/timeline`, a container's `logs` and `/root`, and so on.
 
+A type that two API groups serve is listed once per group, with the
+group in the Group column. `/events` appears twice: `v1` and
+`events.k8s.io/v1` list the same Event objects, and the status line says
+which row is which.
+
 The first row of a folder is `/..`; `Enter` on it goes back up. The frame
 title shows the path, the bottom border the context and namespace scope
-(`prod : shop`). A list across all namespaces gets a Namespace column.
+(`prod : shop`), the filter, and on the right the position and the mode
+(`3/9 • 100% • List`). In a narrow panel the position is cut first, so the
+scope and the filter stay readable. A list across all namespaces gets a
+Namespace column.
 Rows kc considers faults are red: a pod that is Pending, not ready, or
 waiting in CrashLoopBackOff, ImagePullBackOff, ErrImagePull or
 CreateContainerConfigError, a Deployment with missing replicas, a node
@@ -50,7 +58,10 @@ the copy button at its right copies it.
   and First Seen sort by the Event's own times, most recent first, and
   count on with the clock; the wide Name column sorts by name.
 - `M-f` filters rows; `C-z` keeps only rows in a fault state.
-- `C-w` switches the columns between normal and wide.
+- `C-w` switches the columns of this panel between normal and wide: the
+  wide mode adds the columns of `kubectl get -o wide`. In the normal mode
+  a pod's Restarts shows the count only; the wide mode adds the time of
+  the last restart, as in `8 (5m58s ago)`.
 - `C-r` reads the list again ("Reread" in the Left and Right menus).
 - `Ins` or `C-t` marks the row, `*` inverts the marks, `C-a` marks all.
   `+` (Select group) and `-` (Unselect group) ask for a shell pattern and

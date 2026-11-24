@@ -54,6 +54,12 @@ func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 //
 //nolint:funlen,gocognit,gocyclo,nestif // the app-wide Bubble Tea message switch, one case per message type; splitting it is a larger refactor than the lint baseline (#128)
 func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
+	// The result of a withBusy command goes to the main switch even when a
+	// dialog is open: the dialog did not ask for it, and it would be lost.
+	pastModal := false
+	if r, ok := msg.(busyResultMsg); ok {
+		msg, pastModal = r.msg, true
+	}
 	a.syncActivity()
 	defer a.syncActivity()
 	// Start the access reviews the selected row needs for function key gating.
@@ -234,7 +240,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	}
 
 	// Handle modals first
-	if a.modalManager.IsModalVisible() {
+	if a.modalManager.IsModalVisible() && !pastModal {
 		switch {
 		case passesModal(msg):
 			// Fall through to the main switch.
@@ -564,8 +570,12 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			a.busyToken++
 			a.invalidateView("busy done")
 		}
-		// Re-dispatch the original message for normal handling
-		return a, func() tea.Msg { return msg.msg }
+		// Re-dispatch the original message for normal handling, past any
+		// open dialog (see busyResultMsg).
+		if msg.msg == nil {
+			return a, nil
+		}
+		return a, func() tea.Msg { return busyResultMsg(msg) }
 	case explainLoadedMsg:
 		return a, a.handleExplainLoaded(msg)
 	case netpolLoadedMsg:
@@ -1223,6 +1233,11 @@ func passesModal(msg tea.Msg) bool {
 		return true
 	case configSavedMsg:
 		// C-s keeps the options dialog open; its result must still show.
+		return true
+	case BusyShowMsg, BusyTickMsg, BusyHideMsg, busyDoneMsg:
+		// The spinner and the result of withBusy work belong to the app.
+		// A dialog that kept or opened over the work swallowed them: the
+		// spinner stopped and the result never arrived.
 		return true
 	}
 	return false
