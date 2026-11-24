@@ -214,8 +214,8 @@ func TestDefaultCommandsValidate(t *testing.T) {
 	}
 }
 
-// TestReadmeExampleValidates keeps the README example of hotkeys, prompts
-// and confirmation valid.
+// TestReadmeExampleValidates keeps the example of hotkeys, prompts and
+// confirmation in docs/commands.md valid.
 func TestReadmeExampleValidates(t *testing.T) {
 	t.Parallel()
 	const example = `
@@ -308,7 +308,8 @@ func TestDiagnosticTimeoutDefault(t *testing.T) {
 	}
 }
 
-// TestReadmeDiagnosticExampleValidates keeps the README KRR example valid.
+// TestReadmeDiagnosticExampleValidates keeps the KRR example in
+// docs/commands.md valid.
 func TestReadmeDiagnosticExampleValidates(t *testing.T) {
 	t.Parallel()
 	const example = `
