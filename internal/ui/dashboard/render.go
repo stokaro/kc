@@ -265,12 +265,7 @@ func shortFooter(s string, w int) string {
 // target and the state.
 func (m *Model) topBar(v *view, w int) string {
 	bar := menubar.RenderTitles(m.Menus(nil), w)
-	state := m.stateText(v, w >= wideWidth)
-	st := liveStyle
-	if v.paused {
-		st = pausedStyle
-	}
-	stateCell := st.Render(" " + state + " ")
+	stateCell := m.stateCell(v, w)
 	sw := lipgloss.Width(stateCell)
 	// The menu titles end where the bar stops finding one.
 	menus := m.Menus(nil)
@@ -292,6 +287,27 @@ func (m *Model) topBar(v *view, w int) string {
 	right := crumbStyle.Render(text) + stateCell
 	rw := lipgloss.Width(right)
 	return place(bar, right, w-rw, rw, w)
+}
+
+// stateCell is the state as the top bar draws it at its right end.
+func (m *Model) stateCell(v *view, w int) string {
+	st := liveStyle
+	if v.paused {
+		st = pausedStyle
+	}
+	return st.Render(" " + m.stateText(v, w >= wideWidth) + " ")
+}
+
+// StateCell is where the top bar draws the state (LIVE, PAUSED, the
+// window): its first column and its width, at the right end of the row.
+// A click on it opens the Range menu under it. The width is zero when the
+// screen is too small for the dashboard.
+func (m *Model) StateCell() (x, w int) {
+	if m.w < 20 || m.h < 6 {
+		return 0, 0
+	}
+	w = min(m.w, lipgloss.Width(m.stateCell(m.top(), m.w)))
+	return m.w - w, w
 }
 
 // breadcrumb is where the view is: the context, the namespace scope, and

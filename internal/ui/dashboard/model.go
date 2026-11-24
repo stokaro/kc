@@ -509,6 +509,14 @@ func (m *Model) pause(v *view) {
 	v.paused, v.end = true, m.now()
 }
 
+// goLive shows the range ending now again, without the cursor and
+// without following the investigation window.
+func (m *Model) goLive(v *view) {
+	m.detach(v)
+	v.paused, v.cursor = false, -1
+	m.refresh()
+}
+
 // Key runs a key of the dashboard, as typed or chosen from its menu bar
 // or F-key bar (see Menus and FunctionKeys).
 //
@@ -552,12 +560,18 @@ func (m *Model) Key(key string) (tea.Cmd, Action) {
 		}
 	case "space", " ", "f3":
 		if v.paused {
-			m.detach(v)
-			v.paused, v.cursor = false, -1
-			m.refresh()
+			m.goLive(v)
 		} else {
 			m.pause(v)
 		}
+	case liveKey:
+		m.goLive(v)
+	case pauseKey:
+		// Unlike the cursor, which keeps a fixed window, this leaves it.
+		m.detach(v)
+		m.pause(v)
+	case followKey:
+		m.rejoinWindow()
 	case "left", "right", "home", "end":
 		m.moveCursor(v, key)
 	case "up":

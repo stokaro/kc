@@ -232,6 +232,10 @@ func (a *App) updateDashboard(msg tea.Msg) (tea.Cmd, bool) {
 			if i := menubar.TitleIndex(d.model.Menus(nil), m.X); i >= 0 {
 				a.menuBar.OpenAt(d.model.Menus(a.dashboardKey), a.width, i)
 				a.invalidateView("dashboard menu")
+			} else if x, w := d.model.StateCell(); m.X >= x && m.X < x+w {
+				// The state: the Range menu hangs under it.
+				a.menuBar.OpenAnchored(d.model.Menus(a.dashboardKey), a.width, dashboard.RangeMenu, x+w)
+				a.invalidateView("dashboard range popup")
 			}
 			return nil, true
 		}
