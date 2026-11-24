@@ -108,6 +108,7 @@ type session struct {
 	// the child's side until the child holds it.
 	ptmx, tty *os.File
 	gfx       *graphics
+	filter    *outputFilter
 
 	mu         sync.Mutex
 	cols, rows int
@@ -146,10 +147,12 @@ func newSession(cols, rows int) (*session, error) {
 		_ = tty.Close()
 		return nil, err
 	}
-	emu, err := emulator.NewFromPipes(cols, rows, newOutputFilter(ptmx, ptmx, s.gfx, s.size), ptmx)
+	s.filter = newOutputFilter(ptmx, ptmx, s.gfx, s.size)
+	emu, err := emulator.NewFromPipes(cols, rows, s.filter, ptmx)
 	if err != nil {
 		_ = ptmx.Close()
 		_ = tty.Close()
+		_ = s.filter.Close()
 		return nil, fmt.Errorf("create emulator: %w", err)
 	}
 	s.emu = emu
@@ -189,10 +192,11 @@ func (s *session) size() (cols, rows int) {
 	return s.cols, s.rows
 }
 
-// close stops the emulator, which closes the PTY, and the child's side of
-// it if the child never took it.
+// close stops the emulator, which closes the PTY, the filter's reading of
+// it, and the child's side of the PTY if the child never took it.
 func (s *session) close() {
 	_ = s.emu.Close()
+	_ = s.filter.Close()
 	if s.tty != nil {
 		_ = s.tty.Close()
 	}

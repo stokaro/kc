@@ -7,7 +7,9 @@ import (
 	"image/color"
 	"io"
 	"os"
+	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -158,6 +160,47 @@ func TestKittyImagesThroughTheEmulator(t *testing.T) {
 	})
 	go func() { _, _ = io.WriteString(pw, kcOutput(t)) }()
 	img, err := renderCells(waitForCells(t, emu), g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkQuadrantTiles(t, img, 0, 0)
+}
+
+// kc's output read one byte at a time, as a PTY may cut it anywhere: every
+// placeholder keeps both of its diacritics in the emulator.
+func TestKittyImagesThroughTheEmulatorInPieces(t *testing.T) {
+	t.Parallel()
+	g := newGraphics(colorCellWidth, colorCellHeight)
+	src := iotest.OneByteReader(strings.NewReader(kcOutput(t) + "\x1b[3;1Hend"))
+	f := newOutputFilter(src, io.Discard, g, func() (int, int) { return 10, 3 })
+	f.holdFor = time.Minute // only a new cluster releases the one before it
+	emu, err := emulator.NewFromPipes(10, 3, f, nopWriteCloser{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = emu.Close()
+		_ = f.Close()
+	})
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.HasPrefix(emu.GetScreen().Rows[2], "end") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the output did not reach the screen: %q", emu.GetScreen().Rows)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cells := emu.GetCells()
+	for row := range 2 {
+		for col := range 2 {
+			c := cells[row][col]
+			// No cell to the left: the cell's own diacritics only.
+			got, ok := readPlaceholder(c.Content, c.Style.Fg, nil)
+			if want := (placeholder{id: 240, row: row, col: col}); !ok || got != want {
+				t.Errorf("cell (%d,%d) = %+v, %v; want %+v", row, col, got, ok, want)
+			}
+		}
+	}
+	img, err := renderCells(cells, g)
 	if err != nil {
 		t.Fatal(err)
 	}

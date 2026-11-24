@@ -36,7 +36,13 @@ kc uses (ADR 0320), and the color snapshot draws the images.
    child's output and runs it; every other byte reaches the emulator
    unchanged. It is a byte state machine, so a sequence cut across reads
    is handled, and an ESC that is not the string terminator cancels the
-   command as in a VT parser.
+   command as in a VT parser. It also hands the emulator whole grapheme
+   clusters: x/vt ends a cluster at the end of every write, so a
+   placeholder whose diacritics came in the next PTY read lost them, and
+   one cut at the end of a row pushed the frame's border to the next
+   line. The filter never cuts its reads inside a cluster and holds the
+   last cluster of the output until more output follows or the output
+   pauses for 20 ms.
 3. **The commands.** Transmit (`a=t`, `a=T`) of PNG data (`f=100`) sent
    directly, in chunks (`m=1` up to `m=0`, each chunk decoded alone, as
    kitty does); virtual placements (`U=1` with `c`, `r`, on `a=T` or
