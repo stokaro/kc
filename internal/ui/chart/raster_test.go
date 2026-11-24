@@ -154,6 +154,150 @@ func TestRasterShowsALonelySample(t *testing.T) {
 	}
 }
 
+// at is a sample time for rasterChart: minutes and seconds after its
+// start.
+func at(m, sec int) time.Time {
+	return time.Time{}.Add(time.Duration(m)*time.Minute + time.Duration(sec)*time.Second)
+}
+
+// greenRows counts the rows of column x drawn in nearly the full usage
+// color: the line, or a point, but not the faded area under them.
+func greenRows(img *image.RGBA, x int) int {
+	n := 0
+	for y := range img.Bounds().Dy() {
+		if greenness(img.RGBAAt(x, y)) > greenness(grafanaGreen)*3/4 {
+			n++
+		}
+	}
+	return n
+}
+
+// plotted reports whether column x has anything green in it: the line,
+// a point or the area.
+func plotted(img *image.RGBA, x int) bool {
+	for y := range img.Bounds().Dy() {
+		if got := img.RGBAAt(x, y); got.G > got.R+8 {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRasterHoldsSamples: as in the text plot, a sample stands for Hold
+// after it. The line runs on flat from the newest sample to the end of a
+// live chart when that sample is fresh, and stops Hold after a sample
+// with nothing after it, so a real gap stays empty.
+func TestRasterHoldsSamples(t *testing.T) {
+	t.Parallel()
+	every := func(from, to time.Time) []chart.Point {
+		var out []chart.Point
+		for t := from; !t.After(to); t = t.Add(time.Minute) {
+			out = append(out, chart.Point{At: t, V: 5})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name   string
+		points []chart.Point
+		hold   time.Duration
+		// line and empty are times whose pixel column has the line, and
+		// nothing; end is the last column of the plot.
+		line, empty []time.Time
+		end         bool
+	}{
+		{
+			name:   "a fresh newest sample runs on to the end",
+			points: every(at(0, 40), at(9, 40)),
+			hold:   90 * time.Second,
+			line:   []time.Time{at(9, 50)},
+			end:    true,
+		},
+		{
+			name:   "a stale newest sample stops after its hold",
+			points: every(at(0, 0), at(6, 0)),
+			hold:   90 * time.Second,
+			line:   []time.Time{at(7, 0)},
+			empty:  []time.Time{at(8, 0), at(9, 30)},
+		},
+		{
+			name:   "the last sample before a gap holds",
+			points: append(every(at(0, 0), at(3, 0)), every(at(8, 0), at(10, 0))...),
+			hold:   90 * time.Second,
+			line:   []time.Time{at(4, 0), at(9, 0)},
+			empty:  []time.Time{at(5, 30)},
+			end:    true,
+		},
+		{
+			name:   "a sample before the range holds into it",
+			points: append([]chart.Point{{At: at(0, -30), V: 5}}, every(at(5, 0), at(10, 0))...),
+			hold:   90 * time.Second,
+			line:   []time.Time{at(0, 30)},
+			empty:  []time.Time{at(2, 0)},
+			end:    true,
+		},
+		{
+			name:   "no hold, no tail",
+			points: []chart.Point{{At: at(5, 0), V: 5}},
+			line:   []time.Time{at(5, 0)},
+			empty:  []time.Time{at(5, 30)},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := rasterChart(tc.points)
+			c.Hold = tc.hold
+			img := c.Raster(6, 10)
+			w := img.Bounds().Dx()
+			col := func(at time.Time) int {
+				return int(float64(c.Start.Add(at.Sub(time.Time{})).Sub(c.Start)) / float64(c.End.Sub(c.Start)) * float64(w))
+			}
+			for _, at := range tc.line {
+				if x := col(at); lineTop(img, x) < 0 {
+					t.Errorf("no line at %s (x=%d)", at.Sub(time.Time{}), x)
+				}
+			}
+			for _, at := range tc.empty {
+				if x := col(at); plotted(img, x) {
+					t.Errorf("the gap at %s (x=%d) is drawn", at.Sub(time.Time{}), x)
+				}
+			}
+			if got := lineTop(img, w-1) >= 0; got != tc.end {
+				t.Errorf("line in the last column: %v, want %v", got, tc.end)
+			}
+		})
+	}
+}
+
+// TestRasterHoldIsNoSample: the held part of a line is drawn like the
+// line, with the area under it, but gets no point: the points stay at
+// the real sample times.
+func TestRasterHoldIsNoSample(t *testing.T) {
+	t.Parallel()
+	// Three samples are few, so each is drawn as a point too; the end of
+	// the hold does not make them four.
+	c := rasterChart([]chart.Point{{At: at(2, 0), V: 5}, {At: at(3, 0), V: 5}, {At: at(4, 0), V: 5}})
+	img := c.Raster(6, 10)
+	w := img.Bounds().Dx()
+	// 4:00, and 4:42 within the hold; off the grid line at 5:00.
+	sample, held := 4*w/10, 47*w/100
+	// The hold ends at 5:30, without a point there either.
+	end := int(0.55*float64(w)) - 1
+	for _, x := range []int{held, end} {
+		if s, h := greenRows(img, sample), greenRows(img, x); h == 0 || h >= s {
+			t.Errorf("x=%d: the hold has %d rows of line, the sample %d: want a thinner line and no point", x, h, s)
+		}
+	}
+	top := lineTop(img, held)
+	if top < 0 || greenness(img.RGBAAt(held, top+4)) <= 0 {
+		t.Error("no area under the hold")
+	}
+	// Flat at the value of the sample, as the line between the samples.
+	later, between := lineTop(img, 53*w/100), lineTop(img, 35*w/100)
+	if later != top || top < between-1 || top > between+1 {
+		t.Errorf("the hold is at rows %d and %d, the line between the samples at row %d: want it flat at the same value", top, later, between)
+	}
+}
+
 func TestRasterDashesReferenceLines(t *testing.T) {
 	t.Parallel()
 	c := rasterChart(steady(2, 0, 10))
@@ -215,6 +359,24 @@ func TestRasterDrawsSeries(t *testing.T) {
 	}
 	if c.RasterKey(6, 10) == key {
 		t.Error("the series does not change the key")
+	}
+	// A series holds its newest sample as the usage does: a pod measured
+	// 20 seconds ago reaches the end of the plot.
+	var fresh []chart.Point
+	for m := range 10 {
+		fresh = append(fresh, chart.Point{At: at(m, 40), V: 3})
+	}
+	c.Series[0].Points = rasterChart(fresh).Points
+	img = c.Raster(12, 36)
+	last := img.Bounds().Dx() - 1
+	found = false
+	for y := range img.Bounds().Dy() {
+		if img.RGBAAt(last, y) == purple {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the series stops before the end of the plot")
 	}
 	if got := chart.ImageColor(lipgloss.NewStyle().Foreground(lipgloss.BrightGreen)); got != grafanaGreen {
 		t.Errorf("green draws as %v, want Grafana's", got)
