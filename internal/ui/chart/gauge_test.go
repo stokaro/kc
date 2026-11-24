@@ -24,7 +24,7 @@ func near(a, b color.RGBA, tol int) bool {
 	return d(a.R, b.R) && d(a.G, b.G) && d(a.B, b.B) && d(a.A, b.A)
 }
 
-func at(img *image.RGBA, x, y int) color.RGBA { return img.RGBAAt(x, y) }
+func pixel(img *image.RGBA, x, y int) color.RGBA { return img.RGBAAt(x, y) }
 
 func TestGaugeFill(t *testing.T) {
 	t.Parallel()
@@ -95,30 +95,30 @@ func TestGaugePicture(t *testing.T) {
 	if b := img.Bounds(); b.Dx() != w || b.Dy() != testCellH {
 		t.Fatalf("picture is %v", b)
 	}
-	if c := at(img, 100, 1); c.A != 0 {
+	if c := pixel(img, 100, 1); c.A != 0 {
 		t.Errorf("above the track %v, want transparent", c)
 	}
-	if c := at(img, 100, testCellH-1); c.A != 0 {
+	if c := pixel(img, 100, testCellH-1); c.A != 0 {
 		t.Errorf("below the track %v, want transparent", c)
 	}
-	if c := at(img, w/2-2, gaugeMid); !near(c, chart.Green, 2) {
+	if c := pixel(img, w/2-2, gaugeMid); !near(c, chart.Green, 2) {
 		t.Errorf("end of the fill %v, want the level color %v", c, chart.Green)
 	}
-	start := at(img, 20, gaugeMid)
+	start := pixel(img, 20, gaugeMid)
 	if start.A != 0xff || start.G <= start.R || start.G <= start.B || near(start, chart.Green, 8) {
 		t.Errorf("start of the fill %v, want a green fainter than the end", start)
 	}
-	if c := at(img, w/2+20, gaugeMid); !near(c, chart.TrackColor, 1) {
+	if c := pixel(img, w/2+20, gaugeMid); !near(c, chart.TrackColor, 1) {
 		t.Errorf("past the fill %v, want the track %v", c, chart.TrackColor)
 	}
 	mark := w * 3 / 4
-	if c := at(img, mark, gaugeMid); !near(c, chart.Yellow, 2) {
+	if c := pixel(img, mark, gaugeMid); !near(c, chart.Yellow, 2) {
 		t.Errorf("mark %v, want %v", c, chart.Yellow)
 	}
-	if c := at(img, mark, 5); !near(c, chart.Yellow, 2) {
+	if c := pixel(img, mark, 5); !near(c, chart.Yellow, 2) {
 		t.Errorf("mark above the track %v, want %v", c, chart.Yellow)
 	}
-	if c := at(img, mark-12, 5); c.A != 0 {
+	if c := pixel(img, mark-12, 5); c.A != 0 {
 		t.Errorf("beside the mark above the track %v, want transparent", c)
 	}
 }
@@ -130,15 +130,15 @@ func TestGaugeOverTheScale(t *testing.T) {
 	w := gaugeCols * testCellW
 	over := chart.Gauge{Percent: 130, Color: chart.Red, Marks: []chart.Mark{{Percent: 116, Color: chart.Yellow}}}
 	img := over.Raster(gaugeCols, 1, testCellW, testCellH)
-	if c := at(img, w-6, gaugeMid); !near(c, chart.Yellow, 2) {
+	if c := pixel(img, w-6, gaugeMid); !near(c, chart.Yellow, 2) {
 		t.Errorf("arrow tip %v, want %v", c, chart.Yellow)
 	}
 	ends := chart.Gauge{Percent: 0, Color: chart.Green, Marks: []chart.Mark{{Percent: 0, Color: chart.Yellow}, {Percent: 100, Color: chart.Red}}}
 	img = ends.Raster(gaugeCols, 1, testCellW, testCellH)
-	if c := at(img, 0, gaugeMid); !near(c, chart.Yellow, 2) {
+	if c := pixel(img, 0, gaugeMid); !near(c, chart.Yellow, 2) {
 		t.Errorf("mark at 0%% %v, want %v at the left edge", c, chart.Yellow)
 	}
-	if c := at(img, w-1, gaugeMid); !near(c, chart.Red, 2) {
+	if c := pixel(img, w-1, gaugeMid); !near(c, chart.Red, 2) {
 		t.Errorf("mark at 100%% %v, want %v at the right edge", c, chart.Red)
 	}
 }
@@ -149,10 +149,10 @@ func TestGaugeOnTwoRows(t *testing.T) {
 	t.Parallel()
 	g := chart.Gauge{Percent: 100, Color: chart.Green}
 	img := g.Raster(gaugeCols, 2, testCellW, testCellH)
-	if c := at(img, 100, gaugeMid); c.A != 0 {
+	if c := pixel(img, 100, gaugeMid); c.A != 0 {
 		t.Errorf("first row %v, want transparent", c)
 	}
-	if c := at(img, 100, testCellH+gaugeMid); c.A != 0xff {
+	if c := pixel(img, 100, testCellH+gaugeMid); c.A != 0xff {
 		t.Errorf("middle of the last row %v, want the track", c)
 	}
 	if g.Raster(0, 1, testCellW, testCellH) != nil {
@@ -176,7 +176,7 @@ func sparkAt(points ...float64) chart.Spark {
 // line's color.
 func greenColumn(img *image.RGBA, x int) bool {
 	for y := range img.Bounds().Dy() {
-		if near(at(img, x, y), chart.Green, 24) {
+		if near(pixel(img, x, y), chart.Green, 24) {
 			return true
 		}
 	}
@@ -200,10 +200,10 @@ func TestSparkPicture(t *testing.T) {
 	if b := img.Bounds(); b.Dx() != w || b.Dy() != h {
 		t.Fatalf("picture is %v", b)
 	}
-	if c := at(img, 0, 0); c.A != 0 {
+	if c := pixel(img, 0, 0); c.A != 0 {
 		t.Errorf("corner %v, want transparent", c)
 	}
-	if c := at(img, w/2, 4); !near(c, chart.TrackColor, 1) {
+	if c := pixel(img, w/2, 4); !near(c, chart.TrackColor, 1) {
 		t.Errorf("panel %v, want %v", c, chart.TrackColor)
 	}
 	minute := float64(w) / 15
@@ -217,7 +217,7 @@ func TestSparkPicture(t *testing.T) {
 	// padding and no further.
 	top := -1
 	for y := range h {
-		if near(at(img, int(10*minute), y), chart.Green, 24) {
+		if near(pixel(img, int(10*minute), y), chart.Green, 24) {
 			top = y
 			break
 		}
