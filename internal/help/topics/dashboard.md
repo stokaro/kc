@@ -155,8 +155,9 @@ snapshot of the cluster at another time.
 The bar at the bottom shows the function keys that work now.
 
 With the mouse: click a chart to put the cursor there, turn the wheel
-over a chart to zoom, click a row to select it and click it again to
-open its dashboard, click a menu title or a function key.
+over a chart to zoom, turn it over the list or the Events to move the
+selection, click a row to select it and click it again to open its
+dashboard, click a menu title or a function key.
 
 `C-x g` on the same row reopens the last dashboard with its range, its
 pause and the drilldown. The session history is kept until kc exits.
