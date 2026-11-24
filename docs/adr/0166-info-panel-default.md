@@ -1,6 +1,6 @@
 # 0166. Right panel starts in Info mode
 
-- Status: Accepted
+- Status: Accepted; the pause while a dialog is open (point 7) amended by 0342
 - Date: 2026-11-22
 - Issue: #166
 

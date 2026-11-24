@@ -23,7 +23,8 @@ const (
 	// the user's files. It sets the current context and the namespace and
 	// copies only entries it must change or that an earlier file shadows.
 	ModeOverlay Mode = "overlay"
-	// ModeCopy writes a full copy of the file that defines the context.
+	// ModeCopy writes a full copy of what kc loaded for the context: the
+	// file that defines it, or the merged files of $KUBECONFIG.
 	ModeCopy Mode = "copy"
 )
 
@@ -130,7 +131,8 @@ func (f *Files) Remove(slot string) error {
 // Close removes the directory and every slot in it.
 func (f *Files) Close() error { return os.RemoveAll(f.dir) }
 
-// RenderCopy returns the file that defines c, with c's context current,
+// RenderCopy returns c.Config (the file that defines c, or the merged
+// files of $KUBECONFIG), with c's context current,
 // its namespace set and impersonation applied to its user. Relative file
 // references are made absolute, because the copy lives elsewhere.
 func RenderCopy(c Context) (*clientcmdapi.Config, error) {

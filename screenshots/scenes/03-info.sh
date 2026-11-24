@@ -19,7 +19,7 @@ scene_info_node() {
 	sleep 2
 	key down
 	key down
-	wait_for "kc-shots-worker (v1)"
+	wait_for "$CLUSTER-worker (v1)"
 	sleep 20
 	shot
 }

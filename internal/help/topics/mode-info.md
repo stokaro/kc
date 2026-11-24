@@ -35,6 +35,11 @@ attention, a mark after the bar's percentage names it: `! lim` warns,
 `!! node` fails. Without pod usage the bar shows the requests.
 Percentages are truncated, as `kubectl describe node` prints them.
 
+For a workload the lines sum its pods: `2 pods use 11Mi of req 32Mi, no
+limit`. The sum is taken from the exact values. Each pod row under "Top
+pods" is rounded down to whole Mi, as `kubectl top` prints it, so two
+pods of 5.6Mi show as 5Mi each, while their sum shows as 11Mi.
+
 In a narrow panel (under 48 columns, for example a 25% panel) Info is
 compact: the lines under a bar start two columns in, and a `node` or
 `req`/`lim` line shows only when it needs attention or says why a value
@@ -54,8 +59,13 @@ namespaces.
 
 Under each CPU and memory bar a line such as
 `history, % of allocatable · 21 samples over 5m` heads a sparkline. The
-frame `▕ ... ▏ 15m` spans the last 15 minutes with the newest sample at
-the right. Cells before the first sample stay blank. A `·` is a gap: a
+newest sample is at the right, and each cell is a fixed slice of the
+last 15 minutes. The line starts at the oldest sample, so it grows from
+the left until it spans the whole window. The mark after the frame says
+how much it spans, `▕ ... ▏ 5m of 15m`, then `▕ ... ▏ 15m`. A full cell
+is 100% unless the mark names a lower top: `top 10%` means every sample
+was at most 10%, and a full cell is 10%. The top is the smallest of 10,
+25, 50 and 100% that holds every sample in the window. A `·` is a gap: a
 missed poll or metrics that were not available. `collecting` means one
 sample so far; `stale, last 3m ago` means no recent sample.
 
@@ -75,6 +85,14 @@ sample so far; `stale, last 3m ago` means no recent sample.
   they cannot read. kc asks first and starts nothing it cannot read.
 - `C-x m` shows which metric sources the context has
   ([Metric sources](metric-sources.md)).
+- Pods being deleted, such as those a drain evicted, leave the top pods
+  at once. They still count under Pods and in the capacity until they
+  end, since they hold the node until then.
+- Info stays current while a dialog is open beside it: a drain or a
+  delete shows in the bars and the top pods at once. The metrics polls
+  wait for the dialog to close, so the usage age keeps growing until
+  then. The disk is read once when Info starts, also behind a dialog,
+  and then once a minute while no dialog is open.
 - The history is kept in memory while the panel is in Info mode, for
   this session only. CPU and memory are recorded apart: a bar without
   a percentage (no requests or limits) has no history line, and the

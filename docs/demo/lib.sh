@@ -248,6 +248,14 @@ search() {
 	sleep 1.2
 }
 
+# pick filters an open picker (the context picker, C-x c) down to the rows
+# that contain the text, so Enter takes the first of them. search does not
+# work there: the picker filters as you type, and Esc clears the filter.
+pick() {
+	typetext "$1"
+	sleep 0.3
+}
+
 # enter searches a row, enters it and waits for the text to show.
 enter() {
 	key ctrl+s

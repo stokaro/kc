@@ -66,7 +66,7 @@ func TestSparklineReadsAsAHistory(t *testing.T) {
 		if !strings.Contains(l, "history, % of allocatable · 4 samples over 30s") {
 			continue
 		}
-		if i+2 >= len(lines) || !strings.Contains(lines[i+1], "▕") || !strings.HasSuffix(lines[i+1], "▏ 15m") || strings.TrimSpace(lines[i+2]) != "" {
+		if i+2 >= len(lines) || !strings.Contains(lines[i+1], "▕") || !strings.HasSuffix(lines[i+1], "▏ 45s of 15m, top 10%") || strings.TrimSpace(lines[i+2]) != "" {
 			t.Fatalf("label is not followed by a framed sparkline and a blank line:\n%s", view)
 		}
 		return

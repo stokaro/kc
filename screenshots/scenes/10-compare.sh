@@ -77,7 +77,7 @@ scene_compare_context_picker() {
 
 scene_compare_context_result() {
 	after compare/context-picker
-	search "$MIRROR"
+	pick "$MIRROR"
 	key enter
 	wait_for "whole list" 90
 	shot 1

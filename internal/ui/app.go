@@ -986,7 +986,7 @@ func (a *App) currentClusterKey() kccluster.Key {
 		return kccluster.Key{}
 	}
 	return kccluster.Key{
-		KubeconfigPath:       a.currentCtx.Kubeconfig.Path,
+		KubeconfigPath:       a.currentCtx.LoadPath(),
 		ContextName:          a.currentCtx.Name,
 		ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
 		ImpersonateUID:       strings.TrimSpace(a.impersonateUID),
@@ -1198,9 +1198,11 @@ func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
 	mapper := a.cl.RESTMapper()
 	disco := a.cl.DiscoveryClient()
 	var loader clientcmd.ClientConfig
-	if a.currentCtx != nil && a.currentCtx.Kubeconfig != nil && a.currentCtx.Kubeconfig.Config != nil {
-		overrides := &clientcmd.ConfigOverrides{CurrentContext: a.currentCtx.Name}
-		loader = clientcmd.NewDefaultClientConfig(*a.currentCtx.Kubeconfig.Config, overrides)
+	if a.currentCtx != nil {
+		if cfg := a.currentCtx.LoadedConfig(); cfg != nil {
+			overrides := &clientcmd.ConfigOverrides{CurrentContext: a.currentCtx.Name}
+			loader = clientcmd.NewDefaultClientConfig(*cfg, overrides)
+		}
 	}
 	return describe.NewRenderer(cfg, mapper, disco, loader)
 }
@@ -1736,6 +1738,23 @@ func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelOffset int, cent
 	return panelWidth, panelOffset, centered
 }
 
+// setBackdrop sets what a windowed dialog draws around itself. Without an
+// explicit background it draws the panels live, on every render, so what
+// they show keeps moving behind the dialog: the Info panel beside a drain
+// dialog shows the evicted pods leave. A snapshot taken when the dialog
+// opened kept them, and a "loading" value, until it closed. A provider a
+// reused modal kept from another dialog is cleared.
+func (a *App) setBackdrop(modal *Modal, background string) {
+	if background != "" {
+		modal.SetWindowedBackgroundProvider(nil)
+		return
+	}
+	modal.SetWindowedBackgroundProvider(func() string {
+		view, _ := a.renderMainView()
+		return view
+	})
+}
+
 func (a *App) configureModalWindow(modal *Modal, content any, panelIdx int, background string, fallbackWinW, fallbackWinH int) {
 	panelWidth, panelOffset, centered := a.modalPanelMetrics(panelIdx)
 	panelHeight := a.panelsHeight()
@@ -1782,12 +1801,9 @@ func (a *App) configureModalWindow(modal *Modal, content any, panelIdx int, back
 	if setter, ok := content.(interface{ SetDimensions(int, int) }); ok {
 		setter.SetDimensions(innerW, innerH)
 	}
-	bg := background
-	if bg == "" {
-		bg, _ = a.renderMainView()
-	}
 	modal.SetDimensions(a.width, a.height)
-	modal.SetWindowed(winW, winH, bg)
+	modal.SetWindowed(winW, winH, background)
+	a.setBackdrop(modal, background)
 
 	offsetX := panelOffset + max(0, (panelWidth-winW)/2)
 	panelUsable := max(0, panelHeight-headerOffset-1)
@@ -1901,11 +1917,11 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
 	modal.SetContent(a.deleteConfirm)
 	modal.SetDimensions(a.width, a.height)
-	bg, _ := a.renderMainView()
 	winW := max(min(max(50, a.width/2), a.width-4), 40)
 	// The frame fits the content exactly: two border lines around it.
 	winH := min(a.deleteConfirm.Height(winW-2)+2, max(5, a.height-4))
-	modal.SetWindowed(winW, winH, bg)
+	modal.SetWindowed(winW, winH, "")
+	a.setBackdrop(modal, "")
 	modal.SetOnClose(func() tea.Cmd {
 		a.pendingDelete = nil
 		return nil
@@ -3242,7 +3258,7 @@ func (a *App) initData(ctx context.Context) error {
 	log.Info("starting cluster pool")
 	a.clPool.Start()
 	k := kccluster.Key{
-		KubeconfigPath:       a.currentCtx.Kubeconfig.Path,
+		KubeconfigPath:       a.currentCtx.LoadPath(),
 		ContextName:          a.currentCtx.Name,
 		ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
 		ImpersonateUID:       strings.TrimSpace(a.impersonateUID),

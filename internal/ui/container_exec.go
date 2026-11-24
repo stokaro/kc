@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/stokaro/kc/internal/execctx"
 	"github.com/stokaro/kc/internal/models"
 )
 
@@ -188,10 +189,13 @@ func lastStderrLine(s string) string {
 type execSession struct {
 	banner string
 	args   []string
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
-	tail   tailBuffer
+	// kubeconfig is the KUBECONFIG value kubectl runs with; empty keeps
+	// kc's own.
+	kubeconfig string
+	stdin      io.Reader
+	stdout     io.Writer
+	stderr     io.Writer
+	tail       tailBuffer
 	// interrupts, when set, is held while kubectl runs: a C-c in the
 	// cooked terminal reaches kc too and must not quit it.
 	interrupts *interruptGate
@@ -209,7 +213,7 @@ func newExecSession(target models.ExecTarget, mode models.ExecMode) *execSession
 			banner += "\n[kc] the container has no stdin: output only, C-c leaves"
 		}
 	}
-	return &execSession{banner: banner, args: target.KubectlArgs(mode)}
+	return &execSession{banner: banner, args: target.KubectlArgs(mode), kubeconfig: target.KubeconfigEnv()}
 }
 
 func (s *execSession) SetStdin(r io.Reader)  { s.stdin = r }
@@ -232,6 +236,9 @@ func (s *execSession) Run() error {
 	cmd.Stdout = stdout
 	cmd.Stderr = io.MultiWriter(stderr, &s.tail)
 	cmd.Env = os.Environ()
+	if s.kubeconfig != "" {
+		cmd.Env = execctx.ProcessEnv(s.kubeconfig)
+	}
 	if s.interrupts != nil {
 		release := s.interrupts.hold()
 		defer release()

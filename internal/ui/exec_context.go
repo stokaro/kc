@@ -67,7 +67,7 @@ func kubectlEditCommand(ec execctx.Context, resourceRef string) (*exec.Cmd, stri
 	// #nosec G204 -- kubectl is fixed; the arguments are built by kc and
 	// passed without a shell.
 	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Env = execctx.ProcessEnv(ec.Kubeconfig)
+	cmd.Env = execctx.ProcessEnv(ec.KubeconfigEnv())
 	return cmd, execctx.ShellJoin(argv)
 }
 
@@ -88,7 +88,8 @@ func (a *App) execContext(namespace string) execctx.Context {
 	}
 	return execctx.Context{
 		Kubeconfig:    a.currentCtx.Kubeconfig.Path,
-		Config:        a.currentCtx.Kubeconfig.Config,
+		Load:          a.currentCtx.LoadPath(),
+		Config:        a.currentCtx.LoadedConfig(),
 		Context:       a.currentCtx.Name,
 		Namespace:     strings.TrimSpace(namespace),
 		Impersonation: a.impersonation(),

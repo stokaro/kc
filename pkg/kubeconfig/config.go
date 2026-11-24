@@ -26,12 +26,66 @@ type Kubeconfig struct {
 
 // Context represents a Kubernetes context
 type Context struct {
-	Name       string
-	Cluster    string
-	Namespace  string
-	User       string
+	Name      string
+	Cluster   string
+	Namespace string
+	User      string
+	// Kubeconfig is the file that holds the context entry. A change to the
+	// entry belongs in this file, as kubectl config writes it there.
 	Kubeconfig *Kubeconfig
+	// Source is what a client for the context loads. For a context from
+	// $KUBECONFIG it is every file of the list, merged the way kubectl
+	// merges them, so the cluster and user may come from another file.
+	Source *Source
 }
+
+// Source is the kubeconfig a client for a context loads.
+type Source struct {
+	// Path is one file, or the files of $KUBECONFIG joined with the path
+	// list separator, in their order. LoadingRules turns it into rules.
+	Path string
+	// Config is Path loaded; several files are merged as kubectl merges
+	// them: each named entry comes whole from the first file that has it.
+	Config *api.Config
+}
+
+// LoadPath is the Path of the context's Source, or of its file when it
+// has no Source.
+func (c *Context) LoadPath() string {
+	switch {
+	case c.Source != nil:
+		return c.Source.Path
+	case c.Kubeconfig != nil:
+		return c.Kubeconfig.Path
+	}
+	return ""
+}
+
+// LoadedConfig is the Config of the context's Source, or of its file when
+// it has no Source.
+func (c *Context) LoadedConfig() *api.Config {
+	switch {
+	case c.Source != nil:
+		return c.Source.Config
+	case c.Kubeconfig != nil:
+		return c.Kubeconfig.Config
+	}
+	return nil
+}
+
+// LoadingRules returns the client-go loading rules for a Source path: one
+// file is loaded on its own, a list is merged in order the way kubectl
+// merges $KUBECONFIG.
+func LoadingRules(path string) *clientcmd.ClientConfigLoadingRules {
+	files := filepath.SplitList(path)
+	if len(files) == 1 {
+		return &clientcmd.ClientConfigLoadingRules{ExplicitPath: files[0]}
+	}
+	return &clientcmd.ClientConfigLoadingRules{Precedence: files}
+}
+
+// IsList reports whether a Source path names several files.
+func IsList(path string) bool { return len(filepath.SplitList(path)) > 1 }
 
 // Cluster represents a Kubernetes cluster
 type Cluster struct {
@@ -45,6 +99,9 @@ type Manager struct {
 	kubeconfigs []*Kubeconfig
 	contexts    []*Context
 	clusters    []*Cluster
+	// fromEnv is the number of kubeconfigs, at the start of the list, that
+	// came from $KUBECONFIG. Their contexts share one merged Source.
+	fromEnv int
 }
 
 // NewManager creates a new kubeconfig manager
@@ -61,6 +118,7 @@ func (m *Manager) DiscoverKubeconfigs() error {
 	// DiscoverKubeconfigs takes no context and its callers are in internal/ui.
 	log := ctrllog.Log.WithName("kubeconfig.manager") //nolint:forbidigo // no context here, see above
 	m.kubeconfigs = make([]*Kubeconfig, 0)
+	m.fromEnv = 0
 
 	seen := make(map[string]struct{})
 	envVar := strings.TrimSpace(os.Getenv("KUBECONFIG"))
@@ -72,6 +130,7 @@ func (m *Manager) DiscoverKubeconfigs() error {
 		if err := m.addFromEnv(log, envVar, homeDir, seen); err != nil {
 			return err
 		}
+		m.fromEnv = len(m.kubeconfigs)
 		return m.finishDiscovery(log)
 	}
 
@@ -118,6 +177,11 @@ func (m *Manager) addFromEnv(log logr.Logger, envVar, homeDir string, seen map[s
 		}
 
 		if err := m.addKubeconfig(normalized, seen); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				// kubectl skips a file of the list that does not exist.
+				log.Info("skipping missing kubeconfig from KUBECONFIG", "path", normalized)
+				continue
+			}
 			return fmt.Errorf("loading kubeconfig from KUBECONFIG %q: %w", normalized, err)
 		}
 		log.Info("added kubeconfig from env", "path", normalized)
@@ -255,20 +319,37 @@ func (m *Manager) addKubeconfig(path string, seen map[string]struct{}) error {
 	return nil
 }
 
-// buildContextsAndClusters builds the context and cluster lists from kubeconfigs
+// buildContextsAndClusters builds the context and cluster lists from
+// kubeconfigs. The files of $KUBECONFIG are one merged kubeconfig, as for
+// kubectl: a context name defined in several of them is listed once, from
+// the first, and its cluster and user may be in any of them. Every other
+// file (kc also reads the files under ~/.kube) stands alone.
 func (m *Manager) buildContextsAndClusters() error {
 	m.contexts = make([]*Context, 0)
 	m.clusters = make([]*Cluster, 0)
 
-	for _, kubeconfig := range m.kubeconfigs {
+	merged, err := m.envSource()
+	if err != nil {
+		return err
+	}
+	for i, kubeconfig := range m.kubeconfigs {
+		source := &Source{Path: kubeconfig.Path, Config: kubeconfig.Config}
+		if i < m.fromEnv {
+			source = merged
+		}
 		// Build contexts
 		for contextName, context := range kubeconfig.Config.Contexts {
+			if i < m.fromEnv && merged.Config.Contexts[contextName] != context {
+				// An earlier file of $KUBECONFIG defines this name.
+				continue
+			}
 			ctx := &Context{
 				Name:       contextName,
 				Cluster:    context.Cluster,
 				Namespace:  context.Namespace,
 				User:       context.AuthInfo,
 				Kubeconfig: kubeconfig,
+				Source:     source,
 			}
 			m.contexts = append(m.contexts, ctx)
 		}
@@ -284,6 +365,38 @@ func (m *Manager) buildContextsAndClusters() error {
 	}
 
 	return nil
+}
+
+// envSource merges the files of $KUBECONFIG. With one file, it is that
+// file as loaded.
+func (m *Manager) envSource() (*Source, error) {
+	switch m.fromEnv {
+	case 0:
+		return nil, nil
+	case 1:
+		kc := m.kubeconfigs[0]
+		return &Source{Path: kc.Path, Config: kc.Config}, nil
+	}
+	paths := make([]string, 0, m.fromEnv)
+	for _, kc := range m.kubeconfigs[:m.fromEnv] {
+		paths = append(paths, kc.Path)
+	}
+	path := strings.Join(paths, string(os.PathListSeparator))
+	merged, err := LoadingRules(path).Load()
+	if err != nil {
+		return nil, fmt.Errorf("merging kubeconfigs %s: %w", path, err)
+	}
+	// The merged contexts are the loaded entries of the files, so that a
+	// context can be matched to the file it came from.
+	merged.Contexts = make(map[string]*api.Context)
+	for _, kc := range m.kubeconfigs[:m.fromEnv] {
+		for name, c := range kc.Config.Contexts {
+			if _, ok := merged.Contexts[name]; !ok {
+				merged.Contexts[name] = c
+			}
+		}
+	}
+	return &Source{Path: path, Config: merged}, nil
 }
 
 // GetKubeconfigs returns all discovered kubeconfigs
@@ -369,7 +482,7 @@ func (m *Manager) GetNamespacesForContext(ctx *Context) ([]string, error) {
 func (m *Manager) CreateClient(ctx *Context) (client.Client, error) {
 	// Create client config
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: ctx.Kubeconfig.Path},
+		LoadingRules(ctx.LoadPath()),
 		&clientcmd.ConfigOverrides{
 			CurrentContext: ctx.Name,
 		},
@@ -413,7 +526,7 @@ func (m *Manager) CreateClientForKubeconfig(kubeconfig *Kubeconfig) (client.Clie
 func (m *Manager) CreateClientConfig(ctx *Context) (*rest.Config, error) {
 	// Create client config
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: ctx.Kubeconfig.Path},
+		LoadingRules(ctx.LoadPath()),
 		&clientcmd.ConfigOverrides{
 			CurrentContext: ctx.Name,
 		},

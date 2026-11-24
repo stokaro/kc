@@ -247,7 +247,7 @@ func (a *App) compareWithContext(left setSide, target *kubeconfig.Context) tea.C
 	}
 	cur := a.currentClusterKey()
 	key := kccluster.Key{
-		KubeconfigPath:       target.Kubeconfig.Path,
+		KubeconfigPath:       target.LoadPath(),
 		ContextName:          target.Name,
 		ImpersonateUser:      cur.ImpersonateUser,
 		ImpersonateUID:       cur.ImpersonateUID,

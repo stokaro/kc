@@ -240,15 +240,18 @@ func TestSwitchedContextReachesEverySubprocess(t *testing.T) {
 			t.Run("F4 kubectl edit", func(t *testing.T) {
 				cmd, line := kubectlEditCommand(app.execContext("team"), "pods.v1./web")
 				gotKubeconfig, args := runOutput(t, cmd)
-				want := []string{"edit", "pods.v1./web", "--kubeconfig", e.pathB, "--context", "ctx-b", "--namespace", "team",
+				// The contexts come from KUBECONFIG=a:b, which kubectl merges;
+				// --kubeconfig takes one file, so the list goes in the
+				// environment.
+				want := []string{"edit", "pods.v1./web", "--context", "ctx-b", "--namespace", "team",
 					"--as", "alice", "--as-uid", "uid-1", "--as-group", "dev", "--as-group", "ops"}
 				if !slices.Equal(args, want) {
 					t.Fatalf("kubectl argv = %q, want %q", args, want)
 				}
-				if gotKubeconfig != e.pathB {
-					t.Fatalf("kubectl KUBECONFIG = %q, want %q", gotKubeconfig, e.pathB)
+				if list := e.pathA + string(os.PathListSeparator) + e.pathB; gotKubeconfig != list {
+					t.Fatalf("kubectl KUBECONFIG = %q, want %q", gotKubeconfig, list)
 				}
-				if !strings.HasPrefix(line, "kubectl edit pods.v1./web --kubeconfig ") || !strings.Contains(line, "--as-group ops") {
+				if !strings.HasPrefix(line, "kubectl edit pods.v1./web --context ctx-b ") || !strings.Contains(line, "--as-group ops") {
 					t.Fatalf("shown command = %q", line)
 				}
 			})

@@ -133,6 +133,21 @@ func TestUsagePollerPausesWhileADialogIsOpen(t *testing.T) {
 		if got := f.polls.Load(); got != 1 {
 			t.Fatalf("polls after resume = %d, want 1", got)
 		}
+
+		// A dialog that stays open past the idle window: the running
+		// poller's last snapshot is still the newest there is, not
+		// "loading" (the Info panel beside a drain dialog said so).
+		activity.Pause()
+		for range 4 {
+			time.Sleep(usagePollInterval)
+			synctest.Wait()
+			if snap, fresh := m.snapshot(deps, usageNodes, "", watcher, nil); snap == nil || !fresh {
+				t.Fatalf("snapshot behind a dialog = %+v fresh=%v, want the last one, usable", snap, fresh)
+			}
+		}
+		if got := f.polls.Load(); got != 1 {
+			t.Fatalf("polls behind the dialog = %d, want still 1", got)
+		}
 	})
 }
 

@@ -58,7 +58,10 @@ the copy button at its right copies it.
   and First Seen sort by the Event's own times, most recent first, and
   count on with the clock; the wide Name column sorts by name.
 - `M-f` filters rows; `C-z` keeps only rows in a fault state.
-- `C-w` switches the columns between normal and wide.
+- `C-w` switches the columns of this panel between normal and wide: the
+  wide mode adds the columns of `kubectl get -o wide`. In the normal mode
+  a pod's Restarts shows the count only; the wide mode adds the time of
+  the last restart, as in `8 (5m58s ago)`.
 - `C-r` reads the list again ("Reread" in the Left and Right menus).
 - `Ins` or `C-t` marks the row, `*` inverts the marks, `C-a` marks all.
   `+` (Select group) and `-` (Unselect group) ask for a shell pattern and
