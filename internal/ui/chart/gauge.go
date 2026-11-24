@@ -159,8 +159,8 @@ func (gg gaugeGeom) drawMark(p *painter, x float64, above bool, col color.RGBA) 
 		tip := float64(gg.w)
 		size := (gg.reachBottom - gg.reachTop) / 2
 		mid := (gg.reachTop + gg.reachBottom) / 2
-		p.triangle(vertex{tip - size*1.1, mid - size}, vertex{tip - size*1.1, mid + size}, vertex{tip, mid}, TrackColor, 1, 1.5*gg.ratio)
-		p.triangle(vertex{tip - size*1.1, mid - size}, vertex{tip - size*1.1, mid + size}, vertex{tip, mid}, col, 1, 0)
+		p.triangle(vertex{x: tip - size*1.1, y: mid - size}, vertex{x: tip - size*1.1, y: mid + size}, vertex{x: tip, y: mid}, TrackColor, 1, 1.5*gg.ratio)
+		p.triangle(vertex{x: tip - size*1.1, y: mid - size}, vertex{x: tip - size*1.1, y: mid + size}, vertex{x: tip, y: mid}, col, 1, 0)
 		return
 	}
 	outline := math.Max(1, math.Round(gg.ratio))

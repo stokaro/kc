@@ -98,9 +98,9 @@ func (s Spark) runs(g geom, x0, x1 float64) [][]vertex {
 			if pt.At.Sub(prev.At) <= s.Gap && len(run) == 0 {
 				// Cut the segment from the sample before the range at
 				// the start of the range.
-				a, b := vertex{x(prev.At), g.y(math.Min(prev.V, s.Top))}, vertex{x(pt.At), g.y(math.Min(pt.V, s.Top))}
+				a, b := vertex{x: x(prev.At), y: g.y(math.Min(prev.V, s.Top))}, vertex{x: x(pt.At), y: g.y(math.Min(pt.V, s.Top))}
 				f := (x0 - a.x) / (b.x - a.x)
-				run = append(run, vertex{x0, a.y + (b.y-a.y)*f})
+				run = append(run, vertex{x: x0, y: a.y + (b.y-a.y)*f})
 				last = prev.At
 			}
 			prev = nil
@@ -108,7 +108,7 @@ func (s Spark) runs(g geom, x0, x1 float64) [][]vertex {
 		if len(run) > 0 && pt.At.Sub(last) > s.Gap {
 			out, run = append(out, run), nil
 		}
-		run = append(run, vertex{x(pt.At), g.y(math.Max(0, math.Min(pt.V, s.Top)))})
+		run = append(run, vertex{x: x(pt.At), y: g.y(math.Max(0, math.Min(pt.V, s.Top)))})
 		last = pt.At
 	}
 	if len(run) > 0 {
