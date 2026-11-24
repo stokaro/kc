@@ -115,7 +115,7 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 - Keep configuration defaults in sync across:
   - Code: `pkg/appconfig.Default()`
   - Documentation sample: `config-default.yaml` in the repo root
-  - README “Configuration” section
+  - `docs/configuration.md` (the user documentation of the settings)
 - A unit test (`pkg/appconfig/defaults_test.go`) loads `config-default.yaml` and compares it with `Default()`. Update both when changing defaults; do not let them drift.
 
 ## Documentation Scope

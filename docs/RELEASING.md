@@ -103,6 +103,6 @@ HOMEBREW_TAP_GITHUB_TOKEN=<tap token> \
   goreleaser release --clean
 ```
 
-Outside GitHub Actions, cosign asks for an interactive Sigstore login to sign the checksum file. The certificate then names that account instead of the workflow, so the `cosign verify-blob` command in the README does not accept it. Prefer re-running the workflow.
+Outside GitHub Actions, cosign asks for an interactive Sigstore login to sign the checksum file. The certificate then names that account instead of the workflow, so the `cosign verify-blob` command in [Installing kc](install.md) does not accept it. Prefer re-running the workflow.
 
 Keep this document up to date whenever the release process changes.

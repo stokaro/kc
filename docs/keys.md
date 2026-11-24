@@ -1,0 +1,79 @@
+# Key bindings
+
+The keys of the panels and viewers. `F1` in kc opens the help page of what has focus, and every dialog lists its own keys.
+
+| Key        | Action                                                                          |
+|------------|---------------------------------------------------------------------------------|
+| `F1`       | Help for what has focus: the dialog on top, the panel mode, or the folder or row under the cursor. See [Help](features.md#help). |
+| `F2`       | User menu – the custom commands menu, as in mc. In viewers and in a Logs panel: the options dialog. |
+| `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, a file in a container or local panel, etc. In a Logs panel: show its stream full screen, from the lines it has. Closes the viewer again. `Enter` on a row that cannot be entered (a `logs` row, a key, a file) does the same. |
+| `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object. In a local panel (`M-l`) it opens the file in `$KUBE_EDITOR`, `$EDITOR` or `vi`, the editor `kubectl edit` uses, and the editor saves it in place. |
+| `F5`       | Copy – download the current YAML/log/file to the local filesystem. Between a container folder and a local panel (`M-l`), copy the marked files and directories in either direction. |
+| `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
+| `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. In `/port-forwards` it stops the selected forward, also in read-only mode (the forward runs in kc). |
+| `F9`       | Menu bar – Left, File, Command, Options, Right, as in mc (see [Menu Bar](features.md#menu-bar)).            |
+| `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
+| `M-F1`, `M-F2` | Panel options of the left or right panel: sort order, columns, non-empty only, width. |
+| `Tab`      | Switch panels.                                                                  |
+| `C-o`      | Toggle the integrated terminal.                                                 |
+| `Ins`, `C-t` | Mark the row under the cursor and move down, as in mc. `C-a` marks every row. |
+| `+`, `-`   | Select group and Unselect group, as in mc: a dialog asks for a shell pattern (`*`, `?`, `[a-z]`, matched against the whole name, case ignored) and marks or unmarks the rows whose name matches. |
+| `*`        | Invert the marks of the list. `+`, `-` and `*` go to the shell line while it holds typed text. |
+| `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). Text typed while the list is still loading is kept and applied when the rows arrive. `M-s` and `Esc s` do the same. |
+| `C-r`      | Reread the active panel, as in mc (Left/Right menu: Reread). A list reads its folder again: a local or container directory lists again, a list of resource types runs API discovery again (a new CRD shows at once), and an object list reads the shared cache at once, starting no new watch; the cursor stays on its row (or moves to the next one when the row is gone), marks stay on the rows still listed, and the filter and sort stay. Describe and Manifest read the object again, Info reads now. A Logs panel keeps its stream and its lines. In the `F3` viewer `C-r` reads the file or object again and keeps the scroll position; a large file shown in pages is opened again (so a file an editor replaced shows its new content), its cached blocks are dropped and the position stays, moved up when the file got shorter. In the full-screen terminal (`C-o`) `C-r` stays with the shell. |
+| `M-f`      | Filter the rows of an object list (see [Filtering Rows](features.md#filtering-rows)). `Esc f` does the same. |
+| `C-z`      | Show only the rows in a fault state, or all rows again (object lists).         |
+| `M-p`      | Port forward the selected pod, container or service (see [Port Forwarding](features.md#port-forwarding)). `Esc p` does the same. |
+| `C-\`      | Hotlist, as in mc: saved panel locations with their context and namespace. `Enter` goes to the highlighted entry, `Ins` adds the active panel's location, `F2` saves it as a named view (see [Saved Views](features.md#saved-views)), `F4` stores the current settings in the highlighted view, `F6` renames, `Del` (or `F8`) removes the entry. Typing filters the list. Saved in `~/.kc/hotlist.yaml`. |
+| `M-y`      | Go back in the active panel's history of visited locations (`Esc y` does the same). |
+| `M-u`      | Go forward in that history (`Esc u`).                                           |
+| `M-H`      | List the active panel's history, newest first; `Enter` goes there (`Esc H`).   |
+| `M-o`      | Sort the object list by the next column, ascending. `Esc o` does the same. The sorted column has `↑` (ascending) or `↓` (descending) after its title. |
+| `M-r`      | Reverse the sort of the object list. `Esc r` does the same. The panel options (`M-F1`, `M-F2`) set the column ("Sort by") and the direction ("Reverse") too. |
+| `M-a`      | In viewers: copy the whole content. In the logs viewer: copy the shown lines.   |
+| `M-A`      | In the logs viewer: copy the original records that pass the filter, unchanged.  |
+| `M-v`      | In the logs viewer: switch between the formatted and the raw view.              |
+| `M-g`      | In the logs viewer: open the filter dialog.                                     |
+| `M-d`      | In the logs viewer: the fields of the line in focus (exact filters, follow a request, copy, trace URL, context). |
+| `M-z`      | In the logs viewer: return to the filter and the line before the last `M-d` action. |
+| `e`, `E`, `m`, `u`, `U`, `c` | In the logs viewer: next and previous warning or error (JSON level), mark a line, next and previous mark, copy the marked lines. See [Logs viewer](../internal/help/topics/logs-viewer.md). |
+| `M-s`      | In a merged logs viewer: open the sources dialog (states, source filter, stream limit, retry). |
+| `M-m`      | In a merged logs viewer: show only the source of the line in focus; again to show every source. The other sources keep streaming. |
+| `M-l`      | Open a local directory in the active panel, or leave it again. `Esc l` does the same. |
+| `M-c`      | Copy the kubectl command shown above the shell line (the command that lists the active panel; on an overview finding, all of its input commands). `Esc c` does the same where Option does not act as Meta. Locally kc uses pbcopy, wl-copy, xclip or xsel; over SSH it sends OSC 52 (allow clipboard access in your terminal); inside tmux it also fills the tmux buffer. |
+| `M-n`      | In the node list: cordon, uncordon or drain the marked nodes (see [Node Actions](features.md#node-actions)). `Esc n` does the same. |
+| `M-j`      | Owners: opens `<object>/owners` with the owner references of the selected object, the controller first with the cursor on it. Owners that no longer exist or whose kind the cluster does not serve are listed dim with the reason. The Flux Kustomization, HelmRelease or Argo CD Application the object's labels name is listed too, checked against its inventory. `Esc j` does the same. |
+| `M-b`      | Used by: opens `<object>/used-by` with the objects that use the selected one, read from the watch cache: pods using a ConfigMap, Secret, PersistentVolumeClaim or ServiceAccount (volumes, env, envFrom, imagePullSecrets, serviceAccountName) with the controllers that run them (ReplicaSet, Deployment, Job and so on, once each) and the workloads whose pod template names it, also scaled to zero, Services selecting a Pod, Ingresses routing to a Service, the claim bound to a PersistentVolume. `Esc b` does the same. |
+| `M-d`      | Requires: opens `<object>/requires` with the objects the selected one names in its spec: for a Pod its ConfigMaps, Secrets, PersistentVolumeClaims, ServiceAccount and the Node it runs on; for a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob the same from its pod template; for a PersistentVolumeClaim its volume. Targets that do not exist are listed dim with the reason. `Esc d` does the same; the File menu calls it Requires. |
+| `C-x C-d`  | Compare the objects under the cursors of the two panels, as mc's "Compare files". Opens a read-only unified diff of the two YAML manifests. One side can be a local YAML file, such as rendered desired state; see [Compare objects](../internal/help/topics/compare-objects.md). |
+| `C-x d`    | Compare what the two panels show, as mc's "Compare directories": the marked rows, else the rows a filter keeps, else the whole lists (a panel without marks or filter contributes the counterparts of the other side's rows). The same resource and API version on both sides, matched by name (by namespace and name when both list all namespaces; two different namespaces pair with each other). Lists each object as changed, only left, only right, unavailable or equal, and names what each side evaluated; Enter on a pair opens its diff. Read-only. See [Compare lists](../internal/help/topics/compare-lists.md). |
+| `C-x a`    | Compare the whole lists of the two panels, ignoring filters and marks. |
+| `C-x c`    | Compare what the active panel shows (marked rows, else filtered rows, else the whole list) with their counterparts in another kubeconfig context, picked from a list. kc connects to that context for the read and does not switch to it; neither panel shows it. The Command menu has the whole-list variant. |
+| `C-x p`    | Pin the Describe, Manifest, Logs or Info panel (the active one, else the other) to what it shows, or unpin it. See [Pin, freeze and the investigation window](features.md#pin-freeze-and-the-investigation-window). |
+| `C-x f`    | Freeze the display of that panel at the current time, or return it to live data. |
+| `C-x w`    | Set the investigation window the Logs and Info panels and the dashboard use. |
+| `C-x g`    | Open the full-screen dashboard: CPU and memory over time of the scope, node, workload or pod under the cursor, with the requests and limits each time had. |
+| `C-x n`    | Explain whether NetworkPolicies let the pod under the active panel's cursor reach the pod under the other panel's cursor, per port, with the policies and rules behind it. See [NetworkPolicy between two pods](../internal/help/topics/network-policy.md). |
+| `C-x m`    | Show which metric sources the context has and set its Prometheus backend. |
+| `M-e`      | Explain: browse the field documentation of the selected object or resource type, read from the cluster's OpenAPI v3 schema for exactly that group and version (CRDs included). See [Field documentation](features.md#field-documentation). `Esc e` does the same. |
+| `M-i`      | Open the [cluster overview](features.md#cluster-overview) in the active panel for the namespace of the list it shows (all namespaces for a list across namespaces). `Esc` and `/..` return to the panel root. `Esc i` does the same. |
+| `M-k`      | Access – show what the current identity may do with the selected object or resource type: allowed, denied or unknown for get, list, watch, create, update, patch, delete and the subresources kc uses (pod logs, exec, port-forward, attach, eviction; scale for workloads), with the reason and the matching `kubectl auth can-i` command (`Enter` copies it, `r` checks again). `Esc k` does the same. |
+| `M-x`      | Shell in the container of the selected container or pod row: `kubectl exec -it` runs `bash`, or `sh` when the image has no bash. On a pod row kc takes the container named by the `kubectl.kubernetes.io/default-container` annotation, else the first one; open the pod's `/containers` folder to pick another. kc hands the terminal to kubectl and comes back when the shell ends. `Esc x` does the same. Enter on a container's `shell` row does the same. |
+| `M-t`      | Attach to the main process of the selected container or pod (`kubectl attach`, with `-i` and `-t` when the container has stdin and a TTY). Keys go to that process, so ending it ends the container. `Esc t` does the same. |
+| `C-c`      | Quit.                                                                           |
+
+Shell and attach run kubectl with the panel's kubeconfig, context and impersonation (`--as`, `--as-group`, `--as-uid`), and print the equivalent kubectl command before the session starts. Ephemeral containers work the same way. When the image has no shell, kc says so; the `/root` row can still browse its files through the podfs debug helper.
+
+Viewers show the kubectl command that prints the same content on their last line; `M-c` or the clipboard button copies it. Drag with the left mouse button to select text; releasing copies the selection, a click or `Esc` clears it.
+
+In every menu and list dialog (the user menu `F2`, node actions, the hotlist and panel history, the context and namespace pickers, the panel and view options, the access view), the mouse wheel moves the selection up or down while the pointer is over the dialog, as in mc. A list longer than its window scrolls to keep the selection in view. The wheel never runs the selected entry or changes an option, and a wheel turned outside the dialog is ignored.
+
+Each panel keeps a history of the last 50 locations ([Panel history](../internal/help/topics/history.md)). `/owners`, `/used-by` and `/requires` list related objects ([Owners, used by and requires](../internal/help/topics/related.md)). Services, pods, workloads, PersistentVolumeClaims, HorizontalPodAutoscalers, Ingresses, HTTPRoutes, Flux Kustomizations and HelmReleases, and Argo CD Applications have a `/diagnosis` row ([Diagnosis](../internal/help/topics/diagnosis.md)), and objects a `/timeline` row ([Object timeline](../internal/help/topics/timeline.md)) and, in a namespace, an `/events` row with the Events about that object, newest first ([Object events](../internal/help/topics/object-events.md)). Deployments have a `/rollout` row with their revisions, pods, template changes and rollout progress ([Deployment rollout](../internal/help/topics/rollout.md)). The compare viewer is described in [Diff viewer](../internal/help/topics/diff-viewer.md).
+
+`F4`, `F8` and `F3` on container logs are grayed out when a SelfSubjectAccessReview for the current context, impersonation and namespace says the action is denied (`F4` needs get and patch, as `kubectl edit` sends a patch). Answers are cached for 30 seconds. An unknown or failed review keeps the key enabled; the API server still decides every request.
+
+Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). In viewers, `F3`, `F10` and `Esc` close the viewer; a lone `Esc` closes it once the Esc timeout expires, so `Esc+<digit>` keeps working. Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
+
+## JSON logs
+
+The logs viewer detects JSON lines and shows them formatted. `M-g` filters by text, regular expression or field, `M-d` acts on the fields of the line in focus, and `M-v` switches to the raw view. See [Log filter and JSON logs](../internal/help/topics/logs-filter.md) and [Log fields](../internal/help/topics/logs-fields.md).
