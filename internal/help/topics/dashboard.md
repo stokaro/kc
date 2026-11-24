@@ -185,7 +185,8 @@ menus, `F1` and dialogs drawn over the charts. While you resize the
 window the plots are text; the images come back a moment after the size
 stops changing.
 
-`charts.graphics` in `~/.kc/config.yaml` decides:
+`charts.graphics` in `~/.kc/config.yaml` decides, here and for the bars
+of [Info mode](mode-info.md):
 
 - `auto` (the default): images when the terminal says it is one of
   those: `LC_TERMINAL=iTerm2` or `TERM_PROGRAM=iTerm.app` with a version

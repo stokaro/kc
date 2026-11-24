@@ -179,7 +179,14 @@ func (p *Panel) Freeze(ctx context.Context, at time.Time, reason string) {
 		return
 	}
 	info := p.widgetFrameInfo(ctx, p.width)
-	content := viewString(p.renderContentFocused(ctx, false))
+	var content string
+	if tv, ok := p.ensureActiveWidget(ctx).(panelcontent.TextViewer); ok {
+		// The widget goes on replacing its images; the still picture
+		// keeps their text.
+		content = viewString(tv.TextView(ctx, panelcontent.Frame{Size: panelcontent.Size{Width: p.width, Height: p.height}}))
+	} else {
+		content = viewString(p.renderContentFocused(ctx, false))
+	}
 	p.freeze = &panelFreeze{at: at, reason: reason, content: content, info: info}
 	p.invalidateRenderCache()
 }

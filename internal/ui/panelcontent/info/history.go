@@ -92,10 +92,12 @@ type usageSample struct {
 
 // sparkView is a rendered history: the sparkline, the line that says what
 // it shows, the time its cells span and the percentage of a full cell.
+// start and end bound the time of those cells.
 type sparkView struct {
 	line, label string
 	span        time.Duration
 	top         float64
+	start, end  time.Time
 }
 
 // render draws the window that ends at now in at most width cells, with
@@ -129,8 +131,12 @@ func (s series) render(now time.Time, width int) (sparkView, bool) {
 	for len(cells) > 0 && cells[0] == pendingCell {
 		cells = cells[1:]
 	}
-	span := historyWindow / time.Duration(n) * time.Duration(len(cells))
-	return sparkView{line: string(cells), label: s.label(now, what, inWindow), span: span, top: top}, true
+	d := historyWindow / time.Duration(n)
+	span := d * time.Duration(len(cells))
+	// The cells are aligned to absolute time (see cells): the last one
+	// ends at the end of the slice now is in.
+	end := time.Unix(0, (now.UnixNano()/int64(d)+1)*int64(d))
+	return sparkView{line: string(cells), label: s.label(now, what, inWindow), span: span, top: top, start: end.Add(-span), end: end}, true
 }
 
 // scaleTops are the tops a sparkline can be scaled to, in percent.

@@ -281,11 +281,13 @@ metricsHistory:
   timeout: 15s
   backends: []
 
-# How the dashboard (C-x g) draws its charts. auto draws the plots as
-# images in terminals known to show Kitty graphics Unicode placeholders:
-# kitty (TERM=xterm-kitty or KITTY_WINDOW_ID) and Ghostty (TERM=xterm-ghostty
-# or TERM_PROGRAM=ghostty); under tmux only when the client is one of those
-# and allow-passthrough is on. text always draws braille or blocks, kitty
-# always draws images. b in the dashboard switches between them.
+# How the dashboard (C-x g) draws its charts and Info mode its bars and
+# history. auto draws images in terminals known to show Kitty graphics
+# Unicode placeholders: iTerm2 3.7 or later (LC_TERMINAL=iTerm2 or
+# TERM_PROGRAM=iTerm.app), kitty (TERM=xterm-kitty or KITTY_WINDOW_ID) and
+# Ghostty (TERM=xterm-ghostty or TERM_PROGRAM=ghostty); under tmux only when
+# the client is one of those and allow-passthrough is on. text always draws
+# text, kitty always draws images. b in the dashboard switches its charts
+# between them.
 charts:
   graphics: auto

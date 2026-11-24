@@ -352,8 +352,15 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 			p.ClearPin()
 		}
 	}
+	var cmds []tea.Cmd
 	if current := p.ensureActiveWidget(ctx); current != nil && p.mode != mode {
 		current.SetFocus(ctx, false)
+		// Images of the mode it leaves stay on the terminal until deleted.
+		if owner, ok := current.(panelcontent.ImageOwner); ok {
+			if seq := owner.ReleaseImages(); seq != "" {
+				cmds = append(cmds, tea.Raw(seq))
+			}
+		}
 	}
 	if p.mode != mode {
 		p.invalidateRenderCache()
@@ -361,10 +368,9 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 	p.mode = mode
 	w := p.ensureActiveWidget(ctx)
 	if w == nil {
-		return nil
+		return tea.Batch(cmds...)
 	}
 	w.SetFocus(ctx, true)
-	var cmds []tea.Cmd
 	if sizeCmd := p.forwardSizeToWidget(ctx, panelcontent.Size{Width: p.width, Height: p.height}); sizeCmd != nil {
 		cmds = append(cmds, sizeCmd)
 	}

@@ -12,6 +12,7 @@ import (
 
 	models "github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/ui/dashboard"
+	"github.com/stokaro/kc/internal/ui/kittygfx"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	"github.com/stokaro/kc/internal/ui/viewer"
 	"github.com/stokaro/kc/internal/workloadaction"
@@ -90,6 +91,12 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, tea.Batch(append(cmds, cmd)...)
 	}
 	viewWasValid := a.mainViewCache.valid
+
+	// A cell size report or the return of a transmit goes to every owner
+	// of images, whatever covers the screen.
+	if kittygfx.IsMsg(msg) {
+		return a, tea.Batch(append(cmds, a.routeImageMsg(msg))...)
+	}
 
 	// An open dashboard owns the keyboard and the screen; a message of a
 	// closed one is dropped.
