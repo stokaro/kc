@@ -7,15 +7,18 @@
 # Usage: docs/demo/record.sh [all|up|seed|record|gif|down]
 #
 # Environment:
-#   KC_DEMO_SSH          optional ssh destination of a Linux Docker host; kind then
-#                        runs there and the API server is reached through an ssh tunnel
-#   KC_DEMO_REMOTE_KIND  local path of a Linux kind binary to upload when the
-#                        remote host has no kind on PATH
+#   KC_DEMO_SSH          optional ssh destination of a Docker host (Linux or macOS);
+#                        kind then runs there and the API server is reached through
+#                        an ssh tunnel
+#   KC_DEMO_REMOTE_KIND  local path of a kind binary for that host's OS and CPU, to
+#                        upload when the remote host has no kind on PATH
 #   KC_DEMO_PORT         API server port on 127.0.0.1 (default 39158)
 #   KC_DEMO_WORK         work directory (default ${TMPDIR:-/tmp}/kc-demo)
 #   KC_DEMO_LOCAL        local directory kc starts in; the copy scene writes there
 #                        and the GIF shows its path (default /tmp/kc-demo-downloads)
 #   KC_DEMO_OUT          output GIF (default docs/demo.gif)
+#   KC_DEMO_DASH_WAIT    seconds the dashboard collects samples before its
+#                        first frame (default 240)
 #   KC_DEMO_SCENES       scenes to record, in order (default: all, see SCENES);
 #                        each scene starts where the one before it ends
 set -euo pipefail
@@ -28,6 +31,7 @@ OUT=${KC_DEMO_OUT:-$REPO/docs/demo.gif}
 LOCAL=${KC_DEMO_LOCAL:-/tmp/kc-demo-downloads}
 SSH_DEST=${KC_DEMO_SSH:-}
 REMOTE_KIND=${KC_DEMO_REMOTE_KIND:-}
+DASH_WAIT=${KC_DEMO_DASH_WAIT:-240}
 COLS=120
 ROWS=34
 LIB_TAG=demo
@@ -38,12 +42,22 @@ cmd_up() { cluster_up; }
 
 cmd_seed() {
 	start_tunnel
-	# Server-side apply leaves no last-applied annotation in the YAML scene.
+	# Server-side apply leaves no last-applied annotation in the manifests
+	# kc shows.
 	kk kubectl apply --server-side -f "$REPO/docs/demo/seed.yaml"
 	seed_metrics_server
-	kk kubectl -n shop rollout status deploy/web --timeout=180s
-	kk kubectl -n shop rollout status deploy/api --timeout=180s
-	kk kubectl -n batch rollout status deploy/worker --timeout=180s
+	local d
+	for d in shop/web shop/api shop/loadgen batch/worker; do
+		kk kubectl -n "${d%/*}" rollout status "deploy/${d#*/}" --timeout=180s
+	done
+	# Info and the dashboard need metrics; the first ones take about a
+	# minute after metrics-server starts.
+	local n=0
+	until kk kubectl -n shop top pods >/dev/null 2>&1; do
+		n=$((n + 1))
+		[ $n -lt 60 ] || die "metrics-server serves no pod metrics"
+		sleep 5
+	done
 }
 
 cmd_down() {
@@ -54,13 +68,28 @@ cmd_down() {
 FRAMES=$WORK/frames
 frame_no=0
 
-# snap takes a frame and shows it for the given number of seconds.
+# snap takes a frame and shows it for the given number of seconds. It
+# waits until the Kitty images on the screen stop changing, so an Info bar
+# is not caught as text while its image is on its way.
 snap() {
 	local seconds=$1 name
 	frame_no=$((frame_no + 1))
 	name=$(printf 'f%04d.png' "$frame_no")
+	settle_images
 	write_png "$FRAMES/$name"
 	printf "file '%s'\nduration %s\n" "$name" "$seconds" >>"$FRAMES/list.txt"
+}
+
+# kc_config prints the settings kc records with. The dashboard draws its
+# charts, and Info its bars and history, as Kitty graphics images, as in
+# iTerm2 3.7, kitty and Ghostty; the driver's color snapshots show them.
+# With auto kc would draw text, since the driver hides the outer terminal
+# from it.
+kc_config() {
+	cat <<'EOF'
+charts:
+  graphics: kitty
+EOF
 }
 
 # hotlist prints the saved views of the hotlist scene, in the format kc
@@ -110,10 +139,11 @@ cmd_record() {
 	done
 	rm -rf "$LOCAL"
 	mkdir -p "$LOCAL"
-	# kc starts without saved settings, history or bookmarks, apart from the
-	# saved views the hotlist scene opens.
+	# kc starts without saved settings, history or bookmarks, apart from
+	# kc_config and the saved views the hotlist scene opens.
 	rm -rf "$WORK/home/.kc"
 	mkdir -p "$WORK/home/.kc"
+	kc_config >"$WORK/home/.kc/config.yaml"
 	hotlist >"$WORK/home/.kc/hotlist.yaml"
 	start_kc --context "$CONTEXT" -n shop
 
@@ -129,9 +159,11 @@ cmd_gif() {
 	cp "$FRAMES/list.txt" "$FRAMES/concat.txt"
 	grep '^file' "$FRAMES/list.txt" | tail -1 >>"$FRAMES/concat.txt"
 	# One GIF frame per snapshot with its own delay; a shared palette without
-	# dithering keeps the terminal colors flat and the file small.
+	# dithering keeps the terminal colors flat and the file small. With 64
+	# colors the greens of the chart and gauge images, a small share of the
+	# pixels, came out olive; 128 keep them.
 	ffmpeg -loglevel error -y -f concat -safe 0 -i "$FRAMES/concat.txt" \
-		-vf "split[a][b];[a]palettegen=max_colors=64:stats_mode=full[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
+		-vf "split[a][b];[a]palettegen=max_colors=128:stats_mode=full[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
 		-fps_mode vfr -loop 0 "$OUT"
 	log "wrote $OUT ($(wc -c <"$OUT" | tr -d ' ') bytes)"
 }
@@ -167,6 +199,61 @@ scene_intro() {
 	wait_for "shop/web-" 90
 	sleep 2
 	snap 3.5
+}
+
+# select_workload moves the selection of the dashboard's list to the
+# Deployment named. The list sorts by usage, so the row is found by what
+# the screen says, not by its position.
+select_workload() {
+	local i
+	for i in 1 2 3 4 5 6; do
+		key up
+	done
+	for i in 1 2 3 4 5 6; do
+		sleep 0.5
+		shows "Pods of Deployment $1 (Enter to open)" && return 0
+		key down
+	done
+	die "the dashboard list did not select Deployment $1"
+}
+
+scene_dashboard() {
+	caption "C-x g: a full-screen dashboard of CPU, memory and Events"
+	key ctrl+x
+	key g
+	wait_for "namespace shop  LIVE" 30
+	# + zooms the session history to its shortest range, 5 minutes.
+	key +
+	wait_for "last 5 minutes"
+	# kc draws the Metrics API samples it reads while a dashboard is
+	# open, one every 15 seconds. Halfway, a restart of loadgen puts a
+	# rollout on the Events lane and new pods on the charts.
+	log "collecting dashboard samples for ${DASH_WAIT}s"
+	sleep $((DASH_WAIT / 2))
+	kk kubectl -n shop rollout restart deploy/loadgen >/dev/null
+	sleep $((DASH_WAIT - DASH_WAIT / 2))
+	wait_for_images 2
+	snap 4
+	# A drilldown starts with the history of its row, which the
+	# namespace read along.
+	select_workload loadgen
+	key enter
+	wait_for "› Deployment loadgen  LIVE"
+	wait_for_images 2
+	caption "Enter opens a workload, with the history read so far"
+	snap $FIRST
+	# A click on the state at the right end of the top row opens the
+	# Range menu under it.
+	bh "mouse 0 $((COLS - 6)) 0 press"
+	bh "mouse 0 $((COLS - 6)) 0 release"
+	wait_for "Last 15 minutes"
+	caption "A click on the state at the top right picks the range"
+	snap $READ
+	# Esc closes the menu, F10 the dashboard; the panels are as they were.
+	key esc
+	sleep 1.2
+	key f10
+	wait_for "/other types"
 }
 
 scene_search() {
@@ -209,7 +296,7 @@ scene_overview() {
 
 scene_diagnosis() {
 	caption "/diagnosis explains why a Deployment is broken"
-	shell_line "cd deploy/checkout" $FIRST
+	shell_line "cd deploy/checkout"
 	wait_for "/deployments/checkout "
 	wait_for "/diagnosis"
 	enter /diag "/deployments/checkout/diagnosis "
@@ -228,7 +315,7 @@ scene_diagnosis() {
 	wait_for "cannot pull its image"
 	snap $READ
 	caption "... and why a Service has no endpoints"
-	shell_line "cd svc/payments" $FIRST
+	shell_line "cd svc/payments"
 	wait_for "/services/payments "
 	enter /diag "/services/payments/diagnosis "
 	search " error"
@@ -237,36 +324,13 @@ scene_diagnosis() {
 	narrow
 }
 
-scene_help() {
-	caption "F1 opens the help page of what is in focus: here /diagnosis"
-	key f1
-	wait_for "How to read it"
-	sleep 0.5
-	snap $FIRST
-	key f10
-	sleep 0.5
-	key ctrl+x
-	key w
-	wait_for "15m or 2h (live)"
-	key f1
-	wait_for "What the field accepts"
-	sleep 0.5
-	caption "In a dialog it explains the dialog: the investigation window (C-x w)"
-	snap $FIRST
-	# F10 closes the help, then a single Esc the dialog; Esc needs its
-	# one-second timeout before the next key.
-	key f10
-	sleep 0.5
-	key esc
-	sleep 1.2
-}
-
 scene_menu() {
 	caption "F9 opens the menu bar, as in mc; each entry shows its key"
-	# F9 starts on the Left menu; File is the next one.
+	# F9 highlights the title of the menu that was open last, which
+	# depends on the scenes before; the highlighted letter of a title
+	# drops that menu down.
 	key f9
-	key right
-	key down
+	key f
 	wait_for "Quick search"
 	sleep 0.3
 	snap $FIRST
@@ -290,30 +354,29 @@ scene_menu() {
 
 scene_scale() {
 	caption "/timeline records every change kc observes on an object"
-	shell_line "cd deploy/web" $FIRST
+	shell_line "cd deploy/web"
 	wait_for "/deployments/web "
 	enter /tim "/deployments/web/timeline "
 	wait_for "│initial "
 	sleep 0.5
-	snap $STEP
+	snap $READ
 	key home
 	key enter
 	wait_for " Scale"
 	caption "Scale... asks first; the pods on the right follow live"
 	enter " Scale" "Scale Deployment"
-	snap $FIRST
 	key backspace
 	typetext 4
 	sleep 0.3
-	snap $TYPE
+	snap $FIRST
 	key enter
 	wait_for "Replicas:    2 -> 4"
 	snap $READ
 	key left
 	key enter
 	local i
-	for i in 1 2 3 4; do
-		sleep 0.4
+	for i in 1 2 3; do
+		sleep 0.5
 		snap $ANIM
 	done
 	sleep 1
@@ -344,51 +407,13 @@ scene_scale() {
 	key f3
 	wait_for "/deployments/web/timeline "
 	narrow
-}
-
-scene_yaml() {
-	caption "F3 views any object; this is the YAML of the Deployment"
+	# Up to the Deployments, where the logs scene starts.
 	key home
 	key enter
 	wait_for "/deployments/web "
 	key home
 	key enter
 	wait_for "/deployments "
-	search /web
-	key f3
-	wait_for "kind: Deployment"
-	sleep 0.5
-	snap $FIRST
-	key f3
-	wait_for "/deployments "
-}
-
-scene_compare() {
-	caption "C-x C-d compares the objects under the two cursors"
-	# The right panel lists the Deployments too, with api under its cursor;
-	# web is under the left one.
-	key tab
-	typetext "cd deployments"
-	key enter
-	# Both panels list the same rows now, so there is no text to wait for.
-	sleep 2
-	search /api
-	key tab
-	key ctrl+x
-	key ctrl+d
-	# "Reading both manifests..." took 30 to 40 seconds in the recordings.
-	wait_for "+++ right/" 90
-	sleep 0.5
-	snap $FIRST
-	key f3
-	wait_for "/deployments "
-	# Back to the pods on the right for the later scenes.
-	key tab
-	typetext "cd pods"
-	key enter
-	wait_for "/web-"
-	key tab
-	sleep 0.5
 }
 
 scene_logs() {
@@ -445,7 +470,6 @@ scene_files() {
 	snap $READ
 	key enter
 	wait_for "Copy finished"
-	snap $READ
 	key enter
 	wait_for " nginx.conf"
 	snap $STEP
@@ -455,7 +479,7 @@ scene_drain() {
 	caption "Node actions (M-n): drain a node with progress, then uncordon"
 	# The left panel goes to the nodes; the right one keeps the pods, which
 	# go Pending while the only worker is drained.
-	shell_line "cd /nodes" $FIRST
+	shell_line "cd /nodes"
 	# Wait for a header only the node table has: the worker's name is on
 	# the screen before the nodes load, in the pods' Node column.
 	wait_for "Roles"
@@ -467,12 +491,19 @@ scene_drain() {
 	key down
 	wait_for "│kc-demo-worker (v1)"
 	node_actions
-	snap $STEP
+	snap $FIRST
 	key down
 	key down
 	key enter
 	wait_for "Ignore DaemonSet pods"
-	snap $READ
+	# loadgen keeps data in an emptyDir, which a drain refuses to delete
+	# unless asked. The focus starts on Drain; two fields up is the box.
+	key up
+	key up
+	key space
+	key down
+	key down
+	wait_for "[x] Delete emptyDir data"
 	key enter
 	wait_for "Drain node?"
 	snap $READ
@@ -491,20 +522,21 @@ scene_drain() {
 		fi
 		sleep 0.2
 	done
-	snap $READ
+	snap $STEP
 	key enter
 	wait_for "SchedulingDisabled"
+	# The evicted pods come back Pending: the control plane is tainted.
+	wait_for "Pending"
 	snap $STEP
-	caption "Uncordon makes the node schedulable again; the pods come back"
 	node_actions
 	key down
 	key enter
 	wait_for "Uncordon node?"
-	snap $FIRST
 	key left
 	key enter
 	sleep 2
-	snap $STEP
+	caption "Uncordon makes the node schedulable again; the pods come back"
+	snap $FIRST
 	# The files scene needs a running web pod again.
 	kk kubectl -n shop rollout status deploy/web --timeout=180s >/dev/null
 }
@@ -551,7 +583,7 @@ scene_terminal() {
 # The scenes in recording order. KC_DEMO_SCENES picks some of them, such as
 # the first few, to check a change quickly; each scene starts where the one
 # before it ends.
-SCENES="intro search overview diagnosis help menu drain scale yaml compare logs files hotlist terminal"
+SCENES="intro dashboard search overview diagnosis menu drain scale logs files hotlist terminal"
 
 scenes() {
 	local s

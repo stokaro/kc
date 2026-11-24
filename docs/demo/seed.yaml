@@ -159,6 +159,58 @@ spec:
       port: 80
       targetPort: http
 ---
+# loadgen burns CPU for 30 seconds, rests for 30 and holds a buffer, so the
+# dashboard has a curve to draw. Its limits put a ceiling over the usage.
+# screenshots/seed.yaml applies the same Deployment for the screenshots.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: shop
+  labels:
+    app: loadgen
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: loadgen
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              trap 'exit 0' TERM
+              mkdir -p /buf
+              while true; do
+                end=$(( $(date +%s) + 30 ))
+                while [ "$(date +%s)" -lt "$end" ]; do :; done
+                head -c 8388608 /dev/zero > /buf/block
+                sleep 30
+                rm -f /buf/block
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 16Mi
+            limits:
+              cpu: 250m
+              memory: 64Mi
+          volumeMounts:
+            - name: buf
+              mountPath: /buf
+      volumes:
+        - name: buf
+          emptyDir:
+            medium: Memory
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
