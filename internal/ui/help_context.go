@@ -39,6 +39,7 @@ var modalHelpPages = map[string]help.ID{
 	diagnosticStopModal:      help.Diagnostics,
 	diagnosticReportModal:    help.Diagnostics,
 	hotlistModalKey:          help.Hotlist,
+	typeCatalogModalKey:      help.ResourceTypes,
 	viewNameModalKey:         help.Hotlist,
 	historyModalKey:          help.History,
 	logsFieldsModalName:      help.LogsFields,
@@ -177,8 +178,13 @@ func rowHelpPage(item models.Item) (help.ID, bool) {
 	case models.ObjectItem:
 		return "", false // an object named "timeline" is just an object
 	}
-	if r, ok := item.(interface{ ID() string }); ok && r.ID() == models.OverviewRowID {
-		return help.Overview, true
+	if r, ok := item.(interface{ ID() string }); ok {
+		switch r.ID() {
+		case models.OverviewRowID:
+			return help.Overview, true
+		case models.OtherTypesRowID:
+			return help.ResourceTypes, true
+		}
 	}
 	p := item.Path()
 	if len(p) == 0 {

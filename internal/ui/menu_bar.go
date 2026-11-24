@@ -94,6 +94,10 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 			a.setActivePanel(idx, "menu context")
 			return a.showContextPicker()
 		}},
+		{Label: "Browse &all types...", Disabled: !list, Run: func() tea.Cmd {
+			a.setActivePanel(idx, "menu all types")
+			return a.showTypeCatalog(idx, false)
+		}},
 	}
 }
 

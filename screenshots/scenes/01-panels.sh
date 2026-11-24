@@ -180,7 +180,7 @@ scene_panels_history() {
 	wait_for "/loadgen"
 	key home
 	key enter
-	wait_for "/servicecidrs"
+	wait_for "/other types"
 	enter /nodes "/nodes "
 	wait_for "Roles"
 	meta H

@@ -64,6 +64,9 @@ type Panel struct {
 	// pin and freeze: docs/adr/0187-pin-freeze-window.md.
 	pin    *panelPin
 	freeze *panelFreeze
+	// typeMark is drawn at the right of the top border inside a resource
+	// type that the type list above leaves out, such as "outside Work".
+	typeMark string
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -1305,6 +1308,13 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 	availableSpace := width - lipgloss.Width(topLeft+topRight)
 	indicatorWidth := lipgloss.Width(topIndicator)
 	availableForLabel := max(0, availableSpace-indicatorWidth)
+	// The mark belongs to the list the path names, so other modes leave it
+	// out.
+	mark := ""
+	if p.mode == PanelModeList {
+		mark = renderTypeMark(p.typeMark, topBorderStyler(border.Top), availableForLabel)
+		availableForLabel -= lipgloss.Width(mark)
+	}
 	title = p.ellipsizeBreadcrumbTitle(labelStyle, title, availableForLabel)
 	renderedLabel := labelStyle.Render(title)
 	labelWidth := lipgloss.Width(renderedLabel)
@@ -1315,7 +1325,7 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 	rightGapWidth := gapWidth - leftGapWidth
 	leftGap := topBorderStyler(strings.Repeat(border.Top, leftGapWidth))
 	rightGap := topBorderStyler(strings.Repeat(border.Top, rightGapWidth))
-	top := topLeft + leftGap + renderedLabel + rightGap + topIndicator + topRight
+	top := topLeft + leftGap + renderedLabel + rightGap + mark + topIndicator + topRight
 
 	bottomView := boxStyle.
 		BorderTop(false).
@@ -1419,18 +1429,48 @@ func (p *Panel) scopeLabels(dash string, offset, room int, status string, tint c
 		scopeRoom = room
 	}
 	out, hits := renderScopeLabel(p.scope, dash, offset, scopeRoom, tint)
-	f, ok := p.RowFilter()
-	if !ok || !f.Active() {
-		return out, hits
-	}
-	label := renderRowFilter(f.Label(), dash, labelRoom(room-lipgloss.Width(out), status))
-	if label != "" {
-		from := offset + lipgloss.Width(out)
-		hits.filterFrom = from + lipgloss.Width(dash)
-		hits.filterTo = from + lipgloss.Width(label)
-		out += label
+	if f, ok := p.RowFilter(); ok && f.Active() {
+		label := renderRowFilter(f.Label(), dash, labelRoom(room-lipgloss.Width(out), status))
+		if label != "" {
+			from := offset + lipgloss.Width(out)
+			hits.filterFrom = from + lipgloss.Width(dash)
+			hits.filterTo = from + lipgloss.Width(label)
+			out += label
+		}
 	}
 	return out, hits
+}
+
+// typeMarkStyle draws the "outside" mark of a type the profile leaves out
+// as text in the namespace color: a solid block would merge with the menu
+// bar right above the top border.
+func typeMarkStyle() lipgloss.Style {
+	pal := uistyles.Current()
+	return lipgloss.NewStyle().Background(pal.Background).Foreground(pal.Namespace).Bold(true)
+}
+
+// renderTypeMark is the type mark at the right end of the top border,
+// followed by one border glyph, in room columns shared with the path. It
+// takes at most half of them and is left out rather than cut: "outside W…"
+// would read as something else.
+func renderTypeMark(mark, dash string, room int) string {
+	if mark == "" {
+		return ""
+	}
+	text := " " + mark + " "
+	if lipgloss.Width(text)+lipgloss.Width(dash) > room/2 {
+		return ""
+	}
+	return typeMarkStyle().Render(text) + dash
+}
+
+// SetTypeMark sets the "outside" mark of the top border; "" removes it.
+func (p *Panel) SetTypeMark(mark string) {
+	if p.typeMark == mark {
+		return
+	}
+	p.typeMark = mark
+	p.invalidateRenderCache()
 }
 
 // minStatusRoom is the room the labels on the left of a bottom border leave

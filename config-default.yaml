@@ -65,6 +65,11 @@ resources:
   order: alpha
   # Favorites are used when order=favorites; leave empty to follow discovery's "all" category.
   favorites: []
+  visibility:
+    # Which resource types the root and the other type lists show:
+    # work (kc's Work list of daily types; the rest is under "Other types")
+    # or all (every discovered type)
+    defaultProfile: work
 
 objects:
   # Object list sort: a column key (name, age, status, restarts, ...) or creation; "-" sorts descending

@@ -21,7 +21,7 @@ type Palette struct {
 	TitleForeground  color.Color // path label of the focused panel
 	TitleBackground  color.Color
 	Context          color.Color // context name in the bottom border
-	Namespace        color.Color // namespace name in the bottom border
+	Namespace        color.Color // namespace name in the bottom border, "outside Work" mark
 }
 
 // DefaultPalette is the Midnight Commander look kc has always had.

@@ -21,6 +21,7 @@ const (
 	ContextNamespace ID = "context-namespace"
 	NamespaceCreate  ID = "namespace-create"
 	Hotlist          ID = "hotlist"
+	ResourceTypes    ID = "resource-types"
 	History          ID = "history"
 	MenuBar          ID = "menu-bar"
 	ReadOnly         ID = "read-only"

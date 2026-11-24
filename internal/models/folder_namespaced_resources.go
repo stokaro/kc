@@ -94,16 +94,18 @@ func namespacedResourceSpecs(f *ResourcesFolder, namespace string, parent []stri
 			style = favoriteStyle
 		}
 		specs = append(specs, resourceGroupSpec{
-			id:        id,
-			cells:     cellsCopy,
-			path:      pathCopy,
-			detail:    detail,
-			style:     style,
-			gvr:       gvr,
-			gvk:       entry.info.GVK,
-			namespace: ns,
-			watchable: count && ns != AllNamespaces,
-			uncounted: !count || ns == AllNamespaces,
+			id:         id,
+			cells:      cellsCopy,
+			path:       pathCopy,
+			detail:     detail,
+			style:      style,
+			gvr:        gvr,
+			gvk:        entry.info.GVK,
+			namespace:  ns,
+			watchable:  count && ns != AllNamespaces,
+			uncounted:  !count || ns == AllNamespaces,
+			namespaced: true,
+			shortNames: slices.Clone(entry.info.ShortNames),
 			enter: func() (Folder, error) {
 				return NewNamespacedObjectsFolder(f.Deps, gvr, ns, pathCopy, verbsCopy), nil
 			},

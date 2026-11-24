@@ -10,7 +10,8 @@ one.
 - Left and Right: the mode of that panel (List, Describe, Manifest,
   Logs, Info, Local files; the current one is checked), Pin target,
   Freeze display, Panel options, Columns normal/wide, the sort, Group by
-  namespace, Filter and Faults only, Namespace... and Context....
+  namespace, Filter and Faults only, Namespace..., Context... and
+  Browse all types... (see [Resource types](resource-types.md)).
 - File: View, Edit, Copy, Create namespace, Delete, Port forward,
   Owners, Used by, Requires, Explain, the marks (Toggle mark, Select
   group, Unselect group, Invert selection, Select all), Quick search,
