@@ -184,15 +184,15 @@ typetext() { bh "text $1"; }
 # snapshots; without text it clears it.
 caption() { bh "caption $*"; }
 
-# screen prints the current screen as plain text.
-screen() {
+# ask sends a driver command and prints what the driver answers.
+ask() {
 	marker_no=$((marker_no + 1))
 	local mark="$LIB_TAG-mark-$marker_no" start
 	start=$(wc -c <"$BH_LOG")
-	bh "screen plain"
+	bh "$1"
 	bh "$mark"
 	# The driver answers an unknown command with its name, which marks the
-	# end of the screen dump.
+	# end of the answer.
 	local i=0 out
 	while :; do
 		out=$(tail -c +"$((start + 1))" "$BH_LOG")
@@ -202,6 +202,32 @@ screen() {
 		sleep 0.05
 	done
 	printf '%s\n' "$out"
+}
+
+# screen prints the current screen as plain text.
+screen() { ask "screen plain"; }
+
+# wait_for_images waits until the screen shows at least the given number of
+# Kitty graphics images (default 1), each sent at the cell size of the
+# snapshot. kc shows a chart as text until its image has been sent, and
+# sizes the image after the driver's answer to its cell size query; a
+# scaled image means kc drew it before the answer.
+wait_for_images() {
+	local want=${1:-1} timeout=${2:-30} start out
+	start=$(date +%s)
+	while :; do
+		out=$(ask images)
+		if printf '%s\n' "$out" | awk -v want="$want" '
+			/image [0-9]+: .*, shown$/ { n++; if (/, scaled,/) scaled++ }
+			END { exit !(n >= want && scaled == 0) }'; then
+			return 0
+		fi
+		if [ $(($(date +%s) - start)) -ge "$timeout" ]; then
+			printf '%s\n' "$out" >&2
+			die "timed out after ${timeout}s waiting for $want images on the screen"
+		fi
+		sleep 0.3
+	done
 }
 
 # wait_for waits until the screen shows the text (a fixed string).

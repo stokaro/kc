@@ -10,7 +10,7 @@
 
 ![](02-service.png)
 
-`/diagnosis` of a pod whose claim names a StorageClass that does not exist.
+`/diagnosis` of a PersistentVolumeClaim that names a StorageClass that does not exist. Enter `/diagnosis` inside the claim.
 
 ![](03-claim.png)
 

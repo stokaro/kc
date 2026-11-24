@@ -194,6 +194,17 @@ entries:
 EOF
 }
 
+# kc_config prints the settings every scene runs with. The dashboard draws
+# its charts as Kitty graphics images, as in iTerm2 3.7, kitty and Ghostty;
+# the driver's color snapshots show them. With auto kc would draw text
+# charts, since the driver hides the outer terminal from it.
+kc_config() {
+	cat <<'EOF'
+charts:
+  graphics: kitty
+EOF
+}
+
 kc_running=
 
 stop_kc_if_running() {
@@ -204,12 +215,14 @@ stop_kc_if_running() {
 }
 
 # fresh starts a new kc session for a scene: without saved settings or
-# history, apart from the hotlist entries, with the arguments given (default:
-# the shop namespace). It waits until API discovery has listed the types.
+# history, apart from kc_config and the hotlist entries, with the arguments
+# given (default: the shop namespace). It waits until API discovery has
+# listed the types.
 fresh() {
 	stop_kc_if_running
 	rm -rf "$WORK/home/.kc"
 	mkdir -p "$WORK/home/.kc"
+	kc_config >"$WORK/home/.kc/config.yaml"
 	hotlist >"$WORK/home/.kc/hotlist.yaml"
 	marker_no=0
 	if [ $# -eq 0 ]; then
