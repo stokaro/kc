@@ -22,6 +22,7 @@ func (a *App) newPanelInfoWidget(p *Panel) PanelWidget {
 	return infowidget.New(p.manifestWidgetDeps(), infowidget.Options{
 		Resolve: func(ctx context.Context) infowidget.Target { return a.infoTarget(ctx, p) },
 		Window:  func() (investigation.Window, *time.Location) { return a.window, time.Local },
+		Images:  a.infoImages(p),
 	})
 }
 

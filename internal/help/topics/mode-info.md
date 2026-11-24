@@ -69,6 +69,35 @@ was at most 10%, and a full cell is 10%. The top is the smallest of 10,
 missed poll or metrics that were not available. `collecting` means one
 sample so far; `stale, last 3m ago` means no recent sample.
 
+## Bars and history as images
+
+In a terminal that shows Kitty graphics (iTerm2 3.7 or later, kitty,
+Ghostty), Info draws the bars and the history as images in the style of
+Grafana, as the dashboard draws its charts:
+
+- Each bar is a bar gauge: a dark rounded track, filled in green, in
+  orange when the bar warns and in red when it fails (the states of the
+  text colors). On CPU and memory a yellow tick marks the requests and
+  a red tick the limits, on the bar's own scale; a value above the
+  scale is a small arrow at the end of the track. A workload bar of
+  usage against its limits has the limit at its end.
+- The history is a sparkline two rows high: a thin line from sample to
+  sample over a fading area, on a dark panel. The scale (`top 10%`) is
+  next to its top row and the span (`5m of 15m`) next to its bottom row.
+
+The percentages, the numbers and the other lines stay text. While the
+panel width changes (`M-w`, a resize of the window) the bars are text;
+the images come back a moment after the width stops changing. A frozen
+panel (`C-x f`) keeps the text. Dialogs and menus cover the images as
+they cover text.
+
+`charts.graphics` decides, as for the dashboard (see
+[Dashboard](dashboard.md)): `text` keeps Info as text, `kitty` draws
+images in a terminal kc does not recognize. The dashboard's `b` key
+does not change Info. If the bars show question marks, boxes or empty
+space, the terminal does not support Unicode placeholders: set
+`charts.graphics: text`.
+
 ## Keys
 
 - `Down`, `Up` select a top pod on screen; `Enter` or a click opens it

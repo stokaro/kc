@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/stokaro/kc/internal/ui/kittygfx"
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
 
@@ -65,7 +66,7 @@ func castShadow(screen, base string, x, y, w, h int) string {
 		}
 		under := ""
 		if row < len(baseLines) {
-			under = ansi.Strip(ansi.Cut(baseLines[row], from, to))
+			under = kittygfx.Blank(ansi.Strip(ansi.Cut(baseLines[row], from, to)))
 		}
 		if pad := to - from - ansi.StringWidth(under); pad > 0 {
 			under += strings.Repeat(" ", pad)

@@ -94,6 +94,10 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 			a.setActivePanel(idx, "menu context")
 			return a.showContextPicker()
 		}},
+		{Label: "Browse &all types...", Disabled: !list, Run: func() tea.Cmd {
+			a.setActivePanel(idx, "menu all types")
+			return a.showTypeCatalog(idx, false)
+		}},
 	}
 }
 
@@ -396,13 +400,17 @@ func (a *App) toggleMenuBarVisible() tea.Cmd {
 // overlayMenuBar draws the open menu bar over the top row of screen and its
 // drop-down, with a shadow, under the selected title. With the visible bar
 // it covers the idle bar; with layout.menuBarVisible off it covers the top
-// panel row while it is open, as mc does with the menu bar hidden.
+// panel row while it is open, as mc does with the menu bar hidden. A
+// drop-down anchored under a cell of the screen's own top row
+// (menubar.Bar.OpenAnchored) leaves that row as it is.
 func (a *App) overlayMenuBar(screen string) string {
 	if !a.menuBar.IsOpen() {
 		return screen
 	}
 	a.menuBar.SetWidth(a.width)
-	screen = overlay.Composite(a.menuBar.RenderBar(a.width), screen, overlay.Left, overlay.Top, 0, 0)
+	if !a.menuBar.Anchored() {
+		screen = overlay.Composite(a.menuBar.RenderBar(a.width), screen, overlay.Left, overlay.Top, 0, 0)
+	}
 	if !a.menuBar.Dropped() {
 		return screen
 	}

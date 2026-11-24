@@ -12,6 +12,7 @@ import (
 
 	models "github.com/stokaro/kc/internal/models"
 	"github.com/stokaro/kc/internal/ui/dashboard"
+	"github.com/stokaro/kc/internal/ui/kittygfx"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	"github.com/stokaro/kc/internal/ui/viewer"
 	"github.com/stokaro/kc/internal/workloadaction"
@@ -90,6 +91,12 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, tea.Batch(append(cmds, cmd)...)
 	}
 	viewWasValid := a.mainViewCache.valid
+
+	// A cell size report or the return of a transmit goes to every owner
+	// of images, whatever covers the screen.
+	if kittygfx.IsMsg(msg) {
+		return a, tea.Batch(append(cmds, a.routeImageMsg(msg))...)
+	}
 
 	// An open dashboard owns the keyboard and the screen; a message of a
 	// closed one is dropped.
@@ -299,6 +306,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 						tableMode = m.TableMode
 					}
 					resMsg := ResourcesOptionsChangedMsg{
+						HasTypes:         m.Resources.HasTypes,
+						TypeProfile:      m.Resources.TypeProfile,
 						ShowNonEmptyOnly: !m.Resources.IncludeEmpty,
 						Order:            m.Resources.Order,
 						TableMode:        tableMode,
@@ -376,6 +385,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 						if m.HasOrder {
 							c.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
 						}
+						if m.HasTypes {
+							c.Resources.Visibility.DefaultProfile = appconfig.NormalizeVisibilityProfile(m.TypeProfile)
+						}
 						c.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
 					}
 					change(a.cfg)
@@ -392,6 +404,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 						if m.HasInclude || m.HasOrder {
 							a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
 						}
+						if m.HasTypes {
+							a.setPanelTypeProfile(a.leftPanel, m.TypeProfile)
+						}
 						a.syncPanelConfig(a.leftPanel)
 						a.applyResourceOptions(a.leftPanel)
 					} else {
@@ -400,6 +415,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 						cancelTable()
 						if m.HasInclude || m.HasOrder {
 							a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+						}
+						if m.HasTypes {
+							a.setPanelTypeProfile(a.rightPanel, m.TypeProfile)
 						}
 						a.syncPanelConfig(a.rightPanel)
 						a.applyResourceOptions(a.rightPanel)
@@ -856,6 +874,8 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, a.handleExecFinished(msg)
 	case models.OpenObjectRequest:
 		return a, a.openLinkedObject(msg.Link)
+	case models.OpenTypeCatalogRequest:
+		return a, a.showTypeCatalog(a.activePanel, msg.OtherOnly)
 	case linkSelectMsg:
 		return a, a.selectLinkedRow(msg)
 	case portForwardPlanMsg, portForwardInputMsg, portForwardStartedMsg:

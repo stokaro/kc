@@ -12,6 +12,13 @@ import (
 // rangeKey is the prefix of the keys the Range menu runs: "range:15m".
 const rangeKey = "range:"
 
+// The keys of the first items of the Range menu, which no key types.
+const (
+	liveKey   = "menu:live"
+	pauseKey  = "menu:pause"
+	followKey = "menu:follow"
+)
+
 // FunctionKey is one slot of the dashboard's F-key bar: F1 is the first.
 // An empty Label is an unused slot.
 type FunctionKey struct {
@@ -47,7 +54,8 @@ func (m *Model) FunctionKeys() []FunctionKey {
 	}
 }
 
-// RangeMenu is the index of the Range menu in Menus, which F2 drops down.
+// RangeMenu is the index of the Range menu in Menus, which F2 drops down
+// under its title and a click on the state (StateCell) under the state.
 const RangeMenu = 1
 
 // Menus are the dashboard's menu bar; each item runs its key through run,
@@ -80,7 +88,7 @@ func (m *Model) Menus(run func(key string) tea.Cmd) []menubar.Menu {
 		menubar.Separator(),
 		item("&Close", "F10", "f10"),
 	}}
-	var ranges []menubar.Item
+	ranges := m.timeItems(v, item)
 	cur := v.span(m)
 	for _, d := range m.spans(v) {
 		it := item("Last "+longDuration(d), "", rangeKey+shortDuration(d))
@@ -108,6 +116,29 @@ func (m *Model) Menus(run func(key string) tea.Cmd) []menubar.Menu {
 	}
 	help := menubar.Menu{Title: "&Help", Items: []menubar.Item{item("&Dashboard", "F1", "f1")}}
 	return []menubar.Menu{dash, {Title: "&Range", Items: ranges}, view, help}
+}
+
+// timeItems are the first items of the Range menu: what v shows, live,
+// paused or the investigation window, with the one it shows checked, and
+// w. Space is on the item it runs now.
+func (m *Model) timeItems(v *view, item func(label, short, key string) menubar.Item) []menubar.Item {
+	live := item("&Live", "", liveKey)
+	live.Checked = !v.paused && !v.follow
+	pause := item("&Pause here", "Space", pauseKey)
+	if v.paused {
+		live.Shortcut = "Space"
+		pause = item("&Paused at "+v.end.In(m.loc()).Format("15:04:05"), "", pauseKey)
+		pause.Checked = !v.follow
+	}
+	out := []menubar.Item{live, pause}
+	if win := m.window(); !win.Off() || m.src.SetWindow != nil {
+		follow := item("&Follow the investigation window", "", followKey)
+		follow.Checked, follow.Disabled = v.follow, win.Off()
+		set := item("Set the investigation &window to this range", "w", "w")
+		set.Disabled = m.src.SetWindow == nil
+		out = append(out, follow, set)
+	}
+	return append(out, menubar.Separator())
 }
 
 // spans are the ranges v zooms through.

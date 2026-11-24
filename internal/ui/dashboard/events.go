@@ -235,8 +235,15 @@ func (m *Model) laneLabels(v *view, lane []rune, cells int) string {
 	}
 	if n := m.earlierEvents(v); n > 0 && unknown == 0 {
 		// The chart may cover seconds of a range of minutes; the lane
-		// says where the others are rather than when the chart starts.
-		put(0, "← "+strings.Replace(plural(n, "Event"), " ", " earlier ", 1)+", listed below", markNormal)
+		// says where the others are rather than when the chart starts,
+		// without "listed below" when the lane is too short for it.
+		earlier := "← " + strings.Replace(plural(n, "Event"), " ", " earlier ", 1)
+		for _, text := range []string{earlier + ", listed below", earlier} {
+			if free(0, len([]rune(text))) {
+				put(0, text, markNormal)
+				break
+			}
+		}
 	}
 	for _, l := range m.markLabels(v, cells) {
 		n := len([]rune(l.text))

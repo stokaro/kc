@@ -232,10 +232,10 @@ fresh() {
 	kc_running=1
 	menu_at=0
 	# The root of all namespaces is longer than the panel, so its last
-	# type is not on the screen.
+	# row ("other types") is not on the screen.
 	case " $* " in
 	*" -A "*) wait_for "/services " 60 ;;
-	*) wait_for "/servicecidrs" 60 ;;
+	*) wait_for "/other types" 60 ;;
 	esac
 	# The Info panel on the right says "loading" until the nodes, pods
 	# and metrics have arrived.

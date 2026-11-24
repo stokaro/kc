@@ -14,7 +14,7 @@ func TestResourcesFolderFinalizeMarksDirtyOnlyOnChange(t *testing.T) {
 
 	ctx := t.Context()
 
-	cfg := appconfig.Default()
+	cfg := allTypesConfig()
 	cfg.Resources.ShowNonEmptyOnly = false
 
 	deps := Deps{
@@ -70,7 +70,7 @@ func TestResourcesFolderFinalizeVisibilityChanges(t *testing.T) {
 
 	ctx := t.Context()
 
-	cfg := appconfig.Default()
+	cfg := allTypesConfig()
 	cfg.Resources.ShowNonEmptyOnly = true
 
 	deps := Deps{
@@ -112,7 +112,7 @@ func TestResourcesFolderToggleShowNonEmpty(t *testing.T) {
 
 	ctx := t.Context()
 
-	cfg := appconfig.Default()
+	cfg := allTypesConfig()
 	cfg.Resources.ShowNonEmptyOnly = true
 
 	deps := Deps{
@@ -150,7 +150,7 @@ func TestResourcesFolderMarksDirtyOnOrderChange(t *testing.T) {
 
 	ctx := t.Context()
 
-	cfg := appconfig.Default()
+	cfg := allTypesConfig()
 	cfg.Resources.ShowNonEmptyOnly = false
 
 	deps := Deps{
@@ -194,7 +194,7 @@ func TestResourcesFolderHidesForbiddenResources(t *testing.T) {
 
 	ctx := t.Context()
 
-	cfg := appconfig.Default()
+	cfg := allTypesConfig()
 	cfg.Resources.ShowNonEmptyOnly = false
 
 	deps := Deps{
@@ -260,4 +260,12 @@ func TestSortResourceEntriesOrders(t *testing.T) {
 	check(appconfig.OrderAlpha, nil, []string{"certificates", "endpointslices", "pods"})
 	check(appconfig.OrderGroup, nil, []string{"pods", "certificates", "endpointslices"})
 	check(appconfig.OrderFavorites, []string{"pods", "certificates"}, []string{"certificates", "pods", "endpointslices"})
+}
+
+// allTypesConfig lists every type, so tests of the non-empty filter and
+// the order are not about the Work profile.
+func allTypesConfig() *appconfig.Config {
+	cfg := appconfig.Default()
+	cfg.Resources.Visibility.DefaultProfile = appconfig.VisibilityProfileAll
+	return cfg
 }

@@ -27,6 +27,12 @@ type ResourcesFolder struct {
 	items     map[string]*ResourceGroupItem
 	lastSpecs map[string]resourceGroupSignature
 	overrides *resourceViewOptions
+	// catalog is every type of the last population with the profile's
+	// decision; itemsMu guards it.
+	catalog TypeCatalog
+	// active marks the items whose count or emptiness peek was started.
+	// Only types the profile lists are started; finalize alone uses it.
+	active map[string]bool
 }
 
 type resourceViewOptions struct {
@@ -44,6 +50,7 @@ func NewResourcesFolder(base *BaseFolder) *ResourcesFolder {
 		BaseFolder: base,
 		items:      make(map[string]*ResourceGroupItem),
 		lastSpecs:  make(map[string]resourceGroupSignature),
+		active:     make(map[string]bool),
 	}
 }
 
@@ -122,7 +129,9 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		changed := len(f.items) > 0 || len(f.lastSpecs) > 0
 		f.Close()
 		f.setItems(make(map[string]*ResourceGroupItem))
+		f.setCatalog(TypeCatalog{Profile: f.typeProfile()})
 		f.lastSpecs = make(map[string]resourceGroupSignature)
+		f.active = make(map[string]bool)
 		if changed {
 			f.BaseFolder.markDirtyFromSource()
 			log.Info("resources cleared")
@@ -131,32 +140,48 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 	}
 
 	showNonEmpty, _, _ := f.viewSettings()
-	rows := make([]table.Row, 0, len(specs))
+	// The profile decides first, from discovery alone: a type it leaves
+	// out starts no count, no informer handler and no emptiness peek.
+	profile := f.typeProfile()
+	set := f.evaluateTypes(ctx, profile, specs)
+	rows := make([]table.Row, 0, len(specs)+1)
 	seen := make(map[string]*ResourceGroupItem, len(specs))
 	sigs := make(map[string]resourceGroupSignature, len(specs))
+	entries := make([]TypeEntry, 0, len(specs))
 	changed := len(specs) != len(f.lastSpecs)
 	for idx, spec := range specs {
-		item, created := f.ensureResourceGroupItem(spec)
-		if item == nil {
-			continue
-		}
-		item.applySpec(spec, f.Deps, created)
-		current := item
-		handler := func() { f.onResourceGroupCountChanged(current) }
-		item.SetOnChange(handler)
-		item.ComputeCountAsync(handler)
-		visible := resourceGroupVisible(item, spec, showNonEmpty)
-		sig := makeResourceGroupSignature(spec, visible, idx)
+		decision, _ := set.Decide(spec.gvr.GroupResource())
+		item := f.typeItem(spec, decision.Included)
+		entries = append(entries, TypeEntry{
+			ID:         spec.id,
+			GVR:        spec.gvr,
+			Kind:       spec.gvk.Kind,
+			ShortNames: spec.shortNames,
+			Namespaced: spec.namespaced,
+			Path:       slices.Clone(spec.path),
+			Decision:   decision,
+		})
+		seen[spec.id] = item
+		visible := decision.Included && resourceGroupVisible(item, spec, showNonEmpty)
+		sig := makeResourceGroupSignature(spec, decision.Included, visible, idx)
 		sigs[spec.id] = sig
 		if prev, ok := f.lastSpecs[spec.id]; !ok || prev != sig {
 			changed = true
 		}
-		seen[spec.id] = item
 		refreshCountCell(item)
 		if !visible {
 			continue
 		}
 		rows = append(rows, item)
+	}
+	for id := range f.active {
+		if _, ok := seen[id]; !ok {
+			delete(f.active, id)
+		}
+	}
+	f.setCatalog(TypeCatalog{Profile: profile, Entries: entries})
+	if n := len(set.Other()); n > 0 {
+		rows = append(rows, newOtherTypesItem(n, profile, f.Path()))
 	}
 
 	if len(rows) == 0 {
@@ -434,6 +459,9 @@ type resourceGroupSpec struct {
 	uncounted bool
 	enter     func() (Folder, error)
 	verbs     []string
+	// namespaced and shortNames describe the type in the type catalog.
+	namespaced bool
+	shortNames []string
 }
 
 type resourceGroupSignature struct {
@@ -442,18 +470,20 @@ type resourceGroupSignature struct {
 	watchable bool
 	cellsHash string
 	pathHash  string
+	included  bool
 	visible   bool
 	detail    string
 	index     int
 }
 
-func makeResourceGroupSignature(spec resourceGroupSpec, visible bool, index int) resourceGroupSignature {
+func makeResourceGroupSignature(spec resourceGroupSpec, included, visible bool, index int) resourceGroupSignature {
 	return resourceGroupSignature{
 		gvr:       spec.gvr,
 		namespace: spec.namespace,
 		watchable: spec.watchable,
 		cellsHash: joinStrings(spec.cells),
 		pathHash:  joinStrings(spec.path),
+		included:  included,
 		visible:   visible,
 		detail:    spec.detail,
 		index:     index,
@@ -464,10 +494,36 @@ func joinStrings(parts []string) string {
 	return strings.Join(parts, "\x00")
 }
 
+// typeItem returns the item of spec's type with spec applied. A listed type
+// gets its change handler and count; a type the profile leaves out gets a
+// passive item that starts nothing until a jump enters it.
+func (f *ResourcesFolder) typeItem(spec resourceGroupSpec, listed bool) *ResourceGroupItem {
+	item, created := f.ensureResourceGroupItem(spec)
+	if !listed && f.active[spec.id] {
+		// The type left the list: stop its count and peeks. A closed item
+		// stays closed, so an explicit jump gets a fresh one, and so does
+		// the row if the type comes back.
+		item.Close()
+		delete(f.active, spec.id)
+		item, created = newResourceGroupItemFromSpec(f.Deps, spec), true
+	}
+	item.applySpec(spec, f.Deps, created)
+	if listed {
+		handler := func() { f.onResourceGroupCountChanged(item) }
+		item.SetOnChange(handler)
+		item.ComputeCountAsync(handler)
+		f.active[spec.id] = true
+	}
+	return item
+}
+
 func (f *ResourcesFolder) ensureResourceGroupItem(spec resourceGroupSpec) (*ResourceGroupItem, bool) {
-	if existing, ok := f.items[spec.id]; ok {
+	if existing, ok := f.items[spec.id]; ok && !existing.isClosed() {
 		return existing, false
 	}
-	item := NewResourceGroupItem(f.Deps, spec.gvr, spec.gvk, spec.namespace, spec.id, spec.cells, spec.path, spec.detail, spec.style, spec.watchable, spec.enter)
-	return item, true
+	return newResourceGroupItemFromSpec(f.Deps, spec), true
+}
+
+func newResourceGroupItemFromSpec(deps Deps, spec resourceGroupSpec) *ResourceGroupItem {
+	return NewResourceGroupItem(deps, spec.gvr, spec.gvk, spec.namespace, spec.id, spec.cells, spec.path, spec.detail, spec.style, spec.watchable, spec.enter)
 }

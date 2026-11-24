@@ -22,13 +22,22 @@ var (
 	gridColor = blend(Background, color.RGBA{0xf0, 0xfa, 0xff, 0xff}, 0.09)
 )
 
+// Grafana's classic palette: the threshold colors of a bar gauge, and the
+// lines of a time series panel.
+var (
+	Green  = color.RGBA{0x73, 0xbf, 0x69, 0xff}
+	Yellow = color.RGBA{0xfa, 0xde, 0x2a, 0xff}
+	Orange = color.RGBA{0xff, 0x98, 0x30, 0xff}
+	Red    = color.RGBA{0xf2, 0x49, 0x5c, 0xff}
+)
+
 // palette maps the basic terminal colors of the chart styles to
 // Grafana's classic palette.
 var palette = map[ansi.BasicColor]color.RGBA{
-	ansi.Green:   {0x73, 0xbf, 0x69, 0xff},
-	ansi.Yellow:  {0xfa, 0xde, 0x2a, 0xff},
+	ansi.Green:   Green,
+	ansi.Yellow:  Yellow,
 	ansi.Blue:    {0x57, 0x94, 0xf2, 0xff},
-	ansi.Red:     {0xf2, 0x49, 0x5c, 0xff},
+	ansi.Red:     Red,
 	ansi.Magenta: {0xb8, 0x77, 0xd9, 0xff},
 	ansi.Cyan:    {0x8a, 0xb8, 0xff, 0xff},
 }
@@ -528,16 +537,21 @@ func (p *painter) fill(c color.RGBA) {
 	}
 }
 
+// blendAt paints c over the pixel at x, y with opacity a. The image holds
+// premultiplied colors, so the same mix applied to the alpha channel as
+// well paints over a transparent pixel correctly; an opaque one stays
+// opaque.
 func (p *painter) blendAt(x, y int, c color.RGBA, a float64) {
 	if a <= 0 || x < 0 || y < 0 || x >= p.w || y >= p.h {
 		return
 	}
 	a = math.Min(1, a)
 	i := y*p.img.Stride + x*4
-	px := p.img.Pix[i : i+3 : i+3]
+	px := p.img.Pix[i : i+4 : i+4]
 	px[0] = uint8(float64(px[0]) + (float64(c.R)-float64(px[0]))*a + 0.5)
 	px[1] = uint8(float64(px[1]) + (float64(c.G)-float64(px[1]))*a + 0.5)
 	px[2] = uint8(float64(px[2]) + (float64(c.B)-float64(px[2]))*a + 0.5)
+	px[3] = uint8(float64(px[3]) + (255-float64(px[3]))*a + 0.5)
 }
 
 // rect blends the rectangle [x0, x1) by [y0, y1), with partial cover on

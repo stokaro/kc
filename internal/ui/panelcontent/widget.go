@@ -68,6 +68,30 @@ type BackgroundMsg interface {
 	WidgetBackground()
 }
 
+// TerminalMsg carries a message of the terminal image protocol to the
+// widgets: the cell size the terminal reported, or a transmit that went
+// out (kittygfx.IsMsg). The app hands it to every widget like a
+// BackgroundMsg; a widget that draws images takes the ones it sent.
+type TerminalMsg struct{ Msg tea.Msg }
+
+// WidgetBackground makes TerminalMsg a BackgroundMsg.
+func (TerminalMsg) WidgetBackground() {}
+
+// ImageOwner widgets draw terminal images. ReleaseImages deletes them
+// from the terminal and returns the commands to write as raw output, ""
+// when there is nothing to delete. The panel calls it when it leaves the
+// widget's mode; the widget draws text until it sends new pictures.
+type ImageOwner interface {
+	ReleaseImages() string
+}
+
+// TextViewer widgets that draw terminal images render the same content
+// as text only. A still picture of the panel (C-x f) uses it: the widget
+// goes on replacing its images, and a still picture must not show them.
+type TextViewer interface {
+	TextView(context.Context, Frame) tea.View
+}
+
 // Refresher widgets reload what they show when the shared cache changed.
 // Refresh is cheap to call often; the widget limits how often it reloads.
 type Refresher interface {

@@ -162,7 +162,7 @@ scene_intro() {
 	caption "kc: a two-panel Kubernetes TUI in the style of Midnight Commander"
 	# The root list grows while discovery runs; a search before it settles
 	# can land on a row that moves away. Info fills once metrics arrive.
-	wait_for "/servicecidrs" 60
+	wait_for "/other types" 60
 	wait_for "Top pods by memory in namespace shop" 60
 	wait_for "shop/web-" 90
 	sleep 2

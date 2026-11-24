@@ -52,6 +52,9 @@ type slot struct {
 	// encoding is set from Begin to Finish or Drop; again records a
 	// Begin refused meanwhile. Release keeps both: the job still runs.
 	encoding, again bool
+	// gen counts the Forgets of the key: a job or a transmit of an
+	// earlier one is stale.
+	gen int
 }
 
 // picture identifies the pixels and the cell size of an image.
@@ -66,7 +69,9 @@ type picture struct {
 // buffer, which Bubble Tea writes before the next frame of cells.
 type sentMsg struct {
 	seq      string
+	owner    *Images
 	gen, key int
+	slotGen  int
 	idx      int
 	pic      picture
 }
@@ -103,6 +108,21 @@ func QueryCellSize() tea.Cmd {
 	return tea.Raw(ansi.WindowOp(16))
 }
 
+// Owns reports whether msg is for im: a cell size report, which every
+// set takes, or the return of a transmit of im. Several sets share the
+// program's messages; a set that owns a message changes what the screen
+// shows of it.
+func (im *Images) Owns(msg tea.Msg) bool {
+	switch msg := msg.(type) {
+	case uv.CellSizeEvent:
+		return true
+	case tea.RawMsg:
+		s, ok := msg.Msg.(sentMsg)
+		return ok && s.owner == im
+	}
+	return false
+}
+
 // Handle takes a message IsMsg accepts and reports whether the cell size
 // changed.
 func (im *Images) Handle(msg tea.Msg) bool {
@@ -115,10 +135,17 @@ func (im *Images) Handle(msg tea.Msg) bool {
 		return true
 	case tea.RawMsg:
 		s, ok := msg.Msg.(sentMsg)
-		if !ok || s.gen != im.gen || s.key < 0 || s.key >= len(im.slots) {
+		if !ok || s.owner != im || s.key < 0 || s.key >= len(im.slots) {
 			return false
 		}
 		sl := &im.slots[s.key]
+		if s.gen != im.gen || s.slotGen != sl.gen {
+			// A transmit written after the delete of a Release or a
+			// Forget: the terminal holds it again, so the next delete
+			// covers it.
+			im.used[sl.ids[s.idx]] = true
+			return false
+		}
 		sl.held[s.idx], sl.shown = s.pic, s.idx
 		if sl.flight == s.pic {
 			sl.flight = picture{}
@@ -126,6 +153,9 @@ func (im *Images) Handle(msg tea.Msg) bool {
 	}
 	return false
 }
+
+// HasCellSize reports whether the terminal reported its cell size.
+func (im *Images) HasCellSize() bool { return im.cellW > 0 && im.cellH > 0 }
 
 // CellSize is the cell size in pixels for an image of cols by rows: the
 // terminal's, else the fallback, scaled down to stay under maxPixels.
@@ -146,7 +176,7 @@ func (im *Images) CellSize(cols, rows int) (w, h int) {
 // goroutine.
 type Job struct {
 	key, cols, rows int
-	gen             int
+	gen, slotGen    int
 	cellW, cellH    int
 	// known are the pictures the terminal holds or has on its way when
 	// the job began: one of those needs no PNG.
@@ -187,7 +217,7 @@ func (im *Images) Begin(key, cols, rows int) (Job, bool) {
 	sl.encoding, sl.again = true, false
 	w, h := im.CellSize(cols, rows)
 	return Job{
-		key: key, cols: cols, rows: rows, gen: im.gen, cellW: w, cellH: h,
+		key: key, cols: cols, rows: rows, gen: im.gen, slotGen: sl.gen, cellW: w, cellH: h,
 		known: [3]picture{sl.held[0], sl.held[1], sl.flight},
 	}, true
 }
@@ -243,6 +273,9 @@ func (im *Images) Finish(p Picture) (cmd tea.Cmd, again bool) {
 		return nil, again
 	}
 	sl := &im.slots[p.job.key]
+	if p.job.slotGen != sl.gen {
+		return nil, again
+	}
 	pic := p.pic
 	if sl.shown >= 0 && sl.held[sl.shown] == pic {
 		return nil, again
@@ -268,8 +301,8 @@ func (im *Images) Finish(p Picture) (cmd tea.Cmd, again bool) {
 	sl.flight = pic
 	sl.held[next] = picture{}
 	return tea.Raw(sentMsg{
-		seq: im.enc.Transmit(uint32(id), p.png, p.job.cols, p.job.rows),
-		gen: im.gen, key: p.job.key, idx: next, pic: pic,
+		seq:   im.enc.Transmit(uint32(id), p.png, p.job.cols, p.job.rows),
+		owner: im, gen: im.gen, key: p.job.key, slotGen: sl.gen, idx: next, pic: pic,
 	}), again
 }
 
@@ -323,7 +356,9 @@ func (im *Images) Shown(key, cols, rows int) (uint8, bool) {
 
 // Release forgets every picture and returns the commands that delete the
 // images kc sent, or "" when it sent none. A transmit still on its way is
-// covered: its ID is deleted too, and its arrival is ignored.
+// covered: its ID is deleted too, and its arrival is not shown. It may
+// reach the terminal after the delete, so its arrival marks its ID for the
+// next delete.
 func (im *Images) Release() string {
 	im.gen++
 	for i := range im.slots {
@@ -343,6 +378,38 @@ func (im *Images) Release() string {
 		}
 	}
 	return b.String()
+}
+
+// Forget forgets the pictures of key only, when the screen no longer
+// shows it, and returns the commands that delete what kc sent for it, ""
+// when it sent nothing. A picture of key on its way is ignored when it
+// comes back, as after Release.
+func (im *Images) Forget(key int) string {
+	if key < 0 || key >= len(im.slots) {
+		return ""
+	}
+	sl := &im.slots[key]
+	sl.gen++
+	sl.held = [2]picture{}
+	sl.shown, sl.flight = -1, picture{}
+	var b strings.Builder
+	for _, id := range sl.ids {
+		if im.used[id] {
+			b.WriteString(im.enc.Delete(uint32(id)))
+			delete(im.used, id)
+		}
+	}
+	return b.String()
+}
+
+// Holds reports whether kc sent pictures of key that the terminal may
+// still keep.
+func (im *Images) Holds(key int) bool {
+	if key < 0 || key >= len(im.slots) {
+		return false
+	}
+	sl := im.slots[key]
+	return im.used[sl.ids[0]] || im.used[sl.ids[1]]
 }
 
 func hashImage(img *image.RGBA) uint64 {

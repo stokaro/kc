@@ -1,6 +1,7 @@
 package dashboard_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -197,4 +198,32 @@ func TestEarlierEventsAreListed(t *testing.T) {
 	m := open(t, f, false, web, 150, 42)
 	ticks(t, f, m, 2, 15*time.Second)
 	requireText(t, screen(t, m, 150, 42), "← 1 earlier Event, listed below")
+}
+
+// TestEarlierEventsFitTheLane: where the lane is shorter than the note
+// about the earlier Events (31 cells at 80x24 and 40x24), the note drops
+// "listed below" rather than running past the lane.
+func TestEarlierEventsFitTheLane(t *testing.T) {
+	t.Parallel()
+	pod := models.ObjectRef{GVR: podsGVR, Namespaced: true, Namespace: "shop", Name: "web-1"}
+	for _, size := range [][3]int{{150, 42, 1}, {100, 30, 1}, {80, 24, 0}, {60, 24, 1}, {40, 24, 0}} {
+		w, h, below := size[0], size[1], size[2] == 1
+		a := withEvents()
+		// 120 more Events in the five minutes before the session.
+		for i := range 120 {
+			at := t0.Add(-time.Duration(i%60+3) * 5 * time.Second)
+			a.Events.Items = append(a.Events.Items, event("e-pulled-"+strconv.Itoa(i), "Normal", "Pulled", "Pod", pod, at, at, 1))
+		}
+		f := &fakes{now: t0, amounts: a}
+		// The Metrics API only: the chart fits the samples of this session.
+		m := open(t, f, false, web, w, h)
+		ticks(t, f, m, 2, 15*time.Second)
+		_, labels := lane(t, screen(t, m, w, h))
+		if !strings.Contains(labels, "← 121 earlier Events") {
+			t.Errorf("%dx%d: the lane labels %q do not count the 121 earlier Events", w, h, labels)
+		}
+		if got := strings.Contains(labels, "listed below"); got != below {
+			t.Errorf("%dx%d: the lane labels %q say listed below: %t, want %t", w, h, labels, got, below)
+		}
+	}
 }

@@ -4,6 +4,10 @@
 
 > **Origin:** kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) (upstream). This repository is developed independently and has diverged a lot from it: key bindings, features and internals differ. Report issues for this version at [stokaro/kc](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE) for attribution.
 
+![The full-screen dashboard of a namespace in iTerm2: the workloads with their pods and containers on the left, CPU and memory charts drawn as images with a line per workload, the request and limit, and the Events of the last 15 minutes on a timeline](docs/images/dashboard-iterm2.png)
+
+The dashboard (`C-x g`) in iTerm2, where kc draws the charts as images (Kitty graphics; see [`charts.graphics`](#configuration)). Other terminals get the same charts in text.
+
 ![kc demo with a caption per scene: two panels and quick search, the cluster overview and diagnosis of broken objects, the menu bar, draining a node, scaling a Deployment and its timeline, YAML, comparing two objects, filtered JSON logs, copying a file out of a container, the hotlist, the terminal](docs/demo.gif)
 
 The demo was recorded before the menu bar stayed on the top row (see [Menu Bar](#menu-bar)).
@@ -27,10 +31,6 @@ A Deployment list next to the Describe of the selected Deployment:
 Draining a node: what it evicts, the PodDisruptionBudgets and the same kubectl command, before anything happens:
 
 ![The drain confirmation for a node, with the pods to evict, the budgets and the kubectl drain command](screenshots/drain/03-confirm.png)
-
-The CPU dashboard of a Deployment (`C-x g`) with the cursor in the past, from the redesign in #321:
-
-![A full-screen CPU chart of a Deployment over five minutes, with the request and limit lines and the cursor on one cell](screenshots/dashboard/04-expanded.png)
 
 More in the [screenshot catalog](screenshots/README.md), one page per topic.
 
@@ -224,6 +224,10 @@ The logs viewer detects JSON lines and shows them formatted. `M-g` filters by te
 
 kc works in one context at a time, shown in both panels; each panel has its own namespace scope. kc never changes the kubeconfig. See [Context and namespace](internal/help/topics/context-namespace.md).
 
+## Resource types
+
+The root and the other lists of resource types show the Work profile: the types of daily work, from core and apps to cert-manager, Argo CD and Flux. The rest are one `Enter` away under `/other types (N)`, and `cd`, the hotlist and links still open any type. "Types" in the panel options switches a panel to All. See [Resource types](internal/help/topics/resource-types.md).
+
 ## Filtering Rows
 
 `M-f` filters an object list by name, label selector, namespace or column value. See [Row filter](internal/help/topics/row-filter.md).
@@ -405,6 +409,7 @@ In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering (`scroll`, the default, or `fit`) and panning behavior.
 - `terminal.follow`, `terminal.mode` – whether the shell line follows the active panel's context and namespace (default `true`), and how its `KUBECONFIG` points there: `overlay` (default, a small file before your own kubeconfig files) or `copy` (a full copy of the kubeconfig kc loaded for the context: the file that defines it, or the merged `$KUBECONFIG` files).
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
+- `resources.visibility.defaultProfile` – which resource types the root and the other type lists show: `work` (the default: kc's list of daily types, see [Resource types](#resource-types)) or `all`. An unknown value means `work`. "Types" in the panel options (`M-F1`, `M-F2`) switches one panel.
 - `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. In an Events list, `last-seen` and `first-seen` use the Event's own times (`series.lastObservedTime`, `lastTimestamp`, `firstTimestamp`, `eventTime`), most recent first, and these cells count on with the clock like AGE; `name` sorts by the Event name, the wide Name column. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
 - `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
 - `health` – row health of custom resource types from their status, see [Custom Resource Health](#custom-resource-health). Empty by default.
@@ -416,7 +421,7 @@ In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain
 - `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, measured pod and node usage, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
 - `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](#read-only-mode)).
 - `metricsHistory.window`, `metricsHistory.timeout`, `metricsHistory.backends` – past workload usage from Prometheus in the Info panel mode (off by default; see [Cluster Overview](#cluster-overview)). `C-x m` tests a backend and saves it for the current context; see [Metric sources](internal/help/topics/metric-sources.md). The dashboard (`C-x g`, `kc dashboard`) reads the same backend; see [Dashboard](internal/help/topics/dashboard.md).
-- `charts.graphics` – how the dashboard draws its charts: `auto` (the default) draws the plots as images in iTerm2 3.7 or later, kitty and Ghostty, and under tmux with `allow-passthrough on`; `text` always draws braille or blocks; `kitty` always draws images. See [Dashboard](internal/help/topics/dashboard.md).
+- `charts.graphics` – how the dashboard draws its charts and Info mode its bars and history: `auto` (the default) draws images in iTerm2 3.7 or later, kitty and Ghostty, and under tmux with `allow-passthrough on`; `text` always draws text (braille or blocks in the charts); `kitty` always draws images. See [Dashboard](internal/help/topics/dashboard.md) and [Info mode](internal/help/topics/mode-info.md).
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
@@ -575,6 +580,11 @@ resources:
   order: alpha
   # Favorites are used when order=favorites; leave empty to use discovery's "all" category.
   favorites: []
+  visibility:
+    # Which resource types the root and the other type lists show:
+    # work (kc's Work list of daily types; the rest is under "Other types")
+    # or all (every discovered type)
+    defaultProfile: work
 
 objects:
   # Object list sort: a column key (name, age, status, restarts, ...) or creation; "-" sorts descending
@@ -747,14 +757,14 @@ metricsHistory:
   timeout: 15s
   backends: []
 
-# How the dashboard (C-x g) draws its charts. auto draws the plots as
-# images in terminals known to show Kitty graphics Unicode placeholders:
-# iTerm2 3.7 or later (LC_TERMINAL=iTerm2 or TERM_PROGRAM=iTerm.app, with
-# the version), kitty (TERM=xterm-kitty or KITTY_WINDOW_ID) and Ghostty
-# (TERM=xterm-ghostty or TERM_PROGRAM=ghostty); under tmux only when the
-# client is one of those and allow-passthrough is on. text always draws
-# braille or blocks, kitty always draws images. b or F6 in the dashboard
-# switches between them.
+# How the dashboard (C-x g) draws its charts and Info mode its bars and
+# history. auto draws images in terminals known to show Kitty graphics
+# Unicode placeholders: iTerm2 3.7 or later (LC_TERMINAL=iTerm2 or
+# TERM_PROGRAM=iTerm.app), kitty (TERM=xterm-kitty or KITTY_WINDOW_ID) and
+# Ghostty (TERM=xterm-ghostty or TERM_PROGRAM=ghostty); under tmux only when
+# the client is one of those and allow-passthrough is on. text always draws
+# text, kitty always draws images. b in the dashboard switches its charts
+# between them.
 charts:
   graphics: auto
 ```
@@ -779,7 +789,7 @@ panel:
     foreground: black
     background: white
   context: bright-yellow   # context name in the bottom border
-  namespace: bright-cyan
+  namespace: bright-cyan  # namespace name; also the "outside Work" mark
 ```
 
 A skin covers the two panels only; dialogs, the function key bar and the viewer keep their colors (the viewer has `viewer.theme`). An unknown skin, an unknown key or a bad color is shown as an error at startup, and kc then uses `mc`; a bad `contexts` entry is reported and skipped.
