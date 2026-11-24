@@ -33,7 +33,7 @@ The secrets `RELEASE_GITHUB_TOKEN`, `RELEASE_GPG_PRIVATE_KEY` and `RELEASE_GPG_P
 
 ## Versions
 
-The repository has the upstream tags up to `v0.8.0`. The first release of this fork must be newer, for example `v0.9.0`, so Homebrew and `@latest` see it as the newest version. GoReleaser takes the version from the tag and writes it into the binary, and `kc --version` prints it. A tag with a suffix such as `v0.9.0-rc.1` is published as a prerelease.
+The first release of this fork is `v1.0.0` (November 2026); the repository has no older tags. Tags follow semantic versioning: a new feature raises the minor version, a fix the patch version. GoReleaser takes the version from the tag and writes it into the binary, and `kc --version` prints it. A tag with a suffix such as `v1.1.0-rc.1` is published as a prerelease.
 
 ## Cutting a release
 
@@ -42,8 +42,8 @@ The repository has the upstream tags up to `v0.8.0`. The first release of this f
 
    ```bash
    git switch main && git pull
-   git tag -a v0.9.0 -m "kc v0.9.0"
-   git push origin v0.9.0
+   git tag -a v1.1.0 -m "kc v1.1.0"
+   git push origin v1.1.0
    ```
 
 3. The tag starts the `release` job of `.github/workflows/release.yml`. It mints the tap token from the GitHub App (or takes the fallback secret) and stops when there is none, builds and archives the binaries, writes `kc_checksums.txt` and signs it with cosign (`kc_checksums.txt.sigstore.json`), notarizes the macOS binaries when the Apple secrets exist, publishes the GitHub Release, and pushes the cask to the tap.
@@ -54,7 +54,17 @@ The repository has the upstream tags up to `v0.8.0`. The first release of this f
    kc --version
    ```
 
-   The first line must show the tag without the `v`, for example `kc Version: 0.9.0`.
+   The first line must show the tag without the `v`, for example `kc Version: 1.1.0`.
+
+5. GoReleaser writes the release notes as the list of commits since the previous tag. Write a short summary of what changed for users in `docs/changelogs/<tag>.md` (through a pull request, before or after the tag) and put it above that list:
+
+   ```bash
+   gh release view v1.1.0 --repo stokaro/kc --json body -q .body > generated.md
+   tail -n +2 docs/changelogs/v1.1.0.md | cat - generated.md > notes.md   # without the "# v1.1.0" title
+   gh release edit v1.1.0 --repo stokaro/kc --notes-file notes.md
+   ```
+
+   Editing the notes does not change the archives or the cask.
 
 If the job fails after the GitHub Release was created, fix the cause and re-run the failed job. To start over, delete the GitHub Release and the tag, then push the tag again.
 
