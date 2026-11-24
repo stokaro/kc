@@ -16,6 +16,7 @@ import (
 
 	"github.com/stokaro/kc/internal/investigation"
 	models "github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/internal/ui/kittygfx"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	uistyles "github.com/stokaro/kc/internal/ui/styles"
 )
@@ -86,6 +87,13 @@ type Options struct {
 	// Window returns the investigation window and the time zone of its
 	// label; nil or an off window shows nothing about it.
 	Window func() (investigation.Window, *time.Location)
+	// Images draws the bars and the usage history as images; nil draws
+	// text. Each Info panel has its own, with image IDs no other panel or
+	// the dashboard uses.
+	Images *kittygfx.Images
+	// Tick starts the timer that ends the settling of a resize; nil is
+	// tea.Tick.
+	Tick func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 }
 
 // tickMsg re-reads the summary. It is a BackgroundMsg, so it reaches the
@@ -117,6 +125,8 @@ type Widget struct {
 	width, height int
 	offset        int
 	focus         string
+
+	pics pictureState
 }
 
 // New returns an Info widget.
@@ -136,7 +146,7 @@ func (w *Widget) Init(ctx context.Context) tea.Cmd {
 		return nil
 	}
 	w.refresh(ctx)
-	return tea.Batch(w.tick(), w.promHistoryCmd())
+	return tea.Batch(w.tick(), w.promHistoryCmd(), w.startPictures())
 }
 
 func (w *Widget) tick() tea.Cmd {
@@ -162,10 +172,22 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		w.refresh(ctx)
-		return tea.Batch(w.tick(), w.promHistoryCmd()), true
+		return tea.Batch(w.tick(), w.promHistoryCmd(), w.syncPictures()), true
+	case pictureMsg:
+		if m.w != w {
+			return nil, false
+		}
+		return w.takePicture(m), true
+	case settledMsg:
+		if m.w != w {
+			return nil, false
+		}
+		return w.settled(m), true
+	case panelcontent.TerminalMsg:
+		return w.takeTerminal(m)
 	case tea.WindowSizeMsg:
 		w.width, w.height = m.Width, m.Height
-		return nil, true
+		return w.syncPictures(), true
 	case tea.KeyMsg:
 		return w.handleKey(m.String())
 	case panelcontent.MouseMsg:
@@ -210,7 +232,7 @@ func (w *Widget) OnSelectionChanged(ctx context.Context, _ panelcontent.Selectio
 		return nil
 	}
 	w.refresh(ctx)
-	return w.promHistoryCmd()
+	return tea.Batch(w.promHistoryCmd(), w.syncPictures())
 }
 
 // rereader is a Summarizer that can recompute its summary on request;
@@ -235,7 +257,7 @@ func (w *Widget) Reread(ctx context.Context) tea.Cmd {
 	if w.summary.Err != "" {
 		err = errors.New(w.summary.Err)
 	}
-	return tea.Batch(w.tick(), w.promHistoryCmd(), panelcontent.RereadDone(err, ""))
+	return tea.Batch(w.tick(), w.promHistoryCmd(), w.syncPictures(), panelcontent.RereadDone(err, ""))
 }
 
 // refresh resolves the target, swaps the source when the scope changed and
@@ -338,14 +360,26 @@ func usagePercents(s models.InfoSummary) (cpu, mem *usageSample) {
 }
 
 // View renders the visible part of the bars, sparklines and top pods.
+// With images on, a bar or a sparkline whose picture the terminal has is
+// drawn as that picture.
 func (w *Widget) View(_ context.Context, frame panelcontent.Frame) tea.View {
 	w.width, w.height = frame.Size.Width, frame.Size.Height
-	return tea.NewView(strings.Join(w.lines(frame.Size.Width, frame.Size.Height), "\n"))
+	return tea.NewView(strings.Join(w.render(frame.Size.Width, frame.Size.Height, true), "\n"))
+}
+
+// TextView is View with every picture as its text: a still picture of
+// the panel (C-x f) must not show images the widget goes on replacing.
+func (w *Widget) TextView(_ context.Context, frame panelcontent.Frame) tea.View {
+	w.width, w.height = frame.Size.Width, frame.Size.Height
+	return tea.NewView(strings.Join(w.render(frame.Size.Width, frame.Size.Height, false), "\n"))
 }
 
 // lines are the height lines of the content from the scroll offset, which
 // they clamp, with the selected top pod highlighted.
-func (w *Widget) lines(width, height int) []string {
+func (w *Widget) lines(width, height int) []string { return w.render(width, height, false) }
+
+// render is lines, with the pictures placed when pictures is set.
+func (w *Widget) render(width, height int, pictures bool) []string {
 	if width <= 0 || height <= 0 {
 		return nil
 	}
@@ -356,6 +390,9 @@ func (w *Widget) lines(width, height int) []string {
 	out := make([]string, 0, end-w.offset)
 	for _, l := range all[w.offset:end] {
 		s := l.text
+		if pictures {
+			s = w.placePicture(l)
+		}
 		if focus >= 0 && l.consumer == focus {
 			s = uistyles.PanelItemSelectedStyle.Width(width).Render(ansi.Strip(s))
 		} else {
@@ -367,19 +404,27 @@ func (w *Widget) lines(width, height int) []string {
 }
 
 // infoLine is one line of the content. consumer is the index of the top
-// pod it shows, or -1.
+// pod it shows, or -1. pic, when set, is a picture over some of its cells.
 type infoLine struct {
 	text     string
 	consumer int
+	pic      *picSlot
 }
 
 // content is every line at width. Long lines wrap with their indent
 // instead of being cut, so no state word, unit or reason is lost.
 func (w *Widget) content(width int) []infoLine {
+	lines, _ := w.layout(width)
+	return lines
+}
+
+// layout is content with the pictures its lines show when images are on.
+func (w *Widget) layout(width int) ([]infoLine, []wanted) {
 	if width <= 0 {
-		return nil
+		return nil, nil
 	}
 	var out []infoLine
+	var pics []wanted
 	add := func(s string) { out = append(out, infoLine{text: ansi.Truncate(s, width, ""), consumer: -1}) }
 	para := func(indent, s string) {
 		for _, part := range wrapText(s, width-len(indent)) {
@@ -390,7 +435,7 @@ func (w *Widget) content(width int) []infoLine {
 		for _, line := range findingLines(*p, width) {
 			add(line)
 		}
-		return out
+		return out, nil
 	}
 	switch {
 	case w.src == nil:
@@ -399,7 +444,7 @@ func (w *Widget) content(width int) []infoLine {
 			hint = "No cluster to show."
 		}
 		para(" ", hint)
-		return out
+		return out, nil
 	case w.summary.Err != "" || w.summary.Loading:
 		// The history comes from another source and still shows: a user
 		// without cluster-wide reads may read Prometheus.
@@ -411,7 +456,7 @@ func (w *Widget) content(width int) []infoLine {
 		for _, line := range w.promHistoryLines(width) {
 			para(leadingSpaces(line), strings.TrimLeft(line, " "))
 		}
-		return out
+		return out, nil
 	}
 	h := w.history[w.historyKey()]
 	for _, line := range w.headLines(h) {
@@ -425,9 +470,12 @@ func (w *Widget) content(width int) []infoLine {
 	}
 	cells := barCells(w.summary.Bars, width)
 	for _, b := range w.summary.Bars {
-		for _, line := range barBlock(b, h, w.opts.Now(), width, cells) {
-			add(line)
+		lines, bp := barLines(b, h, w.opts.Now(), width, cells, w.images() != nil)
+		for _, l := range lines {
+			l.text = ansi.Truncate(l.text, width, "")
+			out = append(out, l)
 		}
+		pics = append(pics, bp...)
 	}
 	for _, line := range w.promHistoryLines(width) {
 		para(leadingSpaces(line), strings.TrimLeft(line, " "))
@@ -443,7 +491,7 @@ func (w *Widget) content(width int) []infoLine {
 			out = append(out, infoLine{text: ansi.Truncate(line, width, ""), consumer: i})
 		}
 	}
-	return out
+	return out, pics
 }
 
 // scopeText names what the summary is about: the workload or node under
@@ -529,21 +577,64 @@ func detailIndent(width int) string {
 // that says what the sparkline covers. When the bar leaves room on its
 // line, the first line under it moves up next to it.
 func barBlock(b models.InfoBar, h *history, now time.Time, width, cells int) []string {
-	indent := detailIndent(width)
-	line, spill := barLine(b, width, cells)
-	out := []string{line}
-	if spill != "" {
-		out = append(out, indent+spill)
+	lines, _ := barLines(b, h, now, width, cells, false)
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = l.text
 	}
-	para := func(s string, health models.RowHealth) {
-		for _, part := range wrapText(s, width-len(indent)) {
-			out = append(out, indent+styled(part, health))
+	return out
+}
+
+// barLines is barBlock, with pictures when gfx is set: the bar as a
+// gauge over the cells of the text bar, and the sparkline as a picture
+// of sparkRows rows over its frame, with the scale and the span after
+// it, one per row.
+func barLines(b models.InfoBar, h *history, now time.Time, width, cells int, gfx bool) ([]infoLine, []wanted) {
+	lb := lineBuf{indent: detailIndent(width), width: width}
+	pics := barHead(&lb, b, width, cells, gfx)
+	if pic, ok := historyLines(&lb, b, h, now, width, gfx); ok {
+		pics = append(pics, pic)
+	}
+	return lb.out, pics
+}
+
+// lineBuf collects the lines of a bar block.
+type lineBuf struct {
+	out    []infoLine
+	indent string
+	width  int
+}
+
+func (lb *lineBuf) text(s string) { lb.out = append(lb.out, infoLine{text: s, consumer: -1}) }
+
+// para wraps s under the bar, in the color of health.
+func (lb *lineBuf) para(s string, health models.RowHealth) {
+	for _, part := range wrapText(s, lb.width-len(lb.indent)) {
+		lb.text(lb.indent + styled(part, health))
+	}
+}
+
+// barHead adds the bar line and the lines under it, and returns the gauge
+// picture that covers the text bar when gfx is set.
+func barHead(lb *lineBuf, b models.InfoBar, width, cells int, gfx bool) []wanted {
+	line, spill := barLine(b, width, cells)
+	lb.text(line)
+	first := len(lb.out) - 1
+	var pics []wanted
+	if key, ok := gaugeKey(b.Label); gfx && ok && b.Known {
+		label, _, _ := barParts(b)
+		if x := ansi.StringWidth(label); x+cells <= width {
+			lb.out[first].pic = &picSlot{key: key, x: x, cols: cells, rows: 1}
+			pics = append(pics, wanted{key: key, cols: cells, rows: 1, draw: gaugeOf(b)})
 		}
 	}
+	if spill != "" {
+		lb.text(lb.indent + spill)
+	}
 	if spill == "" && b.Detail != "" && width-ansi.StringWidth(line) >= 2+ansi.StringWidth(b.Detail) {
-		out[0] = line + "  " + styled(b.Detail, b.DetailHealth)
+		lb.out[first].text = line + "  " + styled(b.Detail, b.DetailHealth)
 	} else {
-		para(b.Detail, b.DetailHealth)
+		lb.para(b.Detail, b.DetailHealth)
 	}
 	for i, line := range b.More {
 		health := models.RowHealthUnknown
@@ -556,10 +647,17 @@ func barBlock(b models.InfoBar, h *history, now time.Time, width, cells int) []s
 		if width < compactWidth && health <= models.RowHealthOK && !strings.Contains(line, "n/a") {
 			continue
 		}
-		para(line, health)
+		lb.para(line, health)
 	}
+	return pics
+}
+
+// historyLines adds the sparkline of the usage samples of b in h, with
+// the line that says what it covers, and returns its picture when gfx is
+// set.
+func historyLines(lb *lineBuf, b models.InfoBar, h *history, now time.Time, width int, gfx bool) (wanted, bool) {
 	if h == nil {
-		return out
+		return wanted{}, false
 	}
 	var s series
 	switch b.Label {
@@ -568,28 +666,59 @@ func barBlock(b models.InfoBar, h *history, now time.Time, width, cells int) []s
 	case "Memory":
 		s = h.mem
 	default:
-		return out
+		return wanted{}, false
 	}
+	key, _ := sparkKey(b.Label)
 	// The frame marks both ends of the line and the mark after it says
 	// how much of the window the line spans and what a full cell is. The
 	// room for the longest mark is kept always, so the cell width does
-	// not change as the line grows.
-	view, ok := s.render(now, width-len(indent)-1-2-len(sparkMark(historyWindow-time.Minute, 10)))
+	// not change as the line grows. A picture puts the scale and the span
+	// on rows of their own, so only the longer of them needs room.
+	longest := len(sparkMark(historyWindow-time.Minute, 10))
+	if gfx {
+		scale, span := splitSparkMark(historyWindow-time.Minute, 100)
+		longest = max(len(scale), len(span))
+	}
+	view, ok := s.render(now, width-len(lb.indent)-1-2-longest)
 	if !ok {
-		return out
+		return wanted{}, false
 	}
 	// "collecting, 1 sample" says only that a line is on its way; a
 	// compact pane leaves it out until there is a line to label.
 	if view.line == "" && width < compactWidth {
-		return append(out, "")
+		lb.text("")
+		return wanted{}, false
 	}
-	para(view.label, models.RowHealthUnknown)
-	if view.line != "" {
-		out = append(out, indent+"▕"+view.line+"▏"+sparkMark(view.span, view.top))
+	lb.para(view.label, models.RowHealthUnknown)
+	frame := "▕" + view.line + "▏"
+	var pic wanted
+	switch {
+	case view.line == "":
+	case gfx:
+		cols := ansi.StringWidth(frame)
+		scale, span := splitSparkMark(view.span, view.top)
+		slot := picSlot{key: key, x: len(lb.indent), cols: cols, rows: sparkRows}
+		for row := range sparkRows {
+			sl := slot
+			sl.row = row
+			l := infoLine{text: lb.indent + strings.Repeat(" ", cols), consumer: -1, pic: &sl}
+			switch row {
+			case 0:
+				// While the picture is on its way, the text sparkline.
+				l.text = lb.indent + frame + scale
+			case sparkRows - 1:
+				l.text += span
+			}
+			lb.out = append(lb.out, l)
+		}
+		pic = wanted{key: key, cols: cols, rows: sparkRows, draw: sparkOf(s, view, levelColor(b.Health))}
+	default:
+		lb.text(lb.indent + frame + sparkMark(view.span, view.top))
 	}
 	// A blank line ends the block, so the label does not read as the
 	// heading of the next bar.
-	return append(out, "")
+	lb.text("")
+	return pic, pic.draw != nil
 }
 
 // sparkMark follows a sparkline: the time its frame spans, the window

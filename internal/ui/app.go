@@ -3186,8 +3186,9 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	}()
 
 	_, err := p.Run()
-	// The terminal frees the dashboard's images only when told to.
-	if seq := app.releaseChartImages(); seq != "" {
+	// The terminal frees the images of the dashboard and of Info only
+	// when told to.
+	if seq := app.releaseAllImages(); seq != "" {
 		_, _ = os.Stdout.WriteString(seq)
 	}
 	if err != nil {

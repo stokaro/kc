@@ -120,8 +120,13 @@ func TestImagesRelease(t *testing.T) {
 	if _, ok := im.Placeholders(0, 4, 2); ok {
 		t.Error("a transmit sent before the release shows after it")
 	}
+	// The late transmit may have reached the terminal after the delete:
+	// the next release deletes it again.
+	if got, want := im.Release(), enc.Delete(241); got != want {
+		t.Errorf("second Release = %q, want %q", got, want)
+	}
 	if got := im.Release(); got != "" {
-		t.Errorf("second Release = %q, want nothing", got)
+		t.Errorf("third Release = %q, want nothing", got)
 	}
 	if im.Show(0, picture(1), 4, 2) == nil {
 		t.Error("after a release the picture is not sent again")

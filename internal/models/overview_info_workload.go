@@ -93,12 +93,14 @@ func workloadResourceBar(cfg appconfig.OverviewConfig, label string, pods int64,
 	case hasUse && limited:
 		bar.Known, bar.Usage, bar.Percent, bar.Base = true, true, percent(use, lim), "limits"
 		bar.Detail = fmt.Sprintf("%s %s of lim %s, req %s", who, format(use), format(lim), format(req))
+		bar.Marks = limitMarks(req, lim)
 		if bar.Percent >= float64(warnPercent) {
 			warn(flagNearLimit)
 		}
 	case hasUse && req > 0:
 		bar.Known, bar.Usage, bar.Percent, bar.Base = true, true, percent(use, req), "requests"
 		bar.Detail = fmt.Sprintf("%s %s of req %s, no limit", who, format(use), format(req))
+		bar.Marks = []InfoMark{{InfoMarkRequest, 100}}
 		if float64(use) >= cfg.UnderRequestedFactor*float64(req) {
 			warn(flagUnderRequested)
 		}
@@ -107,10 +109,22 @@ func workloadResourceBar(cfg appconfig.OverviewConfig, label string, pods int64,
 	case limited:
 		bar.Known, bar.Percent = true, percent(req, lim)
 		bar.Detail = fmt.Sprintf("req %s of lim %s, use n/a: %s", format(req), format(lim), usageNote)
+		// The bar shows the requests: only the limit is a mark.
+		bar.Marks = []InfoMark{{InfoMarkLimit, 100}}
 	default:
 		bar.Detail = fmt.Sprintf("req %s, no limit, use n/a: %s", format(req), usageNote)
 	}
 	return bar
+}
+
+// limitMarks are the marks of a bar of usage against the limits: the
+// requests, when the pods have any, and the limits at the end.
+func limitMarks(req, lim int64) []InfoMark {
+	marks := []InfoMark{{InfoMarkLimit, 100}}
+	if req > 0 {
+		marks = append([]InfoMark{{InfoMarkRequest, percent(req, lim)}}, marks...)
+	}
+	return marks
 }
 
 // workloadPodsBar shows the ready pods of the desired replicas, or of the
