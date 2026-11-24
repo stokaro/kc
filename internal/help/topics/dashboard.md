@@ -33,7 +33,8 @@ all of them). `Esc` or `F10` returns to the panels as you left them.
   or all namespaces. The line above each chart says in words what they
   are now: `Now: █ usage 0.4  ┄ request 1 (40% used)  ┄ limit 2`.
   `over the request` is yellow, `near the limit` red. A narrow chart
-  writes this line on two lines rather than cut it.
+  writes this line on two lines rather than cut it. Charts drawn as
+  images add the lines of the rows after the usage: `── 3 pods`.
 - **Events**: the Kubernetes Events of the target in the range (see
   below).
 
@@ -163,13 +164,24 @@ pause and the drilldown. The session history is kept until kc exits.
 ## Charts as images
 
 In iTerm2 3.7 or later, kitty and Ghostty the plots are drawn as images
-(the Kitty graphics protocol): the usage as a filled area, the requests,
-limits and allocatable as dashed lines. The frames, the legends, the
-value labels and the time axis stay text, and so do the cursor column
-(moving it sends no new image), the "no data" band, the arrows of a line
-above the scale, menus,
-`F1` and dialogs drawn over the charts. The images show the
-same samples as the text charts, only smoother. While you resize the
+(the Kitty graphics protocol), in the style of a Grafana time series
+panel: a dark plot with grid lines through the value labels and at
+round times of the clock, the usage as a smooth line from sample to
+sample with a fading area under it, and the requests, limits and
+allocatable as thin dashed lines. The plot above the limit is shaded
+faintly red. Samples further apart than a reading interval are not
+joined, so time kc has no samples for is an empty plot with the words
+"no data"; a sample without neighbors is a dot, and so is each sample
+when they are far apart. On a workload, a namespace or a node, with the
+samples of this kc session, thin lines in other colors show the first
+eight rows of the list (pods of a workload, workloads otherwise) under
+their sum; the legend counts them. Prometheus reads have no history per
+row, so they draw the sum only.
+
+The frames, the legends, the value labels and the time axis stay text,
+and so do the cursor (a thin vertical line; moving it sends no new
+image), the words "no data", the arrows of a line above the scale,
+menus, `F1` and dialogs drawn over the charts. While you resize the
 window the plots are text; the images come back a moment after the size
 stops changing.
 

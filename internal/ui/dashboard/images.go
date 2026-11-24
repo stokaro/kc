@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/ui/chart"
@@ -259,7 +260,54 @@ func detached(c chart.Chart) chart.Chart {
 	for i := range c.Refs {
 		c.Refs[i].Points = slices.Clone(c.Refs[i].Points)
 	}
+	c.Series = slices.Clone(c.Series)
+	for i := range c.Series {
+		c.Series[i].Points = slices.Clone(c.Series[i].Points)
+	}
 	return c
+}
+
+// The plot cells an image leaves to text (chart.TextCells) sit on the
+// picture's background: "no data" in grey, the cursor as a thin line.
+var (
+	gfxGapStyle    = lipgloss.NewStyle().Background(chart.Background).Foreground(lipgloss.Color("#8e8e8e"))
+	gfxCursorStyle = lipgloss.NewStyle().Background(chart.Background).Foreground(lipgloss.Color("#b4bac4"))
+)
+
+// seriesColors are the lines of the rows of the list under the usage:
+// Grafana's classic palette without the green, yellow and red of the
+// usage, the request and the limit.
+var seriesColors = [...]string{"#8AB8FF", "#FF9830", "#B877D9", "#5794F2", "#FFB357", "#CA95E5", "#C0D8FF", "#FFCB7D"}
+
+// maxSeries is how many rows of the list get a line: the first, most
+// memory first.
+const maxSeries = len(seriesColors)
+
+// forImages dresses a chart for an image of its plot: value labels on
+// the grid lines, the text cells on the picture's background, and, from
+// the session samples, a thin line per row of the list (the pods of a
+// workload, the workloads of a scope) under their sum.
+func (m *Model) forImages(v *view, wd widget, c *chart.Chart) {
+	c.Centered = true
+	c.Style = c.Style.Background(chart.Background)
+	for i := range c.Refs {
+		c.Refs[i].Style = c.Refs[i].Style.Background(chart.Background)
+	}
+	c.GapStyle, c.CursorLine = gfxGapStyle, gfxCursorStyle
+	if m.usesProm(v) || len(v.now.Rows) < 2 {
+		return
+	}
+	for i, r := range v.now.Rows[:min(len(v.now.Rows), maxSeries)] {
+		cpu, mem := m.sess.points(rowTarget(r).Key())
+		pts := cpu
+		if wd == widgetMemory {
+			pts = mem
+		}
+		if len(pts) == 0 {
+			continue
+		}
+		c.Series = append(c.Series, chart.Series{Points: pts, Style: lipgloss.NewStyle().Foreground(lipgloss.Color(seriesColors[i]))})
+	}
 }
 
 // placeImage replaces the plot cells of a rendered chart (lines[1:],

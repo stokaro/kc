@@ -371,6 +371,9 @@ func (m *Model) chartOf(v *view, wd widget, w, h int) chart.Chart {
 		}
 	}
 	c.Refs = m.refsOf(v, wd)
+	if m.images() {
+		m.forImages(v, wd, &c)
+	}
 	return c
 }
 
@@ -406,7 +409,7 @@ func (m *Model) refsOf(v *view, wd widget) []chart.Ref {
 	}
 	return []chart.Ref{
 		refCapacity: {Points: alloc, Hold: hold, Style: allocStyle},
-		refLimits:   {Points: lim, Hold: hold, Style: limStyle},
+		refLimits:   {Points: lim, Hold: hold, Style: limStyle, Band: true},
 		refRequests: {Points: req, Hold: hold, Style: reqStyle},
 	}
 }

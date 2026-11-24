@@ -42,6 +42,9 @@ type Ref struct {
 	Points []Point
 	Hold   time.Duration
 	Style  lipgloss.Style
+	// Band shades the plot above the line in a raster, faintly, as
+	// Grafana shades the area over a threshold.
+	Band bool
 }
 
 // at is the value of r in the cell [from, to); last closes the cell.
@@ -61,6 +64,14 @@ func (r Ref) at(from, to time.Time, last bool) (float64, bool) {
 	return 0, false
 }
 
+// Series is one more line of a raster, such as one pod of the workload
+// whose sum the chart's Points are. It has the chart's Hold and no area.
+// The text plot and the scale leave it out.
+type Series struct {
+	Points []Point
+	Style  lipgloss.Style
+}
+
 // Chart is one time series over [Start, End] with its scale and axes.
 type Chart struct {
 	Start, End time.Time
@@ -70,6 +81,8 @@ type Chart struct {
 	// gap. Zero holds nothing: every column without a sample is a gap.
 	Hold time.Duration
 	Refs []Ref
+	// Series are thinner lines a raster draws under the usage.
+	Series []Series
 	// Width and Height are the whole chart: the value labels on the left,
 	// the plot, and the time axis as the last line.
 	Width, Height int
@@ -82,6 +95,10 @@ type Chart struct {
 	Style lipgloss.Style
 	// Cursor is the plot cell drawn reversed; -1 draws none.
 	Cursor int
+	// CursorLine, with a foreground, draws the cursor column as a thin
+	// vertical line in its colors instead of reversed: over an image of
+	// the plot the column is text (TextCells).
+	CursorLine lipgloss.Style
 	// Loc is the time zone of the axis labels; nil is UTC.
 	Loc *time.Location
 	// PlotCells fixes the plot width when it fits, widening the labels:
@@ -91,6 +108,12 @@ type Chart struct {
 	// GapStyle draws plot columns without a sample; a run of them wide
 	// enough says "no data". Its zero value leaves them blank.
 	GapStyle lipgloss.Style
+	// Centered puts the value labels on the rows whose centers Raster
+	// draws their grid lines through: zero on the last row and the top on
+	// the first, or on the second when that puts the middle label on a
+	// row center too. The text plot is the same. Charts drawn as images
+	// set it.
+	Centered bool
 }
 
 // RefFit is how far above the usage a reference line may be and still
@@ -106,7 +129,9 @@ const (
 	axisLine = '─'
 	refLine  = '┄'
 	refAbove = '↑'
-	gapLabel = "no data"
+	// cursorLine is the cursor column with CursorLine.
+	cursorLine = '│'
+	gapLabel   = "no data"
 )
 
 // PlotWidth is how many cells the plot of a chart width wide has, after
@@ -131,8 +156,14 @@ type column struct {
 // layout is a chart cut into cells.
 type layout struct {
 	label, plot, rows int
-	cols              []column
-	top               float64
+	// topRow is the row of the top of the scale; ticks are the value
+	// labels, top first.
+	topRow int
+	ticks  []tick
+	// gapRow is the plot row that says "no data".
+	gapRow int
+	cols   []column
+	top    float64
 	// refRows is the plot row of each reference line per plot cell, -1
 	// where it is not drawn; refOff marks the cells where it is above the
 	// scale.
@@ -157,6 +188,20 @@ func (c Chart) layout() layout {
 	l.top = scale(c.scaleValue())
 	if l.top <= 0 || math.IsNaN(l.top) || math.IsInf(l.top, 0) {
 		l.top = 1
+	}
+	if c.Centered {
+		l.topRow, l.ticks = centeredTicks(l.rows, l.top)
+	} else {
+		l.ticks = []tick{{0, l.top}}
+		if l.rows >= 5 {
+			l.ticks = append(l.ticks, tick{refRow(l, l.top/2), l.top / 2})
+		}
+		l.ticks = append(l.ticks, tick{l.rows - 1, 0})
+	}
+	l.gapRow = l.rows / 2
+	if c.Centered && l.gapRow > 0 && slices.ContainsFunc(l.ticks, func(t tick) bool { return t.row == l.gapRow }) {
+		// The words stay off the grid line of a value label.
+		l.gapRow--
 	}
 	l.label = 0
 	for row := range l.rows {
@@ -371,7 +416,8 @@ func (c Chart) Render() []string {
 	lines := make([]string, 0, c.Height)
 	cursor := lipgloss.NewStyle().Reverse(true)
 	gaps := c.gapCells(l)
-	labelRow := l.rows / 2
+	labelRow := l.gapRow
+	_, reverse := c.CursorLine.GetForeground().(lipgloss.NoColor)
 	for row := range l.rows {
 		var b strings.Builder
 		b.WriteString(c.axisLabel(l, row))
@@ -388,8 +434,11 @@ func (c Chart) Render() []string {
 					r = gaps[x]
 				}
 			}
-			if x == c.Cursor {
+			switch {
+			case x == c.Cursor && reverse:
 				st = cursor
+			case x == c.Cursor:
+				r, st = cursorLine, c.CursorLine
 			}
 			b.WriteString(st.Render(string(r)))
 		}
@@ -443,15 +492,72 @@ func (c Chart) labelText(l layout, row int) string {
 		// Nothing to scale: a made-up top would read as data.
 		return ""
 	}
-	switch {
-	case row == 0:
-		return c.format(l.top)
-	case row == l.rows-1:
-		return c.format(0)
-	case l.rows >= 5 && row == refRow(l, l.top/2):
-		return c.format(l.top / 2)
+	for _, t := range l.ticks {
+		if t.row == row {
+			return c.format(t.v)
+		}
 	}
 	return ""
+}
+
+// tick is a value label on a plot row.
+type tick struct {
+	row int
+	v   float64
+}
+
+// centeredTicks are the value labels of a Centered chart: the top on
+// row topRow, zero on the last row, and between them the most labels,
+// at least two rows apart, that land on row centers and read as round
+// numbers. Half the top is the fallback.
+func centeredTicks(rows int, top float64) (topRow int, ticks []tick) {
+	if rows < 2 {
+		return 0, []tick{{0, top}}
+	}
+	best, bestRow := 1, 0
+	for _, tr := range []int{0, 1} {
+		span := rows - 1 - tr
+		if tr == 1 && rows < 4 {
+			continue
+		}
+		for _, k := range []int{5, 4, 3, 2} {
+			if k <= best || span%k != 0 || span/k < 2 {
+				continue
+			}
+			nice := true
+			for i := 1; i < k; i++ {
+				nice = nice && roundNumber(top*float64(i)/float64(k))
+			}
+			if nice {
+				best, bestRow = k, tr
+			}
+		}
+	}
+	if best == 1 && rows >= 5 {
+		best, bestRow = 2, (rows-1)%2
+	}
+	span := rows - 1 - bestRow
+	for i := range best + 1 {
+		ticks = append(ticks, tick{bestRow + i*span/best, top * float64(best-i) / float64(best)})
+	}
+	return bestRow, ticks
+}
+
+// roundNumber reports whether v has at most two significant digits, or
+// is a whole or half number of a binary unit (128Mi, 1.5Gi).
+func roundNumber(v float64) bool {
+	if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return false
+	}
+	m := v / math.Pow(10, math.Floor(math.Log10(v))-1)
+	if math.Abs(m-math.Round(m)) < 1e-6 {
+		return true
+	}
+	if v < 1024 {
+		return false
+	}
+	b := v / math.Pow(1024, math.Floor(math.Log(v)/math.Log(1024)))
+	return math.Abs(2*b-math.Round(2*b)) < 1e-6
 }
 
 // cellRune draws plot cell (row, x) and returns the reference line it
@@ -544,29 +650,105 @@ func (c Chart) timeAxis(l layout) string {
 	for x := range cells {
 		cells[x] = axisLine
 	}
-	layoutFmt := "15:04"
-	if c.End.Sub(c.Start) >= 24*time.Hour {
-		layoutFmt = "01-02 15:04"
+	if ticks := c.timeTicks(l); len(ticks) > 0 {
+		for _, t := range ticks {
+			copy(cells[t.at:], []rune(t.text))
+		}
+		return strings.Repeat(" ", l.label) + "└" + string(cells)
 	}
+	layoutFmt := c.timeFormat()
 	loc := c.Loc
 	if loc == nil {
 		loc = time.UTC
 	}
 	span := c.End.Sub(c.Start)
-	if span < 10*time.Minute {
-		layoutFmt = "15:04:05"
-	}
 	from, to := c.Start.In(loc).Format(layoutFmt), c.End.In(loc).Format(layoutFmt)
 	mid := c.Start.Add(span / 2).In(loc).Format(layoutFmt)
 	if len(from)+len(to)+2 <= l.plot {
 		copy(cells, []rune(from))
 		copy(cells[l.plot-len(to):], []rune(to))
 	}
-	if at := (l.plot - len(mid)) / 2; len(from)+len(mid)+len(to)+4 <= l.plot {
+	if at := (l.plot - len(mid)) / 2; showsMidTime(l, len(mid)) {
 		copy(cells[at:], []rune(mid))
 	}
 	return strings.Repeat(" ", l.label) + "└" + string(cells)
 }
+
+// timeFormat is the layout of the time axis labels.
+func (c Chart) timeFormat() string {
+	switch span := c.End.Sub(c.Start); {
+	case span < 10*time.Minute:
+		return "15:04:05"
+	case span >= 24*time.Hour:
+		return "01-02 15:04"
+	}
+	return "15:04"
+}
+
+// timeTick is a time label of a Centered chart: at fraction f of the
+// plot width, its text from plot cell at.
+type timeTick struct {
+	f    float64
+	at   int
+	text string
+}
+
+// tickSteps are the spacings of the time labels of a Centered chart.
+var tickSteps = []time.Duration{
+	10 * time.Second, 15 * time.Second, 30 * time.Second,
+	time.Minute, 2 * time.Minute, 5 * time.Minute, 10 * time.Minute, 15 * time.Minute, 30 * time.Minute,
+	time.Hour, 2 * time.Hour, 3 * time.Hour, 6 * time.Hour, 12 * time.Hour, 24 * time.Hour,
+}
+
+// timeTicks are the time labels of a Centered chart, as a Grafana time
+// axis has them: at round times of the clock, the closest spacing that
+// leaves three cells between labels, each centered on its time. A label
+// that would stick out of the plot is left out. Nil for a chart that is
+// not Centered, or when no spacing fits.
+func (c Chart) timeTicks(l layout) []timeTick {
+	span := c.End.Sub(c.Start)
+	if !c.Centered || span <= 0 || l.plot < 1 {
+		return nil
+	}
+	loc := c.Loc
+	if loc == nil {
+		loc = time.UTC
+	}
+	_, off := c.Start.In(loc).Zone()
+	shift := time.Duration(off) * time.Second
+	for _, step := range tickSteps {
+		layoutFmt := "15:04"
+		switch {
+		case step < time.Minute:
+			layoutFmt = "15:04:05"
+		case span >= 24*time.Hour:
+			layoutFmt = "01-02 15:04"
+		}
+		n := len(layoutFmt)
+		if float64(step)/float64(span)*float64(l.plot) < float64(n+3) {
+			continue
+		}
+		first := c.Start.Add(shift).Truncate(step).Add(-shift)
+		if first.Before(c.Start) {
+			first = first.Add(step)
+		}
+		var out []timeTick
+		for t := first; !t.After(c.End); t = t.Add(step) {
+			f := float64(t.Sub(c.Start)) / float64(span)
+			at := int(math.Round(f*float64(l.plot) - float64(n)/2))
+			if at < 0 || at+n > l.plot {
+				continue
+			}
+			out = append(out, timeTick{f: f, at: at, text: t.In(loc).Format(layoutFmt)})
+		}
+		return out
+	}
+	return nil
+}
+
+// showsMidTime reports whether the time axis has room for the middle
+// label between the start and the end, all n cells wide.
+func showsMidTime(l layout, n int) bool { return 3*n+4 <= l.plot }
 
 // NiceTop rounds v up to 1, 2, 2.5 or 5 times a power of ten, so the
 // labels read well; zero and below scale to 1.
