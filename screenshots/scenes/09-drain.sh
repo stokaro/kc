@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Node actions (M-n): drain kc-shots-worker2 with progress, then uncordon it.
+# Node actions (M-n): drain the second worker with progress, then uncordon it.
 
 scene_drain_node_actions() {
 	# An earlier run may have left the node cordoned.

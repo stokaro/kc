@@ -90,14 +90,20 @@ type usageSample struct {
 	base    string
 }
 
-// sparkView is a rendered history: the sparkline and the line that says
-// what it shows.
+// sparkView is a rendered history: the sparkline, the line that says what
+// it shows, the time its cells span and the percentage of a full cell.
 type sparkView struct {
 	line, label string
+	span        time.Duration
+	top         float64
 }
 
 // render draws the window that ends at now in at most width cells, with
-// the label that says what the cells show.
+// the label that says what the cells show. The line starts at the cell of
+// the oldest sample in the window, so a young history is a short line
+// that grows to the right, not a few marks at the end of a blank one. The
+// cells are scaled to the smallest of scaleTops that holds the peak, so
+// a few percent still shows its shape.
 func (s series) render(now time.Time, width int) (sparkView, bool) {
 	inWindow := 0
 	for _, sm := range s.samples {
@@ -118,7 +124,33 @@ func (s series) render(now time.Time, width int) (sparkView, bool) {
 	case inWindow == 1:
 		return sparkView{label: fmt.Sprintf("%s: collecting, 1 sample", what)}, true
 	}
-	return sparkView{line: s.cells(now, n), label: s.label(now, what, inWindow)}, true
+	top := s.scaleTop(now)
+	cells := []rune(s.cells(now, n, top))
+	for len(cells) > 0 && cells[0] == pendingCell {
+		cells = cells[1:]
+	}
+	span := historyWindow / time.Duration(n) * time.Duration(len(cells))
+	return sparkView{line: string(cells), label: s.label(now, what, inWindow), span: span, top: top}, true
+}
+
+// scaleTops are the tops a sparkline can be scaled to, in percent.
+var scaleTops = []float64{10, 25, 50, 100}
+
+// scaleTop is the smallest of scaleTops that holds every sample in the
+// window, so the scale changes in a few steps, not with every peak.
+func (s series) scaleTop(now time.Time) float64 {
+	peak := 0.0
+	for _, sm := range s.samples {
+		if now.Sub(sm.at) < historyWindow {
+			peak = math.Max(peak, sm.v)
+		}
+	}
+	for _, top := range scaleTops {
+		if peak <= top {
+			return top
+		}
+	}
+	return 100
 }
 
 // cells draws n cells of historyWindow/n each, aligned to absolute time,
@@ -126,7 +158,7 @@ func (s series) render(now time.Time, width int) (sparkView, bool) {
 // peak of its samples. A cell without one continues the previous value
 // when its neighbors are no more than gapAfter apart and shows gapCell
 // otherwise; cells before the first sample stay blank.
-func (s series) cells(now time.Time, n int) string {
+func (s series) cells(now time.Time, n int, top float64) string {
 	d := historyWindow / time.Duration(n)
 	end := now.UnixNano() / int64(d)
 	cells := make([]rune, n)
@@ -147,11 +179,11 @@ func (s series) cells(now time.Time, n int) string {
 		}
 		switch {
 		case found:
-			cells[k] = sparkRune(peak)
+			cells[k] = sparkRune(peak, top)
 		case prev == nil:
 			cells[k] = pendingCell
 		case s.continues(prev, j, now):
-			cells[k] = sparkRune(prev.v)
+			cells[k] = sparkRune(prev.v, top)
 		default:
 			cells[k] = gapCell
 		}
@@ -198,8 +230,8 @@ func (s series) label(now time.Time, what string, inWindow int) string {
 
 var sparks = []rune("▁▂▃▄▅▆▇█")
 
-// sparkRune is the block for a percentage (0 to 100).
-func sparkRune(v float64) rune {
-	v = math.Max(0, math.Min(v, 100))
-	return sparks[int(math.Round(v/100*float64(len(sparks)-1)))]
+// sparkRune is the block for a percentage on a scale from 0 to top.
+func sparkRune(v, top float64) rune {
+	v = math.Max(0, math.Min(v, top))
+	return sparks[int(math.Round(v/top*float64(len(sparks)-1)))]
 }

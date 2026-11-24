@@ -555,23 +555,36 @@ func barBlock(b models.InfoBar, h *history, now time.Time, width, cells int) []s
 	default:
 		return out
 	}
-	// The frame marks both ends of the window, so the newest samples at
-	// the right read as the end of a time axis, not as stray marks.
-	view, ok := s.render(now, width-len(indent)-1-2-len(windowMark))
+	// The frame marks both ends of the line and the mark after it says
+	// how much of the window the line spans and what a full cell is. The
+	// room for the longest mark is kept always, so the cell width does
+	// not change as the line grows.
+	view, ok := s.render(now, width-len(indent)-1-2-len(sparkMark(historyWindow-time.Minute, 10)))
 	if !ok {
 		return out
 	}
 	para(view.label, models.RowHealthUnknown)
 	if view.line != "" {
-		out = append(out, indent+"▕"+view.line+"▏"+windowMark)
+		out = append(out, indent+"▕"+view.line+"▏"+sparkMark(view.span, view.top))
 	}
 	// A blank line ends the block, so the label does not read as the
 	// heading of the next bar.
 	return append(out, "")
 }
 
-// windowMark follows a sparkline: the time its frame spans.
-var windowMark = " " + shortAge(historyWindow)
+// sparkMark follows a sparkline: the time its frame spans, the window
+// while it spans less than that, and the top of its scale when that is
+// not 100%.
+func sparkMark(span time.Duration, top float64) string {
+	mark := " " + shortAge(historyWindow)
+	if span < historyWindow {
+		mark = " " + shortAge(span) + " of " + shortAge(historyWindow)
+	}
+	if top < 100 {
+		mark += fmt.Sprintf(", top %g%%", top)
+	}
+	return mark
+}
 
 // styled renders s like a row of an object list in state h; ok and unknown
 // lines stay plain.

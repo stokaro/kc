@@ -91,7 +91,10 @@ func summarizePods(rc *ruleContext, byPod map[string][]InfoWorkload) []overviewP
 	}
 	var out []overviewPodUsage
 	rc.scopedPods(func(p *corev1.Pod) {
-		if podTerminal(p) {
+		// A pod being deleted (an evicted one after a drain, say) runs out
+		// its grace period on the node, but it is on its way out; listing
+		// it as a top consumer reads as if the drain had not happened.
+		if podTerminal(p) || p.DeletionTimestamp != nil {
 			return
 		}
 		used, ok := rc.m.pods[usageObjectKey(p.Namespace, p.Name)]
@@ -204,7 +207,9 @@ const InfoTopN = 5
 
 // OverviewInfo serves the Info panel mode from an overview engine of its
 // own, so the mode keeps the same data rules as /overview: the engine runs
-// while Summary is called, and stops when the mode is left (Close).
+// while Summary is called, and stops when the mode is left (Close). Unlike
+// /overview it recomputes while a dialog is open, since the panel stays
+// in view beside it.
 type OverviewInfo struct {
 	engine *overviewEngine
 }
@@ -212,7 +217,9 @@ type OverviewInfo struct {
 // NewOverviewInfo returns the Info source for deps' cluster in namespace
 // (AllNamespaces for the whole cluster). It starts nothing until Summary.
 func NewOverviewInfo(deps Deps, namespace string) *OverviewInfo {
-	return &OverviewInfo{engine: newOverviewEngine(deps, namespace)}
+	e := newOverviewEngine(deps, namespace)
+	e.computeBehindDialogs = true
+	return &OverviewInfo{engine: e}
 }
 
 // Close stops the engine.

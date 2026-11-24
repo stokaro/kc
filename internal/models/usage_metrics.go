@@ -181,6 +181,10 @@ func (m *UsageMetrics) snapshotFor(deps Deps, key usagePollerKey, watcher any, n
 	defer p.mu.Unlock()
 	p.deps = deps
 	p.watchers[watcher] = usageWatcher{seen: now, notify: notify}
+	// A poller that kept running while a dialog held its polls back has
+	// the newest values there are; an old snapshot of a stopped poller
+	// waits for the next poll. Readers show the age of what they get.
+	pausedOnly := p.running && deps.Activity.Paused()
 	if !p.running {
 		p.running = true
 		go p.run()
@@ -188,7 +192,7 @@ func (m *UsageMetrics) snapshotFor(deps Deps, key usagePollerKey, watcher any, n
 	if p.snap == nil {
 		return nil, false
 	}
-	return p.snap, now.Sub(p.snap.at) <= m.idleAfter()
+	return p.snap, pausedOnly || now.Sub(p.snap.at) <= m.idleAfter()
 }
 
 // running reports whether the poller for key polls; tests use it.

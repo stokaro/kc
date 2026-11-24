@@ -306,8 +306,13 @@ func TestRenderBarAndSparkline(t *testing.T) {
 		}
 	}
 	for v, want := range map[float64]rune{0: '▁', 50: '▅', 100: '█', 120: '█', -3: '▁'} {
-		if got := sparkRune(v); got != want {
-			t.Errorf("sparkRune(%v) = %q, want %q", v, got, want)
+		if got := sparkRune(v, 100); got != want {
+			t.Errorf("sparkRune(%v, 100) = %q, want %q", v, got, want)
+		}
+	}
+	for v, want := range map[float64]rune{0: '▁', 5: '▅', 10: '█', 30: '█'} {
+		if got := sparkRune(v, 10); got != want {
+			t.Errorf("sparkRune(%v, 10) = %q, want %q", v, got, want)
 		}
 	}
 }

@@ -56,8 +56,8 @@ func workloadInfoSummary(report *overviewReport, err error, cfgIn appconfig.Over
 	}
 	hasUse := s.pods > 0 && s.measured == s.pods
 	out.Bars = []InfoBar{
-		workloadResourceBar(cfg, "CPU", hasUse, s.cpuUse, s.cpuReq, s.cpuLim, s.cpuUnlimited, cfg.CPULimitWarnPercent, formatMilliCPU, usageNote),
-		workloadResourceBar(cfg, "Memory", hasUse, s.memUse, s.memReq, s.memLim, s.memUnlimited, cfg.MemoryLimitWarnPercent, formatMemory, usageNote),
+		workloadResourceBar(cfg, "CPU", s.pods, hasUse, s.cpuUse, s.cpuReq, s.cpuLim, s.cpuUnlimited, cfg.CPULimitWarnPercent, formatMilliCPU, usageNote),
+		workloadResourceBar(cfg, "Memory", s.pods, hasUse, s.memUse, s.memReq, s.memLim, s.memUnlimited, cfg.MemoryLimitWarnPercent, formatMemory, usageNote),
 		workloadPodsBar(s),
 	}
 	for _, p := range report.pods {
@@ -77,26 +77,32 @@ func workloadInfoSummary(report *overviewReport, err error, cfgIn appconfig.Over
 // workloadResourceBar compares the summed usage of a workload's pods with
 // their summed limits. When a pod has no limit the sum is no ceiling, and
 // the bar compares with the requests instead. Without usage it shows the
-// requests of the limits.
-func workloadResourceBar(cfg appconfig.OverviewConfig, label string, hasUse bool, use, req, lim int64, unlimited bool, warnPercent int, format func(int64) string, usageNote string) InfoBar {
+// requests of the limits. The text names the pods it sums, so the sum is
+// not read as the use of one pod. It is formatted from the exact sum: the
+// pod rows below are each rounded down and can add up to less.
+func workloadResourceBar(cfg appconfig.OverviewConfig, label string, pods int64, hasUse bool, use, req, lim int64, unlimited bool, warnPercent int, format func(int64) string, usageNote string) InfoBar {
 	limited := !unlimited && lim > 0
+	who := "1 pod uses"
+	if pods != 1 {
+		who = fmt.Sprintf("%d pods use", pods)
+	}
 	bar := InfoBar{Label: label, Flag: "ok", Health: severityOK.RowHealth()}
 	warn := func(flag string) { bar.Flag, bar.Health = flag, severityWarning.RowHealth() }
 	switch {
 	case hasUse && limited:
 		bar.Known, bar.Usage, bar.Percent, bar.Base = true, true, percent(use, lim), "limits"
-		bar.Detail = fmt.Sprintf("use %s of lim %s, req %s", format(use), format(lim), format(req))
+		bar.Detail = fmt.Sprintf("%s %s of lim %s, req %s", who, format(use), format(lim), format(req))
 		if bar.Percent >= float64(warnPercent) {
 			warn(flagNearLimit)
 		}
 	case hasUse && req > 0:
 		bar.Known, bar.Usage, bar.Percent, bar.Base = true, true, percent(use, req), "requests"
-		bar.Detail = fmt.Sprintf("use %s of req %s, no limit", format(use), format(req))
+		bar.Detail = fmt.Sprintf("%s %s of req %s, no limit", who, format(use), format(req))
 		if float64(use) >= cfg.UnderRequestedFactor*float64(req) {
 			warn(flagUnderRequested)
 		}
 	case hasUse:
-		bar.Detail = fmt.Sprintf("use %s, no requests or limits", format(use))
+		bar.Detail = fmt.Sprintf("%s %s, no requests or limits", who, format(use))
 	case limited:
 		bar.Known, bar.Percent = true, percent(req, lim)
 		bar.Detail = fmt.Sprintf("req %s of lim %s, use n/a: %s", format(req), format(lim), usageNote)
