@@ -221,23 +221,6 @@ type ResourcesViewConfig struct {
 	Visibility ResourcesVisibilityConfig `json:"visibility"`
 }
 
-// Built-in resource type profiles. VisibilityProfileWork lists the types of
-// kc's Work list; VisibilityProfileAll lists every discovered type.
-const (
-	VisibilityProfileWork = "work"
-	VisibilityProfileAll  = "all"
-)
-
-// ResourcesVisibilityConfig picks which resource types the root, the
-// resources of a namespace and the cluster resources list. Types left out
-// stay reachable: cd, the hotlist, history, links and "Other types".
-type ResourcesVisibilityConfig struct {
-	// DefaultProfile is the profile panels start with: "work" (the
-	// default) or "all". An unknown name falls back to "work", never to
-	// "all".
-	DefaultProfile string `json:"defaultProfile"`
-}
-
 // LayoutConfig holds the screen layout settings of mc's Options > Layout.
 type LayoutConfig struct {
 	// MenuBarVisible keeps the menu bar titles on the top row, as mc does by
@@ -849,7 +832,7 @@ func normalizeForSave(cfg *Config) {
 	if cfg.Resources.PeekInterval.Duration <= 0 {
 		cfg.Resources.PeekInterval = metav1.Duration{Duration: Default().Resources.PeekInterval.Duration}
 	}
-	cfg.Resources.Visibility.DefaultProfile = NormalizeVisibilityProfile(cfg.Resources.Visibility.DefaultProfile)
+	normalizeVisibilityForSave(&cfg.Resources.Visibility)
 	cfg.Objects.Order = NormalizeObjectsOrder(cfg.Objects.Order)
 	if strings.EqualFold(cfg.Objects.Columns, ColumnsModeWide) {
 		cfg.Objects.Columns = ColumnsModeWide
@@ -891,14 +874,4 @@ func clampPercent(v int) int {
 		return 100
 	}
 	return v
-}
-
-// NormalizeVisibilityProfile returns the built-in profile name p means, in
-// lower case. An empty or unknown name is "work": a typo must not widen the
-// catalog to every type.
-func NormalizeVisibilityProfile(p string) string {
-	if strings.EqualFold(strings.TrimSpace(p), VisibilityProfileAll) {
-		return VisibilityProfileAll
-	}
-	return VisibilityProfileWork
 }

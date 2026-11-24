@@ -98,6 +98,10 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 			a.setActivePanel(idx, "menu all types")
 			return a.showTypeCatalog(idx, false)
 		}},
+		{Label: "Reso&urce visibility...", Disabled: !list, Run: func() tea.Cmd {
+			a.setActivePanel(idx, "menu resource visibility")
+			return a.showVisibilityEditor(idx)
+		}},
 	}
 }
 

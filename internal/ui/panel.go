@@ -1145,6 +1145,11 @@ func (p *Panel) renderFooterWithWidth(ctx context.Context, suppress bool, width 
 			renderedFooter = fp.Footer(ctx, width)
 		}
 	}
+	if p.search.active && p.search.hidden != nil && renderedFooter != "" {
+		// The details line says what Enter opens: the type quick search
+		// found, not the row under the cursor.
+		renderedFooter = p.search.hidden.note()
+	}
 	if strings.TrimSpace(renderedFooter) == "" {
 		return ""
 	}
@@ -1381,7 +1386,12 @@ func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.St
 	// The scope goes on the outermost bottom border only: the one that also
 	// carries the mode label.
 	if strings.TrimSpace(mode) != "" && p.search.active {
-		label := renderQuickSearch(p.search.text, borderStyle.Render(border.Bottom), contentWidth/2)
+		room := contentWidth / 2
+		if p.search.hidden != nil {
+			// The reason matters more than the status while it shows.
+			room = contentWidth
+		}
+		label := renderQuickSearch(p.search.text, p.search.hidden, borderStyle.Render(border.Bottom), room)
 		p.scopeHits = scopeHits{}
 		left += label
 		contentWidth -= lipgloss.Width(label)

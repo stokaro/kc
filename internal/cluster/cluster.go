@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -724,20 +725,36 @@ type ResourceInfo struct {
 
 // GetResourceInfos returns API resource infos via discovery.
 func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
+	infos, _, err := c.GetResourceInfosPartial()
+	return infos, err
+}
+
+// GetResourceInfosPartial is GetResourceInfos plus the API groups whose
+// discovery failed, sorted: their types are missing from the list, which
+// does not mean they are not installed.
+func (c *Cluster) GetResourceInfosPartial() ([]ResourceInfo, []string, error) {
 	if err := c.ensureDiscovery(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lists, err := c.disco.ServerPreferredResources()
+	var failed []string
 	if err != nil {
 		// Allow partial discovery results when some aggregated APIs fail (e.g., metrics.k8s.io).
 		if len(lists) == 0 {
-			return nil, err
+			return nil, nil, err
 		}
-		if _, ok := err.(*discovery.ErrGroupDiscoveryFailed); !ok {
-			return nil, err
+		partial, ok := err.(*discovery.ErrGroupDiscoveryFailed)
+		if !ok {
+			return nil, nil, err
 		}
 		// For partial failures, continue with the successful lists so callers
 		// can proceed (metrics server down should not block the UI).
+		for gv := range partial.Groups {
+			if !slices.Contains(failed, gv.Group) {
+				failed = append(failed, gv.Group)
+			}
+		}
+		slices.Sort(failed)
 	}
 	var out []ResourceInfo
 	for _, l := range lists {
@@ -762,5 +779,5 @@ func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
 			})
 		}
 	}
-	return out, nil
+	return out, failed, nil
 }

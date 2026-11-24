@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -22,6 +23,17 @@ type quickSearch struct {
 	// pending is set while text was typed into a list that had no rows
 	// yet: the search runs again when the rows arrive.
 	pending bool
+	// hidden is the type the text names when no row matches it: a type
+	// of the list that the profile leaves out or that has no row because
+	// it is empty or not accessible. Enter opens it.
+	hidden *hiddenTypeMatch
+}
+
+// hiddenTypeMatch is a type quick search found among the types a type list
+// does not show, and why it has no row.
+type hiddenTypeMatch struct {
+	entry models.TypeEntry
+	why   string
 }
 
 // QuickSearchActive reports whether the panel is in quick search.
@@ -65,6 +77,10 @@ func (p *Panel) QuickSearchKey(key tea.KeyPressMsg) bool {
 	defer p.invalidateRenderCache()
 	switch key.String() {
 	case "ctrl+s", "alt+s":
+		if p.search.hidden != nil {
+			p.findHiddenType(p.search.text, true)
+			return true
+		}
 		lw.QuickSearch(ctx, p.search.text, true)
 		return true
 	case "esc":
@@ -73,7 +89,10 @@ func (p *Panel) QuickSearchKey(key tea.KeyPressMsg) bool {
 	case "backspace", "ctrl+h":
 		if r := []rune(p.search.text); len(r) > 0 {
 			p.search.text = string(r[:len(r)-1])
-			lw.QuickSearch(ctx, p.search.text, false)
+			p.search.hidden = nil
+			if !lw.QuickSearch(ctx, p.search.text, false) && p.search.text != "" {
+				p.findHiddenType(p.search.text, false)
+			}
 		}
 		return true
 	}
@@ -81,6 +100,9 @@ func (p *Panel) QuickSearchKey(key tea.KeyPressMsg) bool {
 		text := p.search.text + k.Text
 		switch {
 		case lw.QuickSearch(ctx, text, false):
+			p.search.text, p.search.pending, p.search.hidden = text, false, nil
+		case p.findHiddenType(text, false):
+			// No row matches, but a type the list does not show does.
 			p.search.text, p.search.pending = text, false
 		case !hasObjectRows(lw.Items()):
 			// A live list may still be loading: keep the text and search
@@ -92,6 +114,58 @@ func (p *Panel) QuickSearchKey(key tea.KeyPressMsg) bool {
 	}
 	p.StopQuickSearch()
 	return false
+}
+
+// HiddenTypeMatch returns the type quick search found among the types the
+// panel's type list does not show, if any: Enter opens it.
+func (p *Panel) HiddenTypeMatch() (models.TypeEntry, bool) {
+	if !p.search.active || p.search.hidden == nil {
+		return models.TypeEntry{}, false
+	}
+	return p.search.hidden.entry, true
+}
+
+// findHiddenType looks for a type of the panel's type list whose name
+// starts with text and that has no row: the profile leaves it out, or it
+// is empty or not accessible. With next it looks after the current match.
+// It reports whether one matched, and keeps the current match when none
+// does.
+func (p *Panel) findHiddenType(text string, next bool) bool {
+	src, ok := p.Folder().(models.TypeCatalogSource)
+	if !ok || text == "" {
+		return false
+	}
+	catalog := src.TypeCatalog()
+	q := strings.ToLower(text)
+	var matches []hiddenTypeMatch
+	for _, e := range catalog.Entries {
+		why := e.Hidden
+		if !e.Decision.Included {
+			why = "outside " + catalog.Profile.Title()
+		}
+		if why != "" && strings.HasPrefix(strings.ToLower(e.GVR.Resource), q) {
+			matches = append(matches, hiddenTypeMatch{entry: e, why: why})
+		}
+	}
+	if len(matches) == 0 {
+		return false
+	}
+	pick := 0
+	if next && p.search.hidden != nil {
+		for i, m := range matches {
+			if m.entry.ID == p.search.hidden.entry.ID {
+				pick = (i + 1) % len(matches)
+			}
+		}
+	}
+	p.search.hidden = &matches[pick]
+	return true
+}
+
+// note is the footer line of a hidden match: what Enter does, the type
+// and why it has no row. Enter comes first, so a narrow panel keeps it.
+func (m *hiddenTypeMatch) note() string {
+	return "Enter opens " + m.entry.GVR.Resource + " (" + m.entry.GVR.GroupVersion().String() + "), " + m.why
 }
 
 // quickSearchSelectionChanged records the row the search moved the cursor
@@ -133,8 +207,13 @@ func hasObjectRows(items []Item) bool {
 }
 
 // renderQuickSearch is the frame label shown instead of the scope while
-// searching.
-func renderQuickSearch(text, dash string, maxWidth int) string {
+// searching. A match among the types the list does not show draws the
+// label in the "outside" mark's colors with the reason after the text.
+func renderQuickSearch(text string, hidden *hiddenTypeMatch, dash string, maxWidth int) string {
+	if hidden != nil {
+		label := truncateStringToWidth(" Search: "+text+"_ "+hidden.why+" ", max(0, maxWidth-lipgloss.Width(dash)))
+		return dash + typeMarkStyle().Render(label)
+	}
 	label := truncateStringToWidth(" Search: "+text+"_ ", max(0, maxWidth-lipgloss.Width(dash)))
 	return dash + quickSearchStyle.Render(label)
 }

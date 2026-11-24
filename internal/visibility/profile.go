@@ -72,6 +72,25 @@ func (p Profile) Clone() Profile {
 	return Profile{Mode: p.Mode, Show: slices.Clone(p.Show), Hide: slices.Clone(p.Hide)}
 }
 
+// Equal reports whether p and q pick types the same way: the same mode and
+// the same Show and Hide selectors, in any order.
+func (p Profile) Equal(q Profile) bool {
+	return p.Mode == q.Mode && sameSelectors(p.Show, q.Show) && sameSelectors(p.Hide, q.Hide)
+}
+
+func sameSelectors(a, b []schema.GroupResource) bool {
+	x, y := selectorSet(a), selectorSet(b)
+	if len(x) != len(y) {
+		return false
+	}
+	for gr := range x {
+		if !y[gr] {
+			return false
+		}
+	}
+	return true
+}
+
 // Validate reports every problem of p: an unknown mode, an invalid
 // selector, a list the mode does not use, and a selector both shown and
 // hidden.

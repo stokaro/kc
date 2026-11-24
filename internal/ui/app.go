@@ -428,10 +428,18 @@ func (a *App) Init() tea.Cmd {
 			lookErr = a.toastLogger.Errorf("%s", strings.ReplaceAll(err.Error(), "\n", "; "))
 		}
 	}
+	var visibilityErr tea.Cmd
+	if err := visibilityConfigError(cfg.Resources.Visibility); err != nil {
+		ctrllog.FromContext(a.ctx).WithName("config").Error(err, "resource visibility config")
+		if a.toastLogger != nil {
+			visibilityErr = a.toastLogger.Errorf("%s", strings.ReplaceAll(err.Error(), "\n", "; "))
+		}
+	}
 	return tea.Batch(
 		a.loadCommandHotkeys(),
 		a.loadHealthConfig(),
 		lookErr,
+		visibilityErr,
 		a.initPanels(),
 		a.terminal.Init(),
 		func() tea.Msg {
@@ -524,6 +532,7 @@ func cloneConfig(cfg *appconfig.Config) *appconfig.Config {
 	}
 	clone := *cfg
 	clone.Resources.Favorites = append([]string(nil), cfg.Resources.Favorites...)
+	clone.Resources.Visibility = cfg.Resources.Visibility.Clone()
 	return &clone
 }
 
@@ -1486,9 +1495,11 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 
 	var resConfig *ViewOptionsResourcesConfig
 	if resourceSection {
+		typeChoices, typeProfile := a.typeProfileChoices(panel)
 		resConfig = &ViewOptionsResourcesConfig{
 			ShowTypes:     showInclude,
-			TypeProfile:   a.ensurePanelConfig(panel).Resources.Visibility.DefaultProfile,
+			TypeProfile:   typeProfile,
+			TypeChoices:   typeChoices,
 			ShowInclude:   showInclude,
 			IncludeEmpty:  !showNonEmpty,
 			ShowOrder:     showOrder,

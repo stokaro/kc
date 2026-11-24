@@ -24,6 +24,7 @@ dialog or view opens its page; this index lists them all. See
 
 - [Context and namespace](context-namespace.md)
 - [Resource types](resource-types.md)
+- [Resource visibility](resource-visibility.md)
 - [Hotlist and saved views](hotlist.md)
 - [Panel history](history.md)
 - [Menu bar](menu-bar.md)

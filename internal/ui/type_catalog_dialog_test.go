@@ -36,17 +36,23 @@ func catalogEntries() []models.TypeEntry {
 	}
 }
 
+var (
+	workVisibility = appconfig.EffectiveVisibility{Name: appconfig.VisibilityProfileWork, Profile: visibility.Work()}
+	allVisibility  = appconfig.EffectiveVisibility{Name: appconfig.VisibilityProfileAll, Profile: visibility.Profile{Mode: visibility.ModeAll}}
+)
+
 func TestTypeCatalogChoices(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name      string
-		profile   string
+		profile   appconfig.EffectiveVisibility
 		otherOnly bool
 		notes     []string
 	}{
-		{name: "all types under Work", profile: appconfig.VisibilityProfileWork, notes: []string{"Work", "other", "cluster  other"}},
-		{name: "other types", profile: appconfig.VisibilityProfileWork, otherOnly: true, notes: []string{"", "", "cluster"}},
-		{name: "all types under All", profile: appconfig.VisibilityProfileAll, notes: []string{"", "", "cluster"}},
+		{name: "all types under Work", profile: workVisibility, notes: []string{"Work", "other", "cluster  other"}},
+		{name: "other types", profile: workVisibility, otherOnly: true, notes: []string{"", "", "cluster"}},
+		{name: "all types under All", profile: allVisibility, notes: []string{"", "", "cluster"}},
+		{name: "all types under a named profile", profile: appconfig.EffectiveVisibility{Name: "app", Edited: true, Profile: visibility.Profile{Mode: visibility.ModeOnly}}, notes: []string{"app*", "other", "cluster  other"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -85,7 +91,7 @@ func TestTypeCatalogFilterMatchesKindShortNameAndGroup(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.filter, func(t *testing.T) {
 			t.Parallel()
-			picker := NewScopePickerModel(typeCatalogChoices(catalogEntries(), appconfig.VisibilityProfileWork, false), "", nil, nil)
+			picker := NewScopePickerModel(typeCatalogChoices(catalogEntries(), workVisibility, false), "", nil, nil)
 			for _, r := range tc.filter {
 				picker.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 			}
@@ -102,7 +108,7 @@ func TestTypeCatalogFilterMatchesKindShortNameAndGroup(t *testing.T) {
 
 func TestScopePickerDetailsNeedRoom(t *testing.T) {
 	t.Parallel()
-	choices := typeCatalogChoices(catalogEntries(), appconfig.VisibilityProfileWork, true)
+	choices := typeCatalogChoices(catalogEntries(), workVisibility, true)
 	tests := []struct {
 		name  string
 		width int
@@ -141,7 +147,7 @@ func TestScopePickerDetailsNeedRoom(t *testing.T) {
 
 func TestScopePickerNotesLineUp(t *testing.T) {
 	t.Parallel()
-	p := NewScopePickerModel(typeCatalogChoices(catalogEntries(), appconfig.VisibilityProfileWork, false), "", nil, nil)
+	p := NewScopePickerModel(typeCatalogChoices(catalogEntries(), workVisibility, false), "", nil, nil)
 	p.SetDimensions(70, 6)
 	lines := strings.Split(ansi.Strip(p.View().Content), "\n")
 	// " " + the label column (25) + "  " + the detail column (23) + "  ".
@@ -237,11 +243,11 @@ func TestResourcesOptionsTypesAppliesToThePanelOnly(t *testing.T) {
 	app.leftConfig, app.rightConfig = nil, nil
 	app.activePanel = 0
 	app.modalManager.Show("view_options")
-	app.Update(ResourcesOptionsChangedMsg{HasTypes: true, TypeProfile: "ALL", TableMode: "scroll", Accept: true, Close: true})
-	if got := app.ensurePanelConfig(app.leftPanel).Resources.Visibility.DefaultProfile; got != appconfig.VisibilityProfileAll {
-		t.Fatalf("left panel profile = %q, want all", got)
+	app.Update(ResourcesOptionsChangedMsg{HasTypes: true, TypeProfile: "all", TypeChanged: true, TableMode: "scroll", Accept: true, Close: true})
+	if got := app.panelVisibility(app.leftPanel); got.Name != appconfig.VisibilityProfileAll || got.Source != appconfig.VisibilityFromPanel {
+		t.Fatalf("left panel profile = %+v, want all, chosen for the panel", got)
 	}
-	if got := app.ensurePanelConfig(app.rightPanel).Resources.Visibility.DefaultProfile; got != appconfig.VisibilityProfileWork {
+	if got := app.panelVisibility(app.rightPanel).Name; got != appconfig.VisibilityProfileWork {
 		t.Fatalf("right panel profile = %q, want work", got)
 	}
 	if got := app.cfg.Resources.Visibility.DefaultProfile; got != appconfig.VisibilityProfileWork {

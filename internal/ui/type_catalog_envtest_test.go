@@ -73,12 +73,12 @@ func TestOtherTypesDialogOpensTypeOutsideWork(t *testing.T) {
 	}
 
 	// Under All the type is listed: no mark.
-	app.setPanelTypeProfile(app.leftPanel, appconfig.VisibilityProfileAll)
+	mustSetPanelProfile(t, app, app.leftPanel, appconfig.VisibilityProfileAll)
 	app.applyResourceOptions(app.leftPanel)
 	if app.leftPanel.typeMark != "" {
 		t.Fatalf("mark under All = %q", app.leftPanel.typeMark)
 	}
-	app.setPanelTypeProfile(app.leftPanel, appconfig.VisibilityProfileWork)
+	mustSetPanelProfile(t, app, app.leftPanel, appconfig.VisibilityProfileWork)
 	app.applyResourceOptions(app.leftPanel)
 	if app.leftPanel.typeMark != "outside Work" {
 		t.Fatalf("mark back under Work = %q", app.leftPanel.typeMark)
@@ -126,10 +126,17 @@ func TestWorkProfileDoesNotCountOtherTypes(t *testing.T) {
 	}
 
 	// Control: listed under All, the same type is counted.
-	app.setPanelTypeProfile(app.leftPanel, appconfig.VisibilityProfileAll)
+	mustSetPanelProfile(t, app, app.leftPanel, appconfig.VisibilityProfileAll)
 	app.applyResourceOptions(app.leftPanel)
 	kctesting.Eventually(t, 10*time.Second, 50*time.Millisecond, func() bool {
 		root.Len(ctx)
 		return counted(leasesID)
 	})
+}
+
+func mustSetPanelProfile(t *testing.T, app *App, panel *Panel, name string) {
+	t.Helper()
+	if err := app.setPanelProfile(panel, name); err != nil {
+		t.Fatalf("profile %s: %v", name, err)
+	}
 }

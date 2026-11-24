@@ -91,7 +91,7 @@ func TestFinalizeWorkProfileListsWorkTypesThenOther(t *testing.T) {
 	}
 
 	c := f.TypeCatalog()
-	if c.Profile != appconfig.VisibilityProfileWork || len(c.Entries) != 3 {
+	if c.Profile.Name != appconfig.VisibilityProfileWork || len(c.Entries) != 3 {
 		t.Fatalf("catalog = %+v", c)
 	}
 	if other := c.Other(); len(other) != 2 || other[0].GVR != visLeases || other[1].GVR != visWidgets {
@@ -101,8 +101,8 @@ func TestFinalizeWorkProfileListsWorkTypesThenOther(t *testing.T) {
 		t.Fatalf("widgets entry = %+v", e)
 	}
 	d, profile, ok := f.TypeDecision("coordination.k8s.io/v1/leases")
-	if !ok || d.Included || profile != appconfig.VisibilityProfileWork {
-		t.Fatalf("TypeDecision(leases) = %+v %q %v", d, profile, ok)
+	if !ok || d.Included || profile.Name != appconfig.VisibilityProfileWork {
+		t.Fatalf("TypeDecision(leases) = %+v %+v %v", d, profile, ok)
 	}
 	if d, _, _ := f.TypeDecision("/v1/pods"); !d.Included || d.Reason != visibility.ReasonWork {
 		t.Fatalf("TypeDecision(pods) = %+v", d)
@@ -176,8 +176,8 @@ func TestSyncTypeProfileRebuildsRowsBuiltUnderAnotherProfile(t *testing.T) {
 	cfg.Resources.Visibility.DefaultProfile = appconfig.VisibilityProfileAll
 	// Decisions follow the profile at once, before the rebuild, so a
 	// panel below the folder marks the right types.
-	if d, profile, _ := f.TypeDecision("coordination.k8s.io/v1/leases"); !d.Included || profile != appconfig.VisibilityProfileAll {
-		t.Fatalf("TypeDecision(leases) under All = %+v %q", d, profile)
+	if d, profile, _ := f.TypeDecision("coordination.k8s.io/v1/leases"); !d.Included || profile.Name != appconfig.VisibilityProfileAll {
+		t.Fatalf("TypeDecision(leases) under All = %+v %+v", d, profile)
 	}
 	f.SyncTypeProfile()
 	if !f.IsDirty() {
@@ -185,5 +185,91 @@ func TestSyncTypeProfileRebuildsRowsBuiltUnderAnotherProfile(t *testing.T) {
 	}
 	if n := f.Len(ctx); n != 3 {
 		t.Fatalf("Len after the switch = %d, want 3", n)
+	}
+}
+
+// onlyLeases is a saved profile that lists Leases and nothing else.
+func onlyLeases(cfg *appconfig.Config) {
+	cfg.Resources.Visibility.Profiles = map[string]appconfig.VisibilityProfileConfig{
+		"leases": {Mode: "only", Show: []appconfig.TypeSelector{{Group: "coordination.k8s.io", Resource: "leases"}}},
+	}
+}
+
+// A type selected by name stays listed while "Include empty" is No and its
+// count is not known yet; its cell says so instead of claiming 0.
+func TestFinalizeListsExplicitTypesWhileCounting(t *testing.T) {
+	t.Parallel()
+	f, cfg := newVisFolder(t, appconfig.VisibilityProfileWork)
+	cfg.Resources.ShowNonEmptyOnly = true
+	onlyLeases(cfg)
+	cfg.Resources.Visibility.DefaultProfile = "leases"
+
+	rows := f.finalize(t.Context(), visSpecs())
+	got := rowIDs(rows)
+	if len(got) != 2 || got[0] != "coordination.k8s.io/v1/leases" || got[1] != OtherTypesRowID {
+		t.Fatalf("rows = %v, want leases and the other row", got)
+	}
+	if _, cells, _, _ := rows[0].Columns(); cells[2] != "…" {
+		t.Fatalf("count cell of a type still counting = %q, want …", cells[2])
+	}
+	if _, cells, _, _ := rows[1].Columns(); cells[1] != "outside leases" {
+		t.Fatalf("other row = %q", cells)
+	}
+	d, profile, _ := f.TypeDecision("coordination.k8s.io/v1/leases")
+	if !d.Included || !d.Explicit || profile.Name != "leases" {
+		t.Fatalf("TypeDecision(leases) = %+v under %+v", d, profile)
+	}
+}
+
+// Under Work with "Include empty" No, a listed type whose emptiness is not
+// known has no row; the catalog says why, for quick search.
+func TestFinalizeRecordsWhyAListedTypeHasNoRow(t *testing.T) {
+	t.Parallel()
+	f, cfg := newVisFolder(t, appconfig.VisibilityProfileWork)
+	cfg.Resources.ShowNonEmptyOnly = true
+	rows := f.finalize(t.Context(), visSpecs())
+	if got := rowIDs(rows); len(got) != 1 || got[0] != OtherTypesRowID {
+		t.Fatalf("rows = %v, want only the other row", got)
+	}
+	for _, e := range f.TypeCatalog().Entries {
+		want := ""
+		if e.GVR == visPods {
+			want = HiddenEmpty
+		}
+		if e.Hidden != want {
+			t.Errorf("%s hidden = %q, want %q", e.GVR.Resource, e.Hidden, want)
+		}
+	}
+}
+
+// The profile bound to the folder's context wins over the global default.
+func TestFinalizeUsesTheContextBinding(t *testing.T) {
+	t.Parallel()
+	cfg := appconfig.Default()
+	onlyLeases(cfg)
+	cfg.Resources.Visibility.DefaultProfile = appconfig.VisibilityProfileAll
+	cfg.Resources.Visibility.Contexts = map[string]string{"prod": "leases"}
+	f := NewResourcesFolder(NewBaseFolder(Deps{AppConfig: cfg, Ctx: t.Context(), CtxName: "prod"}, nil, nil))
+	t.Cleanup(f.Close)
+	got := rowIDs(f.finalize(t.Context(), visSpecs()))
+	if len(got) != 2 || got[0] != "coordination.k8s.io/v1/leases" {
+		t.Fatalf("rows in context prod = %v, want leases and the other row", got)
+	}
+}
+
+// A default that names no profile lists Work, never every type.
+func TestFinalizeMissingProfileListsWork(t *testing.T) {
+	t.Parallel()
+	cfg := appconfig.Default()
+	cfg.Resources.ShowNonEmptyOnly = false
+	cfg.Resources.Visibility.DefaultProfile = "missing"
+	f := NewResourcesFolder(NewBaseFolder(Deps{AppConfig: cfg, Ctx: t.Context()}, nil, nil))
+	t.Cleanup(f.Close)
+	got := rowIDs(f.finalize(t.Context(), visSpecs()))
+	if len(got) != 2 || got[0] != "/v1/pods" || got[1] != OtherTypesRowID {
+		t.Fatalf("rows = %v, want Work: pods and the other row", got)
+	}
+	if c := f.TypeCatalog(); c.Profile.Err == nil || c.Profile.Title() != "Work" {
+		t.Fatalf("catalog profile = %+v, want Work with the error", c.Profile)
 	}
 }

@@ -226,7 +226,7 @@ kc works in one context at a time, shown in both panels; each panel has its own 
 
 ## Resource types
 
-The root and the other lists of resource types show the Work profile: the types of daily work, from core and apps to cert-manager, Argo CD and Flux. The rest are one `Enter` away under `/other types (N)`, and `cd`, the hotlist and links still open any type. "Types" in the panel options switches a panel to All. See [Resource types](internal/help/topics/resource-types.md).
+The root and the other lists of resource types show the Work profile: the types of daily work, from core and apps to cert-manager, Argo CD and Flux. The rest are one `Enter` away under `/other types (N)`, and `cd`, the hotlist, links and quick search still open any type. "Resource visibility..." in the Left or Right menu adds types to Work or removes them, lists only or hides the types you check, and saves the result as a named profile for a kube context or as the default; "Types" in the panel options switches a panel between Work, All and your profiles. See [Resource types](internal/help/topics/resource-types.md) and [Resource visibility](internal/help/topics/resource-visibility.md).
 
 ## Filtering Rows
 
@@ -409,7 +409,7 @@ In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering (`scroll`, the default, or `fit`) and panning behavior.
 - `terminal.follow`, `terminal.mode` – whether the shell line follows the active panel's context and namespace (default `true`), and how its `KUBECONFIG` points there: `overlay` (default, a small file before your own kubeconfig files) or `copy` (a full copy of the kubeconfig kc loaded for the context: the file that defines it, or the merged `$KUBECONFIG` files).
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
-- `resources.visibility.defaultProfile` – which resource types the root and the other type lists show: `work` (the default: kc's list of daily types, see [Resource types](#resource-types)) or `all`. An unknown value means `work`. "Types" in the panel options (`M-F1`, `M-F2`) switches one panel.
+- `resources.visibility` – which resource types the root and the other type lists show. `defaultProfile` is the profile of a context without one of its own: `work` (the default: kc's list of daily types, see [Resource types](#resource-types)), `all` or a name from `profiles`. `profiles` holds your own, each a `mode` (`work`: Work plus `show` minus `hide`; `hide`; `only`; `all`) with `show` and `hide` lists of API group and plural resource names, no versions or wildcards. `contexts` maps an exact kube context name to a profile. A profile that is missing or invalid lists Work, never every type, and kc says so at start. The editor ("Resource visibility..." in the Left or Right menu) writes these keys; "Types" in the panel options (`M-F1`, `M-F2`) switches one panel. See [Resource visibility](internal/help/topics/resource-visibility.md).
 - `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. In an Events list, `last-seen` and `first-seen` use the Event's own times (`series.lastObservedTime`, `lastTimestamp`, `firstTimestamp`, `eventTime`), most recent first, and these cells count on with the clock like AGE; `name` sorts by the Event name, the wide Name column. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
 - `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
 - `health` – row health of custom resource types from their status, see [Custom Resource Health](#custom-resource-health). Empty by default.
@@ -581,10 +581,24 @@ resources:
   # Favorites are used when order=favorites; leave empty to use discovery's "all" category.
   favorites: []
   visibility:
-    # Which resource types the root and the other type lists show:
-    # work (kc's Work list of daily types; the rest is under "Other types")
-    # or all (every discovered type)
+    # Which resource types the root and the other type lists show: the
+    # profile of the current kube context (contexts), else defaultProfile:
+    # work (kc's Work list of daily types; the rest is under "Other types"),
+    # all (every discovered type) or a name from profiles
     defaultProfile: work
+    # Your own profiles. mode: work (Work plus show, minus hide), hide
+    # (every type but hide), only (only show) or all. A selector is an API
+    # group ("" for core) and a plural resource name. For example:
+    # profiles:
+    #   app:
+    #     mode: only
+    #     show:
+    #       - {group: "", resource: pods}
+    #       - {group: apps, resource: deployments}
+    #     hide: []
+    # Profiles per kube context, by exact context name. For example:
+    # contexts:
+    #   production: app
 
 objects:
   # Object list sort: a column key (name, age, status, restarts, ...) or creation; "-" sorts descending
