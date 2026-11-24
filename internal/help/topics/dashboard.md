@@ -86,9 +86,9 @@ repeated Event marks its first and last time.
 The API server keeps Events about an hour by default; the bottom border
 says since when. Before that time the lane says `no Events kept before
 09:10`: kc does not know what happened then, which is not the same as
-nothing. `← 3 earlier Events, listed below` means the range has
-Events before the first sample of a chart that is still filling; the
-list shows them.
+nothing. `← 3 earlier Events, listed below` (without `listed below` on
+a narrow screen) means the range has Events before the first sample of
+a chart that is still filling; the list shows them.
 
 The list has the time, type, reason, object, count and message, newest
 first. The Count column shows only when an Event of the list happened
