@@ -130,6 +130,40 @@ func Cells(row, from, to int) string {
 	return b.String()
 }
 
+// Blank replaces each placeholder cell of s, the placeholder and its
+// diacritics, by a space. Text redrawn in another color, such as a dialog
+// shadow, must not keep placeholders: their color would name another
+// image.
+func Blank(s string) string {
+	if !strings.ContainsRune(s, Placeholder) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	inCell := false
+	for _, r := range s {
+		switch {
+		case r == Placeholder:
+			b.WriteByte(' ')
+			inCell = true
+		case inCell && isDiacritic(r):
+		default:
+			inCell = false
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func isDiacritic(r rune) bool {
+	for _, d := range diacritics {
+		if d == r {
+			return true
+		}
+	}
+	return false
+}
+
 // Color is the SGR foreground of image id: the 256-color index, which
 // carries an 8-bit ID. It survives a 256-color profile, which a 24-bit ID
 // would not under tmux without true color. Callers keep IDs at 16 or
