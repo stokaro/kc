@@ -37,24 +37,40 @@ type colorFaces struct {
 	bold    font.Face
 }
 
-var loadFaces = sync.OnceValues(func() (colorFaces, error) {
-	regular, err := newFace(gomono.TTF)
-	if err != nil {
-		return colorFaces{}, err
-	}
-	bold, err := newFace(gomonobold.TTF)
-	if err != nil {
-		return colorFaces{}, err
-	}
-	return colorFaces{regular: regular, bold: bold}, nil
-})
+// The fonts are parsed once and safe for concurrent use; a face is not,
+// so every snapshot makes its own faces.
+var (
+	parseRegular = sync.OnceValues(func() (*opentype.Font, error) { return parseFont(gomono.TTF) })
+	parseBold    = sync.OnceValues(func() (*opentype.Font, error) { return parseFont(gomonobold.TTF) })
+	parseCaption = sync.OnceValues(func() (*opentype.Font, error) { return parseFont(gobold.TTF) })
+)
 
-func newFace(ttf []byte) (font.Face, error) {
+func parseFont(ttf []byte) (*opentype.Font, error) {
 	f, err := opentype.Parse(ttf)
 	if err != nil {
 		return nil, fmt.Errorf("parse font: %w", err)
 	}
-	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: colorFontSize, DPI: 72, Hinting: font.HintingFull})
+	return f, nil
+}
+
+func loadFaces() (colorFaces, error) {
+	regular, err := newFace(parseRegular, colorFontSize)
+	if err != nil {
+		return colorFaces{}, err
+	}
+	bold, err := newFace(parseBold, colorFontSize)
+	if err != nil {
+		return colorFaces{}, err
+	}
+	return colorFaces{regular: regular, bold: bold}, nil
+}
+
+func newFace(parse func() (*opentype.Font, error), size float64) (font.Face, error) {
+	f, err := parse()
+	if err != nil {
+		return nil, err
+	}
+	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
 		return nil, fmt.Errorf("create font face: %w", err)
 	}
@@ -336,25 +352,13 @@ var (
 	captionAccent = color.RGBA{R: 0xff, G: 0xc8, B: 0x00, A: 0xff}
 )
 
-var loadCaptionFace = sync.OnceValues(func() (font.Face, error) {
-	f, err := opentype.Parse(gobold.TTF)
-	if err != nil {
-		return nil, fmt.Errorf("parse caption font: %w", err)
-	}
-	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: captionFontSize, DPI: 72, Hinting: font.HintingFull})
-	if err != nil {
-		return nil, fmt.Errorf("create caption font face: %w", err)
-	}
-	return face, nil
-})
-
 // drawCaption draws text in a solid box with an accent frame over the top or
 // bottom rows of img. Text wider than the image is cut at the box edge.
 func drawCaption(img *image.RGBA, text, position string) error {
 	if text == "" {
 		return nil
 	}
-	face, err := loadCaptionFace()
+	face, err := newFace(parseCaption, captionFontSize)
 	if err != nil {
 		return err
 	}
