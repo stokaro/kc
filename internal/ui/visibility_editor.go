@@ -631,6 +631,9 @@ type visibilityColumns struct {
 
 const (
 	visibilityReasonWidth = len("removed from Work")
+	// visibilityListedWidth has a cell more than "if any", so the value
+	// does not read as one phrase with the reason after it.
+	visibilityListedWidth = len("if any") + 1
 	// visibilityNameWant is the name width the optional columns give way
 	// to: a long CRD name keeps this much before Version is dropped.
 	visibilityNameWant = 30
@@ -656,7 +659,7 @@ func (m *VisibilityEditorModel) columns() visibilityColumns {
 	for _, col := range []struct {
 		width int
 		dst   *int
-	}{{len("Listed"), &c.listed}, {len("cluster"), &c.scope}, {version, &c.version}} {
+	}{{visibilityListedWidth, &c.listed}, {len("cluster"), &c.scope}, {version, &c.version}} {
 		if room-(col.width+1) < want {
 			break
 		}

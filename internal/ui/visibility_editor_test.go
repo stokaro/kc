@@ -147,6 +147,9 @@ func TestVisibilityEditorShowsTheEmptyFilter(t *testing.T) {
 			t.Errorf("%s: Listed %q, want %q", tc.gr, listed, tc.listed)
 		}
 	}
+	if s := ansi.Strip(m.View().Content); !strings.Contains(s, "if any  in Work") {
+		t.Errorf("Listed and Why are not two cells apart:\n%s", s)
+	}
 	m.hideEmpty = false
 	if listed, _, _ := m.effect(m.rows[slices.IndexFunc(m.rows, func(r visibilityRow) bool { return r.gr == grPods })]); listed != "yes" {
 		t.Errorf("with empty types included pods say %q, want yes", listed)
@@ -279,7 +282,7 @@ func TestVisibilityEditorLayout(t *testing.T) {
 		width, height int
 		want, not     []string
 	}{
-		{name: "80x24", width: 74, height: 17, want: []string{"Type", "Scope", "Listed", "Why", "customresourcedefinitions.apiextens…", "cluster", "not in Work"}, not: []string{"Version"}},
+		{name: "80x24", width: 74, height: 17, want: []string{"Type", "Scope", "Listed", "Why", "customresourcedefinitions.apiexten…", "cluster", "not in Work"}, not: []string{"Version"}},
 		{name: "wide", width: 104, height: 30, want: []string{"Version", "customresourcedefinitions.apiextensions.k8s.io", "in Work"}},
 		{name: "120x30", width: 104, height: 23, want: []string{"Version", "Scope", "Listed", "customresourcedefinitions.apiextensions.k8s.io"}},
 		{name: "narrow", width: 40, height: 10, want: []string{"Type", "Why"}, not: []string{"Listed"}},
