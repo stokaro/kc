@@ -19,7 +19,8 @@ import (
 // With images on (Options.Images), Info draws its bars as Grafana bar
 // gauges and its usage history as Grafana stat panel sparklines; every
 // other cell stays text. The pictures go through the Kitty Unicode
-// placeholders of kittygfx, like the dashboard's charts (ADR 0320).
+// placeholders of kittygfx, like the dashboard's charts (ADR 0320); ADR
+// 0350 records the design.
 
 // Image keys: one gauge per bar, one sparkline per usage history.
 const (
