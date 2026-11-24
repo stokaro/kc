@@ -91,8 +91,12 @@ func blend(a, b color.Color, t float64) color.Color {
 }
 
 // renderCells draws a screen of cells with their colors. Box-drawing and
-// block characters are drawn as shapes so that lines join across cells.
-func renderCells(cells [][]uv.Cell) (*image.RGBA, error) {
+// block characters are drawn as shapes so that lines join across cells. A
+// Kitty Unicode placeholder cell shows its tile of the image in gfx over
+// the cell background, and nothing when gfx has no such image; a cell that
+// is not a placeholder stays text, as text drawn over an image does in a
+// terminal.
+func renderCells(cells [][]uv.Cell, gfx *graphics) (*image.RGBA, error) {
 	faces, err := loadFaces()
 	if err != nil {
 		return nil, err
@@ -110,45 +114,57 @@ func renderCells(cells [][]uv.Cell) (*image.RGBA, error) {
 	baseline := (colorCellHeight-glyphHeight)/2 + metrics.Ascent.Ceil()
 
 	for y, row := range cells {
+		// left is the placeholder cell before this one, for the
+		// diacritics a placeholder may leave out.
+		var left *placeholder
 		for x := 0; x < len(row); x++ {
 			cell := row[x]
 			width := max(cell.Width, 1)
 			fg, bg := cellColors(cell.Style)
 			rect := image.Rect(x*colorCellWidth, y*colorCellHeight, (x+width)*colorCellWidth, (y+1)*colorCellHeight)
 			draw.Draw(img, rect, image.NewUniform(bg), image.Point{}, draw.Src)
-			content := cell.Content
-			if content == "" || content == " " {
-				x += width - 1
-				continue
-			}
-			r := []rune(content)[0]
-			if drawShape(img, rect, r, fg, bg) {
-				x += width - 1
-				continue
-			}
-			face := faces.regular
-			if cell.Style.Attrs&uv.AttrBold != 0 {
-				face = faces.bold
-			}
-			// Go Mono has no emoji; leave such cells blank rather than draw
-			// the missing-glyph box.
-			if _, ok := face.GlyphAdvance(r); ok {
-				d := &font.Drawer{
-					Dst:  img,
-					Src:  image.NewUniform(fg),
-					Face: face,
-					Dot:  fixed.P(rect.Min.X, rect.Min.Y+baseline),
-				}
-				d.DrawString(content)
-			}
-			if cell.Style.Underline != uv.UnderlineNone {
-				line := image.Rect(rect.Min.X, rect.Min.Y+baseline+2, rect.Max.X, rect.Min.Y+baseline+3)
-				draw.Draw(img, line, image.NewUniform(fg), image.Point{}, draw.Src)
-			}
 			x += width - 1
+			if p, ok := readPlaceholder(cell.Content, cell.Style.Fg, left); ok {
+				gfx.drawTile(img, rect, p.id, p.row, p.col)
+				left = &p
+				continue
+			}
+			left = nil
+			drawGlyph(img, rect, cell, faces, baseline, fg, bg)
 		}
 	}
 	return img, nil
+}
+
+// drawGlyph draws the content of a cell over its background.
+func drawGlyph(img *image.RGBA, rect image.Rectangle, cell uv.Cell, faces colorFaces, baseline int, fg, bg color.Color) {
+	content := cell.Content
+	if content == "" || content == " " {
+		return
+	}
+	r := []rune(content)[0]
+	if drawShape(img, rect, r, fg, bg) {
+		return
+	}
+	face := faces.regular
+	if cell.Style.Attrs&uv.AttrBold != 0 {
+		face = faces.bold
+	}
+	// Go Mono has no emoji; leave such cells blank rather than draw the
+	// missing-glyph box.
+	if _, ok := face.GlyphAdvance(r); ok {
+		d := &font.Drawer{
+			Dst:  img,
+			Src:  image.NewUniform(fg),
+			Face: face,
+			Dot:  fixed.P(rect.Min.X, rect.Min.Y+baseline),
+		}
+		d.DrawString(content)
+	}
+	if cell.Style.Underline != uv.UnderlineNone {
+		line := image.Rect(rect.Min.X, rect.Min.Y+baseline+2, rect.Max.X, rect.Min.Y+baseline+3)
+		draw.Draw(img, line, image.NewUniform(fg), image.Point{}, draw.Src)
+	}
 }
 
 // Line weights of one arm of a box-drawing character.
@@ -369,10 +385,10 @@ func drawCaption(img *image.RGBA, text, position string) error {
 	return nil
 }
 
-// colorSnapshotToPNG writes the screen with colors and real glyphs, and the
-// caption, if any, over the rows that position names.
-func colorSnapshotToPNG(cells [][]uv.Cell, caption, position, path string) error {
-	img, err := renderCells(cells)
+// colorSnapshotToPNG writes the screen with colors, real glyphs and the
+// images of gfx, and the caption, if any, over the rows that position names.
+func colorSnapshotToPNG(cells [][]uv.Cell, gfx *graphics, caption, position, path string) error {
+	img, err := renderCells(cells, gfx)
 	if err != nil {
 		return err
 	}

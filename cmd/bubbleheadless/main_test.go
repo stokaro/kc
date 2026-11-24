@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/taigrr/bubbleterm/emulator"
 )
 
 // TestChildEnvHidesTheOuterTerminal: the child sees the emulator, not the
@@ -18,6 +23,31 @@ func TestChildEnvHidesTheOuterTerminal(t *testing.T) {
 	want := []string{"HOME=/tmp/h", "LANG=en_US.UTF-8", "COLUMNS=120", "LINES=40", "TERM=xterm-256color"}
 	if !slices.Equal(got, want) {
 		t.Errorf("childEnv = %q, want %q", got, want)
+	}
+}
+
+// A Kitty placeholder is one cell in the plain snapshot: blank, with its
+// diacritics on it, so the text after it stays in its column.
+func TestSnapshotToPNGKeepsColumnsAfterPlaceholders(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	read := func(name string, rows ...string) []byte {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		if err := snapshotToPNG(emulator.EmittedFrame{Rows: rows}, path); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	marks := string([]rune{0x0305, 0x030D})
+	got := read("placeholders.png", "\U0010EEEE"+marks+"\U0010EEEE"+marks+"x")
+	want := read("blanks.png", "  x")
+	if !bytes.Equal(got, want) {
+		t.Fatal("the plain snapshot of placeholders and x differs from two blanks and x")
 	}
 }
 
