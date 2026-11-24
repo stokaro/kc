@@ -98,7 +98,10 @@ dropped.
 ## Consequences
 
 - The value labels of a chart drawn as images can differ from the text
-  chart's, and the time axis has more labels.
+  chart's, and the time axis has more labels. The text plot keeps its
+  own row bands, so in the moments it shows instead of the image (until
+  the first picture arrives, and while a resize settles) a line can sit
+  up to a row off the label next to it.
 - A live chart still sends a picture about once a second; the gradient
   and the antialiasing make it a little larger (40 KB for 1600x612).
 - The per-row lines exist only for session samples of rows the
