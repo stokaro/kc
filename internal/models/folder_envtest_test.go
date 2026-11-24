@@ -275,6 +275,8 @@ func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 		AppConfig: appconfig.Default(),
 	}
 	deps.AppConfig.Resources.ShowNonEmptyOnly = false
+	// The test is about discovery: list every type, not only Work.
+	deps.AppConfig.Resources.Visibility.DefaultProfile = appconfig.VisibilityProfileAll
 
 	folder := NewNamespacedResourcesFolder(deps, ns.Name, []string{"namespaces", ns.Name})
 	folder.Refresh()

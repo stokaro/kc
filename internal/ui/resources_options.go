@@ -68,6 +68,10 @@ func (m *ResourcesOptionsModel) Init() tea.Cmd          { return nil }
 func (m *ResourcesOptionsModel) SetDimensions(w, h int) { m.width, m.height = w, h }
 
 type ResourcesOptionsChangedMsg struct {
+	// HasTypes is set when TypeProfile carries a choice: the built-in
+	// profile ("work" or "all") the panel lists types under.
+	HasTypes         bool
+	TypeProfile      string
 	ShowNonEmptyOnly bool
 	Order            string
 	TableMode        string

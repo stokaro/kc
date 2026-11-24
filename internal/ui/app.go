@@ -608,6 +608,9 @@ func applyResourceOptionsToFolder(folder models.Folder, show bool, order appconf
 	if configurable, ok := folder.(models.ResourceViewConfigurable); ok {
 		configurable.ApplyResourceViewOptions(show, order, favorites)
 	}
+	if follower, ok := folder.(models.TypeProfileFollower); ok {
+		follower.SyncTypeProfile()
+	}
 }
 
 func (a *App) navigatorForPanel(panel *Panel) *navui.Navigator {
@@ -643,6 +646,7 @@ func (a *App) setPanelFolder(ctx context.Context, panelIdx int, folder models.Fo
 	}
 	panel.SetFolder(ctx, folder, hasBack)
 	panel.RefreshFolder(ctx)
+	a.syncTypeMark(panelIdx)
 	a.attachFolderDirtyListener(panelIdx, folder)
 	a.invalidateView(fmt.Sprintf("panel %d folder assigned", panelIdx))
 	a.invalidateFunctionBar(fmt.Sprintf("panel %d folder assigned", panelIdx))
@@ -936,6 +940,9 @@ func (a *App) applyResourceOptions(panel *Panel) {
 		if cur := nav.Current(); cur != nil {
 			applyResourceOptionsToFolder(cur, show, order, favorites)
 		}
+	}
+	if idx := a.panelIndex(panel); idx >= 0 {
+		a.syncTypeMark(idx)
 	}
 }
 
@@ -1480,6 +1487,8 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 	var resConfig *ViewOptionsResourcesConfig
 	if resourceSection {
 		resConfig = &ViewOptionsResourcesConfig{
+			ShowTypes:     showInclude,
+			TypeProfile:   a.ensurePanelConfig(panel).Resources.Visibility.DefaultProfile,
 			ShowInclude:   showInclude,
 			IncludeEmpty:  !showNonEmpty,
 			ShowOrder:     showOrder,

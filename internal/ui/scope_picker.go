@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/stokaro/kc/internal/ui/styles"
 )
@@ -14,7 +15,22 @@ type scopeChoice struct {
 	Label string // shown
 	Value string // returned on select
 	Note  string // dim text after the label, e.g. "current"
+	// Detail is a second column after the label, such as the API group of
+	// a resource type. It shows when the picker has room for both.
+	Detail string
+	// Search is more text the filter matches, not shown, such as the
+	// kind and short names of a resource type.
+	Search string
 }
+
+// detailLabelWidth caps the label column of a picker with details, so one
+// long label does not push every detail out of a narrow dialog; a longer
+// label pushes only its own detail.
+const detailLabelWidth = 26
+
+// minDetailWidth is the least room worth showing a detail in; a narrower
+// picker shows the labels alone rather than a letter or two of each detail.
+const minDetailWidth = 12
 
 // ScopePickerModel is a list to pick a namespace (or a context) from. Typing
 // filters the list by substring, like mc's quick search narrows a panel.
@@ -94,7 +110,7 @@ func (m *ScopePickerModel) refilter() {
 	q := strings.ToLower(m.filter)
 	m.visible = m.visible[:0]
 	for i, c := range m.choices {
-		if q == "" || strings.Contains(strings.ToLower(c.Label), q) {
+		if q == "" || strings.Contains(strings.ToLower(c.Label+"\x00"+c.Detail+"\x00"+c.Search), q) {
 			m.visible = append(m.visible, i)
 		}
 	}
@@ -191,6 +207,20 @@ func (m *ScopePickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// labelColumn returns the widths of the label and detail columns when the
+// choices have details and the picker has room for them, else zeros.
+func (m *ScopePickerModel) labelColumn() (label, detail int) {
+	for _, c := range m.choices {
+		label = max(label, lipgloss.Width(c.Label))
+		detail = max(detail, lipgloss.Width(c.Detail))
+	}
+	label = min(label, detailLabelWidth)
+	if detail == 0 || m.width-1-label-2 < minDetailWidth {
+		return 0, 0
+	}
+	return label, detail
+}
+
 // clickRow chooses the entry under a left click (content coordinates).
 func (m *ScopePickerModel) clickRow(mouse tea.Mouse) tea.Cmd {
 	if mouse.Button != tea.MouseLeft || mouse.Y < 0 || mouse.Y >= m.listRows() || mouse.X < 0 || mouse.X >= m.width {
@@ -212,6 +242,7 @@ func (m *ScopePickerModel) View() tea.View {
 	sel := row.Background(lipgloss.Color(styles.ColorModalSelBg)).Bold(true)
 	note := row.Foreground(lipgloss.Color(styles.ColorDarkGrey))
 	var lines []string
+	col, detailCol := m.labelColumn()
 	end := min(len(m.visible), m.scroll+m.listRows())
 	for i := m.scroll; i < end; i++ {
 		c := m.choiceAt(i)
@@ -223,6 +254,15 @@ func (m *ScopePickerModel) View() tea.View {
 		suffix := ""
 		if c.Note != "" {
 			suffix = "  " + c.Note
+		}
+		if col > 0 && c.Detail != "" {
+			text += strings.Repeat(" ", max(0, col-lipgloss.Width(c.Label))) + "  "
+			// Details share a column too, so the notes after them line up
+			// where the row has room.
+			if room := min(detailCol, m.width-lipgloss.Width(text)-lipgloss.Width(suffix)); room > 0 {
+				detail := ansi.Truncate(c.Detail, room, "…")
+				text += detail + strings.Repeat(" ", room-lipgloss.Width(detail))
+			}
 		}
 		text = truncateStringToWidth(text, max(0, m.width-lipgloss.Width(suffix)))
 		pad := max(0, m.width-lipgloss.Width(text)-lipgloss.Width(suffix))

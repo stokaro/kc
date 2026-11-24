@@ -224,6 +224,10 @@ The logs viewer detects JSON lines and shows them formatted. `M-g` filters by te
 
 kc works in one context at a time, shown in both panels; each panel has its own namespace scope. kc never changes the kubeconfig. See [Context and namespace](internal/help/topics/context-namespace.md).
 
+## Resource types
+
+The root and the other lists of resource types show the Work profile: the types of daily work, from core and apps to cert-manager, Argo CD and Flux. The rest are one `Enter` away under `/other types (N)`, and `cd`, the hotlist and links still open any type. "Types" in the panel options switches a panel to All. See [Resource types](internal/help/topics/resource-types.md).
+
 ## Filtering Rows
 
 `M-f` filters an object list by name, label selector, namespace or column value. See [Row filter](internal/help/topics/row-filter.md).
@@ -405,6 +409,7 @@ In `/nodes`, `M-n` cordons, uncordons or drains the marked nodes. Before a drain
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering (`scroll`, the default, or `fit`) and panning behavior.
 - `terminal.follow`, `terminal.mode` – whether the shell line follows the active panel's context and namespace (default `true`), and how its `KUBECONFIG` points there: `overlay` (default, a small file before your own kubeconfig files) or `copy` (a full copy of the kubeconfig kc loaded for the context: the file that defines it, or the merged `$KUBECONFIG` files).
 - `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
+- `resources.visibility.defaultProfile` – which resource types the root and the other type lists show: `work` (the default: kc's list of daily types, see [Resource types](#resource-types)) or `all`. An unknown value means `work`. "Types" in the panel options (`M-F1`, `M-F2`) switches one panel.
 - `objects.order`, `objects.columns`, `objects.groupByNamespace` – object list sort, wide/normal column display, and namespace grouping. The order is a column title in lower case with spaces as dashes (`name`, `age`, `status`, `restarts`, `nominated-node`), or `creation`; a leading `-` sorts descending. Columns sort by value: numbers, READY ratios, RESTARTS counts, ages and durations, CPU and memory quantities, and IP addresses; AGE uses the creation time. In an Events list, `last-seen` and `first-seen` use the Event's own times (`series.lastObservedTime`, `lastTimestamp`, `firstTimestamp`, `eventTime`), most recent first, and these cells count on with the clock like AGE; `name` sorts by the Event name, the wide Name column. Empty cells, `<none>` and `n/a` (no metrics) come last in both directions. Ties sort by name, then by namespace. A list without that column sorts by name. Lists that span namespaces (all namespaces, the pods of a node) are grouped by namespace first while `groupByNamespace` is true (the default); the order applies inside each namespace, and `namespace` orders the groups. With `groupByNamespace: false` the order applies to all rows at once, so `-mem` puts the pod that uses the most memory first whatever its namespace. "Group by namespace" in the Left/Right menu and in the panel options (`M-F1`, `M-F2`) switches one panel; it is checked while the list is grouped, and the sort, the filter and the namespace scope stay as they are.
 - `columns` – your own columns per resource type, see [Custom Columns](#custom-columns). Empty by default.
 - `health` – row health of custom resource types from their status, see [Custom Resource Health](#custom-resource-health). Empty by default.
@@ -575,6 +580,11 @@ resources:
   order: alpha
   # Favorites are used when order=favorites; leave empty to use discovery's "all" category.
   favorites: []
+  visibility:
+    # Which resource types the root and the other type lists show:
+    # work (kc's Work list of daily types; the rest is under "Other types")
+    # or all (every discovered type)
+    defaultProfile: work
 
 objects:
   # Object list sort: a column key (name, age, status, restarts, ...) or creation; "-" sorts descending
@@ -779,7 +789,7 @@ panel:
     foreground: black
     background: white
   context: bright-yellow   # context name in the bottom border
-  namespace: bright-cyan
+  namespace: bright-cyan  # namespace name; also the "outside Work" mark
 ```
 
 A skin covers the two panels only; dialogs, the function key bar and the viewer keep their colors (the viewer has `viewer.theme`). An unknown skin, an unknown key or a bad color is shown as an error at startup, and kc then uses `mc`; a bad `contexts` entry is reported and skipped.

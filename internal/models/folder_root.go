@@ -44,14 +44,15 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	nsPath := append(slices.Clone(f.Path()), "namespaces")
 	nsPathCopy := append([]string(nil), nsPath...)
 	namespacesSpec := resourceGroupSpec{
-		id:        "namespaces",
-		cells:     []string{"/namespaces", "v1", ""},
-		path:      nsPathCopy,
-		detail:    "namespaces (v1)",
-		style:     nameStyle,
-		gvr:       gvrNamespaces,
-		gvk:       schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"},
-		watchable: true,
+		id:         "namespaces",
+		cells:      []string{"/namespaces", "v1", ""},
+		path:       nsPathCopy,
+		detail:     "namespaces (v1)",
+		style:      nameStyle,
+		gvr:        gvrNamespaces,
+		gvk:        schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"},
+		watchable:  true,
+		shortNames: []string{"ns"},
 		enter: func() (Folder, error) {
 			return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPathCopy, NamespaceResourceVerbs()), nil
 		},

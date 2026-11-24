@@ -36,6 +36,10 @@ type ViewOptionsCommittedMsg struct {
 
 // ViewOptionsResourcesPayload carries Resources section toggles.
 type ViewOptionsResourcesPayload struct {
+	// HasTypes is set when the dialog offered Types; TypeProfile is then
+	// the chosen built-in profile, "work" or "all".
+	HasTypes        bool
+	TypeProfile     string
 	HasInclude      bool
 	IncludeEmpty    bool
 	HasOrder        bool
@@ -117,6 +121,9 @@ type ViewOptionsChoice struct {
 
 // ViewOptionsResourcesConfig configures the Resources section.
 type ViewOptionsResourcesConfig struct {
+	// ShowTypes offers the Types row: which profile lists the types.
+	ShowTypes     bool
+	TypeProfile   string
 	ShowInclude   bool
 	IncludeEmpty  bool
 	ShowOrder     bool
@@ -281,6 +288,7 @@ const (
 	viewOptionLogsContainer
 	viewOptionObjectFaultsOnly
 	viewOptionObjectGroupNamespaces
+	viewOptionResourceTypes
 )
 
 type viewOptionEntry struct {
@@ -311,6 +319,8 @@ type ViewOptionsModel struct {
 
 	resources struct {
 		enabled    bool
+		hasTypes   bool
+		allTypes   bool
 		hasInclude bool
 		include    bool
 		hasOrder   bool
@@ -394,6 +404,8 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 
 	if cfg.Resources != nil {
 		model.resources.enabled = true
+		model.resources.hasTypes = cfg.Resources.ShowTypes
+		model.resources.allTypes = appconfig.NormalizeVisibilityProfile(cfg.Resources.TypeProfile) == appconfig.VisibilityProfileAll
 		model.resources.hasInclude = cfg.Resources.ShowInclude
 		model.resources.include = cfg.Resources.IncludeEmpty
 		model.resources.hasOrder = cfg.Resources.ShowOrder
@@ -405,6 +417,12 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 			kind:  viewOptionEntrySection,
 			title: "Resources:",
 		})
+		if model.resources.hasTypes {
+			model.entries = append(model.entries, viewOptionEntry{
+				kind:   viewOptionEntryOption,
+				option: viewOptionResourceTypes,
+			})
+		}
 		if model.resources.hasInclude {
 			model.entries = append(model.entries, viewOptionEntry{
 				kind:   viewOptionEntryOption,
@@ -848,6 +866,8 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		}
 	case viewOptionIncludeEmpty:
 		m.resources.include = !m.resources.include
+	case viewOptionResourceTypes:
+		m.resources.allTypes = !m.resources.allTypes
 	case viewOptionResourceOrder:
 		if len(orderKeys) == 0 {
 			return
@@ -977,7 +997,13 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 		msg.Close = accept
 	}
 	if m.resources.enabled {
+		profile := appconfig.VisibilityProfileWork
+		if m.resources.allTypes {
+			profile = appconfig.VisibilityProfileAll
+		}
 		msg.Resources = &ViewOptionsResourcesPayload{
+			HasTypes:        m.resources.hasTypes,
+			TypeProfile:     profile,
 			HasInclude:      m.resources.hasInclude,
 			IncludeEmpty:    m.resources.include,
 			HasOrder:        m.resources.hasOrder,
@@ -1052,6 +1078,11 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (label, value
 			val = "Yes"
 		}
 		return "Include empty", val
+	case viewOptionResourceTypes:
+		if m.resources.allTypes {
+			return "Types", "All"
+		}
+		return "Types", "Work"
 	case viewOptionResourceOrder:
 		return "Order", orderLabels[m.resources.orderIndex]
 	case viewOptionResourceTableMode, viewOptionObjectTableMode:

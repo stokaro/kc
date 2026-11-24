@@ -16,6 +16,9 @@ Panel section, always first:
 
 Resources section, on the root and other lists of resource types:
 
+- Types: Work lists the types of daily work and puts the rest under
+  "other types"; All lists every discovered type. See
+  [Resource types](resource-types.md).
 - Include empty: Yes also lists types that have no objects. No is the
   "non-empty only" setting (`resources.showNonEmptyOnly`). A hidden type
   still opens when you name it: `cd jobs`, a hotlist entry, a history
@@ -52,8 +55,8 @@ In Logs mode the dialog adds the viewer and log options, see
 - Faults only belongs to the folder, like the row filter; `C-s` does
   not save it.
 - `C-s` saves Table mode, Columns, the sort, Group by namespace,
-  Include empty, Order and the panel widths as the defaults kc starts
-  with.
+  Types, Include empty, Order and the panel widths as the defaults kc
+  starts with.
 - `M-o`, `M-r` and `C-w` change the sort and columns without the dialog.
 - The panel mode is not saved; use `layout.leftPanelMode` and
   `layout.rightPanelMode` for the start mode.

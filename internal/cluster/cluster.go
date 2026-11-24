@@ -718,6 +718,8 @@ type ResourceInfo struct {
 	Namespaced bool
 	Verbs      []string
 	Categories []string
+	// ShortNames are the aliases discovery advertises, such as po.
+	ShortNames []string
 }
 
 // GetResourceInfos returns API resource infos via discovery.
@@ -756,6 +758,7 @@ func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
 				Namespaced: ar.Namespaced,
 				Verbs:      append([]string(nil), ar.Verbs...),
 				Categories: append([]string(nil), ar.Categories...),
+				ShortNames: append([]string(nil), ar.ShortNames...),
 			})
 		}
 	}

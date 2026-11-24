@@ -76,16 +76,17 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 			style = favoriteStyle
 		}
 		specs = append(specs, resourceGroupSpec{
-			id:        id,
-			cells:     cellsCopy,
-			path:      pathCopy,
-			detail:    detail,
-			style:     style,
-			gvr:       gvr,
-			gvk:       entry.info.GVK,
-			namespace: "",
-			watchable: true,
-			verbs:     verbsCopy,
+			id:         id,
+			cells:      cellsCopy,
+			path:       pathCopy,
+			detail:     detail,
+			style:      style,
+			gvr:        gvr,
+			gvk:        entry.info.GVK,
+			namespace:  "",
+			watchable:  true,
+			verbs:      verbsCopy,
+			shortNames: slices.Clone(entry.info.ShortNames),
 			enter: func() (Folder, error) {
 				return NewClusterObjectsFolder(f.Deps, gvr, pathCopy, verbsCopy), nil
 			},
