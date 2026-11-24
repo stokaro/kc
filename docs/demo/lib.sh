@@ -230,6 +230,23 @@ wait_for_images() {
 	done
 }
 
+# settle_images waits until the list of Kitty graphics images, and which of
+# them the screen shows, stays the same between two looks 0.4s apart, for
+# at most the given seconds (default 5). kc draws an Info bar or a chart as
+# text until its image arrives, so a snapshot taken while one is on its way
+# mixes text and pictures.
+settle_images() {
+	local timeout=${1:-5} start prev=none out
+	start=$(date +%s)
+	while :; do
+		out=$(ask images | grep -E 'image [0-9]+:|no images' || true)
+		[ "$out" != "$prev" ] || return 0
+		prev=$out
+		[ $(($(date +%s) - start)) -lt "$timeout" ] || return 0
+		sleep 0.4
+	done
+}
+
 # wait_for waits until the screen shows the text (a fixed string).
 wait_for() {
 	local text=$1 timeout=${2:-20} start

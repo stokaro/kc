@@ -72,7 +72,10 @@ kc uses (ADR 0320), and the color snapshot draws the images.
    instead of writing text charts when the images stop coming.
 7. **The capture runs kc with `charts.graphics: kitty`** in its temporary
    HOME. `auto` still draws text in the driver: the outer terminal stays
-   hidden.
+   hidden. The Info bars and history of ADR 0350 come through the same
+   way, so before each screenshot the capture waits until the `images`
+   list stops changing, and a bar is not caught as text while its image
+   is on its way.
 
 ## Alternatives considered
 

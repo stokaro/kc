@@ -195,9 +195,10 @@ EOF
 }
 
 # kc_config prints the settings every scene runs with. The dashboard draws
-# its charts as Kitty graphics images, as in iTerm2 3.7, kitty and Ghostty;
-# the driver's color snapshots show them. With auto kc would draw text
-# charts, since the driver hides the outer terminal from it.
+# its charts, and Info mode its bars and history, as Kitty graphics images,
+# as in iTerm2 3.7, kitty and Ghostty; the driver's color snapshots show
+# them. With auto kc would draw text, since the driver hides the outer
+# terminal from it.
 kc_config() {
 	cat <<'EOF'
 charts:
@@ -266,6 +267,7 @@ shot() {
 	file=$(scene_file "$current")
 	mkdir -p "$(dirname "$file")"
 	sleep "${1:-0.5}"
+	settle_images
 	write_png "$WORK/shot.png"
 	ffmpeg -loglevel error -y -i "$WORK/shot.png" \
 		-vf "split[a][b];[a]palettegen=max_colors=128:reserve_transparent=0[p];[b][p]paletteuse=dither=none" \
