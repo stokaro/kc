@@ -416,6 +416,39 @@ func TestPanelContextSwitchLeases(t *testing.T) {
 	}
 }
 
+// Switching one panel leaves the other where it was: its connection, its
+// location, the row under its cursor and its row filter.
+func TestPanelContextSwitchKeepsTheOtherPanel(t *testing.T) {
+	e := newTwoClusters(t)
+	app := e.app
+	ctx := t.Context()
+	e.openWeb(t, 0)
+	app.applyRowFilterText(0, "we")
+	left, path := app.ownConn(0), app.leftPanel.GetCurrentPath()
+	before, ok := app.leftPanel.SelectedNavItem(ctx)
+	if !ok {
+		t.Fatal("the left panel lost its row to the filter")
+	}
+
+	e.switchPanel(t, 1, e.prod)
+	e.switchPanel(t, 1, e.mirror)
+
+	if app.ownConn(0) != left {
+		t.Fatalf("the left panel moved to %q", app.ownConn(0).name())
+	}
+	if got := app.leftPanel.GetCurrentPath(); got != path {
+		t.Fatalf("the left panel is at %q, want %q", got, path)
+	}
+	if f, _ := app.leftPanel.RowFilter(); f.Text() != "we" {
+		t.Fatalf("the left panel's filter is %q, want we", f.Text())
+	}
+	item, conn := app.selectedRow(ctx, app.leftPanel)
+	if item == nil || conn != left {
+		t.Fatalf("the left panel's row is %v from %q, want web from a-dev", item, conn.name())
+	}
+	assertInstance(t, "left", item, string(before.(models.InstanceItem).UID()), left)
+}
+
 // C-x C-d compares the objects of two contexts, each side read from its
 // own cluster and labeled with its context; a side that is gone reports
 // the read error instead of a diff.
