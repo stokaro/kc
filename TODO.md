@@ -22,16 +22,17 @@ One execution context for every subprocess (`internal/execctx`, ADR 0055).
 - [x] Cluster overview `/overview`: capacity (requests and limits), health, risks, activity, thresholds under `overview:` — #51
 - [x] Overview follow-ups: measured usage from metrics.k8s.io, Info panel mode, kubelet stats for disk and volumes — #51
 - [x] Overview: cert-manager Certificates not Ready or expiring, Info mode for one workload — #51
-- [ ] Overview: CRD workloads as Info targets, pick up cert-manager installed while the overview is open (left over from #51)
+- [ ] Info and the dashboard for CRD workloads (Argo Rollouts, OpenKruise, CloudNativePG) — #364
+- [ ] Overview: pick up cert-manager and other optional kinds installed or removed while kc runs — #365
 - [x] Built-in workload actions: scale, rollout restart, rollback — #33
 - [x] Extensible actions: built-in actions for workloads, CronJobs and nodes; custom commands with hotkeys, prompts, confirmation and `dangerous` — #46
-- [ ] Favorites: add and remove favorite resource types from the UI (today only `resources.favorites` in the config). The hotlist (`C-\`, #41) saves locations, not resource types.
 
 Dropped as no longer useful:
 - [x] Per-image shell probe cache for podfs: a missing shell now leads to the helper consent row (#21, #26), and the failed exec costs one request per session.
 - [x] Selection sync options: Describe/Manifest already follow the other panel's selection; pinning a panel is covered by #49.
 - [x] API group hierarchy under `/groups/...`: no demand; the root already lists types with their group.
 - [x] Selection replay helper: only one replay site is left (`app_update.go`).
+- [x] Favorites from the UI: favorites only order the type list when its order is Favorites (not the default), and without `resources.favorites` they follow discovery's `all` category. Visibility profiles and their editor (#319, #357) choose the types a list shows, and the hotlist (`C-\`, #41) and quick search (`C-s`) reach the rest.
 
 ## Definition of Done
 - [ ] Non-trivial logic unit-tested per AGENTS.md.
