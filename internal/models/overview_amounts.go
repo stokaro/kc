@@ -160,6 +160,9 @@ func summarizeAmounts(rc *ruleContext, byPod map[string][]InfoWorkload) overview
 // and does no I/O.
 func (o *OverviewInfo) Amounts(focus UsageFocus, topN int) UsageAmounts {
 	report, err := o.engine.snapshot()
+	if focus.Workload != nil {
+		o.engine.want(focus.Workload.GVR)
+	}
 	return usageAmounts(report, err, focus, topN)
 }
 

@@ -129,12 +129,15 @@ func limitMarks(req, lim int64) []InfoMark {
 
 // workloadPodsBar shows the ready pods of the desired replicas, or of the
 // pods that run when the workload has no replica count (Jobs, CronJobs,
-// ReplicaSets, which the overview reads as metadata only).
+// ReplicaSets, which the overview reads as metadata only, and custom kinds
+// without a scale subresource). A custom kind says why it has no count.
 func workloadPodsBar(s *overviewWorkloadSummary) InfoBar {
 	bar := InfoBar{Label: "Pods", Known: true, Flag: "ok", Health: severityOK.RowHealth()}
 	of := s.pods
 	if s.hasDesired {
 		of = s.desired
+	} else if s.desiredNote != "" {
+		bar.More, bar.MoreHealth = []string{s.desiredNote}, []RowHealth{RowHealthUnknown}
 	}
 	switch {
 	case of == 0 && s.hasDesired:
