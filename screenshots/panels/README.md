@@ -6,7 +6,7 @@ The root of a context: resource groups with their API version and object count. 
 
 ![](01-root.png)
 
-The context picker. `F9`, Left, Context... (`t`).
+The context picker of the left panel; only that panel switches. `F9`, Left, Context... (`t`).
 
 ![](02-contexts.png)
 
@@ -89,3 +89,7 @@ Inside a Helm release: values, manifest, notes, its resources and the stored rev
 The port forward dialog on a pod. `M-p`, or `F9`, File, Port forward.
 
 ![](22-port-forward.png)
+
+Two contexts side by side: the left panel in the kind context and `shop`, the right one in the mirror context, read-only by the config (`RO` in its frame), and `batch`. `F9`, Right, Context... (`t`) switches only the right panel; Namespace... (`n`) then picks its namespace.
+
+![](23-two-contexts.png)

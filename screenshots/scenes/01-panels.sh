@@ -213,3 +213,32 @@ scene_panels_port_forward() {
 	meta_after_search p "Port forward"
 	shot
 }
+
+# Two contexts side by side: the left panel stays in the kind context and
+# the shop namespace; the right one switches to the mirror context, which
+# this scene's config makes read-only, and to the batch namespace.
+# shellcheck disable=SC2034 # kc_config in capture.sh reads extra_config
+scene_panels_two_contexts() {
+	extra_config="readOnly:
+  contexts:
+    - $MIRROR"
+	fresh
+	extra_config=
+	shell_line "cd deployments"
+	wait_for "/loadgen"
+	menu 4 l
+	sleep 1
+	menu 4 t
+	wait_for "$MIRROR"
+	pick "$MIRROR"
+	key enter
+	wait_for "$MIRROR : shop" 60
+	menu 4 n
+	wait_for "All namespaces"
+	pick batch
+	key enter
+	wait_for "$MIRROR : batch" 60
+	shell_line "cd pods"
+	wait_for "worker-" 60
+	shot 2
+}

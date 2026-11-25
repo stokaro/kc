@@ -10,7 +10,7 @@ The drain options, with emptyDir data allowed for a pod that keeps data in one. 
 
 ![](02-options.png)
 
-The confirmation: what the drain evicts, the PodDisruptionBudgets and the same `kubectl drain` command. Enter.
+The confirmation: the context, what the drain evicts, the PodDisruptionBudgets and the same `kubectl drain` command. Enter.
 
 ![](03-confirm.png)
 
