@@ -1,6 +1,6 @@
 # 0051. Cluster overview: cert-manager Certificates and Info for one workload
 
-- Status: Accepted
+- Status: Accepted; in decision 3, the depth of four steps and "owners of other kinds end the walk" superseded by 0364 (custom workloads)
 - Date: 2026-11-22
 - Issue: #51
 

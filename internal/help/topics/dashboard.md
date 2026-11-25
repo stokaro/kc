@@ -117,6 +117,21 @@ metrics API samples kc collected while the dashboard was open in this
 session (one every 15 seconds, the last hour), and the border says
 `Metrics API, 9 samples · 2 of 2 pods measured` and why.
 
+## Custom workloads
+
+An object of a custom kind that controls pods, such as an Argo Rollout,
+is a workload like a Deployment: `C-x g` on its row opens its dashboard
+(`kind-dev › namespace shop › rollouts.argoproj.io web`), and a
+namespace lists it among its workloads. kc knows such a kind once an
+overview engine of the connection (Info, the dashboard) has seen one of
+its pods, or when discovery lists its scale subresource; until then
+`C-x g` on its row opens the namespace. Prometheus reads its pods
+through the owner series of kube-state-metrics: `kube_pod_owner` when
+it owns them, `kube_replicaset_owner` or `kube_job_owner` with a
+ReplicaSet or Job in between. When those series cannot reach the pods
+(a deeper chain, or a kind named like a built-in one), the charts show
+the session and the border says `no Prometheus history:` and why.
+
 ## The investigation window
 
 With an investigation window set (`C-x w`), the dashboard shows it: the
