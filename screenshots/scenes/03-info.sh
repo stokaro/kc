@@ -47,3 +47,17 @@ scene_info_finding() {
 	wait_for "ImagePullBackOff"
 	shot 1
 }
+
+scene_info_custom_workload() {
+	custom_workload_up
+	fresh --context "$CONTEXT" -n "$CUSTOM_NS"
+	shell_line "cd $CUSTOM_CRD"
+	wait_for "storefront"
+	search storefront
+	wait_for "Pods of $CUSTOM_CRD $CUSTOM_NS/storefront" 60
+	wait_for "3/3 ready, 3 pods" 60
+	# Let the session history collect a few samples for the sparklines.
+	sleep 60
+	shot
+	custom_workload_down
+}
