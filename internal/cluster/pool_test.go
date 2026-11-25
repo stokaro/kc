@@ -107,9 +107,15 @@ func TestPoolSharedEntryNeedsEveryRelease(t *testing.T) {
 	if left.Cluster() != right.Cluster() {
 		t.Fatalf("two leases on one key returned different clusters")
 	}
+	if n := tp.Leases(nodeKey); n != 2 {
+		t.Fatalf("Leases = %d, want 2", n)
+	}
 
 	left.Release()
 	left.Release() // a second release must not drop the right panel's hold
+	if n := tp.Leases(nodeKey); n != 1 {
+		t.Fatalf("Leases after a double release = %d, want 1", n)
+	}
 	tp.advance(10 * testTTL)
 	tp.evictIdle()
 	if !tp.has(nodeKey) {

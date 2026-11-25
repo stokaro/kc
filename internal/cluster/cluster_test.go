@@ -29,6 +29,9 @@ func TestClusterDiscoveryListenerNotified(t *testing.T) {
 	cancel := cl.AddDiscoveryListener(func() {
 		hits.Add(1)
 	})
+	if n := cl.DiscoveryListeners(); n != 1 {
+		t.Fatalf("DiscoveryListeners = %d, want 1", n)
+	}
 
 	cl.RefreshDiscovery()
 	got := hits.Load()
@@ -37,6 +40,9 @@ func TestClusterDiscoveryListenerNotified(t *testing.T) {
 	}
 
 	cancel()
+	if n := cl.DiscoveryListeners(); n != 0 {
+		t.Fatalf("DiscoveryListeners after cancel = %d, want 0", n)
+	}
 	cl.RefreshDiscovery()
 	if hits.Load() != got {
 		t.Fatalf("listener fired after cancel: before=%d after=%d", got, hits.Load())

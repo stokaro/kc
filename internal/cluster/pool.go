@@ -217,6 +217,17 @@ func (p *Pool) evictIdle() {
 	}
 }
 
+// Leases is the number of unreleased leases on k's entry, 0 when the pool
+// has no entry for k.
+func (p *Pool) Leases(k Key) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if e, ok := p.items[k]; ok {
+		return e.refs
+	}
+	return 0
+}
+
 // PruneNamespaces keeps cluster-scoped entries and entries for the provided namespace,
 // cancelling and removing all other namespace-scoped clusters. An empty namespace prunes
 // all namespace-scoped entries. Entries held by a lease are kept; they are
