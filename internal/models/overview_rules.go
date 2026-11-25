@@ -99,6 +99,9 @@ type overviewFinding struct {
 	// notApplicable says why there is nothing to check (no objects of the
 	// kind in scope, an add-on not installed). It is not a pass.
 	notApplicable string
+	// addonMissing is set with notApplicable when the cluster does not
+	// serve the add-on kind the rule needs (optionalNotServed).
+	addonMissing bool
 }
 
 // overviewReport is the result of one recompute.
@@ -242,7 +245,7 @@ var overviewRules = []overviewRule{
 // severity is the worst target's.
 func countFinding(rc *ruleContext, f overviewFinding, needs []schema.GroupVersionResource, targets func() []overviewTarget) overviewFinding {
 	if reason := optionalNotServed(rc.in, needs); reason != "" {
-		return notApplicable(f, reason)
+		return addonNotServed(f, reason)
 	}
 	if reason := rc.in.missingReason(needs...); reason != "" {
 		f.unavailable = reason

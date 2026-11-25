@@ -22,12 +22,13 @@ import (
 type fakeOverviewConn struct {
 	reader crclient.Reader
 
-	mu         sync.Mutex
-	onEvent    func()
-	watches    int
-	keepAlives int
-	missing    map[schema.GroupVersionResource]string
-	onlyIn     map[schema.GroupVersionResource]string
+	mu          sync.Mutex
+	onEvent     func()
+	watches     int
+	keepAlives  int
+	rediscovers int
+	missing     map[schema.GroupVersionResource]string
+	onlyIn      map[schema.GroupVersionResource]string
 }
 
 func (c *fakeOverviewConn) Reader(schema.GroupVersionResource) crclient.Reader { return c.reader }
@@ -59,6 +60,12 @@ func (c *fakeOverviewConn) Unavailable(gvr schema.GroupVersionResource) (string,
 func (c *fakeOverviewConn) KeepAlive(context.Context) {
 	c.mu.Lock()
 	c.keepAlives++
+	c.mu.Unlock()
+}
+
+func (c *fakeOverviewConn) Rediscover() {
+	c.mu.Lock()
+	c.rediscovers++
 	c.mu.Unlock()
 }
 
