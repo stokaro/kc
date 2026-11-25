@@ -24,8 +24,11 @@ longer changes it, and the frame title starts with `[pinned]`.
   `[pinned, replaced by uid 1a2b3c4d]`. kc never shows the new object in
   place of the old one.
 - Switching between Describe, Manifest, Logs and Info keeps the pin.
-  List mode, Command mode, a context switch and `C-x p` again drop it,
-  and the panel follows the other cursor again.
+  List mode, Command mode and `C-x p` again drop it, and the panel
+  follows the other cursor again.
+- A context switch of either panel keeps the pin: the pinned panel stays
+  on the pinned object's context, and its border names it. After
+  unpinning it follows the other panel's context.
 
 ## Freeze
 

@@ -41,7 +41,7 @@ The pages are in [`internal/help/topics`](../internal/help/topics/index.md) and 
 
 ## Context and Namespace
 
-kc works in one context at a time, shown in both panels; each panel has its own namespace scope. kc never changes the kubeconfig. See [Context and namespace](../internal/help/topics/context-namespace.md).
+Each panel has its own kubeconfig context and namespace scope, shown in its bottom border: the left panel can browse staging while the right one browses prod, also with namespaces and objects of the same names. "Context..." in a panel's menu switches that panel only; "Context for both panels..." in the Command menu switches both. Every action runs in the context of the row it acts on, under that context's read-only setting, and the shell line follows the active panel. kc never changes the kubeconfig. See [Context and namespace](../internal/help/topics/context-namespace.md).
 
 ## Resource types
 

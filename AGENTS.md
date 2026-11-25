@@ -21,6 +21,7 @@ The application is a **Kubernetes TUI** built with **Go 1.27** and **Bubble Tea 
 
 2.  **UI Core (`internal/ui`)**:
     -   **App Model**: The central Bubble Tea model (`App` struct in `app.go`). It manages global state: two panels (`leftPanel`, `rightPanel`), an integrated terminal, and modal overlays.
+    -   **Panel connections**: Each panel browses its own kubeconfig context through a `panelConn` (`panel_conn.go`): a pool lease, the cluster and its identity. There is no app-wide cluster. Code that acts on a row takes the connection the row was read from (`selectedRow`, `Selection.Source`, the origin stamp of widget requests); followers use `targetConn`. See `docs/adr/0362-independent-panel-contexts.md`.
     -   **Panels**: Each `Panel` is a self-contained component that displays either a list of items (a "Folder") or a content viewer (YAML, logs).
     -   **Navigator**: (`internal/navigation`) Manages the navigation stack for each panel. It treats navigation as a stack of `Folder` objects, supporting "enter" (push) and "back" (pop) operations.
 

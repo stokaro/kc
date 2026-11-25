@@ -15,8 +15,11 @@ and `M-t` attaches to its main process.
   goes to the shell, `F9` and `F10` included; only `C-o` or a click on
   the bottom line returns to the panels.
 - The shell runs with `KUBECONFIG` set to a file kc generates, so
-  `kubectl` talks to the context, namespace and identity the panels show.
-  It follows context and namespace changes from its next command on.
+  `kubectl` talks to the context, namespace and identity of the active
+  panel. A Describe, Manifest, Logs or Info panel gives the context of
+  the panel it follows, or of its pin. The shell follows a change of the
+  active panel, its context or its namespace from its next command on;
+  a program already running keeps what it started with.
   `terminal.follow: false` leaves the shell's environment alone.
 
 ## cd on the shell line

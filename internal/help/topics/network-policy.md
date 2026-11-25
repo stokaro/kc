@@ -55,7 +55,9 @@ for ingress always and for egress when it has egress rules.
 - Pods on the host network give `unknown`.
 - Policies or namespaces you may not read give `unknown` for the rules
   that need them, never `allowed`.
-- Both pods are read in the context of the active panel.
+- Both pods must be in one cluster: both panels in the same context.
+  With two contexts kc refuses and names them; the policies of one
+  cluster say nothing about a pod of another.
 
 ## See also
 

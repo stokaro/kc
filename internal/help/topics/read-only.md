@@ -6,7 +6,9 @@ cannot delete or edit anything while you browse.
 
 ## How to read it
 
-- The panel frame shows a red `RO` before the context name.
+- The panel frame shows a red `RO` before the context name. Each
+  panel shows its own context: with prod on the left and staging on the
+  right, only the left frame says `RO`.
 - The keys that would write are grayed out in the function bar.
 - Pressing one anyway shows "Read-only mode: <action> is disabled".
 - A context switch says "Context: <name> (read-only)".
@@ -44,8 +46,11 @@ readOnly:
 
 - `kc --readonly` makes every context read-only for this run.
 - `kc --write` ignores the config and allows writes everywhere.
-- Without either flag the config decides. Switching the context applies
-  the setting of the new context.
+- Without either flag the config decides. Switching a panel's context
+  applies the setting of the new context to that panel.
+- An action is refused or allowed by the context of the row it acts on,
+  whichever panel is active: `F8` on a prod row is refused while the
+  staging panel next to it still deletes.
 
 ## Limits
 
