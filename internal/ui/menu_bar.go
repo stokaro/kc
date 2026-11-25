@@ -86,13 +86,13 @@ func (a *App) panelMenuItems(idx int) []menubar.Item {
 		{Label: "&Filter...", Shortcut: "M-f", Disabled: !list, Run: a.onPanel(idx, a.showRowFilterDialog)},
 		{Label: "Faults onl&y", Shortcut: "C-z", Disabled: !list, Run: a.onPanel(idx, a.toggleFaultsOnly)},
 		menubar.Separator(),
-		{Label: "&Namespace...", Disabled: !visible || a.cl == nil || panel == nil, Run: func() tea.Cmd {
+		{Label: "&Namespace...", Disabled: !visible || a.ownConn(idx).cluster() == nil || panel == nil, Run: func() tea.Cmd {
 			a.setActivePanel(idx, "menu namespace")
 			return a.loadNamespacesForPicker(idx)
 		}},
 		{Label: "Con&text...", Disabled: a.kubeMgr == nil, Run: func() tea.Cmd {
 			a.setActivePanel(idx, "menu context")
-			return a.showContextPicker()
+			return a.showContextPicker(idx)
 		}},
 		{Label: "Browse &all types...", Disabled: !list, Run: func() tea.Cmd {
 			a.setActivePanel(idx, "menu all types")
@@ -162,6 +162,7 @@ func (a *App) commandMenuItems() []menubar.Item {
 		{Label: "Compare with conte&xt...", Shortcut: "C-x c", Run: a.compareListWithContext},
 		{Label: "Network&Policy between pods", Shortcut: "C-x n", Run: a.explainNetworkPolicy},
 		{Label: "Compare whole list with co&ntext...", Run: a.compareWholeListWithContext},
+		{Label: "Context for both p&anels...", Disabled: a.kubeMgr == nil, Run: a.showBothContextPicker},
 		a.windowMenuItem(),
 		a.metricSourcesMenuItem(),
 		a.dashboardMenuItem(),

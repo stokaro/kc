@@ -77,12 +77,12 @@ func TestClusterActionRunsOffTheUpdateLoop(t *testing.T) {
 	app := &App{ctx: t.Context(), width: 100, height: 30, modalManager: NewModalManager(nil),
 		leftPanel: NewPanel("l"), rightPanel: NewPanel("r"), leftPanelWidthPercent: 50, rightPanelWidthPercent: 50}
 
-	app.showClusterActionConfirm(action, 0)
+	app.showClusterActionConfirm(action, 0, "")
 	if cmd := app.handleConfirmResult(confirmResultMsg{ok: false}); cmd != nil || action.runs != 0 {
 		t.Fatalf("cancel must not run the action")
 	}
 
-	app.showClusterActionConfirm(action, 0)
+	app.showClusterActionConfirm(action, 0, "")
 	cmd := app.handleConfirmResult(confirmResultMsg{ok: true})
 	if action.runs != 0 {
 		t.Fatalf("the action ran on the update goroutine")

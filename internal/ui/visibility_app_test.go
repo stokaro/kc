@@ -28,7 +28,7 @@ func newVisibilityApp(t *testing.T) *App {
 		"app": {Mode: "only", Show: []appconfig.TypeSelector{{Resource: "pods"}}},
 	}
 	app.leftConfig, app.rightConfig = nil, nil
-	app.currentCtx = &kubeconfig.Context{Name: "kind-dev"}
+	useTestCluster(app, &kubeconfig.Context{Name: "kind-dev"}, nil)
 	return app
 }
 
@@ -61,10 +61,17 @@ func TestSetPanelVisibilityFollowsTheSettings(t *testing.T) {
 		t.Fatalf("a missing profile was applied")
 	}
 
-	// A context switch drops the panels' own choices.
-	app.resetPanelVisibility()
+	// A context switch of the panel drops its own choice; the other
+	// panel keeps its own.
+	if err := app.setPanelProfile(app.rightPanel, "app"); err != nil {
+		t.Fatal(err)
+	}
+	app.resetPanelVisibilityOf(0)
 	if got := app.panelVisibility(app.leftPanel); got.Source == appconfig.VisibilityFromPanel {
 		t.Fatalf("after a context switch the panel keeps %+v", got)
+	}
+	if got := app.panelVisibility(app.rightPanel); got.Name != "app" || got.Source != appconfig.VisibilityFromPanel {
+		t.Fatalf("the other panel lost its choice: %+v", got)
 	}
 }
 
@@ -122,7 +129,7 @@ func TestTypeProfileSaver(t *testing.T) {
 			app := newVisibilityApp(t)
 			app.cfg.Resources.Visibility.Contexts = tc.contexts
 			var got appconfig.ResourcesVisibilityConfig
-			app.typeProfileSaver(ResourcesOptionsChangedMsg{HasTypes: true, TypeProfile: tc.choice})(&got)
+			app.typeProfileSaver(0, ResourcesOptionsChangedMsg{HasTypes: true, TypeProfile: tc.choice})(&got)
 			if got.DefaultProfile != tc.want.DefaultProfile || !mapsEqual(got.Contexts, tc.want.Contexts) {
 				t.Fatalf("saver wrote %+v, want %+v", got, tc.want)
 			}

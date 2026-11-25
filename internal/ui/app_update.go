@@ -170,7 +170,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 					"namespace", msg.Namespace,
 					"cfg", cfg.Name,
 				)
-				if cmd := a.startNamespaceCommand(msg.PanelIdx, *cfg, msg.Namespace); cmd != nil {
+				if cmd := a.restartNamespaceCommand(msg.PanelIdx, *cfg, msg.Namespace); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 			}
@@ -381,7 +381,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			case ResourcesOptionsChangedMsg:
 				var saveCmd tea.Cmd
 				if m.SaveDefault {
-					saveTypes := a.typeProfileSaver(m)
+					saveTypes := a.typeProfileSaver(a.activePanel, m)
 					// Persist current dialog values to config defaults
 					change := func(c *appconfig.Config) {
 						if m.HasInclude {
@@ -659,11 +659,11 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 				a.namespaceInput.Reset()
 			}
 			if !msg.Confirm {
-				a.namespaceCreatePanel = -1
+				a.namespaceCreatePanel, a.namespaceCreateConn = -1, nil
 			}
 		}
 		if msg.Confirm {
-			if a.cl == nil {
+			if a.namespaceCreateConn.cluster() == nil && a.activeConn().cluster() == nil {
 				if a.toastLogger != nil {
 					a.enqueueCmd(a.toastLogger.Errorf("Cluster not ready for namespace creation"))
 				}
@@ -696,7 +696,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			} else {
 				a.enqueueCmd(a.ShowToast(fmt.Sprintf("Create namespace failed: %v", msg.err), 5*time.Second))
 			}
-			a.namespaceCreatePanel = -1
+			a.namespaceCreatePanel, a.namespaceCreateConn = -1, nil
 			return a, nil
 		}
 		a.enqueueCmd(a.ShowToast(fmt.Sprintf("Namespace %s created", msg.name), 3*time.Second))
@@ -710,7 +710,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			a.refreshPanelAfterEdit(0)
 			a.refreshPanelAfterEdit(1)
 		}
-		a.namespaceCreatePanel = -1
+		a.namespaceCreatePanel, a.namespaceCreateConn = -1, nil
 		return a, nil
 	case copyFinishedMsg:
 		if msg.err != nil {
@@ -860,21 +860,21 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKeyMsg(msg, cmds)
+	case panelOriginMsg:
+		return a, a.handlePanelOrigin(msg)
 	case models.ConfirmRequest:
-		return a, a.showConfirm(msg.Action)
+		// Unstamped requests come from the active panel's rows.
+		return a, a.handlePanelOrigin(panelOriginMsg{panel: a.activePanelRef(), msg: msg})
 	case models.ExecRequest:
-		if panel := a.activePanelRef(); panel != nil {
-			return a, a.resolveExecTarget(panel.Folder(), msg.Item, msg.Mode)
-		}
-		return a, nil
+		return a, a.handlePanelOrigin(panelOriginMsg{panel: a.activePanelRef(), msg: msg})
 	case execResolvedMsg:
 		return a, a.handleExecResolved(msg)
 	case execFinishedMsg:
 		return a, a.handleExecFinished(msg)
 	case models.OpenObjectRequest:
-		return a, a.openLinkedObject(msg.Link)
+		return a, a.handlePanelOrigin(panelOriginMsg{panel: a.activePanelRef(), msg: msg})
 	case models.OpenTypeCatalogRequest:
-		return a, a.showTypeCatalog(a.activePanel, msg.OtherOnly)
+		return a, a.handlePanelOrigin(panelOriginMsg{panel: a.activePanelRef(), msg: msg})
 	case linkSelectMsg:
 		return a, a.selectLinkedRow(msg)
 	case portForwardPlanMsg, portForwardInputMsg, portForwardStartedMsg:
@@ -890,7 +890,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	case transferChoiceMsg, transferCancelMsg, transferCloseMsg, transferTickMsg, transferDoneMsg:
 		return a, a.handleTransferMsg(msg)
 	case models.NodeShellRequest:
-		return a, tea.Batch(append(cmds, a.startNodeShell(msg))...)
+		return a, tea.Batch(append(cmds, a.startNodeShell(a.connNamed(msg.Context), msg))...)
 	case nodeShellStartedMsg:
 		return a, tea.Batch(append(cmds, a.handleNodeShellStarted(msg))...)
 	case execEndedMsg:
@@ -1212,6 +1212,10 @@ func passesModal(msg tea.Msg) bool {
 		// The app owns the clipboard; the viewer only asks.
 		return true
 	case readErrorMsg, FolderDirtyMsg, DiscoveryRefreshedMsg:
+		return true
+	case contextSwitchedMsg:
+		// A switch finishes behind a dialog: the lease it carries must
+		// reach the panel or be released.
 		return true
 	case panelcontent.BackgroundMsg:
 		// Panel content keeps loading behind a dialog; a dropped result

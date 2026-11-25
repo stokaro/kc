@@ -121,25 +121,51 @@ type pendingConfirmation struct {
 	row      models.ConfirmedAction
 	cluster  models.ClusterAction
 	panelIdx int // the panel the cluster action came from
+	// kubeContext is the context the action changes, for the read-only
+	// check when the dialog is answered.
+	kubeContext string
+	// conn is the connection of the row the action came from; a follow
+	// up (the node shell) runs there.
+	conn *panelConn
 }
 
-// showConfirm opens a red dialog for action and remembers it until the
-// user answers.
-func (a *App) showConfirm(action models.ConfirmedAction) tea.Cmd {
-	return a.showConfirmation(action.Confirmation(), &pendingConfirmation{row: action})
+// showConfirm opens a red dialog for action, a row of conn, and remembers
+// it until the user answers.
+func (a *App) showConfirm(conn *panelConn, action models.ConfirmedAction) tea.Cmd {
+	return a.showConfirmation(action.Confirmation(), &pendingConfirmation{row: action, kubeContext: conn.name(), conn: conn})
 }
 
-// showClusterActionConfirm opens a red dialog for a cluster action that
-// came from panel panelIdx.
-func (a *App) showClusterActionConfirm(action models.ClusterAction, panelIdx int) tea.Cmd {
-	return a.showConfirmation(action.Confirmation(), &pendingConfirmation{cluster: action, panelIdx: panelIdx})
+// showClusterActionConfirm opens a red dialog for a cluster action in
+// kubeContext that came from panel panelIdx.
+func (a *App) showClusterActionConfirm(action models.ClusterAction, panelIdx int, kubeContext string) tea.Cmd {
+	return a.showConfirmation(action.Confirmation(), &pendingConfirmation{cluster: action, panelIdx: panelIdx, kubeContext: kubeContext, conn: a.ownConn(panelIdx)})
 }
 
+// confirmationContext is the Context row of c, "" when it has none.
+func confirmationContext(c models.Confirmation) string {
+	for _, d := range c.Details {
+		if d[0] == "Context" {
+			return d[1]
+		}
+	}
+	return ""
+}
+
+// showConfirmation opens the red dialog. The context the action changes
+// is the confirmation's own Context row, which the row's folder fills in;
+// without one, the pending action's. The dialog always names it: with two
+// panels in two contexts, it is the last guard against acting in the
+// wrong one.
 func (a *App) showConfirmation(c models.Confirmation, pending *pendingConfirmation) tea.Cmd {
+	if kc := confirmationContext(c); kc != "" {
+		pending.kubeContext = kc
+	} else if pending.kubeContext != "" {
+		c.Details = append([][2]string{{"Context", pending.kubeContext}}, c.Details...)
+	}
 	model := NewConfirmModel(c)
 	// A confirmed action changes the cluster unless it says it is local.
-	if !c.Local && a.accessPolicy().ReadOnly {
-		return a.readOnlyRefusal(confirmationName(c))
+	if !c.Local && a.policyFor(pending.kubeContext).ReadOnly {
+		return a.readOnlyRefusal(pending.kubeContext, confirmationName(c))
 	}
 	modal := NewModal("Confirm", model)
 	modal.SetDanger(true)
@@ -160,9 +186,9 @@ func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
 	if !msg.ok || pending == nil {
 		return nil
 	}
-	if !pending.local() && a.accessPolicy().ReadOnly {
+	if !pending.local() && a.policyFor(pending.kubeContext).ReadOnly {
 		// The context became read-only while the dialog was open.
-		return a.readOnlyRefusal(pending.name())
+		return a.readOnlyRefusal(pending.kubeContext, pending.name())
 	}
 	if pending.cluster != nil {
 		return a.runClusterAction(pending.cluster, pending.panelIdx)
@@ -175,6 +201,10 @@ func (a *App) handleConfirmResult(msg confirmResultMsg) tea.Cmd {
 	}
 	if f, ok := pending.row.(models.ConfirmFollowUp); ok {
 		next := f.FollowUp()
+		if req, ok := next.(models.NodeShellRequest); ok {
+			// The node shell runs in the cluster of the row that asked.
+			return a.startNodeShell(pending.conn, req)
+		}
 		return func() tea.Msg { return next }
 	}
 	return nil

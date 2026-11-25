@@ -25,6 +25,10 @@ type Request struct {
 	// AllContainers merges the logs of every started container of the pod;
 	// Spec.Container is empty then.
 	AllContainers bool
+	// Source names the cluster connection of the selected row
+	// (panelcontent.Selection.Source): pods of one name in two contexts
+	// are two targets.
+	Source string
 }
 
 // Target returns the log stream the selected item stands for: a container,
@@ -110,7 +114,7 @@ func podKey(spec models.LogsSpec) string {
 // targetID is the identity of a selected row's request: the pod, and the
 // container or all containers it names.
 func targetID(req Request) string {
-	id := podKey(req.Spec) + "/" + req.Spec.Container
+	id := req.Source + "|" + podKey(req.Spec) + "/" + req.Spec.Container
 	if req.AllContainers {
 		id += "/" + ContainerAll
 	}

@@ -69,9 +69,11 @@ func (a *App) NavigatePanel(idx int, p PanelPath, onDone func(error) tea.Cmd) te
 	a.panelNavGen++
 	nav := a.navigatorFor(idx)
 	a.panelNavs[idx] = &panelNavigation{
-		gen:    a.panelNavGen,
-		path:   p,
-		walk:   newPathWalk(nav, p.Elems, p.SelectLast, a.resolveTypeName, time.Now()),
+		gen:  a.panelNavGen,
+		path: p,
+		walk: newPathWalk(nav, p.Elems, p.SelectLast, func(name string) (schema.GroupResource, error) {
+			return a.resolveTypeName(idx, name)
+		}, time.Now()),
 		onDone: onDone,
 	}
 	return a.continuePanelNavigation(idx, a.panelNavGen)
@@ -156,17 +158,19 @@ func (a *App) typeShortcut(idx int, p PanelPath) bool {
 	if _, ok := nav.Current().(typeFolder); ok || !nav.HasBack() {
 		return false
 	}
-	_, err := a.resolveTypeName(first.Name)
+	_, err := a.resolveTypeName(idx, first.Name)
 	return err == nil
 }
 
 // resolveTypeName maps "po", "pods", "pod" or "deployments.apps" to the
-// resource type with the cluster's RESTMapper (which knows short names).
-func (a *App) resolveTypeName(name string) (schema.GroupResource, error) {
-	if a.cl == nil {
+// resource type with the RESTMapper of panel idx's cluster (which knows
+// short names).
+func (a *App) resolveTypeName(idx int, name string) (schema.GroupResource, error) {
+	cl := a.ownConn(idx).cluster()
+	if cl == nil {
 		return schema.GroupResource{}, errors.New("cluster not ready")
 	}
-	gvr, err := a.cl.RESTMapper().ResourceFor(schema.ParseGroupResource(name).WithVersion(""))
+	gvr, err := cl.RESTMapper().ResourceFor(schema.ParseGroupResource(name).WithVersion(""))
 	if err != nil {
 		return schema.GroupResource{}, fmt.Errorf("unknown resource type %q", name)
 	}
@@ -197,7 +201,7 @@ func (a *App) rescopePanelRoot(idx int, ns string) {
 	a.replaceNavigator(idx, a.newScopedNavigator(idx))
 	a.showNavigatorRoot(idx)
 	if idx == a.activePanel {
-		a.updateTermContextNamespace(ns)
+		a.ensureTermContext()
 	}
 }
 
@@ -210,5 +214,5 @@ func (a *App) showWalkedFolder(idx int) {
 	panel.ResetSelectionTop(ctx)
 	cancel()
 	a.applyResourceOptions(panel)
-	a.syncTerminalNamespaceForNavigator(a.navigatorFor(idx))
+	a.ensureTermContext()
 }

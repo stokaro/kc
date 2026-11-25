@@ -54,18 +54,46 @@ func (a *App) logLimits() logview.Limits {
 	return logview.Limits{MaxRecords: cfg.EffectiveMaxLines(), MaxBytes: cfg.EffectiveMaxMemoryBytes()}
 }
 
-// panelLogsSource captures the cluster on the UI goroutine; the returned
-// Open runs in a tea.Cmd and does the requests.
+// panelLogsSource resolves the cluster of the selection (req.Source) on
+// the UI goroutine; the returned Open runs in a tea.Cmd and does the
+// requests. The stream holds the connection until it is canceled, so the
+// other panel may switch its context while the stream runs.
 //
 //nolint:gocognit // the stream opener runs in two nested closures; each branch is one way to open the logs (all containers, the default container, one container)
 func (a *App) panelLogsSource() logswidget.Source {
 	return func(req logswidget.Request) logswidget.Open {
-		cl, root := a.cl, a.ctx
+		conn := a.connByID(req.Source)
+		// A selection of a connection nobody holds any more was made
+		// before its panel switched the context.
+		gone := conn == nil && req.Source != ""
+		if conn == nil && !gone {
+			conn = a.activeConn()
+		}
+		cl, root := conn.cluster(), a.ctx
 		maxRequests := appconfig.DefaultLogsMaxRequests
 		if a.cfg != nil {
 			maxRequests = a.cfg.Viewer.Logs.EffectiveMaxRequests()
 		}
-		return func() (logswidget.Stream, error) {
+		// The hold is taken here, on the UI goroutine, while the panel
+		// still holds conn; the widget always runs the returned Open.
+		release := conn.hold()
+		return func() (stream logswidget.Stream, err error) {
+			if gone {
+				return logswidget.Stream{}, errContextChanged
+			}
+			defer func() {
+				if err != nil {
+					release()
+					return
+				}
+				cancel := stream.Cancel
+				stream.Cancel = func() {
+					if cancel != nil {
+						cancel()
+					}
+					release()
+				}
+			}()
 			if cl == nil {
 				return logswidget.Stream{}, errors.New("no active cluster")
 			}

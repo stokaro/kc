@@ -48,9 +48,10 @@ type WidgetDeps struct {
 	Config *appconfig.Config
 }
 
-// DescribeFunc prepares the reads behind a Describe view. It runs on the UI
+// DescribeFunc prepares the reads behind a Describe view of target, which
+// the connection source (Selection.Source) shows. It runs on the UI
 // goroutine and must not do I/O; the returned functions run in a tea.Cmd.
-type DescribeFunc func(describe.Target) DescribeReads
+type DescribeFunc func(source string, target describe.Target) DescribeReads
 
 // DescribeReads are the background reads for one describe target.
 type DescribeReads struct {
@@ -125,6 +126,10 @@ type Selection struct {
 	ID   string
 	Path string
 	Item models.Item
+	// Source names the cluster connection the item was read from. Two
+	// panels may browse different contexts that hold objects of the same
+	// name; widgets key their content by Source too. Empty when unknown.
+	Source string
 	// Force notifies listeners and other panels even when the ID remains unchanged.
 	Force bool
 }

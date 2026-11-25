@@ -75,13 +75,12 @@ func (a *App) compareSelectedObjects() tea.Cmd {
 		}
 		return nil
 	}
-	fallbackCtx := ""
-	if a.currentCtx != nil {
-		fallbackCtx = a.currentCtx.Name
-	}
+	// A side that does not name its context is in its panel's: the two
+	// panels may show two contexts.
+	ctxs := [2]string{a.ownConn(0).name(), a.ownConn(1).name()}
 	var view *DiffViewer
 	load := func(seq int, opts manifestdiff.Options) tea.Cmd {
-		return a.readComparison(view, seq, left, right, fallbackCtx, opts)
+		return a.readComparison(view, seq, left, right, ctxs, opts)
 	}
 	view = NewDiffViewer(a.viewerTheme(), itemViewCommand(left), itemViewCommand(right), load, func() tea.Cmd {
 		a.hideModal()
@@ -100,7 +99,7 @@ func (a *App) compareSelectedObjects() tea.Cmd {
 }
 
 // readComparison reads both manifests and renders them with opts.
-func (a *App) readComparison(view *DiffViewer, seq int, left, right models.ManifestSource, fallbackCtx string, opts manifestdiff.Options) tea.Cmd {
+func (a *App) readComparison(view *DiffViewer, seq int, left, right models.ManifestSource, fallbackCtx [2]string, opts manifestdiff.Options) tea.Cmd {
 	root := a.ctx
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(root, compareReadTimeout)
@@ -108,11 +107,11 @@ func (a *App) readComparison(view *DiffViewer, seq int, left, right models.Manif
 		ctrllog.FromContext(ctx).WithName("compare").V(1).Info("reading manifests",
 			"left", left.GVR().String()+" "+left.Namespace()+"/"+left.Name(),
 			"right", right.GVR().String()+" "+right.Namespace()+"/"+right.Name())
-		l, err := readSide(ctx, left, fallbackCtx)
+		l, err := readSide(ctx, left, fallbackCtx[0])
 		if err != nil {
 			return compareResultMsg{view: view, seq: seq, err: err}
 		}
-		r, err := readSide(ctx, right, fallbackCtx)
+		r, err := readSide(ctx, right, fallbackCtx[1])
 		if err != nil {
 			return compareResultMsg{view: view, seq: seq, err: err}
 		}

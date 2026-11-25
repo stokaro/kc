@@ -101,9 +101,14 @@ func TestEnterOnShellRowRequestsAShell(t *testing.T) {
 	target := models.ExecTarget{Cluster: kccluster.Key{ContextName: "dev"}, Namespace: "shop", Pod: "web-0", Container: "app"}
 	app := execTestApp(t, models.NewContainerShellItem("shell", []string{"shell"}, nil, target))
 	_, cmd := app.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	reqs := collectMsgs[models.ExecRequest](cmd)
-	if len(reqs) != 1 || reqs[0].Mode != models.ExecShell {
-		t.Fatalf("Enter on the shell row: requests %+v, want one shell request", reqs)
+	// The request carries the panel it came from, so it resolves in that
+	// panel's folder even when the other panel is active by then.
+	reqs := collectMsgs[panelOriginMsg](cmd)
+	if len(reqs) != 1 || reqs[0].panel != app.activePanelRef() {
+		t.Fatalf("Enter on the shell row: requests %+v, want one from the active panel", reqs)
+	}
+	if req, ok := reqs[0].msg.(models.ExecRequest); !ok || req.Mode != models.ExecShell {
+		t.Fatalf("Enter on the shell row: request %+v, want a shell request", reqs[0].msg)
 	}
 	_, cmd = app.Update(reqs[0])
 	got := collectMsgs[execResolvedMsg](cmd)

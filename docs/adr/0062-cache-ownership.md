@@ -1,6 +1,6 @@
 # 0062. Cache ownership in the cluster pool
 
-- Status: Accepted
+- Status: Accepted; decision 3 (the app holds the current context's cluster) is superseded by [0362](0362-independent-panel-contexts.md)
 - Date: 2026-11-22
 - Issue: #62
 

@@ -95,13 +95,11 @@ func (a *App) togglePinOf(idx int, panel *Panel) tea.Cmd {
 func (a *App) pin(idx int, panel *Panel) tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
-	pin := &panelPin{}
+	// The pin keeps the connection of what the panel shows, so the other
+	// panel may switch its context meanwhile.
+	pin := &panelPin{conn: a.targetConn(idx), scope: a.targetScope(idx)}
 	if panel.Mode() == PanelModeInfo {
-		if other := a.panelByIndex(1 - idx); other != nil {
-			if item, ok := other.SelectedNavItem(ctx); ok {
-				pin.item = item
-			}
-		}
+		pin.item = a.otherPanelRow(ctx, idx)
 		pin.scope = a.overviewNamespace(1 - idx)
 	} else {
 		sel := panel.CurrentSelection(ctx)
@@ -109,8 +107,17 @@ func (a *App) pin(idx int, panel *Panel) tea.Cmd {
 		if pin.item == nil {
 			return a.ShowToast("Nothing to pin: the panel shows no object", 3*time.Second)
 		}
+		if sel.Source != "" {
+			c := a.connByID(sel.Source)
+			if c == nil {
+				return a.ShowToast(fmt.Sprintf("Nothing to pin: %v", errContextChanged), 3*time.Second)
+			}
+			pin.conn = c
+		}
 	}
-	ident, watchable := a.identityOf(pin.item)
+	// Without a connection (no context yet) the pin keeps the row only.
+	pin.release = pin.conn.hold()
+	ident, watchable := a.identityOf(pin.conn, pin.item)
 	pin.ident = ident
 	if watchable {
 		pin.watch = &pinWatch{}
@@ -124,10 +131,23 @@ func (a *App) pin(idx int, panel *Panel) tea.Cmd {
 	return tea.Batch(a.ShowInfo("Pinned "+label+"; C-x p unpins", 2*time.Second), a.startPinWatch(pin))
 }
 
+// otherPanelRow is the row under the cursor of the panel other than idx,
+// nil for none.
+func (a *App) otherPanelRow(ctx context.Context, idx int) models.Item {
+	other := a.panelByIndex(1 - idx)
+	if other == nil {
+		return nil
+	}
+	if item, ok := other.SelectedNavItem(ctx); ok {
+		return item
+	}
+	return nil
+}
+
 // identityOf names the object item stands for. ok is false when the row
 // names none (an Info panel on a namespace).
-func (a *App) identityOf(item models.Item) (pinIdentity, bool) {
-	id := pinIdentity{cluster: a.currentClusterKey()}
+func (a *App) identityOf(c *panelConn, item models.Item) (pinIdentity, bool) {
+	id := pinIdentity{cluster: c.clusterKey()}
 	if obj, ok := item.(models.ObjectItem); ok && obj.GVR().Resource != "" {
 		id.gvr, id.namespace, id.name = obj.GVR(), obj.Namespace(), obj.Name()
 		if inst, ok := item.(models.InstanceItem); ok {
@@ -147,7 +167,7 @@ func (a *App) identityOf(item models.Item) (pinIdentity, bool) {
 // informer of its type. GetInformer may wait for discovery, so it runs in
 // a command.
 func (a *App) startPinWatch(pin *panelPin) tea.Cmd {
-	if pin.watch == nil || a.cl == nil {
+	if pin.watch == nil || pin.conn.cluster() == nil {
 		return nil
 	}
 	if a.pinSignal == nil {
@@ -158,7 +178,7 @@ func (a *App) startPinWatch(pin *panelPin) tea.Cmd {
 		a.pinWaiting = true
 		wait = a.waitPinSignal()
 	}
-	deps := a.makeDeps(a.cl, nil, pin.ident.cluster)
+	deps := a.connDeps(pin.conn, nil)
 	w, signal, id := pin.watch, a.pinSignal, pin.ident
 	start := func() tea.Msg {
 		stop, err := models.WatchObject(deps, id.gvr, id.namespace, id.name, func(s models.ObjectSighting) {
@@ -256,21 +276,14 @@ func (a *App) unpin(panel *Panel) tea.Cmd {
 	defer cancel()
 	panel.ClearPin()
 	panel.Thaw()
+	// The panel shows the other panel's context again, which may not be
+	// the pinned one: its frame and the shell follow.
+	a.syncPanelScopeLabels()
+	a.ensureTermContext()
 	cmds := []tea.Cmd{a.ShowInfo("Unpinned: the panel follows the other panel again", 2*time.Second)}
 	cmds = append(cmds, a.followOtherPanel(ctx, panel), panel.RefreshContent(ctx))
 	a.invalidateView("unpin")
 	return tea.Batch(cmds...)
-}
-
-// dropPins unpins and thaws both panels, as a context switch must: the
-// pinned objects belong to the old cluster.
-func (a *App) dropPins() {
-	for idx := range 2 {
-		if p := a.panelByIndex(idx); p != nil {
-			p.ClearPin()
-			p.Thaw()
-		}
-	}
 }
 
 // toggleFreeze freezes the follower panel's display, or returns it to

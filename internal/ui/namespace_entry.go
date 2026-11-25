@@ -105,11 +105,3 @@ func namespaceListAllowed(ctx context.Context, cl *kccluster.Cluster) error {
 func (a *App) rememberPanelNamespace(ns string) {
 	a.namespaceScopes.recent = rememberNamespace(a.namespaceScopes.recent, ns)
 }
-
-// contextNamespace is the namespace the kubeconfig context names, or "".
-func (a *App) contextNamespace() string {
-	if a.currentCtx == nil {
-		return ""
-	}
-	return strings.TrimSpace(a.currentCtx.Namespace)
-}

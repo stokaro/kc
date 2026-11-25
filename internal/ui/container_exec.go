@@ -83,7 +83,7 @@ var errExecReadOnly = errors.New("disabled in read-only mode: a shell or attach 
 func (a *App) execGate(target models.ExecTarget, _ models.ExecMode) error {
 	kubeContext := target.Cluster.ContextName
 	if kubeContext == "" {
-		kubeContext = a.currentContextName()
+		kubeContext = a.activeConn().name()
 	}
 	if a.readOnlyFor(kubeContext) {
 		return errExecReadOnly

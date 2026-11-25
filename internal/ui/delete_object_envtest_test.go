@@ -158,7 +158,8 @@ func TestConfirmedDeleteUsesOriginClusterEnvtest(t *testing.T) {
 	app.cancel()
 	app.ctx, app.cancel = context.WithCancel(ctx)
 	t.Cleanup(app.cancel)
-	app.cl = nil
+	// The panels have no connection: the delete uses the target's own
+	// cluster.
 	app.pendingDelete = &target
 
 	_, cmd := app.Update(DeleteConfirmMsg{Confirm: true, Close: true})

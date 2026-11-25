@@ -59,7 +59,7 @@ func TestConfirmRunsActionOnlyWhenApproved(t *testing.T) {
 	if !passesModal(confirmResultMsg{}) {
 		t.Fatalf("the dialog's answer must reach the app")
 	}
-	app.showConfirm(action)
+	app.showConfirm(nil, action)
 	if !app.modalManager.IsModalVisible() {
 		t.Fatalf("no confirmation dialog")
 	}
@@ -67,7 +67,7 @@ func TestConfirmRunsActionOnlyWhenApproved(t *testing.T) {
 	if action.confirmed != 0 || app.modalManager.IsModalVisible() {
 		t.Fatalf("cancel must close without running the action")
 	}
-	app.showConfirm(action)
+	app.showConfirm(nil, action)
 	app.handleConfirmResult(confirmResultMsg{ok: true})
 	if action.confirmed != 1 {
 		t.Fatalf("confirmed %d times, want 1", action.confirmed)

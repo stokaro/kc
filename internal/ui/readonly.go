@@ -40,14 +40,6 @@ func resolveReadOnly(override ReadOnlyOverride, cfg appconfig.ReadOnlyConfig, co
 	}
 }
 
-// readOnly reports whether the current context is in read-only mode.
-func (a *App) readOnly() bool {
-	if a == nil {
-		return false
-	}
-	return a.readOnlyFor(a.currentContextName())
-}
-
 // readOnlyFor reports whether the named context is in read-only mode.
 func (a *App) readOnlyFor(context string) bool {
 	var cfg appconfig.ReadOnlyConfig
@@ -58,28 +50,31 @@ func (a *App) readOnlyFor(context string) bool {
 }
 
 // refuseReadOnly returns a command that tells the user read-only mode
-// refuses action, or nil when the policy permits the checks. Every mutating
-// handler calls it first, so a key that slips past the function bar still
-// changes nothing.
-func (a *App) refuseReadOnly(action string, checks ...access.Check) tea.Cmd {
-	if a.accessPolicy().Permits(nil, checks...) {
+// refuses action in kubeContext, the context the action changes, or nil
+// when the policy permits the checks. Every mutating handler calls it
+// first, so a key that slips past the function bar still changes nothing.
+// The two panels may show different contexts: the caller names the one
+// of the action's target, never the other panel's.
+func (a *App) refuseReadOnly(kubeContext, action string, checks ...access.Check) tea.Cmd {
+	if a.policyFor(kubeContext).Permits(nil, checks...) {
 		return nil
 	}
-	return a.readOnlyRefusal(action)
+	return a.readOnlyRefusal(kubeContext, action)
 }
 
-// readOnlyRefusal logs and shows the refusal of action.
-func (a *App) readOnlyRefusal(action string) tea.Cmd {
-	ctrllog.FromContext(a.ctx).WithName("readOnly").Info("refused in read-only mode", "action", action, "context", a.currentContextName())
+// readOnlyRefusal logs and shows the refusal of action in kubeContext.
+func (a *App) readOnlyRefusal(kubeContext, action string) tea.Cmd {
+	ctrllog.FromContext(a.ctx).WithName("readOnly").Info("refused in read-only mode", "action", action, "context", kubeContext)
 	return a.ShowToast(access.ReadOnlyRefusal(action), readOnlyToastTTL)
 }
 
-// refuseCommand returns a refusal when read-only mode does not let cmd run.
-func (a *App) refuseCommand(cmd appconfig.CommandConfig) tea.Cmd {
-	if a.accessPolicy().PermitsCommand(cmd.Dangerous) {
+// refuseCommand returns a refusal when read-only mode does not let cmd run
+// in kubeContext.
+func (a *App) refuseCommand(kubeContext string, cmd appconfig.CommandConfig) tea.Cmd {
+	if a.policyFor(kubeContext).PermitsCommand(cmd.Dangerous) {
 		return nil
 	}
-	return a.readOnlyRefusal(fmt.Sprintf("command %q", cmd.Name))
+	return a.readOnlyRefusal(kubeContext, fmt.Sprintf("command %q", cmd.Name))
 }
 
 // mutatingFunctionKey reports whether a function bar key changes the cluster.

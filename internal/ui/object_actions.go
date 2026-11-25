@@ -22,10 +22,11 @@ type objectActionTarget struct {
 // objectActionPreparedMsg carries the change to confirm, or why it could
 // not be prepared.
 type objectActionPreparedMsg struct {
-	label    string
-	action   models.ClusterAction
-	panelIdx int
-	err      error
+	label       string
+	action      models.ClusterAction
+	panelIdx    int
+	kubeContext string
+	err         error
 }
 
 // objectActionDoneMsg reports a confirmed action's outcome.
@@ -101,7 +102,7 @@ func (a *App) prepareObjectAction(target objectActionTarget, action objectaction
 		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 		defer cancel()
 		ca, err := action.Prepare(ctx, target.env, target.obj)
-		return objectActionPreparedMsg{label: action.Label, action: ca, panelIdx: target.panelIdx, err: err}
+		return objectActionPreparedMsg{label: action.Label, action: ca, panelIdx: target.panelIdx, kubeContext: target.env.Context, err: err}
 	})
 }
 
@@ -112,7 +113,7 @@ func (a *App) handleObjectActionPrepared(msg objectActionPreparedMsg) tea.Cmd {
 	if msg.action == nil {
 		return nil
 	}
-	return a.showClusterActionConfirm(msg.action, msg.panelIdx)
+	return a.showClusterActionConfirm(msg.action, msg.panelIdx, msg.kubeContext)
 }
 
 // runClusterAction runs a confirmed action off the update goroutine.

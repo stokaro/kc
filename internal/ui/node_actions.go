@@ -154,7 +154,7 @@ func (a *App) openNodeActions() (tea.Cmd, bool) {
 	}
 	// Read-only mode refuses every node action here, before any dialog
 	// opens: cordon, uncordon and drain all patch the nodes.
-	if cmd := a.refuseReadOnly("Node actions", access.Check{Resource: nodeaction.NodesGVR, Verb: "patch"}); cmd != nil {
+	if cmd := a.refuseReadOnly(target.env.Context, "Node actions", access.Check{Resource: nodeaction.NodesGVR, Verb: "patch"}); cmd != nil {
 		return cmd, true
 	}
 	menu := newNodeActionMenu(target)

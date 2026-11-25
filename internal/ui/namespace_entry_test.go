@@ -105,11 +105,11 @@ func TestFallbackNamespaceNames(t *testing.T) {
 
 func TestNamespacePickerTakesATypedNameWhenListingIsForbidden(t *testing.T) {
 	app := NewApp()
-	app.currentCtx = &kubeconfig.Context{Name: "ctx", Namespace: "team-a"}
+	useTestCluster(app, &kubeconfig.Context{Name: "ctx", Namespace: "team-a"}, nil)
 	app.panelScope = [2]string{"team-a", "team-a"}
 	app.rememberPanelNamespace("team-old")
 
-	app.showNamespacePicker(namespacesLoadedMsg{panel: 1, err: errNamespaceListForbidden})
+	app.showNamespacePicker(namespacesLoadedMsg{panel: 1, conn: app.ownConn(1).connID(), err: errNamespaceListForbidden})
 	modal := app.modalManager.modals["namespace_picker"]
 	if modal == nil || !modal.visible {
 		t.Fatal("the picker did not open")
@@ -133,5 +133,20 @@ func TestNamespacePickerTakesATypedNameWhenListingIsForbidden(t *testing.T) {
 	typeText(picker, "team-b")
 	if got := picker.choiceAt(picker.selected); got.Value != "team-b" {
 		t.Fatalf("selected %q, want the typed team-b", got.Value)
+	}
+}
+
+// Names read for a connection the panel no longer has name another
+// cluster's namespaces: the picker does not open on them.
+func TestNamespacePickerDropsNamesOfAnOldConnection(t *testing.T) {
+	app := NewApp()
+	old := useTestCluster(app, &kubeconfig.Context{Name: "ctx-a", Namespace: "team-a"}, nil, 1)
+	useTestCluster(app, &kubeconfig.Context{Name: "ctx-b", Namespace: "team-b"}, nil, 1)
+	app.showNamespacePicker(namespacesLoadedMsg{panel: 1, conn: old.connID(), names: []string{"only-in-a"}})
+	if modal := app.modalManager.modals["namespace_picker"]; modal != nil && modal.visible {
+		t.Fatal("the picker opened on the namespaces of the panel's old context")
+	}
+	if old.holders() != 0 {
+		t.Fatalf("the old connection has %d holders after the switch, want 0", old.holders())
 	}
 }

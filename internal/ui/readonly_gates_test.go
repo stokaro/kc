@@ -31,7 +31,7 @@ func TestReadOnlyRefusesPortForward(t *testing.T) {
 
 func TestReadOnlyRefusesNodeShellRequest(t *testing.T) {
 	app, _ := readOnlyTestApp(t, false)
-	wantRefusal(t, app.startNodeShell(models.NodeShellRequest{Context: "eu-prod", Node: "n1", Namespace: "default"}), "Node shell")
+	wantRefusal(t, app.startNodeShell(app.ownConn(0), models.NodeShellRequest{Context: "eu-prod", Node: "n1", Namespace: "default"}), "Node shell")
 	if app.nodeShellStarting {
 		t.Fatal("read-only mode started a node shell")
 	}
@@ -52,7 +52,7 @@ func TestReadOnlyRefusesClusterActions(t *testing.T) {
 	t.Run("dialog is not opened", func(t *testing.T) {
 		app, _ := readOnlyTestApp(t, false)
 		ran := false
-		wantRefusal(t, app.showClusterActionConfirm(stubClusterAction{ran: &ran}, 0), "Run now")
+		wantRefusal(t, app.showClusterActionConfirm(stubClusterAction{ran: &ran}, 0, "eu-prod"), "Run now")
 		if app.pendingConfirm != nil || app.modalManager.IsModalVisible() {
 			t.Fatal("read-only mode opened the confirmation dialog")
 		}
@@ -60,7 +60,7 @@ func TestReadOnlyRefusesClusterActions(t *testing.T) {
 	t.Run("approval after the context became read-only", func(t *testing.T) {
 		app, _ := readOnlyTestApp(t, true)
 		ran := false
-		if cmd := app.showClusterActionConfirm(stubClusterAction{ran: &ran}, 0); isRefusal(cmd) || app.pendingConfirm == nil {
+		if cmd := app.showClusterActionConfirm(stubClusterAction{ran: &ran}, 0, "eu-prod"); isRefusal(cmd) || app.pendingConfirm == nil {
 			t.Fatal("a writable context must open the dialog")
 		}
 		app.readOnlyOverride = ReadOnlyForced

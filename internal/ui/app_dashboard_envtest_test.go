@@ -44,14 +44,7 @@ func pooledTestApp(t *testing.T, ns string) *App {
 	app.clPool = kccluster.NewPool(time.Minute, 0)
 	app.clPool.Start()
 	t.Cleanup(app.clPool.Stop)
-	app.currentCtx = &kubeconfig.Context{Name: "envtest", Namespace: ns, Kubeconfig: &kubeconfig.Kubeconfig{Path: path, Context: "envtest"}}
-	var err error
-	app.clLease, err = app.clPool.Acquire(t.Context(), app.currentClusterKey(), nil)
-	if err != nil {
-		t.Fatalf("cluster: %v", err)
-	}
-	t.Cleanup(app.clLease.Release)
-	app.cl = app.clLease.Cluster()
+	usePoolContext(t, app, &kubeconfig.Context{Name: "envtest", Namespace: ns, Kubeconfig: &kubeconfig.Kubeconfig{Path: path, Context: "envtest"}})
 	return app
 }
 
@@ -125,7 +118,7 @@ func TestDashboardOpensOverUnchangedPanelsEnvtest(t *testing.T) {
 	_, _ = app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app.activePanel = 0
 	deployments := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
-	runLinkCmds(t, app, app.openObjectRef(models.ObjectRef{GVR: deployments, Namespaced: true, Namespace: ns, Name: "web"}, ""))
+	runLinkCmds(t, app, app.openObjectRef(app.ownConn(0), 0, models.ObjectRef{GVR: deployments, Namespaced: true, Namespace: ns, Name: "web"}, ""))
 	app.activePanel = 1
 	before := panelsOf(app)
 
@@ -265,7 +258,7 @@ func TestDashboardEventsAndLogsAroundEnvtest(t *testing.T) {
 	_, _ = app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	app.activePanel = 0
 	deployments := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
-	runLinkCmds(t, app, app.openObjectRef(models.ObjectRef{GVR: deployments, Namespaced: true, Namespace: ns, Name: "web"}, ""))
+	runLinkCmds(t, app, app.openObjectRef(app.ownConn(0), 0, models.ObjectRef{GVR: deployments, Namespaced: true, Namespace: ns, Name: "web"}, ""))
 	app.activePanel = 1
 	openDash := func() {
 		t.Helper()

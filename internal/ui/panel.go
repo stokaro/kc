@@ -55,12 +55,18 @@ type Panel struct {
 	commandFocusHandler  func(bool) tea.Cmd
 	lastSelectionID      string
 	lastSelection        models.Item
-	renderCache          string
-	renderCacheWidth     int
-	renderCacheHeight    int
-	renderCacheFocused   bool
-	renderCacheValid     bool
-	selectionObservers   []func(context.Context, panelcontent.Selection, string) tea.Msg
+	// lastSource is the connection lastSelection was read from.
+	lastSource string
+	// selectionSource names the connection of the panel's own list rows
+	// (list true) or of what the panel shows (false); see
+	// panelcontent.Selection.Source. Nil leaves Source empty.
+	selectionSource    func(list bool) string
+	renderCache        string
+	renderCacheWidth   int
+	renderCacheHeight  int
+	renderCacheFocused bool
+	renderCacheValid   bool
+	selectionObservers []func(context.Context, panelcontent.Selection, string) tea.Msg
 	// pin and freeze: docs/adr/0187-pin-freeze-window.md.
 	pin    *panelPin
 	freeze *panelFreeze
@@ -310,11 +316,12 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 			}
 		}
 	}
+	// The list's rows come from the panel's own connection.
+	sel.Source = p.sourceOf(true)
 	changed := sel.ID != "" && sel.ID != p.lastSelectionID
 	if sel.ID != "" {
 		p.lastSelectionID = sel.ID
 	}
-	p.lastSelection = sel.Item
 	// Only the list reports here. Describe and Manifest widgets follow the
 	// other panel through NotifySelection; this panel's hidden list must not
 	// replace what they show.
@@ -381,14 +388,9 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 		cmds = append(cmds, initCmd)
 	}
 	if mode == PanelModeList {
-		var selItem models.Item
-		if item, ok := p.SelectedNavItem(ctx); ok {
-			selItem = item
-		}
 		if selCmd := p.widgetSelectionChanged(ctx, panelcontent.Selection{
 			ID:    p.currentSelectionID(ctx),
 			Path:  p.currentPath,
-			Item:  selItem,
 			Force: true,
 		}); selCmd != nil {
 			cmds = append(cmds, selCmd)
@@ -532,7 +534,9 @@ func (p *Panel) Folder() models.Folder {
 // Enter triggers the list widget's enter behaviour for the current selection.
 func (p *Panel) Enter(ctx context.Context) tea.Cmd {
 	if lw := p.listWidget(ctx); lw != nil {
-		return lw.Enter(ctx)
+		// Requests the row makes go to this panel's context, as from the
+		// Enter key.
+		return p.stampOrigin(lw.Enter(ctx))
 	}
 	return nil
 }
@@ -720,15 +724,8 @@ func (p *Panel) currentSelectionID(ctx context.Context) string {
 // SelectedNavItem resolves the currently focused navigation item, skipping the
 // synthetic back entry. Returns false when no concrete item is selected.
 func (p *Panel) SelectedNavItem(ctx context.Context) (models.Item, bool) {
-	if lw := p.listWidget(ctx); lw != nil {
-		if item, ok := lw.SelectedNavItem(ctx); ok {
-			return item, true
-		}
-	}
-	if p.lastSelection != nil {
-		return p.lastSelection, true
-	}
-	return nil, false
+	item, _ := p.selectedItemSource(ctx)
+	return item, item != nil
 }
 
 // SetFolderNavHandler installs a callback invoked when Enter is pressed while
@@ -748,14 +745,11 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 		lw.RefreshFolder(ctx)
 	}
 	p.applyPendingQuickSearch(ctx)
-	var selItem models.Item
-	if item, ok := p.SelectedNavItem(ctx); ok {
-		selItem = item
-	}
+	// widgetSelectionChanged reads the row from the list itself: a row
+	// this panel followed from the other one is not the list's.
 	p.widgetSelectionChanged(ctx, panelcontent.Selection{
 		ID:    p.currentSelectionID(ctx),
 		Path:  p.currentPath,
-		Item:  selItem,
 		Force: true,
 	})
 }
@@ -771,17 +765,15 @@ func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection)
 		p.freeze.missed = true
 		return nil
 	}
-	sel = p.pinnedSelection(sel)
-	if sel.Item == nil {
-		if item, ok := p.SelectedNavItem(ctx); ok {
-			sel.Item = item
-		}
-	}
+	sel = p.completeSelection(ctx, p.pinnedSelection(sel))
 	if sel.ID != "" {
 		p.lastSelectionID = sel.ID
 	}
-	if sel.Item != nil {
-		p.lastSelection = sel.Item
+	// Only a follower keeps the row it was told about. A List panel on
+	// ".." or on an empty list has no row of its own and must not act on
+	// the other panel's.
+	if sel.Item != nil && followerMode(p.mode) {
+		p.lastSelection, p.lastSource = sel.Item, sel.Source
 	}
 	p.invalidateRenderCache()
 	ctrllog.FromContext(ctx).WithName("panel").Info("notify selection", "panel", p.title, "mode", p.mode, "selectionID", sel.ID, "force", sel.Force, "hasItem", sel.Item != nil)
@@ -876,7 +868,7 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if cmd, handled := widget.Update(ctx, msg); handled {
 			p.invalidateRenderCache()
-			return p, cmd
+			return p, p.stampOrigin(cmd)
 		}
 	}
 	if key, ok := msg.(tea.KeyMsg); ok {
@@ -1635,7 +1627,7 @@ func (p *Panel) GetCurrentItem() *Item {
 			return item
 		}
 	}
-	if p.lastSelection != nil {
+	if followerMode(p.mode) && p.lastSelection != nil {
 		return &Item{Item: p.lastSelection}
 	}
 	return nil
@@ -1650,15 +1642,20 @@ func (p *Panel) Items(ctx context.Context) []Item {
 	return nil
 }
 
-// CurrentSelection returns the latest selection snapshot.
+// CurrentSelection returns the latest selection snapshot: the list's row
+// in List and Command mode, the followed selection in the other modes.
 func (p *Panel) CurrentSelection(ctx context.Context) panelcontent.Selection {
 	sel := panelcontent.Selection{Path: p.currentPath}
 	if p.lastSelectionID != "" {
 		sel.ID = p.lastSelectionID
 	}
-	if p.lastSelection != nil {
-		sel.Item = p.lastSelection
+	if followerMode(p.mode) {
+		if p.lastSelection != nil {
+			sel.Item, sel.Source = p.lastSelection, p.lastSource
+		}
+		return sel
 	}
+	sel.Item, sel.Source = p.selectedItemSource(ctx)
 	return sel
 }
 
@@ -1693,14 +1690,38 @@ func (p *Panel) completeSelection(ctx context.Context, sel panelcontent.Selectio
 		sel.Path = p.currentPath
 	}
 	if sel.Item == nil {
-		if item, ok := p.SelectedNavItem(ctx); ok {
-			sel.Item = item
-		}
+		sel.Item, sel.Source = p.selectedItemSource(ctx)
 	}
-	if sel.Item != nil {
-		p.lastSelection = sel.Item
+	if sel.Source == "" {
+		sel.Source = p.sourceOf(!followerMode(p.mode))
 	}
 	return sel
+}
+
+// selectedItemSource is SelectedNavItem with the connection the item was
+// read from. Describe, Manifest, Logs and Info fall back to the row they
+// follow; List and Command mode have only their own list's row.
+func (p *Panel) selectedItemSource(ctx context.Context) (models.Item, string) {
+	if lw := p.listWidget(ctx); lw != nil {
+		if item, ok := lw.SelectedNavItem(ctx); ok {
+			return item, p.sourceOf(true)
+		}
+	}
+	if followerMode(p.mode) && p.lastSelection != nil {
+		return p.lastSelection, p.lastSource
+	}
+	return nil, ""
+}
+
+// SetSelectionSource installs the function that names the panel's
+// connections for panelcontent.Selection.Source.
+func (p *Panel) SetSelectionSource(f func(list bool) string) { p.selectionSource = f }
+
+func (p *Panel) sourceOf(list bool) string {
+	if p.selectionSource == nil {
+		return ""
+	}
+	return p.selectionSource(list)
 }
 
 func (p *Panel) notifySelectionObservers(ctx context.Context, sel panelcontent.Selection) {

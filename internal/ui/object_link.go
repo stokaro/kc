@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"k8s.io/apimachinery/pkg/types"
 
+	kccluster "github.com/stokaro/kc/internal/cluster"
 	"github.com/stokaro/kc/internal/models"
 	navui "github.com/stokaro/kc/internal/navigation"
 )
@@ -20,20 +21,37 @@ const linkToastTTL = 6 * time.Second
 // namespace scope and type list, with the object selected. Focus stays on
 // the panel with the link, so the user can walk through the links.
 func (a *App) openLinkedObject(link models.ObjectLink) tea.Cmd {
-	ref, missing := link.LinkTarget()
-	return a.openObjectRef(ref, missing)
+	return a.openLinkedObjectFrom(a.activePanel, link)
 }
 
-// openObjectRef shows ref in the other panel as openLinkedObject does;
-// missing says why the link cannot be followed exactly.
-func (a *App) openObjectRef(ref models.ObjectRef, missing string) tea.Cmd {
+// openLinkedObjectFrom follows a link of panel from: the link names an
+// object of the cluster that panel shows.
+func (a *App) openLinkedObjectFrom(from int, link models.ObjectLink) tea.Cmd {
+	ref, missing := link.LinkTarget()
+	return a.openObjectRef(a.targetConn(from), from, ref, missing)
+}
+
+// openObjectRef shows ref, an object of src, in the panel other than
+// from, as openLinkedObject does; missing says why the link cannot be
+// followed exactly. When that panel browses another context, it moves to
+// src first: the link names an object of src's cluster.
+func (a *App) openObjectRef(src *panelConn, from int, ref models.ObjectRef, missing string) tea.Cmd {
 	if ref.GVR.Empty() {
 		if missing == "" {
 			missing = "the object's type is not known to kc"
 		}
 		return a.ShowToast(missing, linkToastTTL)
 	}
-	idx := 1 - a.activePanel
+	if src == nil || src.holders() == 0 {
+		// Nobody holds src any more: its lease is gone.
+		return a.ShowToast(errContextChanged.Error(), linkToastTTL)
+	}
+	idx := 1 - from
+	var moved tea.Cmd
+	if own := a.ownConn(idx); own != src {
+		a.adoptConn(idx, src)
+		moved = a.ShowInfo(titleCase(panelName(idx))+" panel context: "+src.name(), linkToastTTL)
+	}
 	if ref.Namespaced && a.panelScope[idx] != ref.Namespace {
 		a.panelScope[idx] = ref.Namespace
 		a.replaceNavigator(idx, a.newScopedNavigator(idx))
@@ -61,11 +79,28 @@ func (a *App) openObjectRef(ref models.ObjectRef, missing string) tea.Cmd {
 	}
 	a.syncPanelWithNavigator(idx)
 	a.syncPanelScopeLabels()
-	cmds := []tea.Cmd{a.selectLinkedRow(linkSelectMsg{panelIdx: idx, path: panel.GetCurrentPath(), ref: ref, reportMissing: missing == ""})}
+	a.ensureTermContext()
+	cmds := []tea.Cmd{moved, a.selectLinkedRow(linkSelectMsg{panelIdx: idx, path: panel.GetCurrentPath(), ref: ref, reportMissing: missing == ""})}
 	if missing != "" {
 		cmds = append(cmds, a.ShowToast(missing, linkToastTTL))
 	}
 	return tea.Batch(cmds...)
+}
+
+// adoptConn makes c, another panel's connection, panel idx's too, and
+// puts the panel at the root of its namespace scope there. The two panels
+// share c: no new connect, and each holds it.
+func (a *App) adoptConn(idx int, c *panelConn) {
+	var infos []kccluster.ResourceInfo
+	if cl := c.cluster(); cl != nil {
+		infos, _ = cl.GetResourceInfos()
+	}
+	if p := a.panelByIndex(idx); p != nil && a.switchSeq != nil {
+		// A switch of the panel still on its way loses to the link.
+		a.switchSeq[p]++
+	}
+	a.cancelJump(idx)
+	a.installPanelConn(idx, c, infos)
 }
 
 // linkSelectMsg retries selecting a linked object in its list.
@@ -151,10 +186,12 @@ func linkReplacedMessage(ref models.ObjectRef, listed types.UID) string {
 
 // linkedTypeFolder builds the object list of ref's type as the root would.
 func (a *App) linkedTypeFolder(panel *Panel, ref models.ObjectRef) models.Folder {
-	if a.cl == nil {
+	conn := a.connOfPanel(panel)
+	cl := conn.cluster()
+	if cl == nil {
 		return nil
 	}
-	infos, err := a.cl.GetResourceInfos()
+	infos, err := cl.GetResourceInfos()
 	if err != nil {
 		return nil
 	}
@@ -163,7 +200,7 @@ func (a *App) linkedTypeFolder(panel *Panel, ref models.ObjectRef) models.Folder
 			continue
 		}
 		cfg := a.ensurePanelConfig(panel)
-		deps := a.makeDeps(a.cl, cfg, a.currentClusterKey())
+		deps := a.connDeps(conn, cfg)
 		verbs := append([]string(nil), info.Verbs...)
 		path := []string{info.Resource}
 		if ref.Namespaced {

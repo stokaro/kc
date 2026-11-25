@@ -62,24 +62,24 @@ var newNodeShellClient = func(cfg *rest.Config) (nodeShellClient, error) {
 	return nodeShellClient{cfg: cfg, client: client}, nil
 }
 
-// startNodeShell creates the pod in the background; nodeShellStartedMsg
-// follows.
-func (a *App) startNodeShell(req models.NodeShellRequest) tea.Cmd {
+// startNodeShell creates the pod in the background in pc, the connection
+// of the node row that asked; nodeShellStartedMsg follows.
+func (a *App) startNodeShell(pc *panelConn, req models.NodeShellRequest) tea.Cmd {
 	// The confirmation already refuses in read-only mode; this catches a
 	// request that was on its way when the context became read-only.
 	createPod := access.Check{Resource: corev1.SchemeGroupVersion.WithResource("pods"), Verb: "create", Namespace: req.Namespace}
-	if cmd := a.refuseReadOnly("Node shell", createPod); cmd != nil {
+	if cmd := a.refuseReadOnly(req.Context, "Node shell", createPod); cmd != nil {
 		return cmd
 	}
 	switch {
 	case a.nodeShell != nil || a.nodeShellStarting:
 		return a.ShowToast("A node shell is already open", 3*time.Second)
-	case a.cl == nil || a.currentCtx == nil || a.currentCtx.Name != req.Context:
-		return a.ShowToast("Node shell: the context "+req.Context+" is not the current one", 5*time.Second)
+	case pc.cluster() == nil || pc.name() != req.Context:
+		return a.ShowToast("Node shell: no panel shows the context "+req.Context, 5*time.Second)
 	case !a.cfg.NodeShell.EnabledFor(req.Context):
 		return a.ShowToast("Node shell is disabled for "+req.Context+" (nodeShell in config)", 5*time.Second)
 	}
-	conn, err := newNodeShellClient(a.cl.GetConfig())
+	conn, err := newNodeShellClient(pc.cluster().GetConfig())
 	if err != nil {
 		return a.ShowToast("Node shell: "+err.Error(), 5*time.Second)
 	}

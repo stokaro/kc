@@ -41,7 +41,7 @@ func TestNamespaceCommandRestartImmediate(t *testing.T) {
 	}
 
 	// Arm panel 1 with a namespaced command placeholder and set a non-empty current target.
-	if cmd := app.startNamespaceCommand(1, cfg, ""); cmd != nil {
+	if cmd := app.startNamespaceCommand(1, cfg, "", nil); cmd != nil {
 		_ = cmd()
 	}
 	app.namespaceCommandTarget[1] = "default"
@@ -71,7 +71,7 @@ func TestNamespaceCommandRestartDebounced(t *testing.T) {
 		Debounce: metav1.Duration{Duration: 2 * time.Millisecond},
 	}
 
-	if cmd := app.startNamespaceCommand(1, cfg, ""); cmd != nil {
+	if cmd := app.startNamespaceCommand(1, cfg, "", nil); cmd != nil {
 		_ = cmd()
 	}
 	app.namespaceCommandTarget[1] = "default"
@@ -122,7 +122,7 @@ func TestNamespaceCommandPlaceholderDisablesWatch(t *testing.T) {
 	app.commandWatchToken[0] = 7
 
 	oldToken := app.commandWatchToken[0]
-	if cmd := app.startNamespaceCommand(0, cfg, ""); cmd != nil {
+	if cmd := app.startNamespaceCommand(0, cfg, "", nil); cmd != nil {
 		_ = cmd()
 	}
 
@@ -161,7 +161,7 @@ func TestNamespaceFollowAcrossPanels(t *testing.T) {
 	}
 
 	// Start a namespaced command on panel 1.
-	if cmd := app.startNamespaceCommand(1, cfg, "default"); cmd != nil {
+	if cmd := app.startNamespaceCommand(1, cfg, "default", nil); cmd != nil {
 		runCmdQueue(app, cmd)
 	}
 	if app.namespaceCommandTarget[1] != "default" {

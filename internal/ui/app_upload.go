@@ -75,15 +75,9 @@ func (a *App) startUpload(panel *Panel, srcIdx int, srcNav, dstNav *navui.Naviga
 
 // refuseUpload refuses a copy into the container of dest in read-only
 // mode: it execs into the pod and writes there. The check covers the
-// current context and the one the container folder belongs to.
+// context the container folder belongs to.
 func (a *App) refuseUpload(dest models.ContainerFSSource) tea.Cmd {
-	if cmd := a.refuseReadOnly(uploadActionName, access.ExecChecks(dest.Namespace, dest.Pod)...); cmd != nil {
-		return cmd
-	}
-	if dest.Context != "" && a.readOnlyFor(dest.Context) {
-		return a.readOnlyRefusal(uploadActionName)
-	}
-	return nil
+	return a.refuseReadOnly(dest.Context, uploadActionName, access.ExecChecks(dest.Namespace, dest.Pod)...)
 }
 
 // markedLocalNames returns the names of the marked local entries of panel,

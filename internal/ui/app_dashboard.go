@@ -41,6 +41,10 @@ type dashboardState struct {
 	engine *gatedInfo
 	scope  string
 	key    kccluster.Key
+	// conn is the connection the engine reads, held while the engine
+	// runs: the panel it was opened from may switch its context.
+	conn    *panelConn
+	release func()
 	// window is the investigation window as the dashboard last saw it, to
 	// tell when w changed it.
 	window investigation.Window
@@ -58,13 +62,14 @@ func (a *App) dashboardOpen() bool { return a.dash != nil && a.dash.open }
 // restores the last dashboard when that was of the same context, scope
 // and target.
 func (a *App) showDashboard() tea.Cmd {
-	if a.cl == nil {
+	conn := a.ownConn(a.activePanel)
+	if conn.cluster() == nil {
 		return a.ShowToast("Dashboard: not connected to a cluster", linkToastTTL)
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	scope := a.overviewNamespace(a.activePanel)
-	return a.openDashboard(scope, a.dashboardTarget(ctx, scope))
+	return a.openDashboard(conn, scope, a.dashboardTarget(ctx, scope))
 }
 
 // dashboardTarget is the dashboard target of the row under the active
@@ -94,25 +99,28 @@ func (a *App) dashboardTarget(ctx context.Context, scope string) dashboard.Targe
 	return t
 }
 
-// openDashboard shows the dashboard of target in scope.
-func (a *App) openDashboard(scope string, target dashboard.Target) tea.Cmd {
-	key := a.currentClusterKey()
-	if a.dash != nil && (a.dash.key != key || a.dash.scope != scope) {
-		a.dash.engine.Close()
-		a.dash.engine = nil
+// openDashboard shows the dashboard of target in scope of conn's cluster.
+func (a *App) openDashboard(conn *panelConn, scope string, target dashboard.Target) tea.Cmd {
+	if conn.cluster() == nil {
+		return a.ShowToast("Dashboard: not connected to a cluster", linkToastTTL)
+	}
+	key := conn.clusterKey()
+	if a.dash != nil && a.dash.engine != nil && (a.dash.conn != conn || a.dash.scope != scope) {
+		a.dash.stopEngine()
 	}
 	if a.dash == nil {
 		a.dash = &dashboardState{}
 	}
 	d := a.dash
 	if d.engine == nil {
-		cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(a.activePanel)), a.ctx
+		cl, cfg, root := conn.cluster(), a.ensurePanelConfig(a.panelByIndex(a.activePanel)), a.ctx
+		deps := a.connDeps(conn, cfg)
 		d.engine = newGatedInfo(root, cl.CanListWatchAllNamespaces, cl.CanListWatchInNamespace, scope, func() infowidget.Summarizer {
-			return models.NewOverviewInfo(a.makeDeps(cl, cfg, key), scope)
+			return models.NewOverviewInfo(deps, scope)
 		})
-		d.scope, d.key = scope, key
+		d.scope, d.key, d.conn, d.release = scope, key, conn, conn.hold()
 	}
-	src := a.dashboardSources(key, d.engine, scope)
+	src := a.dashboardSources(conn, d.engine, scope)
 	switch {
 	case d.model == nil:
 		d.model = dashboard.New(src, target)
@@ -139,7 +147,8 @@ func (d *dashboardState) restores(src dashboard.Sources, target dashboard.Target
 // dashboardSources reads the overview engine and, when metricsHistory
 // names a backend for the context, Prometheus through the API server's
 // service proxy.
-func (a *App) dashboardSources(key kccluster.Key, engine *gatedInfo, scope string) dashboard.Sources {
+func (a *App) dashboardSources(conn *panelConn, engine *gatedInfo, scope string) dashboard.Sources {
+	key := conn.clusterKey()
 	src := dashboard.Sources{
 		Context:   key.ContextName,
 		Scope:     scope,
@@ -161,7 +170,7 @@ func (a *App) dashboardSources(key kccluster.Key, engine *gatedInfo, scope strin
 		a.promShared = promhistory.NewShared(promhistory.DefaultConcurrency, promhistory.DefaultCacheEntries)
 	}
 	src.Backend = backend.Namespace + "/" + backend.Service
-	src.Usage = dashboardUsage(a.ctx, a.cl.GetConfig, key, backend, a.cfg.MetricsHistory, a.promShared)
+	src.Usage = dashboardUsage(a.ctx, conn.cluster().GetConfig, key, backend, a.cfg.MetricsHistory, a.promShared)
 	return src
 }
 
@@ -296,11 +305,12 @@ func (a *App) dashboardResult(cmd tea.Cmd, act dashboard.Action) tea.Cmd {
 	case act.Note != "":
 		cmds = append(cmds, a.ShowToast(act.Note, linkToastTTL))
 	case act.Logs != nil:
-		cmds = append(cmds, a.closeDashboard())
+		// The panel moves before the dashboard gives up its connection.
 		cmds = append(cmds, a.openDashboardLogs(*act.Logs, act.Window))
-	case act.Open != nil:
 		cmds = append(cmds, a.closeDashboard())
+	case act.Open != nil:
 		cmds = append(cmds, a.openDashboardObject(*act.Open), a.revisionNote(act.Event))
+		cmds = append(cmds, a.closeDashboard())
 	case act.Close:
 		cmds = append(cmds, a.closeDashboard())
 	}
@@ -324,7 +334,7 @@ func (a *App) openDashboardLogs(ref models.ObjectRef, w investigation.Window) te
 	from := a.activePanel
 	a.window = w
 	cmds := a.applyWindow()
-	cmds = append(cmds, a.openObjectRef(ref, ""))
+	cmds = append(cmds, a.openObjectRef(a.dash.conn, from, ref, ""))
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	if p := a.panelByIndex(from); p != nil && p.Mode() != PanelModeLogs {
@@ -346,7 +356,7 @@ func (a *App) revisionNote(e *models.UsageEvent) tea.Cmd {
 	if o.GVR.GroupResource() == (schema.GroupResource{Group: "apps", Resource: "deployments"}) {
 		return a.ShowInfo("Deployment "+o.Name+": its revisions are in /rollout, from its ReplicaSets", linkToastTTL)
 	}
-	since, running, ok := models.RecordedRevisions(a.currentClusterKey(), o.GVR, o.Namespace, o.Name)
+	since, running, ok := models.RecordedRevisions(a.dash.key, o.GVR, o.Namespace, o.Name)
 	switch {
 	case ok && !since.After(e.Last):
 		state := "recorded"
@@ -364,7 +374,7 @@ func (a *App) revisionNote(e *models.UsageEvent) tea.Cmd {
 // takes the focus.
 func (a *App) openDashboardObject(ref models.ObjectRef) tea.Cmd {
 	idx := 1 - a.activePanel
-	cmd := a.openObjectRef(ref, "")
+	cmd := a.openObjectRef(a.dash.conn, a.activePanel, ref, "")
 	a.setActivePanel(idx, "dashboard open object")
 	return cmd
 }
@@ -379,13 +389,22 @@ func (a *App) closeDashboard() tea.Cmd {
 	}
 	d.open = false
 	d.model.Stop()
-	d.engine.Close()
-	d.engine = nil
+	d.stopEngine()
 	a.invalidateView("dashboard close")
 	if seq := a.releaseChartImages(); seq != "" {
 		return tea.Raw(seq)
 	}
 	return nil
+}
+
+// stopEngine stops the engine and gives up the hold on its connection.
+func (d *dashboardState) stopEngine() {
+	d.engine.Close()
+	d.engine = nil
+	if d.release != nil {
+		d.release()
+		d.release = nil
+	}
 }
 
 func (a *App) renderDashboard() tea.View {
@@ -408,5 +427,5 @@ func (a *App) renderDashboard() tea.View {
 // kc dashboard names (all namespaces with -A).
 func (a *App) applyStartupIntentDashboard() tea.Cmd {
 	ns := a.startupIntentNamespace()
-	return a.openDashboard(ns, dashboard.Target{Kind: dashboard.KindScope, Namespace: ns})
+	return a.openDashboard(a.ownConn(0), ns, dashboard.Target{Kind: dashboard.KindScope, Namespace: ns})
 }

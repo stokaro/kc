@@ -1,6 +1,6 @@
 # 0041. Directory hotlist and navigation history
 
-- Status: Accepted
+- Status: Accepted; a jump to another context moving both panels is superseded by [0362](0362-independent-panel-contexts.md)
 - Date: 2026-11-22
 - Issue: #41
 

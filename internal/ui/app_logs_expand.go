@@ -44,8 +44,14 @@ func (a *App) expandPanelLogs(panel *Panel) tea.Cmd {
 	// prefix, which the viewer reads as the record's source.
 	v.SetStyledLines(sess.AllContainers)
 	v.appendRecords(sess.Lines)
-	v.SetCommand(models.PanelLogsCommand(a.makeDeps(a.cl, a.ensurePanelConfig(panel), a.currentClusterKey()), sess.Spec, sess.AllContainers))
-	return a.presentLogsViewer(v, title+" (Logs panel)")
+	conn := a.connByID(w.Target().Source)
+	if conn == nil {
+		if idx, ok := a.panelIndexFor(panel); ok {
+			conn = a.targetConn(idx)
+		}
+	}
+	v.SetCommand(models.PanelLogsCommand(a.connDeps(conn, a.ensurePanelConfig(panel)), sess.Spec, sess.AllContainers))
+	return a.presentLogsViewer(v, title+" (Logs panel)", conn.hold())
 }
 
 // sessionOpener returns the opener of a viewer that reads f: the first open

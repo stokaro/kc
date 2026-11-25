@@ -33,8 +33,7 @@ func setupAppWithCluster(t *testing.T) (*App, *kccluster.Cluster) {
 	app.cancel()
 	app.ctx, app.cancel = context.WithCancel(ctx)
 	t.Cleanup(app.cancel)
-	app.cl = cl
-	app.currentCtx = &kubeconfig.Context{Name: "env"}
+	useTestCluster(app, &kubeconfig.Context{Name: "env"}, cl)
 	return app, cl
 }
 
@@ -81,7 +80,7 @@ func waitForNamespaceReady(t *testing.T, app *App, ns string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	for {
-		if app.namespaceExists(ns) {
+		if app.namespaceExists(0, ns) {
 			return
 		}
 		select {

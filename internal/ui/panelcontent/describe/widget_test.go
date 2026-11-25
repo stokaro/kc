@@ -30,7 +30,7 @@ type fakeCluster struct {
 }
 
 func (f *fakeCluster) describeFunc() panelcontent.DescribeFunc {
-	return func(target describe.Target) panelcontent.DescribeReads {
+	return func(_ string, target describe.Target) panelcontent.DescribeReads {
 		return panelcontent.DescribeReads{
 			Describe: func() (describe.Result, error) {
 				f.describes = append(f.describes, target)

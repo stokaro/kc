@@ -232,7 +232,7 @@ func TestGuardRefusesInvalidCommand(t *testing.T) {
 	t.Parallel()
 	app := newHotkeyApp(t)
 	ran := false
-	guard := app.guardCommand(nil, "", func(appconfig.CommandConfig) tea.Cmd { ran = true; return nil })
+	guard := app.guardCommand(nil, nil, "", func(appconfig.CommandConfig) tea.Cmd { ran = true; return nil })
 	cmd := guard(appconfig.CommandConfig{Name: "ns", Command: "x", Type: appconfig.CommandTypeNamespace, Confirm: appconfig.CommandConfirm{Enabled: true}})
 	if ran || cmd == nil {
 		t.Fatalf("a confirmed namespace command must be refused with a message, ran=%v", ran)

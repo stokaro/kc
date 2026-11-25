@@ -1,6 +1,6 @@
 # 0196. Compare resource sets
 
-- Status: Accepted; the whole-list rule is superseded by [0258](0258-compare-visible-or-marked-rows.md)
+- Status: Accepted; the whole-list rule is superseded by [0258](0258-compare-visible-or-marked-rows.md), decision 1 (one context per app) by [0362](0362-independent-panel-contexts.md)
 - Date: 2026-11-23
 - Issue: #196
 

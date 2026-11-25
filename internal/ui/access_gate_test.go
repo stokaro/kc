@@ -89,7 +89,7 @@ func newAccessTestApp(t *testing.T, srv *ssarServer) (*App, stubObject) {
 	app.leftPanel.SetEnvironmentSupplier(func() PanelEnvironment {
 		// The real environment needs a live cluster for edit and delete;
 		// keep its Permit wiring and force the rest on.
-		env := app.panelEnvironment()
+		env := app.panelEnvironment(app.leftPanel)
 		env.AllowEditObjects = true
 		env.AllowDeleteObjects = true
 		return env

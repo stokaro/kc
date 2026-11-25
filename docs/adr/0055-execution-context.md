@@ -1,6 +1,6 @@
 # 0055. One execution context for terminal commands
 
-- Status: Accepted
+- Status: Accepted; decision 5 (a watching command moves to the new context) is superseded by [0362](0362-independent-panel-contexts.md)
 - Date: 2026-11-22
 - Issue: #55
 

@@ -30,8 +30,7 @@ func TestGoToNamespaceEmptyStaysClusterScope(t *testing.T) {
 	app.cancel()
 	app.ctx, app.cancel = context.WithCancel(ctx)
 	t.Cleanup(app.cancel)
-	app.cl = cl
-	app.currentCtx = &kubeconfig.Context{Name: "env"}
+	useTestCluster(app, &kubeconfig.Context{Name: "env"}, cl)
 
 	app.goToNamespace("")
 
@@ -80,12 +79,11 @@ func TestGoToNamespaceExistingNavigatesPanels(t *testing.T) {
 	app.cancel()
 	app.ctx, app.cancel = context.WithCancel(ctx)
 	t.Cleanup(app.cancel)
-	app.cl = cl
-	app.currentCtx = &kubeconfig.Context{Name: "env", Namespace: nsName}
+	useTestCluster(app, &kubeconfig.Context{Name: "env", Namespace: nsName}, cl)
 
 	waitCtx, cancelWait := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelWait()
-	for !app.namespaceExists(nsName) {
+	for !app.namespaceExists(0, nsName) {
 		select {
 		case <-time.After(50 * time.Millisecond):
 		case <-waitCtx.Done():

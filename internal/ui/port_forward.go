@@ -68,9 +68,9 @@ func (a *App) portForwardForPanel(panel *Panel) tea.Cmd {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	item, ok := panel.SelectedNavItem(ctx)
+	item, conn := a.selectedRow(ctx, panel)
 	cancel()
-	if !ok || item == nil {
+	if item == nil {
 		return nil
 	}
 	target, ok := models.PortForwardTargetFor(item)
@@ -78,7 +78,7 @@ func (a *App) portForwardForPanel(panel *Panel) tea.Cmd {
 		return a.ShowToast("Port forward works on pods, containers and services", 3*time.Second)
 	}
 	// A service resolves to a pod later; read-only mode needs no name.
-	if cmd := a.refuseReadOnly("Port forward", access.PortForwardChecks(target.Namespace, "")...); cmd != nil {
+	if cmd := a.refuseReadOnly(conn.name(), "Port forward", access.PortForwardChecks(target.Namespace, "")...); cmd != nil {
 		return cmd
 	}
 	folder := panel.Folder()
@@ -221,14 +221,14 @@ func (a *App) stopSelectionForPanel(panel *Panel) (tea.Cmd, bool) {
 		return nil, false
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	item, ok := panel.SelectedNavItem(ctx)
+	item, conn := a.selectedRow(ctx, panel)
 	cancel()
-	if !ok || item == nil {
+	if item == nil {
 		return nil, false
 	}
 	action, ok := stopActionFor(item)
 	if !ok {
 		return nil, false
 	}
-	return a.showConfirm(action), true
+	return a.showConfirm(conn, action), true
 }

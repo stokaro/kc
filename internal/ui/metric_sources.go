@@ -66,6 +66,9 @@ type metricSourcesDialog struct {
 	app       *App
 	context   string
 	namespace string
+	// conn is the connection of the panel the dialog was opened from: its
+	// checks read that cluster even after the panel switches its context.
+	conn *panelConn
 
 	form    dialog.Form
 	service textinput.Model
@@ -308,12 +311,13 @@ func (d *metricSourcesDialog) test() tea.Cmd {
 		return nil
 	}
 	a := d.app
-	if a.cl == nil {
+	cl := d.conn.cluster()
+	if cl == nil {
 		d.note, d.isErr = "not connected to a cluster", true
 		return nil
 	}
 	d.seq++
-	seq, cl, root, timeout := d.seq, a.cl, a.ctx, a.cfg.MetricsHistory.EffectiveTimeout()
+	seq, root, timeout := d.seq, a.ctx, a.cfg.MetricsHistory.EffectiveTimeout()
 	ctxName, ns := d.context, d.namespace
 	d.note, d.isErr = "Testing...", false
 	return func() tea.Msg {
@@ -370,12 +374,13 @@ func (d *metricSourcesDialog) find() tea.Cmd {
 		return nil
 	}
 	a := d.app
-	if a.cl == nil {
+	cl := d.conn.cluster()
+	if cl == nil {
 		d.note, d.isErr = "not connected to a cluster", true
 		return nil
 	}
 	d.seq++
-	seq, cl, root, timeout := d.seq, a.cl, a.ctx, a.cfg.MetricsHistory.EffectiveTimeout()
+	seq, root, timeout := d.seq, a.ctx, a.cfg.MetricsHistory.EffectiveTimeout()
 	d.note, d.isErr = "Listing Services...", false
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(root, timeout)
@@ -496,21 +501,22 @@ func formatLabels(m map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
-// showMetricSources opens the dialog for the current context and the
-// namespace scope of the active panel, and runs the report at once: the
-// checks are a handful of bounded requests the user asked for by opening
-// it.
+// showMetricSources opens the dialog for the context and the namespace
+// scope of the active panel, and runs the report at once: the checks are a
+// handful of bounded requests the user asked for by opening it.
 func (a *App) showMetricSources() tea.Cmd {
-	if a.cl == nil {
+	conn := a.ownConn(a.activePanel)
+	if conn.cluster() == nil {
 		if a.toastLogger != nil {
 			return a.toastLogger.Errorf("Metric sources: not connected to a cluster")
 		}
 		return nil
 	}
-	key := a.currentClusterKey()
+	key := conn.clusterKey()
 	ns := a.overviewNamespace(a.activePanel)
 	b, configured := a.cfg.MetricsHistory.BackendFor(key.ContextName)
 	d := newMetricSourcesDialog(a, key.ContextName, ns, b, configured)
+	d.conn = conn
 	modal := NewModal("Metric sources", d)
 	modal.SetCloseOnSingleEsc(true)
 	a.modalManager.Register(metricSourcesModalName, modal)
