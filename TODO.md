@@ -22,8 +22,9 @@ One execution context for every subprocess (`internal/execctx`, ADR 0055).
 - [x] Cluster overview `/overview`: capacity (requests and limits), health, risks, activity, thresholds under `overview:` — #51
 - [x] Overview follow-ups: measured usage from metrics.k8s.io, Info panel mode, kubelet stats for disk and volumes — #51
 - [x] Overview: cert-manager Certificates not Ready or expiring, Info mode for one workload — #51
-- [ ] Info and the dashboard for CRD workloads (Argo Rollouts, OpenKruise, CloudNativePG) — #364
-- [ ] Overview: pick up cert-manager and other optional kinds installed or removed while kc runs — #365
+- [x] Info and the dashboard for CRD workloads (Argo Rollouts, OpenKruise, CloudNativePG) — #364
+- [x] Overview: pick up cert-manager and other optional kinds installed or removed while kc runs — #365
+- [x] A kubeconfig context per panel ("Context..." in the panel menu switches one panel, the Command menu both) — #362
 - [x] Built-in workload actions: scale, rollout restart, rollback — #33
 - [x] Extensible actions: built-in actions for workloads, CronJobs and nodes; custom commands with hotkeys, prompts, confirmation and `dangerous` — #46
 
