@@ -51,7 +51,7 @@ func TestCompareObjectsReadsBothManifestsFast(t *testing.T) {
 			cl.RefreshDiscovery()
 		}
 		start := time.Now()
-		msg, ok := a.readComparison(nil, 1, sources["left"], sources["right"], "envtest", manifestdiff.Options{})().(compareResultMsg)
+		msg, ok := a.readComparison(nil, 1, sources["left"], sources["right"], [2]string{"envtest", "envtest"}, manifestdiff.Options{})().(compareResultMsg)
 		took := time.Since(start)
 		if !ok || msg.err != nil {
 			t.Fatalf("%s: compare = %#v", step, msg)

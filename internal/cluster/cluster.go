@@ -299,6 +299,13 @@ func (c *Cluster) AddDiscoveryListener(fn func()) func() {
 	}
 }
 
+// DiscoveryListeners is the number of registered discovery listeners.
+func (c *Cluster) DiscoveryListeners() int {
+	c.discoMu.RLock()
+	defer c.discoMu.RUnlock()
+	return len(c.discoListeners)
+}
+
 func (c *Cluster) notifyDiscoveryListeners() {
 	c.discoMu.RLock()
 	if len(c.discoListeners) == 0 {

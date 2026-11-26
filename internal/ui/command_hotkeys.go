@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -147,8 +148,12 @@ func (a *App) runCommandHotkey(idx int) tea.Cmd {
 		return nil
 	}
 	// The menu leaves a dangerous command out in read-only mode; say why
-	// rather than "not available here".
-	if refuse := a.refuseCommand(cmd); refuse != nil {
+	// rather than "not available here". The command runs for the rows of
+	// the active panel, in their context.
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	_, conn := a.selectedRow(ctx, panel)
+	cancel()
+	if refuse := a.refuseCommand(conn.name(), cmd); refuse != nil {
 		return refuse
 	}
 	ctrllog.FromContext(a.ctx).WithName("commands").V(1).Info("hotkey", "key", cmd.Hotkey, "name", cmd.Name)

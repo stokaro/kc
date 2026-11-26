@@ -91,17 +91,19 @@ func explainTargetOf(item models.Item) (schema.GroupVersionResource, schema.Grou
 }
 
 // explainDeps uses the folder's own cluster, so a panel browsing another
-// context documents that context's types.
+// context documents that context's types. A folder without Deps reads
+// the active panel's connection.
 func (a *App) explainDeps(folder models.Folder) (models.Deps, bool) {
 	if f, ok := folder.(interface{ FolderDeps() models.Deps }); ok {
 		if deps := f.FolderDeps(); deps.Cl != nil {
 			return deps, true
 		}
 	}
-	if a.cl == nil {
+	conn := a.activeConn()
+	if conn.cluster() == nil {
 		return models.Deps{}, false
 	}
-	return a.makeDeps(a.cl, nil, a.currentClusterKey()), true
+	return a.connDeps(conn, nil), true
 }
 
 // openapiClient talks to /openapi/v3 without discovery's memory cache; the

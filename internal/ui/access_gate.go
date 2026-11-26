@@ -18,13 +18,13 @@ import (
 // answers changed: the function bar and an open access view must redraw.
 type accessResultMsg struct{}
 
-// accessState holds the review cache and the client the reviews use.
+// accessState holds the review cache and the clients the reviews use, one
+// per cluster: the panels may browse two.
 type accessState struct {
 	cache *access.Cache
 
 	mu        sync.Mutex
-	clientFor *kccluster.Cluster
-	reviewer  access.Reviewer
+	reviewers map[*kccluster.Cluster]access.Reviewer
 	// override replaces the API reviewer in tests.
 	override access.Reviewer
 }
@@ -36,10 +36,12 @@ func (a *App) accessState() *accessState {
 	return a.access
 }
 
-// accessIdentity names who the reviews run as: the kubeconfig, context and
-// impersonation settings the cluster client uses.
-func (a *App) accessIdentity() access.Identity {
-	key := a.currentClusterKey()
+// accessIdentity names who the reviews in connection c run as: the
+// kubeconfig, context and impersonation settings its cluster client uses.
+// The cache keeps answers per identity, so the two panels' contexts never
+// share them.
+func (a *App) accessIdentity(c *panelConn) access.Identity {
+	key := c.clusterKey()
 	imp := a.impersonation()
 	return access.Identity{
 		Kubeconfig: key.KubeconfigPath,
@@ -51,44 +53,61 @@ func (a *App) accessIdentity() access.Identity {
 	}
 }
 
-// accessPolicy is the user's own restriction on actions: the read-only
-// mode (#42) refuses every mutating check.
-func (a *App) accessPolicy() access.Policy {
-	return access.Policy{ReadOnly: a.readOnly()}
+// policyFor is the user's own restriction on actions in kubeContext: the
+// read-only mode (#42) refuses every mutating check.
+func (a *App) policyFor(kubeContext string) access.Policy {
+	return access.Policy{ReadOnly: a.readOnlyFor(kubeContext)}
 }
 
-// accessReviewer returns the reviewer for the current cluster. Its client
-// uses the cluster's rest.Config, so reviews carry the same credentials and
-// impersonation headers as every other request kc sends.
-func (a *App) accessReviewer() access.Reviewer {
+// accessReviewer returns the reviewer for connection c's cluster. Its
+// client uses the cluster's rest.Config, so reviews carry the same
+// credentials and impersonation headers as every other request kc sends.
+func (a *App) accessReviewer(c *panelConn) access.Reviewer {
 	st := a.accessState()
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.override != nil {
 		return st.override
 	}
-	if a.cl == nil {
+	cl := c.cluster()
+	if cl == nil {
 		return nil
 	}
-	if st.clientFor != a.cl || st.reviewer == nil {
-		cs, err := kubernetes.NewForConfig(a.cl.GetConfig())
-		if err != nil {
-			ctrllog.FromContext(a.ctx).WithName("access").Error(err, "building access review client")
-			return nil
-		}
-		st.clientFor = a.cl
-		st.reviewer = access.SSARReviewer{Client: cs.AuthorizationV1()}
+	if r, ok := st.reviewers[cl]; ok {
+		return r
 	}
-	return st.reviewer
+	cs, err := kubernetes.NewForConfig(cl.GetConfig())
+	if err != nil {
+		ctrllog.FromContext(a.ctx).WithName("access").Error(err, "building access review client", "context", c.name())
+		return nil
+	}
+	// Clients of clusters no panel shows any more go.
+	live := make(map[*kccluster.Cluster]bool, 2)
+	for idx := range 2 {
+		live[a.ownConn(idx).cluster()] = true
+		live[a.targetConn(idx).cluster()] = true
+	}
+	for k := range st.reviewers {
+		if !live[k] {
+			delete(st.reviewers, k)
+		}
+	}
+	if st.reviewers == nil {
+		st.reviewers = make(map[*kccluster.Cluster]access.Reviewer)
+	}
+	r := access.SSARReviewer{Client: cs.AuthorizationV1()}
+	st.reviewers[cl] = r
+	return r
 }
 
-// permitAccess gates panel actions from cached answers only; it never sends
-// a request. Missing answers count as Unknown and keep the action enabled.
-func (a *App) permitAccess(checks ...access.Check) bool {
+// permitAccessIn gates actions on connection c from cached answers only;
+// it never sends a request. Missing answers count as Unknown and keep the
+// action enabled.
+func (a *App) permitAccessIn(c *panelConn, checks ...access.Check) bool {
 	st := a.accessState()
-	id := a.accessIdentity()
-	return a.accessPolicy().Permits(func(c access.Check) access.Decision {
-		return st.cache.Decide(id, c)
+	id := a.accessIdentity(c)
+	return a.policyFor(c.name()).Permits(func(ch access.Check) access.Decision {
+		return st.cache.Decide(id, ch)
 	}, checks...)
 }
 
@@ -159,14 +178,14 @@ func (a *App) accessPrefetchCmd() tea.Cmd {
 	if panel == nil {
 		return nil
 	}
-	reviewer := a.accessReviewer()
-	if reviewer == nil {
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	item, conn := a.selectedRow(ctx, panel)
+	cancel()
+	if item == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	item, ok := panel.SelectedNavItem(ctx)
-	cancel()
-	if !ok {
+	reviewer := a.accessReviewer(conn)
+	if reviewer == nil {
 		return nil
 	}
 	checks := gateChecksForItem(item)
@@ -174,7 +193,7 @@ func (a *App) accessPrefetchCmd() tea.Cmd {
 		return nil
 	}
 	st := a.accessState()
-	id := a.accessIdentity()
+	id := a.accessIdentity(conn)
 	var need []access.Check
 	for _, c := range checks {
 		need = append(need, st.cache.GateChecks(id, c)...)

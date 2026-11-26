@@ -15,14 +15,17 @@ import (
 	"github.com/stokaro/kc/pkg/kubeconfig"
 )
 
-// This file builds the one execution context (execctx.Context) that every
-// subprocess kc starts runs against, and hands it to each consumer:
+// This file builds the execution contexts (execctx.Context) that the
+// subprocesses kc starts run against, one per panel connection, and hands
+// them to each consumer:
 //
 //   - the embedded shell gets KUBECONFIG pointing at a generated file whose
-//     path never changes, so the running shell follows context switches;
-//   - F4 (kubectl edit) gets kubectl flags;
+//     path never changes, so the running shell follows the active panel's
+//     context and namespace;
+//   - F4 (kubectl edit) gets kubectl flags for the panel it was pressed in;
 //   - custom commands (F2) get KUBECONFIG pointing at a generated file of
-//     their own, and the context in their template data.
+//     their own, for the connection they started with, and the context in
+//     their template data.
 
 // shellSlot names the embedded shell's generated kubeconfig.
 const shellSlot = "shell"
@@ -80,17 +83,18 @@ func (a *App) impersonation() execctx.Impersonation {
 	}.Normalized()
 }
 
-// execContext is kc's selected context with namespace. It is zero when no
-// context is selected.
-func (a *App) execContext(namespace string) execctx.Context {
-	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
+// execContextFor is connection c's context with namespace. It is zero
+// when c has no context.
+func (a *App) execContextFor(c *panelConn, namespace string) execctx.Context {
+	if c == nil || c.kctx == nil || c.kctx.Kubeconfig == nil {
 		return execctx.Context{}
 	}
+	k := c.kctx
 	return execctx.Context{
-		Kubeconfig:    a.currentCtx.Kubeconfig.Path,
-		Load:          a.currentCtx.LoadPath(),
-		Config:        a.currentCtx.LoadedConfig(),
-		Context:       a.currentCtx.Name,
+		Kubeconfig:    k.Kubeconfig.Path,
+		Load:          k.LoadPath(),
+		Config:        k.LoadedConfig(),
+		Context:       k.Name,
 		Namespace:     strings.TrimSpace(namespace),
 		Impersonation: a.impersonation(),
 	}
@@ -164,24 +168,43 @@ func (a *App) closeKubeconfigFiles() {
 	a.execFiles = nil
 }
 
-// ensureTermContext points the embedded shell at the selected context and
-// the active panel's namespace.
-func (a *App) ensureTermContext() {
-	a.updateTermContextNamespace(a.panelExecNamespace(a.panelByIndex(a.activePanel)))
+// termTarget is the connection and namespace of what the active panel
+// shows: its own list, or in Describe, Manifest, Logs and Info the other
+// panel's (or the pin's).
+func (a *App) termTarget() (*panelConn, string) {
+	idx := a.activePanel
+	panel := a.panelByIndex(idx)
+	if panel == nil || !followerMode(panel.Mode()) {
+		return a.ownConn(idx), a.panelExecNamespace(panel)
+	}
+	if pin := panel.pinned(); pin != nil && pin.conn != nil {
+		return pin.conn, pin.scope
+	}
+	return a.ownConn(1 - idx), a.panelExecNamespace(a.panelByIndex(1 - idx))
 }
 
-// updateTermContextNamespace rewrites the shell's kubeconfig for the
-// selected context and ns. The KUBECONFIG value stays the same, so the
-// running shell picks the change up with its next command.
-func (a *App) updateTermContextNamespace(ns string) {
+// ensureTermContext points the embedded shell at the active panel's
+// effective context and namespace. kc calls it whenever the active panel,
+// its context, its namespace or its mode may have changed; the file is
+// rewritten only when the target differs from the last one written. The
+// KUBECONFIG value stays the same, so the running shell picks the change
+// up with its next command, and a program that already runs keeps what
+// it started with.
+func (a *App) ensureTermContext() {
 	if a.terminal == nil || a.cfg == nil || !a.cfg.Terminal.Follow {
 		if a.terminal != nil {
 			a.terminal.SetEnv(nil)
 		}
+		a.termWritten = ""
 		return
 	}
-	ec := a.execContext(ns)
+	conn, ns := a.termTarget()
+	ec := a.execContextFor(conn, ns)
 	if ec.IsZero() {
+		return
+	}
+	written := ec.Load + "\x00" + ec.Context + "\x00" + ec.Namespace
+	if written == a.termWritten && a.terminal.env != nil {
 		return
 	}
 	files, err := a.kubeconfigFiles()
@@ -189,6 +212,7 @@ func (a *App) updateTermContextNamespace(ns string) {
 		var kubeconfigPath string
 		if kubeconfigPath, err = files.Write(shellSlot, ec); err == nil {
 			a.terminal.SetEnv(execctx.ProcessEnv(kubeconfigPath))
+			a.termWritten = written
 			ctrllog.FromContext(a.ctx).WithName("termctx").Info("updated terminal kubeconfig",
 				"path", files.Path(shellSlot), "context", ec.Context, "namespace", ec.Namespace)
 			return
@@ -199,17 +223,37 @@ func (a *App) updateTermContextNamespace(ns string) {
 	}
 }
 
-// panelCommandExec supplies custom commands started in one panel.
+// panelCommandExec supplies custom commands started in one panel. conn,
+// when set, is the connection the command started with: the one of the
+// rows it runs for. It stays the command's for its watch restarts, even
+// after a panel switched its context. source is the panel whose location
+// gives the namespace when the command names none.
 type panelCommandExec struct {
-	app   *App
-	panel *Panel
+	app    *App
+	panel  *Panel
+	conn   *panelConn
+	source *Panel
+}
+
+// commandExecFor is the supplier of a command shown in panel and started
+// for the rows of source, which browses conn.
+func (a *App) commandExecFor(panel, source *Panel, conn *panelConn) panelCommandExec {
+	return panelCommandExec{app: a, panel: panel, conn: conn, source: source}
 }
 
 func (s panelCommandExec) CommandExec(slot, namespace string) (CommandExec, error) {
-	if namespace == "" {
-		namespace = s.app.panelExecNamespace(s.panel)
+	source := s.source
+	if source == nil {
+		source = s.panel
 	}
-	ec := s.app.execContext(namespace)
+	if namespace == "" {
+		namespace = s.app.panelExecNamespace(source)
+	}
+	conn := s.conn
+	if conn == nil {
+		conn = s.app.connOfPanel(source)
+	}
+	ec := s.app.execContextFor(conn, namespace)
 	if ec.IsZero() {
 		return CommandExec{}, nil
 	}

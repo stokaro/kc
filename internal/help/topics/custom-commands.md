@@ -5,8 +5,13 @@ for the selected object (Object Actions, such as the CronJob actions),
 then the custom commands you define in `~/.kc/config.yaml`. The Command
 menu of the menu bar (`F9`) opens the same menu with "User menu". A
 command runs in a terminal in
-the other panel, with `KUBECONFIG` set to kc's context and the selected
-item's namespace, so `kubectl` needs no extra flags. Until you define
+the other panel, with `KUBECONFIG` set to the context of the panel
+the item was selected in and the item's namespace, so `kubectl` needs
+no extra flags. A running command keeps its context when a panel
+switches. A namespace command restarts when the selection moves to
+another namespace, but not into another context: when the panel it
+follows switches its context, the command panel says so and you run the
+command again. Until you define
 your own, kc ships `Top Nodes` and `Top Pods`.
 
 ```yaml

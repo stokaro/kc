@@ -67,18 +67,12 @@ func TestAppBrowsesPodsWithNamespaceOnlyAccess(t *testing.T) {
 	app.clPool = kccluster.NewPool(time.Minute, 0)
 	app.clPool.Start()
 	t.Cleanup(app.clPool.Stop)
-	app.currentCtx = &kubeconfig.Context{Name: "envtest", Namespace: ns, Kubeconfig: &kubeconfig.Kubeconfig{Path: path, Context: "envtest"}}
 	app.impersonateUser = user
-	key := app.currentClusterKey()
-	if key.KubeconfigPath != path {
+	kctx := &kubeconfig.Context{Name: "envtest", Namespace: ns, Kubeconfig: &kubeconfig.Kubeconfig{Path: path, Context: "envtest"}}
+	if key := app.clusterKeyFor(kctx); key.KubeconfigPath != path {
 		t.Fatalf("cluster key %+v does not use the test kubeconfig", key)
 	}
-	app.clLease, err = app.clPool.Acquire(ctx, key, nil)
-	if err != nil {
-		t.Fatalf("user cluster: %v", err)
-	}
-	t.Cleanup(app.clLease.Release)
-	app.cl = app.clLease.Cluster()
+	usePoolContext(t, app, kctx)
 
 	// The context's namespace scopes both panels.
 	app.goToNamespace(app.initialNamespace())

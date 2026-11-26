@@ -60,7 +60,9 @@ func TestSwitchToContextSplitAcrossKubeconfigs(t *testing.T) {
 	pool := kccluster.NewPool(time.Minute, 0)
 	pool.Start()
 	t.Cleanup(pool.Stop)
-	app := &App{ctx: t.Context(), kubeMgr: mgr, clPool: pool}
+	app := NewApp()
+	t.Cleanup(app.cancel)
+	app.kubeMgr, app.clPool = mgr, pool
 
 	for _, name := range []string{"split", "base"} {
 		t.Run(name, func(t *testing.T) {
@@ -84,7 +86,7 @@ func TestSwitchToContextSplitAcrossKubeconfigs(t *testing.T) {
 			if got.err != nil {
 				t.Fatalf("switch to %s: %v", name, got.err)
 			}
-			t.Cleanup(got.lease.Release)
+			t.Cleanup(got.releaseLeases)
 			if len(got.infos) == 0 {
 				t.Error("no resource types read from the cluster")
 			}
@@ -108,8 +110,8 @@ func TestSwitchToContextSplitAcrossKubeconfigs(t *testing.T) {
 	}
 
 	// kubectl started by kc loads the same merged list.
-	app.currentCtx = mgr.GetContextByName("split")
-	cmd, line := kubectlEditCommand(app.execContext("kube-system"), "configmap/x")
+	split := useTestCluster(app, mgr.GetContextByName("split"), nil, 0)
+	cmd, line := kubectlEditCommand(app.execContextFor(split, "kube-system"), "configmap/x")
 	if strings.Contains(line, "--kubeconfig") {
 		t.Errorf("kubectl edit names one file: %s", line)
 	}

@@ -299,17 +299,17 @@ func (a *App) showAccessView() tea.Cmd {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	item, _ := panel.SelectedNavItem(ctx)
+	item, conn := a.selectedRow(ctx, panel)
 	cancel()
 	target, ok := accessTargetForItem(item)
 	if !ok {
 		return a.ShowToast("Access: select an object or a resource type", 3*time.Second)
 	}
 	st := a.accessState()
-	id := a.accessIdentity()
-	view := newAccessViewModel(target, id, a.accessPolicy(), st.cache)
+	id := a.accessIdentity(conn)
+	view := newAccessViewModel(target, id, a.policyFor(conn.name()), st.cache)
 	run := func(force bool) tea.Cmd {
-		reviewer := a.accessReviewer()
+		reviewer := a.accessReviewer(conn)
 		if reviewer == nil {
 			return nil
 		}

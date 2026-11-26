@@ -37,7 +37,10 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 		return infowidget.Target{Hint: "No panel."}
 	}
 	other := 1 - idx
-	if a.cl == nil {
+	// The other panel's connection, or the pin's: the panels may show two
+	// contexts.
+	conn := a.targetConn(idx)
+	if conn.cluster() == nil {
 		return infowidget.Target{Hint: "Not connected to a cluster."}
 	}
 	ns := a.overviewNamespace(other)
@@ -45,10 +48,12 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 	if pin != nil {
 		ns = pin.scope
 	}
-	key := a.currentClusterKey()
+	key := conn.clusterKey()
 	label := key.ContextName + ": " + namespaceScopeLabel(ns)
 	t := infowidget.Target{
-		Key:   key.ContextName + "|" + key.KubeconfigPath + "|" + ns,
+		// The connection's identity: a switch of the other panel, even to
+		// a context of the same name, starts another engine.
+		Key:   conn.connID() + "|" + key.ContextName + "|" + key.KubeconfigPath + "|" + ns,
 		Label: label,
 	}
 	if pin != nil {
@@ -58,13 +63,14 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 			narrowInfoTarget(&t, item, key)
 		}
 	}
-	cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
+	cl, cfg, root := conn.cluster(), a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
+	deps := a.connDeps(conn, cfg)
 	if t.Workload != nil && t.Finding == nil && a.cfg != nil {
 		t.PromHistory = infoHistory(root, cl.GetConfig, key, a.cfg.MetricsHistory, *t.Workload, a.window)
 	}
 	t.Open = func() infowidget.Summarizer {
 		return newGatedInfo(root, cl.CanListWatchAllNamespaces, cl.CanListWatchInNamespace, ns, func() infowidget.Summarizer {
-			return models.NewOverviewInfo(a.makeDeps(cl, cfg, key), ns)
+			return models.NewOverviewInfo(deps, ns)
 		})
 	}
 	return t

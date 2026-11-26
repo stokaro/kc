@@ -54,7 +54,9 @@ type listMetaFolder interface {
 // panel shows: its marked rows, else its rows under an active filter.
 func (a *App) panelListSide(idx int, whole bool) (setSide, bool) {
 	nav := a.navigatorFor(idx)
-	if nav == nil || a.cl == nil {
+	conn := a.ownConn(idx)
+	cl := conn.cluster()
+	if nav == nil || cl == nil {
 		return setSide{}, false
 	}
 	lister, ok := nav.Current().(listMetaFolder)
@@ -62,10 +64,12 @@ func (a *App) panelListSide(idx int, whole bool) (setSide, bool) {
 		return setSide{}, false
 	}
 	gvr, ns, _ := lister.ObjectListMeta()
-	key := a.currentClusterKey()
-	deps := a.makeDeps(a.cl, a.ensurePanelConfig(a.panelByIndex(idx)), key)
+	// Each side is read from its panel's own connection: the panels may
+	// show two contexts.
+	key := conn.clusterKey()
+	deps := a.connDeps(conn, a.ensurePanelConfig(a.panelByIndex(idx)))
 	set := setdiff.Set{Context: key.ContextName, GVR: gvr, Namespace: ns}
-	set.AllNamespaces = ns == models.AllNamespaces && namespacedResource(a.cl.RESTMapper(), gvr)
+	set.AllNamespaces = ns == models.AllNamespaces && namespacedResource(cl.RESTMapper(), gvr)
 	if !whole {
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		set.Selection = panelSelection(ctx, a.panelByIndex(idx), gvr)
@@ -198,7 +202,7 @@ func (a *App) compareWithContextPicker(whole bool) tea.Cmd {
 		return nil
 	}
 	contexts := a.kubeMgr.GetContexts()
-	choices := otherContextChoices(contexts, a.currentCtx)
+	choices := otherContextChoices(contexts, a.ownConn(a.activePanel).kctxOrNil())
 	if len(choices) == 0 {
 		return a.ShowToast("Compare with context: kubeconfig has no other context", 3*time.Second)
 	}
@@ -245,14 +249,7 @@ func (a *App) compareWithContext(left setSide, target *kubeconfig.Context) tea.C
 	if target == nil || target.Kubeconfig == nil {
 		return nil
 	}
-	cur := a.currentClusterKey()
-	key := kccluster.Key{
-		KubeconfigPath:       target.LoadPath(),
-		ContextName:          target.Name,
-		ImpersonateUser:      cur.ImpersonateUser,
-		ImpersonateUID:       cur.ImpersonateUID,
-		ImpersonateGroupsKey: a.impersonationGroupsKey(),
-	}
+	key := a.clusterKeyFor(target)
 	right := left
 	right.set.Context = target.Name
 	right.set.Selection = setdiff.Selection{Scope: setdiff.Counterparts}

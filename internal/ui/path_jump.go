@@ -43,21 +43,11 @@ type pathJump struct {
 // pathJumpMsg resumes a jump after a wait.
 type pathJumpMsg struct{ jump pathJump }
 
-// pendingJump waits for a context switch to finish.
+// pendingJump waits for a context switch of its panel to finish.
 type pendingJump struct {
-	panel  int
 	target navui.Location
 	record bool
 	view   *hotlist.View
-}
-
-// currentContextName is the name of kc's kubeconfig context, "" before one
-// is selected.
-func (a *App) currentContextName() string {
-	if a.currentCtx == nil {
-		return ""
-	}
-	return a.currentCtx.Name
 }
 
 // panelLocation is where panel idx is now.
@@ -67,7 +57,7 @@ func (a *App) panelLocation(idx int) (navui.Location, bool) {
 		return navui.Location{}, false
 	}
 	return navui.Location{
-		Context:   a.currentContextName(),
+		Context:   a.ownConn(idx).name(),
 		Namespace: a.panelScope[idx],
 		Steps:     nav.Steps(),
 		Path:      a.navigatorPath(nav),
@@ -87,7 +77,7 @@ func (a *App) recordHistory(idx int) {
 	if idx < 0 || idx > 1 {
 		return
 	}
-	if p := a.pendingJump; p != nil && p.panel == idx {
+	if a.pendingJumps[idx] != nil {
 		// The panel is on its way somewhere else.
 		return
 	}
@@ -102,9 +92,7 @@ func (a *App) cancelJump(idx int) {
 		return
 	}
 	a.jumpToken[idx]++
-	if p := a.pendingJump; p != nil && p.panel == idx {
-		a.pendingJump = nil
-	}
+	a.pendingJumps[idx] = nil
 }
 
 // findContext returns the kubeconfig context called name.
@@ -120,8 +108,8 @@ func (a *App) findContext(name string) *kubeconfig.Context {
 	return nil
 }
 
-// jumpTo moves panel idx to target. A target in another context switches kc
-// to that context first, which puts both panels at their roots.
+// jumpTo moves panel idx to target. A target in another context switches
+// the panel to that context first; the other panel stays where it is.
 func (a *App) jumpTo(idx int, target navui.Location, record bool) tea.Cmd {
 	return a.jumpToView(idx, target, record, nil)
 }
@@ -132,16 +120,16 @@ func (a *App) jumpToView(idx int, target navui.Location, record bool, view *hotl
 		return nil
 	}
 	a.cancelJump(idx)
-	if target.Context != "" && target.Context != a.currentContextName() {
+	if target.Context != "" && target.Context != a.ownConn(idx).name() {
 		c := a.findContext(target.Context)
 		if c == nil {
 			return a.ShowToast(fmt.Sprintf("Context %s not found", target.Context), 3*time.Second)
 		}
-		cmd := a.switchContext(c)
+		cmd := a.switchContexts([]int{idx}, c)
 		if cmd == nil {
 			return nil
 		}
-		a.pendingJump = &pendingJump{panel: idx, target: target, record: record, view: view}
+		a.pendingJumps[idx] = &pendingJump{target: target, record: record, view: view}
 		return cmd
 	}
 	nav := a.navigatorFor(idx)
@@ -154,7 +142,7 @@ func (a *App) jumpToView(idx int, target navui.Location, record bool, view *hotl
 		nav = a.newScopedNavigator(idx)
 		a.replaceNavigator(idx, nav)
 		if idx == a.activePanel {
-			a.updateTermContextNamespace(target.Namespace)
+			a.ensureTermContext()
 		}
 	} else if cur, ok := a.panelLocation(idx); ok {
 		done = cur.CommonSteps(target)
@@ -173,14 +161,21 @@ func (a *App) jumpToView(idx int, target navui.Location, record bool, view *hotl
 	})
 }
 
-// resumePendingJump starts the jump that waited for a context switch.
-func (a *App) resumePendingJump() tea.Cmd {
-	p := a.pendingJump
-	a.pendingJump = nil
-	if p == nil || p.target.Context != a.currentContextName() {
+// resumePendingJump starts the jump of panel idx that waited for the
+// panel's context switch.
+func (a *App) resumePendingJump(idx int) tea.Cmd {
+	p := a.pendingJumps[idx]
+	a.pendingJumps[idx] = nil
+	if p == nil || p.target.Context != a.ownConn(idx).name() {
 		return nil
 	}
-	return a.jumpToView(p.panel, p.target, p.record, p.view)
+	return a.jumpToView(idx, p.target, p.record, p.view)
+}
+
+// dropPendingJump forgets the jump of panel idx that waited for a context
+// switch that failed.
+func (a *App) dropPendingJump(idx int) {
+	a.pendingJumps[idx] = nil
 }
 
 // continueJump enters the remaining steps of j. It gives up quietly when the
@@ -263,7 +258,7 @@ func (a *App) finishJump(j pathJump) {
 		cancel()
 		a.applyResourceOptions(panel)
 	}
-	a.syncTerminalNamespaceForNavigator(j.nav)
+	a.ensureTermContext()
 	if j.record {
 		a.recordHistory(j.panel)
 	}

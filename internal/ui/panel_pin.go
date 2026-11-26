@@ -69,6 +69,19 @@ type panelPin struct {
 	// lost says why the pinned instance is no longer what the name shows:
 	// deleted, or replaced by another UID. The panel is frozen then.
 	lost string
+	// conn is the connection the pinned item was read from; the pin
+	// holds it until release (docs/adr/0362-independent-panel-contexts.md).
+	conn    *panelConn
+	release func()
+}
+
+// close stops the pin's watch and gives up its hold on the connection.
+func (pin *panelPin) close() {
+	pin.watch.close()
+	if pin.release != nil {
+		pin.release()
+		pin.release = nil
+	}
 }
 
 // pinWatch keeps the last thing the shared cache said about a pinned
@@ -140,7 +153,7 @@ func (p *Panel) pinned() *panelPin { return p.pin }
 // pin's item.
 func (p *Panel) SetPin(pin *panelPin) {
 	if p.pin != nil && p.pin != pin {
-		p.pin.watch.close()
+		p.pin.close()
 	}
 	p.pin = pin
 	p.invalidateRenderCache()
@@ -152,7 +165,7 @@ func (p *Panel) ClearPin() {
 	if p.pin == nil {
 		return
 	}
-	p.pin.watch.close()
+	p.pin.close()
 	p.pin = nil
 	p.invalidateRenderCache()
 }
@@ -208,7 +221,7 @@ func (p *Panel) pinnedSelection(sel panelcontent.Selection) panelcontent.Selecti
 	if p.pin == nil || p.pin.item == nil {
 		return sel
 	}
-	return panelcontent.Selection{ID: p.pin.id, Path: sel.Path, Item: p.pin.item, Force: sel.Force}
+	return panelcontent.Selection{ID: p.pin.id, Path: sel.Path, Item: p.pin.item, Source: p.pin.conn.connID(), Force: sel.Force}
 }
 
 // decorateFrame marks a pinned or frozen panel in its frame. A frozen

@@ -83,14 +83,8 @@ func TestInfoWithNamespaceOnlyAccess(t *testing.T) {
 	app.clPool = kccluster.NewPool(time.Minute, 0)
 	app.clPool.Start()
 	t.Cleanup(app.clPool.Stop)
-	app.currentCtx = &kubeconfig.Context{Name: "envtest", Namespace: ns, Kubeconfig: &kubeconfig.Kubeconfig{Path: path, Context: "envtest"}}
 	app.impersonateUser = user
-	app.clLease, err = app.clPool.Acquire(ctx, app.currentClusterKey(), nil)
-	if err != nil {
-		t.Fatalf("user cluster: %v", err)
-	}
-	t.Cleanup(app.clLease.Release)
-	app.cl = app.clLease.Cluster()
+	usePoolContext(t, app, &kubeconfig.Context{Name: "envtest", Namespace: ns, Kubeconfig: &kubeconfig.Kubeconfig{Path: path, Context: "envtest"}})
 	app.goToNamespace(app.initialNamespace())
 
 	tgt := app.infoTarget(ctx, app.rightPanel)

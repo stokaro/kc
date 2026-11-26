@@ -35,6 +35,25 @@ func TestContextChoices(t *testing.T) {
 	}
 }
 
+// A panel's picker marks its own context and the other panel's.
+func TestPanelContextChoicesMarkTheOtherPanel(t *testing.T) {
+	kc := &kubeconfig.Kubeconfig{Path: "/home/u/.kube/config"}
+	dev := &kubeconfig.Context{Name: "dev", Kubeconfig: kc}
+	prod := &kubeconfig.Context{Name: "prod", Kubeconfig: kc}
+	stage := &kubeconfig.Context{Name: "stage", Kubeconfig: kc}
+	got := panelContextChoices([]*kubeconfig.Context{dev, prod, stage}, prod, dev, "left")
+	want := []string{"left", "current", ""}
+	for i, c := range got {
+		if c.Note != want[i] {
+			t.Errorf("choice %s note = %q, want %q", c.Label, c.Note, want[i])
+		}
+	}
+	// Both panels in one context: it is the current one.
+	if got := panelContextChoices([]*kubeconfig.Context{dev}, dev, dev, "left"); got[0].Note != "current" {
+		t.Errorf("shared context note = %q, want current", got[0].Note)
+	}
+}
+
 func TestContextNamespace(t *testing.T) {
 	if got := contextNamespace(&kubeconfig.Context{}); got != "default" {
 		t.Errorf("got %q", got)

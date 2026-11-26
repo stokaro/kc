@@ -106,7 +106,7 @@ func diagnosticNamespace(items []models.Item) string {
 
 // startDiagnostic runs cmd for items from panel p, or offers to stop the
 // run of cmd that is still going.
-func (a *App) startDiagnostic(p *Panel, cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) tea.Cmd {
+func (a *App) startDiagnostic(p *Panel, conn *panelConn, cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) tea.Cmd {
 	if run := a.diagnostics.runs[cmd.Name]; run != nil {
 		return a.askStopDiagnostic(run)
 	}
@@ -121,7 +121,7 @@ func (a *App) startDiagnostic(p *Panel, cmd appconfig.CommandConfig, items []mod
 	run := &diagnosticRun{id: a.diagnostics.seq, cmd: cmd, scopes: diagnosticScopes(items), started: time.Now()}
 	run.slot = fmt.Sprintf("diag-%d", run.id)
 
-	supplier := panelCommandExec{app: a, panel: p}
+	supplier := a.commandExecFor(p, p, conn)
 	exec, err := supplier.CommandExec(run.slot, diagnosticNamespace(items))
 	if err != nil {
 		return a.commandError(cmd, fmt.Errorf("preparing kubeconfig: %w", err))

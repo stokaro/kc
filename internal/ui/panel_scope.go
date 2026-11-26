@@ -20,12 +20,12 @@ import (
 )
 
 // newScopedNavigator returns a navigator whose root is scoped to the panel's
-// namespace.
+// namespace, in the panel's own connection.
 func (a *App) newScopedNavigator(idx int) *navui.Navigator {
 	panel := a.panelByIndex(idx)
 	cfg := a.ensurePanelConfig(panel)
 	a.syncPanelConfig(panel)
-	deps := a.makeDeps(a.cl, cfg, a.currentClusterKey())
+	deps := a.connDeps(a.ownConn(idx), cfg)
 	return navui.NewNavigator(models.NewRootFolder(deps, a.panelScope[idx]))
 }
 
@@ -156,6 +156,9 @@ func (p *Panel) scopeHit(x int) string {
 // namespacesLoadedMsg carries the namespace names for a panel's picker.
 type namespacesLoadedMsg struct {
 	panel int
+	// conn is the connection the names were listed in; the picker does
+	// not open when the panel switched its context meanwhile.
+	conn  string
 	names []string
 	err   error
 }
@@ -166,27 +169,28 @@ var namespacesGVR = schema.GroupVersionResource{Version: "v1", Resource: "namesp
 // opens when they arrive. A user who may not list namespaces gets the
 // picker at once, with typed entry.
 func (a *App) loadNamespacesForPicker(idx int) tea.Cmd {
-	cl := a.cl
+	conn := a.ownConn(idx)
+	cl := conn.cluster()
 	if cl == nil {
 		return nil
 	}
-	parent := a.ctx
+	parent, id := a.ctx, conn.connID()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(parent, requestTimeout)
 		defer cancel()
 		if err := namespaceListAllowed(ctx, cl); err != nil {
-			return namespacesLoadedMsg{panel: idx, err: err}
+			return namespacesLoadedMsg{panel: idx, conn: id, err: err}
 		}
 		list, err := cl.ListByGVR(ctx, namespacesGVR, "")
 		if err != nil {
-			return namespacesLoadedMsg{panel: idx, err: err}
+			return namespacesLoadedMsg{panel: idx, conn: id, err: err}
 		}
 		names := make([]string, 0, len(list.Items))
 		for i := range list.Items {
 			names = append(names, list.Items[i].GetName())
 		}
 		sort.Strings(names)
-		return namespacesLoadedMsg{panel: idx, names: names}
+		return namespacesLoadedMsg{panel: idx, conn: id, names: names}
 	}
 }
 
@@ -210,11 +214,16 @@ func namespaceChoices(names []string, current string) []scopeChoice {
 // typed name.
 func (a *App) showNamespacePicker(msg namespacesLoadedMsg) tea.Cmd {
 	idx := msg.panel
+	if a.ownConn(idx).connID() != msg.conn {
+		// The panel switched its context (or C-u moved it) while the
+		// names were read: they name another cluster's namespaces.
+		return nil
+	}
 	current := a.panelScope[idx]
 	names := msg.names
 	var toast tea.Cmd
 	if msg.err != nil {
-		names = fallbackNamespaceNames(a.contextNamespace(), a.panelScope, a.namespaceScopes.recent)
+		names = fallbackNamespaceNames(connNamespace(a.ownConn(idx)), a.panelScope, a.namespaceScopes.recent)
 		if !errors.Is(msg.err, errNamespaceListForbidden) {
 			toast = a.ShowToast("Could not list namespaces: "+msg.err.Error(), 3*time.Second)
 		}
@@ -277,7 +286,7 @@ func (a *App) setPanelScope(idx int, ns string) tea.Cmd {
 	a.showNavigatorRoot(idx)
 	a.syncPanelScopeLabels()
 	if idx == a.activePanel {
-		a.updateTermContextNamespace(ns)
+		a.ensureTermContext()
 	}
 	a.recordHistory(idx)
 	return toast
@@ -291,14 +300,24 @@ func keepTypeError(err error) string {
 	return err.Error()
 }
 
-// syncPanelScopeLabels updates the scope drawn in both panel frames.
+// syncPanelScopeLabels updates the scope drawn in both panel frames: the
+// context and namespace of what each panel shows, so a Describe, Manifest,
+// Logs or Info panel names the context of the panel it follows (or of its
+// pin), with that context's color and read-only marker.
 func (a *App) syncPanelScopeLabels() {
-	ctxName := a.currentContextName()
-	readOnly := a.readOnly()
 	for idx, panel := range []*Panel{a.leftPanel, a.rightPanel} {
-		if panel != nil {
-			panel.SetScope(panelScopeLabel{Context: ctxName, Namespace: a.panelScope[idx], ReadOnly: readOnly})
+		if panel == nil {
+			continue
 		}
+		name := a.targetConn(idx).name()
+		if panel.Mode() == PanelModeCommand {
+			// A namespace command runs in the context of the panel that
+			// named the namespace.
+			if c := commandConnOf(panel); c != nil {
+				name = c.name()
+			}
+		}
+		panel.SetScope(panelScopeLabel{Context: name, Namespace: a.targetScope(idx), ReadOnly: a.readOnlyFor(name)})
 	}
 }
 
@@ -306,13 +325,20 @@ func (a *App) syncPanelScopeLabels() {
 // label. It reports whether the click was on a label.
 func (a *App) handleScopeClick(m tea.Mouse) (tea.Cmd, bool) {
 	idx, hit := a.scopeHitAt(m)
+	if hit == "context" || hit == "namespace" {
+		if p := a.panelByIndex(idx); p != nil && followerMode(p.Mode()) {
+			// The labels of a follower name the other panel's scope; a
+			// click here must not change that panel.
+			return nil, true
+		}
+	}
 	switch hit {
 	case "namespace":
 		a.setActivePanel(idx, "scope click")
 		return a.loadNamespacesForPicker(idx), true
 	case "context":
 		a.setActivePanel(idx, "scope click")
-		return a.showContextPicker(), true
+		return a.showContextPicker(idx), true
 	case "filter":
 		a.setActivePanel(idx, "filter click")
 		a.clearRowFilter(idx)

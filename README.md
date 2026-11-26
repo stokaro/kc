@@ -4,7 +4,7 @@
 
 ![An animated tour of kc with a caption per scene: the two panels, quick search, the cluster overview, diagnosis of broken objects, logs and more](docs/demo.gif)
 
-kc is a two-panel Kubernetes TUI in the style of Midnight Commander. You browse contexts, namespaces, resource types and objects like folders and files, and the lists stay live through controller-runtime informers. The second panel shows what the first one points at: its YAML, Describe, logs, or CPU and memory use. Every change to the cluster asks first, in a dialog that names the context.
+kc is a two-panel Kubernetes TUI in the style of Midnight Commander. You browse contexts, namespaces, resource types and objects like folders and files, and the lists stay live through controller-runtime informers. The second panel shows what the first one points at: its YAML, Describe, logs, or CPU and memory use. Or it browses a context of its own, so staging and prod sit side by side. Every change to the cluster asks first, in a dialog that names the context.
 
 kc started as a fork of [Kubernetes Commander by Stefan Schimanski](https://github.com/sttts/kc) and is developed independently; report issues [here](https://github.com/stokaro/kc/issues), not upstream. See [NOTICE](NOTICE).
 

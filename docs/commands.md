@@ -72,7 +72,7 @@ commands:
 
 ## Templating
 Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `{{.Version}}`, `{{.Resource}}`.
-The execution context is available as `{{.Context}}`, `{{.As}}`, `{{.AsUID}}` and `{{.AsGroups}}` (a list), for tools that do not read `KUBECONFIG`. Commands already run with `KUBECONFIG` set to kc's selected context and the namespace of the selected item (else the panel's), so `kubectl` needs no extra flags. Commands without a selected item are run as written, without template expansion.
+The execution context is available as `{{.Context}}`, `{{.As}}`, `{{.AsUID}}` and `{{.AsGroups}}` (a list), for tools that do not read `KUBECONFIG`. Commands already run with `KUBECONFIG` set to the context of the panel the item was selected in and the namespace of the selected item (else the panel's), so `kubectl` needs no extra flags. Each panel has its own context; a running command keeps the one it started with. Commands without a selected item are run as written, without template expansion.
 
 A command acts on the marked rows when any are marked, otherwise on the highlighted row. `.Items` lists them in panel order, each with its own `Name`, `Namespace`, `Group`, `Version` and `Resource`; the top-level variables repeat the first item. Commands with `supportsMultiSelection: true` are offered for several marked rows; other commands are hidden from the F2 user menu then.
 

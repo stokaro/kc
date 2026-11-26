@@ -125,7 +125,7 @@ func TestCustomWorkloadInfoAndDashboardEnvtest(t *testing.T) {
 	_, _ = app.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	// The link opens in the other panel: the Rollout row in the left one.
 	app.activePanel = 1
-	runLinkCmds(t, app, app.openObjectRef(models.ObjectRef{GVR: rollouts, Namespaced: true, Namespace: ns, Name: "web"}, ""))
+	runLinkCmds(t, app, app.openObjectRef(app.ownConn(1), 1, models.ObjectRef{GVR: rollouts, Namespaced: true, Namespace: ns, Name: "web"}, ""))
 	_ = app.setPanelMode(t.Context(), app.rightPanel, PanelModeInfo, "test")
 	app.activePanel = 0
 
@@ -149,7 +149,7 @@ func TestCustomWorkloadInfoAndDashboardEnvtest(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	key := app.currentClusterKey()
+	key := app.ownConn(0).clusterKey()
 	if !models.IsWorkloadTarget(key, rollouts) || models.IsWorkloadTarget(key, widgets) {
 		t.Fatalf("workload targets: rollouts %v widgets %v, want only rollouts", models.IsWorkloadTarget(key, rollouts), models.IsWorkloadTarget(key, widgets))
 	}
@@ -172,7 +172,7 @@ func TestCustomWorkloadInfoAndDashboardEnvtest(t *testing.T) {
 	// A row of a kind that owns no pods opens the namespace dashboard,
 	// whose workload list has the Rollout.
 	app.activePanel = 1
-	runLinkCmds(t, app, app.openObjectRef(models.ObjectRef{GVR: widgets, Namespaced: true, Namespace: ns, Name: "w"}, ""))
+	runLinkCmds(t, app, app.openObjectRef(app.ownConn(1), 1, models.ObjectRef{GVR: widgets, Namespaced: true, Namespace: ns, Name: "w"}, ""))
 	app.activePanel = 0
 	_, _ = app.Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
 	_, _ = app.Update(tea.KeyPressMsg{Code: 'g', Text: "g"})

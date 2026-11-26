@@ -177,7 +177,7 @@ func (w *Widget) load(ctx context.Context) tea.Cmd {
 		w.setStatic("Selected resource does not expose manifest content.")
 		return nil
 	}
-	key := itemKey(item)
+	key := w.sel.Source + "|" + itemKey(item)
 	if key != w.loader.Key() && w.shownKey == "" {
 		w.viewer.SetContent("Loading...", viewer.Metadata{Title: "Manifest"})
 	}

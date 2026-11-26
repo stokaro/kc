@@ -18,7 +18,8 @@ one.
   Owners, Used by, Requires, Explain, the marks (Toggle mark, Select
   group, Unselect group, Invert selection, Select all), Quick search,
   Exit.
-- Command: the User menu (`F2`), Swap panels, Switch panels on/off,
+- Command: the User menu (`F2`), Context for both panels..., Swap
+  panels, Switch panels on/off,
   Copy command, the compare commands, Investigation window, Hotlist,
   History back, forward and list, Help.
 - Options: Panel width, Left and Right panel options, Menu bar visible.

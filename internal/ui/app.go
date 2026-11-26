@@ -21,7 +21,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
@@ -42,7 +41,6 @@ import (
 	models "github.com/stokaro/kc/internal/models"
 	navui "github.com/stokaro/kc/internal/navigation"
 	"github.com/stokaro/kc/internal/objectaction"
-	"github.com/stokaro/kc/internal/podfs"
 	"github.com/stokaro/kc/internal/portforward"
 	"github.com/stokaro/kc/internal/promhistory"
 	"github.com/stokaro/kc/internal/ui/menubar"
@@ -77,11 +75,11 @@ func (a *App) hasApplicableCommands(panel *Panel) bool {
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
-	item, _ := panel.SelectedNavItem(ctx)
+	item, conn := a.selectedRow(ctx, panel)
 	selected := panel.GetSelectedItems()
 	activeNamespace := deriveNamespace(item, selected, panel.namespace(ctx))
 	targets := commandTargets(item, selected)
-	policy := a.accessPolicy()
+	policy := a.policyFor(conn.name())
 	for _, cmd := range a.cfg.Commands {
 		if policy.PermitsCommand(cmd.Dangerous) && isCommandApplicableToTargets(cmd, targets, activeNamespace) {
 			return true
@@ -202,14 +200,18 @@ type App struct {
 	ctrlXPending bool
 	// Data providers
 	kubeMgr *kubeconfig.Manager
-	cl      *kccluster.Cluster
-	clLease *kccluster.Lease // holds cl in clPool; see docs/adr/0062-cache-ownership.md
 	clPool  *kccluster.Pool
+	// conns are the panels' connections, by panel position; swapPanels
+	// swaps them with the panels (docs/adr/0362-independent-panel-contexts.md).
+	conns   [2]heldConn
+	connSeq uint64
+	// switchSeq numbers each panel's context switches; only the newest
+	// result of a panel applies.
+	switchSeq map[*Panel]uint64
 	// setCompareSeq numbers list comparisons; only the newest is shown.
 	setCompareSeq     int
 	ctx               context.Context
 	cancel            context.CancelFunc
-	currentCtx        *kubeconfig.Context
 	kubectlCtx        string // context plain kubectl uses; see Deps.KubectlContext
 	impersonateUser   string
 	impersonateUID    string
@@ -249,32 +251,34 @@ type App struct {
 	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 
 	// Pins and the investigation window: docs/adr/0187-pin-freeze-window.md.
-	pinSignal              chan struct{}
-	pinWaiting             bool
-	window                 investigation.Window
-	pendingCmdsMu          sync.Mutex
-	pendingCmds            []tea.Cmd
-	cfgStore               *appconfig.Store // ~/.kc/config.yaml; see configStore
-	leftConfig             *appconfig.Config
-	rightConfig            *appconfig.Config
-	namespaceInput         *NamespaceCreateModel
-	deleteConfirm          *DeleteConfirmModel
-	copyInput              *CopyToLocalModel
-	pendingCopy            *copyRequest
-	closeViewer            func() // releases the open F3 viewer's file; see showViewerModal
-	pendingDelete          *deleteTarget
-	lastCopyDir            string
-	transfer               *transferJob // the open copy dialog, if any
-	transferGen            int
-	namespaceCreatePanel   int
+	pinSignal            chan struct{}
+	pinWaiting           bool
+	window               investigation.Window
+	pendingCmdsMu        sync.Mutex
+	pendingCmds          []tea.Cmd
+	cfgStore             *appconfig.Store // ~/.kc/config.yaml; see configStore
+	leftConfig           *appconfig.Config
+	rightConfig          *appconfig.Config
+	namespaceInput       *NamespaceCreateModel
+	deleteConfirm        *DeleteConfirmModel
+	copyInput            *CopyToLocalModel
+	pendingCopy          *copyRequest
+	closeViewer          func() // releases the open F3 viewer's file; see showViewerModal
+	pendingDelete        *deleteTarget
+	lastCopyDir          string
+	transfer             *transferJob // the open copy dialog, if any
+	transferGen          int
+	namespaceCreatePanel int
+	// namespaceCreateConn is the connection of that panel when the dialog
+	// opened; the namespace goes there or nowhere.
+	namespaceCreateConn    *panelConn
 	leftPanelWidthPercent  int
 	rightPanelWidthPercent int
 	leftFolderDirtyCancel  func()
 	rightFolderDirtyCancel func()
 	viewerOptionsTarget    viewerOptionsTarget
-	// Discovery refresh notifications
-	discoveryCh     chan struct{}
-	discoveryCancel func()
+	// Discovery refresh notifications from every connection.
+	discoveryCh chan struct{}
 	// Recent Bubble Tea messages for idle-loop diagnostics
 	msgLog []string
 	// Cached views
@@ -311,20 +315,22 @@ type App struct {
 	startupIntentScheduled bool
 	startupIntentApplied   bool
 	helpViewer             *HelpViewer
-	podfsFactory           podfs.Factory
 	folderDirtyCh          chan FolderDirtyMsg
-	// describeRenderer is reused while describeRendererCluster is a.cl.
-	describeRenderer        *describe.Renderer
-	describeRendererCluster *kccluster.Cluster
-	readErrCh               chan error // read failures from models, shown as red toasts
-	panelNamespace          [2]string
-	namespaceCommandTarget  [2]string
+	// describeRenderers keeps one renderer per connection the panels
+	// hold; see describeRendererFor.
+	describeRenderers map[string]*describe.Renderer
+	// termWritten is the target the shell's kubeconfig was last written
+	// for; see ensureTermContext.
+	termWritten            string
+	readErrCh              chan error // read failures from models, shown as red toasts
+	panelNamespace         [2]string
+	namespaceCommandTarget [2]string
 	// Navigation history per panel (M-y, M-u, M-H) and the hotlist (C-\).
-	history     [2]*navui.History
-	jumpToken   [2]int
-	pendingJump *pendingJump
-	hotlist     []hotlist.Entry
-	hotlistPath string // empty until Init; tests set it
+	history      [2]*navui.History
+	jumpToken    [2]int
+	pendingJumps [2]*pendingJump
+	hotlist      []hotlist.Entry
+	hotlistPath  string // empty until Init; tests set it
 	// panelNavs are the running NavigatePanel walks, one per panel.
 	panelNavs   [2]*panelNavigation
 	panelNavGen uint64
@@ -550,11 +556,17 @@ func (a *App) watchDiscovery() tea.Cmd {
 	}
 }
 
+// handleDiscoveryRefresh refreshes the type lists of both panels, each
+// from its own connection: the signal does not say which cluster's
+// discovery changed.
 func (a *App) handleDiscoveryRefresh() {
-	if a.cl != nil {
-		if infos, err := a.cl.GetResourceInfos(); err == nil {
-			a.leftPanel.SetResourceCatalog(infos)
-			a.rightPanel.SetResourceCatalog(infos)
+	for idx := range 2 {
+		cl := a.ownConn(idx).cluster()
+		if cl == nil {
+			continue
+		}
+		if infos, err := cl.GetResourceInfos(); err == nil {
+			a.panelByIndex(idx).SetResourceCatalog(infos)
 		} else if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Discovery refresh failed: %v", err))
 		}
@@ -642,6 +654,8 @@ func (a *App) setActivePanel(idx int, reason string) {
 		return
 	}
 	a.activePanel = idx
+	// The shell follows the active panel's context and namespace.
+	a.ensureTermContext()
 	a.invalidateView(reason)
 	a.invalidateFunctionBar("active panel change")
 }
@@ -986,25 +1000,11 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		AppConfig:        cfg,
 		ClusterKey:       key,
 		NamespaceFactory: a.namespaceClusterFactory(),
-		PodFSFactory:     a.podfsFactory,
 		ReportError:      a.reportReadError,
 		Activity:         a.activity,
 		ReadOnly:         a.readOnlyFor(key.ContextName),
 		PortForwards:     a.portForwards,
 		Usage:            a.usage,
-	}
-}
-
-func (a *App) currentClusterKey() kccluster.Key {
-	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
-		return kccluster.Key{}
-	}
-	return kccluster.Key{
-		KubeconfigPath:       a.currentCtx.LoadPath(),
-		ContextName:          a.currentCtx.Name,
-		ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
-		ImpersonateUID:       strings.TrimSpace(a.impersonateUID),
-		ImpersonateGroupsKey: a.impersonationGroupsKey(),
 	}
 }
 
@@ -1063,14 +1063,6 @@ func (a *App) navigatorNamespace(nav *navui.Navigator) string {
 	return ns
 }
 
-func (a *App) syncTerminalNamespaceForNavigator(nav *navui.Navigator) {
-	if a.cfg == nil || !a.cfg.Terminal.Follow {
-		return
-	}
-	ns := strings.TrimSpace(a.navigatorNamespace(nav))
-	a.updateTermContextNamespace(ns)
-}
-
 // setupModals sets up the modal dialogs
 
 func (a *App) setupModals() {
@@ -1120,11 +1112,23 @@ func (a *App) setupModals() {
 }
 
 func (a *App) setupPanelInputs() {
-	envSupplier := func() PanelEnvironment { return a.panelEnvironment() }
 	registerModes := func(panel *Panel, name string) {
 		if panel == nil {
 			return
 		}
+		// The closures resolve the panel's index when called: C-u swaps
+		// the panels and their connections.
+		panel.SetEnvironmentSupplier(func() PanelEnvironment { return a.panelEnvironment(panel) })
+		panel.SetSelectionSource(func(list bool) string {
+			idx, ok := a.panelIndexFor(panel)
+			if !ok {
+				return ""
+			}
+			if list {
+				return a.ownConn(idx).connID()
+			}
+			return a.targetConn(idx).connID()
+		})
 		panel.RegisterMode(PanelModeDescribe, func(p *Panel) PanelWidget {
 			deps := p.manifestWidgetDeps()
 			deps.Describe = a.describeFunc()
@@ -1140,32 +1144,37 @@ func (a *App) setupPanelInputs() {
 		panel.RegisterMode(PanelModeInfo, a.newPanelInfoWidget)
 	}
 	if a.leftPanel != nil {
-		a.leftPanel.SetEnvironmentSupplier(envSupplier)
 		a.leftPanel.SetCommandExecSupplier(panelCommandExec{app: a, panel: a.leftPanel})
 		a.leftPanel.SetActionHandlers(a.panelActionHandlers())
 		registerModes(a.leftPanel, "Left panel")
 	}
 	if a.rightPanel != nil {
-		a.rightPanel.SetEnvironmentSupplier(envSupplier)
 		a.rightPanel.SetCommandExecSupplier(panelCommandExec{app: a, panel: a.rightPanel})
 		a.rightPanel.SetActionHandlers(a.panelActionHandlers())
 		registerModes(a.rightPanel, "Right panel")
 	}
 }
 
-// describeFunc prepares describe reads on the UI goroutine: it takes the
-// cluster and the cached renderer now, so the background reads never touch
-// App fields that a context switch replaces.
+// describeFunc prepares describe reads on the UI goroutine: it resolves
+// the selection's connection and takes its cached renderer now, so the
+// background reads never touch App fields that a context switch replaces.
+// A connection no panel holds any more means the context of the panel
+// changed after the selection was made; nothing is read then.
 func (a *App) describeFunc() panelcontent.DescribeFunc {
-	return func(target describe.Target) panelcontent.DescribeReads {
-		cl, root := a.cl, a.ctx
-		renderer, err := a.describeRendererForCluster()
+	return func(source string, target describe.Target) panelcontent.DescribeReads {
+		root := a.ctx
+		conn := a.connByID(source)
+		if conn == nil && source == "" {
+			conn = a.activeConn()
+		}
+		cl := conn.cluster()
+		renderer, err := a.describeRendererFor(conn)
 		return panelcontent.DescribeReads{
 			Describe: func() (describe.Result, error) {
 				if err != nil {
 					return describe.Result{}, err
 				}
-				ctrllog.FromContext(root).WithName("describe").Info("describe",
+				ctrllog.FromContext(root).WithName("describe").Info("describe", "context", conn.name(),
 					"gvr", target.GVR.String(), "namespace", target.Namespace, "name", target.Name)
 				return renderer.Describe(target)
 			},
@@ -1185,37 +1194,58 @@ func (a *App) describeFunc() panelcontent.DescribeFunc {
 	}
 }
 
-// describeRendererForCluster returns one renderer per cluster connection,
-// so a describe does not rebuild the REST client plumbing.
-func (a *App) describeRendererForCluster() (*describe.Renderer, error) {
-	if a.describeRenderer != nil && a.describeRendererCluster == a.cl {
-		return a.describeRenderer, nil
+// errContextChanged is the read of a selection whose connection the panel
+// gave up: its context was switched after the selection was made.
+var errContextChanged = errors.New("the context of this panel changed")
+
+// describeRendererFor returns one renderer per connection, so a describe
+// does not rebuild the REST client plumbing.
+func (a *App) describeRendererFor(c *panelConn) (*describe.Renderer, error) {
+	if c == nil {
+		return nil, errContextChanged
 	}
-	renderer, err := a.newDescribeRenderer()
+	if r, ok := a.describeRenderers[c.id]; ok {
+		return r, nil
+	}
+	renderer, err := newDescribeRenderer(c)
 	if err != nil {
 		return nil, err
 	}
-	a.describeRenderer, a.describeRendererCluster = renderer, a.cl
+	if a.describeRenderers == nil {
+		a.describeRenderers = make(map[string]*describe.Renderer)
+	}
+	a.describeRenderers[c.id] = renderer
 	return renderer, nil
 }
 
-func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
-	if a == nil || a.cl == nil {
+// pruneDescribeRenderers drops the renderers of connections that neither
+// panel nor pin holds.
+func (a *App) pruneDescribeRenderers() {
+	for id := range a.describeRenderers {
+		if a.connByID(id) == nil {
+			delete(a.describeRenderers, id)
+		}
+	}
+}
+
+func newDescribeRenderer(c *panelConn) (*describe.Renderer, error) {
+	cl := c.cluster()
+	if cl == nil {
 		return nil, fmt.Errorf("cluster client unavailable")
 	}
-	cfg := rest.CopyConfig(a.cl.GetConfig())
+	cfg := rest.CopyConfig(cl.GetConfig())
 	if cfg.Timeout == 0 {
 		// The describer takes no context; the timeout bounds each request so
 		// a hung server cannot hold the panel's only load in flight.
 		cfg.Timeout = requestTimeout
 	}
-	mapper := a.cl.RESTMapper()
-	disco := a.cl.DiscoveryClient()
+	mapper := cl.RESTMapper()
+	disco := cl.DiscoveryClient()
 	var loader clientcmd.ClientConfig
-	if a.currentCtx != nil {
-		if cfg := a.currentCtx.LoadedConfig(); cfg != nil {
-			overrides := &clientcmd.ConfigOverrides{CurrentContext: a.currentCtx.Name}
-			loader = clientcmd.NewDefaultClientConfig(*cfg, overrides)
+	if c.kctx != nil {
+		if raw := c.kctx.LoadedConfig(); raw != nil {
+			overrides := &clientcmd.ConfigOverrides{CurrentContext: c.kctx.Name}
+			loader = clientcmd.NewDefaultClientConfig(*raw, overrides)
 		}
 	}
 	return describe.NewRenderer(cfg, mapper, disco, loader)
@@ -1283,19 +1313,25 @@ func (a *App) panelActionHandlers() PanelActionHandlers {
 	return handlers
 }
 
-func (a *App) panelEnvironment() PanelEnvironment {
+// panelEnvironment is what panel's actions may do. The panel's actions
+// act on the row under its cursor (SelectedNavItem), so the environment
+// is that row's connection.
+func (a *App) panelEnvironment(panel *Panel) PanelEnvironment {
 	env := PanelEnvironment{}
-	if a.currentCtx != nil {
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	_, conn := a.selectedRow(ctx, panel)
+	cancel()
+	if conn != nil && conn.kctx != nil {
 		env.AllowCreateNamespaces = true
-		if a.currentCtx.Kubeconfig != nil {
+		if conn.kctx.Kubeconfig != nil {
 			env.AllowEditObjects = true
 		}
 	}
-	if a.cl != nil {
+	if conn.cluster() != nil {
 		env.AllowDeleteObjects = true
 	}
-	env.Permit = a.permitAccess
-	env.ReadOnly = a.readOnly()
+	env.Permit = func(checks ...access.Check) bool { return a.permitAccessIn(conn, checks...) }
+	env.ReadOnly = a.readOnlyFor(conn.name())
 	return env
 }
 
@@ -1361,6 +1397,10 @@ func (a *App) setPanelMode(ctx context.Context, panel *Panel, mode PanelViewMode
 	prev := panel.Mode()
 	cmd := panel.SetMode(ctx, mode)
 	if panel.Mode() != prev {
+		// A follower shows the other panel's context; the frame and the
+		// shell follow what the panel shows.
+		a.syncPanelScopeLabels()
+		a.ensureTermContext()
 		a.invalidateView(reason)
 		a.invalidateFunctionBar(reason)
 	}
@@ -1844,19 +1884,21 @@ func (a *App) configureModalWindow(modal *Modal, content any, panelIdx int, back
 }
 
 func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
-	if cmd := a.refuseReadOnly("Create namespace", access.CreateNamespaceChecks()...); cmd != nil {
-		return cmd
-	}
-	if a.currentCtx == nil {
-		if a.toastLogger != nil {
-			a.enqueueCmd(a.toastLogger.Errorf("No active context for namespace creation"))
-		}
-		return nil
-	}
 	if panel == nil {
 		panel = a.activePanelRef()
 	}
 	if panel == nil {
+		return nil
+	}
+	// The namespace goes into the cluster the panel's list shows.
+	conn := a.connOfPanel(panel)
+	if cmd := a.refuseReadOnly(conn.name(), "Create namespace", access.CreateNamespaceChecks()...); cmd != nil {
+		return cmd
+	}
+	if conn == nil || conn.kctx == nil {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("No active context for namespace creation"))
+		}
 		return nil
 	}
 	if panel.GetCurrentPath() != "/namespaces" {
@@ -1866,9 +1908,11 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 		return nil
 	}
 	a.namespaceCreatePanel = a.panelIndex(panel)
+	a.namespaceCreateConn = conn
 	modal := a.modalManager.modals["namespace_create"]
 	if modal == nil {
 		a.namespaceCreatePanel = -1
+		a.namespaceCreateConn = nil
 		return nil
 	}
 	if a.namespaceInput == nil {
@@ -1911,12 +1955,14 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	if !ok {
 		return nil
 	}
-	if cmd := a.refuseReadOnly("Delete", access.DeleteChecks(objectAccessTarget(obj))...); cmd != nil {
-		return cmd
-	}
 	target, err := deleteTargetFor(panelIdx, obj)
 	if err != nil {
 		return a.ShowToast(fmt.Sprintf("Cannot delete %s: %v", objectLabel(obj.GVR(), itemKind(obj), obj.Namespace(), obj.Name()), err), 5*time.Second)
+	}
+	// The object goes on the cluster it was read from; read-only mode of
+	// that context decides, whichever panel is active.
+	if cmd := a.refuseReadOnly(target.context, "Delete", access.DeleteChecks(objectAccessTarget(obj))...); cmd != nil {
+		return cmd
 	}
 	a.pendingDelete = &target
 
@@ -1948,22 +1994,35 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	return nil
 }
 
+// createNamespaceWithName creates the namespace in the cluster of the
+// panel the dialog was opened from. When that panel switched its context
+// meanwhile, nothing is created: the name was typed for the old one.
 func (a *App) createNamespaceWithName(name string) tea.Cmd {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil
 	}
-	if cmd := a.refuseReadOnly("Create namespace", access.CreateNamespaceChecks()...); cmd != nil {
+	conn := a.namespaceCreateConn
+	if idx := a.namespaceCreatePanel; conn != nil && (idx == 0 || idx == 1) && a.ownConn(idx) != conn {
+		a.namespaceCreatePanel, a.namespaceCreateConn = -1, nil
+		return a.ShowToast(fmt.Sprintf("Namespace %s not created: the %s panel switched from %s to %s", name, panelName(idx), conn.name(), a.ownConn(idx).name()), 5*time.Second)
+	}
+	if conn == nil {
+		conn = a.activeConn()
+	}
+	if cmd := a.refuseReadOnly(conn.name(), "Create namespace", access.CreateNamespaceChecks()...); cmd != nil {
 		return cmd
 	}
+	cl, root := conn.cluster(), a.ctx
 	return a.withBusy("Create namespace", 300*time.Millisecond, func() tea.Msg {
-		if a.cl == nil {
+		if cl == nil {
 			return namespaceCreatedMsg{name: name, err: fmt.Errorf("cluster not ready")}
 		}
-		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+		ctx, cancel := context.WithTimeout(root, requestTimeout)
 		defer cancel()
+		ctrllog.FromContext(root).WithName("namespace").Info("create namespace", "context", conn.name(), "gvr", "v1/namespaces", "name", name)
 		ns := &corev1.Namespace{Name: name}
-		if err := a.cl.GetClient().Create(ctx, ns); err != nil {
+		if err := cl.GetClient().Create(ctx, ns); err != nil {
 			return namespaceCreatedMsg{name: name, err: err}
 		}
 		return namespaceCreatedMsg{name: name}
@@ -1974,7 +2033,7 @@ func (a *App) createNamespaceWithName(name string) tea.Cmd {
 // was read from; see executeDelete.
 func (a *App) performDelete(target deleteTarget) tea.Cmd {
 	checks := access.DeleteChecks(access.Target{Resource: target.gvr, Namespace: target.namespace, Name: target.name})
-	if cmd := a.refuseReadOnly("Delete", checks...); cmd != nil {
+	if cmd := a.refuseReadOnly(target.context, "Delete", checks...); cmd != nil {
 		return cmd
 	}
 	root := a.ctx
@@ -2001,11 +2060,12 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	if _, isBack := item.(models.Back); isBack {
 		return nil
 	}
+	_, conn := a.selectedRow(ctx, panel)
 	if wl, ok := item.(models.WorkloadLogsProvider); ok {
-		return a.openWorkloadLogs(item, wl)
+		return a.openWorkloadLogs(conn, item, wl)
 	}
 	if logs, ok := item.(models.LogsProvider); ok {
-		return a.openLogsViewer(item, logs.LogsSpec())
+		return a.openLogsViewer(conn, item, logs.LogsSpec())
 	}
 	if paged, ok := item.(models.PagedViewable); ok {
 		return a.openFileView(panel, item, paged)
@@ -2142,14 +2202,17 @@ func (a *App) showViewerModal(title string, content tea.Model, onClose func()) {
 	a.showModal("yaml_viewer")
 }
 
-func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
-	if a.cl == nil {
+// openLogsViewer shows the logs of spec, a row read from conn, full
+// screen. The viewer holds conn until it closes, so the panel may switch
+// its context meanwhile.
+func (a *App) openLogsViewer(conn *panelConn, item models.Item, spec models.LogsSpec) tea.Cmd {
+	if conn.cluster() == nil {
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Logs unavailable: no active cluster"))
 		}
 		return nil
 	}
-	cfg := rest.CopyConfig(a.cl.GetConfig())
+	cfg := rest.CopyConfig(conn.cluster().GetConfig())
 	clientset, err := kubernetes.NewForConfig(rest.AddUserAgent(cfg, "kc-log-viewer"))
 	if err != nil {
 		if a.toastLogger != nil {
@@ -2163,7 +2226,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	if a.cfg != nil {
 		spec = logsSpecWithDefaults(spec, a.cfg.Viewer.Logs)
 	}
-	parent, cl := a.ctx, a.cl
+	parent, cl := a.ctx, conn.cluster()
 	open := func(spec models.LogsSpec) (io.ReadCloser, context.CancelFunc, error) {
 		ctx, cancel := context.WithCancel(parent)
 		stream, err := openResumingLogs(ctx, cl, clientset, spec, "logsViewer")
@@ -2182,16 +2245,20 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 		logsViewer.SetCommand(itemViewCommand(item))
 	}
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
-	return a.presentLogsViewer(logsViewer, a.modalTitleFromItem(item, title))
+	return a.presentLogsViewer(logsViewer, a.modalTitleFromItem(item, title), conn.hold())
 }
 
-// presentLogsViewer wires the keys of a single-container logs viewer and
-// shows it full screen. Closing it stops its stream.
-func (a *App) presentLogsViewer(logsViewer *LogsViewer, modalTitle string) tea.Cmd {
+// presentLogsViewer wires the keys of a logs viewer and shows it full
+// screen. Closing it stops its stream and calls release, the end of the
+// viewer's hold on its connection; release must be safe to call twice.
+func (a *App) presentLogsViewer(logsViewer *LogsViewer, modalTitle string, release func()) tea.Cmd {
 	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnFilter(func() tea.Cmd { return a.showLogsFilterModal(logsViewer) })
 	a.setupLogFields(logsViewer)
 	logsViewer.SetOnClose(func() tea.Cmd {
+		// F3 and F10 close the viewer itself; the modal's OnClose does
+		// not run then.
+		release()
 		a.hideModal()
 		return nil
 	})
@@ -2202,11 +2269,31 @@ func (a *App) presentLogsViewer(logsViewer *LogsViewer, modalTitle string) tea.C
 	modal.SetCloseOnEscTimeout(true)
 	modal.SetOnClose(func() tea.Cmd {
 		logsViewer.Close()
+		release()
 		return nil
 	})
+	// Register drops a viewer still open under the name without its
+	// OnClose, and with it the stream and the hold.
+	closeOld := a.closeOpenModal("logs_viewer")
 	a.modalManager.Register("logs_viewer", modal)
 	a.showModal("logs_viewer")
-	return logsViewer.Init()
+	return tea.Batch(closeOld, logsViewer.Init())
+}
+
+// closeOpenModal hides the dialog shown under name and runs its OnClose.
+func (a *App) closeOpenModal(name string) tea.Cmd {
+	if a.modalManager == nil {
+		return nil
+	}
+	old, ok := a.modalManager.modals[name]
+	if !ok || !old.IsVisible() {
+		return nil
+	}
+	a.hideModalName(name)
+	if old.onClose == nil {
+		return nil
+	}
+	return old.onClose()
 }
 
 // logsSpecWithDefaults applies the configured viewer.logs defaults to spec.
@@ -2257,9 +2344,9 @@ func (a *App) editSelectionForPanel(panel *Panel) tea.Cmd {
 	}
 
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	item, ok := panel.SelectedNavItem(ctx)
+	item, conn := a.selectedRow(ctx, panel)
 	cancel()
-	if !ok || item == nil {
+	if item == nil {
 		return nil
 	}
 	if local, ok := item.(models.LocalEntryItem); ok {
@@ -2271,14 +2358,23 @@ func (a *App) editSelectionForPanel(panel *Panel) tea.Cmd {
 	}
 
 	path := panel.GetCurrentPath()
-	return a.runKubectlEdit(panelIdx, path, obj)
+	return a.runKubectlEdit(conn, panelIdx, path, obj)
 }
 
-func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectItem) tea.Cmd {
-	if cmd := a.refuseReadOnly("Edit", access.EditChecks(objectAccessTarget(obj))...); cmd != nil {
+// runKubectlEdit runs kubectl edit for obj, a row read from conn, with
+// conn's kubeconfig, context and kc's impersonation. A row that says it
+// comes from another context is refused: kubectl would edit an object of
+// the same name in conn's cluster.
+func (a *App) runKubectlEdit(conn *panelConn, panelIdx int, panelPath string, obj models.ObjectItem) tea.Cmd {
+	if inst, ok := obj.(models.InstanceItem); ok {
+		if origin := inst.Origin().Context; origin != "" && conn != nil && origin != conn.name() {
+			return a.ShowToast(fmt.Sprintf("kubectl edit: the row comes from context %s, the panel shows %s", origin, conn.name()), 5*time.Second)
+		}
+	}
+	if cmd := a.refuseReadOnly(conn.name(), "Edit", access.EditChecks(objectAccessTarget(obj))...); cmd != nil {
 		return cmd
 	}
-	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
+	if conn == nil || conn.kctx == nil || conn.kctx.Kubeconfig == nil {
 		if a.toastLogger != nil {
 			return a.toastLogger.Errorf("kubectl edit: no active kubeconfig")
 		}
@@ -2289,9 +2385,9 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 
 	namespace := strings.TrimSpace(obj.Namespace())
 	if namespace == "" {
-		namespace = strings.TrimSpace(a.currentCtx.Namespace)
+		namespace = connNamespace(conn)
 	}
-	ec := a.execContext(namespace)
+	ec := a.execContextFor(conn, namespace)
 	if ec.Kubeconfig == "" || ec.Context == "" {
 		if a.toastLogger != nil {
 			return a.toastLogger.Errorf("kubectl edit: active context has no kubeconfig file")
@@ -2479,13 +2575,15 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	if a.cl == nil {
+	// The startup intents open in the left panel.
+	cl := a.ownConn(0).cluster()
+	if cl == nil {
 		a.notifyIntentErrorf("kubectl logs %s: cluster not ready", intent.Pod)
 		return nil
 	}
 	// Choosing the container reads the pod from the API, so it runs off
 	// the update goroutine; the navigation starts when it is known.
-	cl, parent := a.cl, a.ctx
+	parent := a.ctx
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(parent, requestTimeout)
 		defer cancel()
@@ -2536,19 +2634,21 @@ func (a *App) startupIntentNamespace() string {
 	return corev1.NamespaceDefault
 }
 
+// currentNamespace is the kubeconfig namespace of the left panel's
+// context, where the startup intents open.
 func (a *App) currentNamespace() string {
-	if a.currentCtx != nil {
-		return strings.TrimSpace(a.currentCtx.Namespace)
-	}
-	return ""
+	return connNamespace(a.ownConn(0))
 }
 
+// resolveResource resolves a resource name in the left panel's cluster,
+// where the startup intents open.
 func (a *App) resolveResource(resource string) (schema.GroupVersionResource, bool, error) {
 	var zero schema.GroupVersionResource
-	if a.cl == nil {
+	cl := a.ownConn(0).cluster()
+	if cl == nil {
 		return zero, false, fmt.Errorf("cluster not ready")
 	}
-	mapper := a.cl.RESTMapper()
+	mapper := cl.RESTMapper()
 	gvr, err := mapper.ResourceFor(schema.GroupVersionResource{Resource: resource})
 	if err != nil {
 		return zero, false, err
@@ -2766,7 +2866,7 @@ func (a *App) openLogsViewerForIntent(intent *LogsIntent) tea.Cmd {
 	}
 	spec := logsProvider.LogsSpec()
 	spec.Follow = intent.Follow
-	return a.openLogsViewer(item, spec)
+	return a.openLogsViewer(a.ownConn(0), item, spec)
 }
 
 func (a *App) logCommandToTerminal(command string) {
@@ -2833,7 +2933,11 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 	}
 
 	if logs, ok := item.(models.LogsProvider); ok {
-		if a.cl == nil {
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		_, conn := a.selectedRow(ctx, panel)
+		cancel()
+		cl := conn.cluster()
+		if cl == nil {
 			if a.toastLogger != nil {
 				a.enqueueCmd(a.toastLogger.Errorf("Copy unavailable: cluster not ready"))
 			}
@@ -2854,7 +2958,7 @@ func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
 			fetch: func(ctx context.Context) (io.ReadCloser, error) {
 				specCopy := spec
 				specCopy.Follow = false
-				return a.fetchLogsSnapshot(ctx, specCopy)
+				return fetchLogsSnapshot(ctx, cl, specCopy)
 			},
 		}
 		return a.showCopyDialog(req)
@@ -3081,11 +3185,12 @@ func sanitizeFilename(name string) string {
 	return out
 }
 
-func (a *App) fetchLogsSnapshot(ctx context.Context, spec models.LogsSpec) (io.ReadCloser, error) {
-	if a.cl == nil {
+// fetchLogsSnapshot reads the logs of spec from cl once.
+func fetchLogsSnapshot(ctx context.Context, cl *kccluster.Cluster, spec models.LogsSpec) (io.ReadCloser, error) {
+	if cl == nil {
 		return nil, fmt.Errorf("cluster not ready")
 	}
-	cfg := rest.CopyConfig(a.cl.GetConfig())
+	cfg := rest.CopyConfig(cl.GetConfig())
 	clientset, err := kubernetes.NewForConfig(rest.AddUserAgent(cfg, "kc-copy-logs"))
 	if err != nil {
 		return nil, err
@@ -3095,6 +3200,7 @@ func (a *App) fetchLogsSnapshot(ctx context.Context, spec models.LogsSpec) (io.R
 	}
 	opts := spec.PodLogOptions()
 	opts.Follow = false
+	ctrllog.FromContext(ctx).WithName("copyLogs").Info("client logs snapshot", "gvr", "v1/pods", "namespace", spec.Namespace, "pod", spec.Pod, "container", spec.Container)
 	req := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts)
 	return req.Stream(ctx)
 }
@@ -3191,10 +3297,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 			_ = app.terminal.Close()
 		}
 		// Stop background resources
-		if app.discoveryCancel != nil {
-			app.discoveryCancel()
-			app.discoveryCancel = nil
-		}
+		app.releasePanelConns()
 		app.stopPortForwards()
 		if app.clPool != nil {
 			app.clPool.Stop()
@@ -3228,8 +3331,6 @@ func (a *App) initConfigAndData(ctx context.Context) error {
 }
 
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
-//
-//nolint:gocognit,gocyclo // startup steps in order, each with its own error and fallback
 func (a *App) initData(ctx context.Context) error {
 	log := ctrllog.FromContext(ctx).WithName("init")
 	// Kubeconfig manager and discovery
@@ -3248,33 +3349,34 @@ func (a *App) initData(ctx context.Context) error {
 		a.kubectlCtx = raw.CurrentContext
 	}
 	// Select the --context, else the current context (prefer env KUBECONFIG
-	// first path).
+	// first path). Both panels start there.
+	var kctx *kubeconfig.Context
 	if name := strings.TrimSpace(a.contextOverride); name != "" {
 		c, err := a.startupContext(name)
 		if err != nil {
 			log.Error(err, "requested context not found", "context", name)
 			return err
 		}
-		a.currentCtx = c
+		kctx = c
 	} else {
-		a.currentCtx = a.selectCurrentContext()
+		kctx = a.selectCurrentContext()
 	}
-	if a.currentCtx == nil {
+	if kctx == nil {
 		log.Error(nil, "no current context found")
 		return fmt.Errorf("no current context found")
 	}
-	ctxNamespace := strings.TrimSpace(a.currentCtx.Namespace)
+	ctxNamespace := strings.TrimSpace(kctx.Namespace)
 	override := strings.TrimSpace(a.namespaceOverride)
 	if override != "" {
 		log.Info("namespace override requested", "requested", override, "original", ctxNamespace)
 		ctxNamespace = override
-		a.currentCtx.Namespace = override
+		kctx.Namespace = override
 	}
 	nsLog := ctxNamespace
 	if nsLog == "" {
 		nsLog = "(cluster)"
 	}
-	log.Info("selected context", "name", a.currentCtx.Name, "cluster", a.currentCtx.Cluster, "namespace", nsLog)
+	log.Info("selected context", "name", kctx.Name, "cluster", kctx.Cluster, "namespace", nsLog)
 	// Prepare app context and cluster pool; cluster will be started via pool.Acquire
 	a.cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
@@ -3286,34 +3388,27 @@ func (a *App) initData(ctx context.Context) error {
 	)
 	log.Info("starting cluster pool")
 	a.clPool.Start()
-	k := kccluster.Key{
-		KubeconfigPath:       a.currentCtx.LoadPath(),
-		ContextName:          a.currentCtx.Name,
-		ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
-		ImpersonateUID:       strings.TrimSpace(a.impersonateUID),
-		ImpersonateGroupsKey: a.impersonationGroupsKey(),
+	k := a.clusterKeyFor(kctx)
+	// Discovery refresh events of either panel's cluster wake one loop.
+	if a.discoveryCh == nil {
+		a.discoveryCh = make(chan struct{}, 1)
 	}
-	log.Info("acquiring cluster", "key", k)
-	lease, err := a.clPool.Acquire(a.ctx, k, nil)
-	if err != nil {
-		log.Error(err, "cluster acquisition failed")
-		return fmt.Errorf("cluster pool acquire: %w", err)
-	}
-	// The app holds its cluster for as long as it is the current one:
-	// evicting it would cancel the informers the panels still read.
-	a.clLease = lease
-	a.cl = lease.Cluster()
-	if factory, err := podfs.NewFactory(a.cl.GetConfig()); err != nil {
-		log.Error(err, "failed to initialize pod filesystem factory")
-		if a.toastLogger != nil {
-			a.enqueueCmd(a.toastLogger.Errorf("Pod filesystem unavailable: %v", err))
+	// Each panel holds a lease of its own: switching one panel later
+	// releases only that one, and the shared pool entry stays while the
+	// other panel reads it.
+	for idx := range 2 {
+		log.Info("acquiring cluster", "key", k, "panel", panelName(idx))
+		lease, err := a.clPool.Acquire(a.ctx, k, nil)
+		if err != nil {
+			log.Error(err, "cluster acquisition failed")
+			a.releasePanelConns()
+			return fmt.Errorf("cluster pool acquire: %w", err)
 		}
-	} else {
-		a.podfsFactory = factory
+		a.setPanelConn(idx, a.newPanelConn(kctx, k, lease))
 	}
 	log.Info("cluster ready, fetching resource info")
 	// Discovery-backed catalog (for panel displays)
-	if infos, err := a.cl.GetResourceInfos(); err == nil {
+	if infos, err := a.ownConn(0).cluster().GetResourceInfos(); err == nil {
 		log.Info("resource infos fetched", "count", len(infos))
 		a.leftPanel.SetResourceCatalog(infos)
 		a.rightPanel.SetResourceCatalog(infos)
@@ -3324,19 +3419,6 @@ func (a *App) initData(ctx context.Context) error {
 		log.Error(err, "failed to fetch resource infos")
 	}
 	a.ensureTermContext()
-	// Subscribe to discovery refresh events so resource folders can update dynamically.
-	if a.discoveryCh == nil {
-		a.discoveryCh = make(chan struct{}, 1)
-	}
-	if a.discoveryCancel != nil {
-		a.discoveryCancel()
-	}
-	a.discoveryCancel = a.cl.AddDiscoveryListener(func() {
-		select {
-		case a.discoveryCh <- struct{}{}:
-		default:
-		}
-	})
 	a.enqueueCmd(a.watchDiscovery())
 	// Legacy generic data sources removed; folders provide data directly
 	a.leftPanel.SetViewConfig(a.viewConfig)
@@ -3372,10 +3454,7 @@ func (a *App) initData(ctx context.Context) error {
 		// Programmatic navigation to current namespace for both panels
 		ns := a.initialNamespace()
 		if strings.TrimSpace(a.namespaceOverride) == "" {
-			ctxNs := ""
-			if a.currentCtx != nil {
-				ctxNs = strings.TrimSpace(a.currentCtx.Namespace)
-			}
+			ctxNs := connNamespace(a.ownConn(0))
 			if ctxNs == "" && ns == corev1.NamespaceDefault {
 				log.Info("no namespace set in context; defaulting", "namespace", ns)
 			}
@@ -3404,7 +3483,7 @@ func (a *App) goToNamespace(ns string) {
 		// their folders held are released and can go now.
 		a.clPool.PruneNamespaces(ns)
 	}
-	a.updateTermContextNamespace(ns)
+	a.ensureTermContext()
 	a.showNavigatorRoot(0)
 	a.showNavigatorRoot(1)
 	a.installFolderNavHandlers()
@@ -3444,10 +3523,8 @@ func (a *App) initialNamespace() string {
 	if ns := strings.TrimSpace(a.namespaceOverride); ns != "" {
 		return ns
 	}
-	if a.currentCtx != nil {
-		if ns := strings.TrimSpace(a.currentCtx.Namespace); ns != "" {
-			return ns
-		}
+	if ns := connNamespace(a.ownConn(0)); ns != "" {
+		return ns
 	}
 	return corev1.NamespaceDefault
 }
@@ -3559,26 +3636,28 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		cancelReset()
 	}
 	a.applyResourceOptions(panelRef)
-	a.syncTerminalNamespaceForNavigator(nav)
+	a.ensureTermContext()
 	a.recordHistory(a.activePanel)
 }
 
-// namespaceExists returns true if the namespace exists in the current cluster.
-func (a *App) namespaceExists(ns string) bool {
+// namespaceExists returns true if the namespace exists in the cluster of
+// panel idx.
+func (a *App) namespaceExists(idx int, ns string) bool {
 	if ns == "" {
 		return false
 	}
-	if a.cl == nil {
+	cl := a.ownConn(idx).cluster()
+	if cl == nil {
 		return false
 	}
 	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
-	gvr, err := a.cl.GVKToGVR(gvk)
+	gvr, err := cl.GVKToGVR(gvk)
 	if err != nil {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 	defer cancel()
-	if _, err := a.cl.GetByGVR(ctx, gvr, "", ns); err != nil {
+	if _, err := cl.GetByGVR(ctx, gvr, "", ns); err != nil {
 		return false
 	}
 	return true
@@ -3637,22 +3716,6 @@ func sameFilepath(a, b string) bool {
 	}
 	return ap == bp
 }
-
-func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]any, error) {
-	gvr, err := a.cl.GVKToGVR(gvk)
-	if err != nil {
-		return nil, err
-	}
-	obj, err := a.cl.GetByGVR(a.ctx, gvr, namespace, name)
-	if err != nil {
-		return nil, err
-	}
-	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-	return obj.Object, nil
-}
-
-// RESTMapper exposes the app's RESTMapper to viewers for resource→GVK resolution.
-func (a *App) RESTMapper() metamapper.RESTMapper { return a.cl.RESTMapper() }
 
 // logMsg appends Bubble Tea messages to a bounded buffer for later inspection.
 func (a *App) logMsg(msg tea.Msg) {
@@ -3760,6 +3823,7 @@ func (a *App) swapPanels() {
 
 	// The namespace scope, the history and any jump belong to the content.
 	a.panelScope[0], a.panelScope[1] = a.panelScope[1], a.panelScope[0]
+	a.conns[0], a.conns[1] = a.conns[1], a.conns[0]
 	a.history[0], a.history[1] = a.history[1], a.history[0]
 	a.cancelJump(0)
 	a.cancelJump(1)
@@ -3823,16 +3887,28 @@ func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) panelNamespac
 	return panelNamespaces{item: item, selected: selectedItems, folder: folderNamespace, active: activeNamespace}
 }
 
-func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, namespace string) tea.Cmd {
-	// A namespace change restarts the command; the context may be read-only
-	// by now.
-	if refuse := a.refuseCommand(cfg); refuse != nil {
-		return refuse
-	}
+// startNamespaceCommand runs cfg in panel panelIdx for namespace, which
+// the other panel's selection names. conn is the connection the command
+// was approved for, the one the namespace was read from. When nobody holds
+// it any more, its panel switched, and the command does not start.
+func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, namespace string, conn *panelConn) tea.Cmd {
 	panel := a.panelByIndex(panelIdx)
 	if panel == nil {
 		return nil
 	}
+	if conn != nil && a.connByID(conn.connID()) == nil {
+		return a.ShowToast(fmt.Sprintf("%s not started: %v", cfg.Name, errContextChanged), 4*time.Second)
+	}
+	source := a.panelByIndex(1 - panelIdx)
+	// A namespace change restarts the command; the context may be read-only
+	// by now.
+	if refuse := a.refuseCommand(conn.name(), cfg); refuse != nil {
+		return refuse
+	}
+	// The supplier records conn for restarts, the placeholder's too. The
+	// frame names conn once the panel is in Command mode.
+	panel.SetCommandExecSupplier(a.commandExecFor(panel, source, conn))
+	defer a.syncPanelScopeLabels()
 
 	panel.InvalidateRenderCache()
 
@@ -3904,7 +3980,43 @@ func (a *App) maybeRestartNamespaceCommand(panelIdx int, namespace string) tea.C
 		})
 	}
 
-	return a.startNamespaceCommand(panelIdx, *cfg, namespace)
+	return a.restartNamespaceCommand(panelIdx, *cfg, namespace)
+}
+
+// restartNamespaceCommand starts the namespace command shown in panel
+// panelIdx again, for namespace. It runs in the connection it was approved
+// for: when the other panel switched its context since, the namespace
+// comes from another cluster, and the panel says so instead.
+func (a *App) restartNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, namespace string) tea.Cmd {
+	panel := a.panelByIndex(panelIdx)
+	if panel == nil {
+		return nil
+	}
+	conn := commandConnOf(panel)
+	if cur := a.ownConn(1 - panelIdx); cur != conn {
+		a.commandWatchInterval[panelIdx] = 0
+		a.commandWatchToken[panelIdx]++
+		leftWidth, rightWidth := a.panelWidths()
+		frameWidth := leftWidth
+		if panelIdx == 1 {
+			frameWidth = rightWidth
+		}
+		msg := fmt.Sprintf("The %s panel switched from %s to %s; run the command again", panelName(1-panelIdx), conn.name(), cur.name())
+		return panel.ShowCommandPlaceholder(a.ctx, cfg, msg, cfg.Name, frameWidth, a.panelsHeight())
+	}
+	return a.startNamespaceCommand(panelIdx, cfg, namespace, conn)
+}
+
+// commandConnOf is the connection the command shown in panel runs in, nil
+// when it was started without one.
+func commandConnOf(panel *Panel) *panelConn {
+	if panel == nil {
+		return nil
+	}
+	if s, ok := panel.commandExec.(panelCommandExec); ok {
+		return s.conn
+	}
+	return nil
 }
 
 //nolint:gocognit,gocyclo // resolves the target namespace through a chain of fallbacks and logs each
@@ -3955,9 +4067,10 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	// Marked rows win over the highlighted row; see docs/adr/0063.
 	targets := commandTargets(item, selectedItems)
 
-	// Filter commands
-	// Read-only mode hides dangerous commands.
-	policy := a.accessPolicy()
+	// The commands run for p's rows, in the context those rows come
+	// from; read-only mode there hides dangerous commands.
+	_, conn := a.selectedRow(ctx, p)
+	policy := a.policyFor(conn.name())
 	var available []appconfig.CommandConfig
 	for _, cmd := range a.cfg.Commands {
 		if !policy.PermitsCommand(cmd.Dangerous) {
@@ -3981,9 +4094,9 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 		targetLeft = true
 	}
 
-	selector := NewCommandSelectorModel(available, targetPanel, targetNamespace, targetLeft, a.guardCommand(targets, targetNamespace, func(cmd appconfig.CommandConfig) tea.Cmd {
+	selector := NewCommandSelectorModel(available, targetPanel, targetNamespace, targetLeft, a.guardCommand(conn, targets, targetNamespace, func(cmd appconfig.CommandConfig) tea.Cmd {
 		a.hideModal()
-		if refuse := a.refuseCommand(cmd); refuse != nil {
+		if refuse := a.refuseCommand(conn.name(), cmd); refuse != nil {
 			return refuse
 		}
 		// The menu only offers commands that accept len(targets) rows.
@@ -3999,7 +4112,7 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 		}
 
 		if cmd.Diagnostic != nil {
-			return a.startDiagnostic(p, cmd, items, gvr)
+			return a.startDiagnostic(p, conn, cmd, items, gvr)
 		}
 
 		runPanel := p
@@ -4014,7 +4127,7 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			if ns == namespacePlaceholder {
 				ns = ""
 			}
-			return a.startNamespaceCommand(runPanelIdx, cmd, ns)
+			return a.startNamespaceCommand(runPanelIdx, cmd, ns, conn)
 		}
 
 		leftWidth, rightWidth := a.panelWidths()
@@ -4024,7 +4137,9 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			frameWidth = rightWidth
 		}
 
+		runPanel.SetCommandExecSupplier(a.commandExecFor(runPanel, p, conn))
 		start := runPanel.StartCommand(a.ctx, cmd, items, gvr, frameWidth, panelHeight)
+		a.syncPanelScopeLabels()
 		var sched tea.Cmd
 		if panelIdx := a.panelIndex(runPanel); panelIdx >= 0 {
 			ctxCmd, cancelCmd := context.WithTimeout(a.ctx, panelContextTimeout)

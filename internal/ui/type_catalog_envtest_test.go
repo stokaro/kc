@@ -97,7 +97,7 @@ func TestWorkProfileDoesNotCountOtherTypes(t *testing.T) {
 	ctx := t.Context()
 	lease := &coordinationv1.Lease{}
 	lease.Name, lease.Namespace = "held", nsA
-	if err := app.cl.GetClient().Create(ctx, lease); err != nil {
+	if err := app.ownConn(0).cluster().GetClient().Create(ctx, lease); err != nil {
 		t.Fatalf("create lease: %v", err)
 	}
 	root := app.leftNav.Current()

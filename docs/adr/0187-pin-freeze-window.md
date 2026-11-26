@@ -1,6 +1,6 @@
 # 0187. Pin panel targets, freeze a display, share an investigation window
 
-- Status: Accepted
+- Status: Accepted; a context switch dropping pins is superseded by [0362](0362-independent-panel-contexts.md)
 - Date: 2026-11-23
 - Issue: #187
 

@@ -325,12 +325,17 @@ EOF
 # its charts, and Info mode its bars and history, as Kitty graphics images,
 # as in iTerm2 3.7, kitty and Ghostty; the driver's color snapshots show
 # them. With auto kc would draw text, since the driver hides the outer
-# terminal from it.
+# terminal from it. A scene that needs more settings sets extra_config
+# before fresh.
+extra_config=
 kc_config() {
 	cat <<'EOF'
 charts:
   graphics: kitty
 EOF
+	if [ -n "$extra_config" ]; then
+		printf '%s\n' "$extra_config"
+	fi
 }
 
 kc_running=

@@ -23,7 +23,8 @@ A saved view also stores:
 
 - `C-\` opens the hotlist. The title lists its keys.
 - `Enter` or a click goes to the entry. An entry in another context
-  switches kc there first; a saved view then applies its settings.
+  switches the active panel there first, the other panel stays; a saved
+  view then applies its settings.
 - `Ins` adds the active panel's place as a bookmark.
 - `F2` saves the active panel's place and settings as a named view. A
   dialog asks for the name ("Save view as"); `Enter` saves, `Esc`

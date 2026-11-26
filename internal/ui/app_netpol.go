@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -38,6 +39,11 @@ func (a *App) explainNetworkPolicy() tea.Cmd {
 	dstRef, okDstPod := models.PodRefOf(dstItem)
 	if !okSrc || !okDst || !okSrcPod || !okDstPod {
 		return a.ShowToast(models.ErrNotPodPair.Error(), 4*time.Second)
+	}
+	// Traffic between two pods is a question about one cluster: the
+	// policies of one cluster say nothing about a pod of another.
+	if from, to := a.ownConn(a.activePanel), a.ownConn(1-a.activePanel); from.clusterKey() != to.clusterKey() {
+		return a.ShowToast(fmt.Sprintf("NetworkPolicy check needs both pods in one cluster: the panels show %s and %s", from.name(), to.name()), 4*time.Second)
 	}
 	origin := src.Folder()
 	deps, ok := a.explainDeps(origin)

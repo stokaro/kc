@@ -51,9 +51,7 @@ func TestStartupFoldersReadTheConfigFile(t *testing.T) {
 
 	app := NewApp()
 	t.Cleanup(func() {
-		if app.discoveryCancel != nil {
-			app.discoveryCancel()
-		}
+		app.releasePanelConns()
 		if app.clPool != nil {
 			app.clPool.Stop()
 		}

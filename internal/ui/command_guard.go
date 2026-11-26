@@ -28,8 +28,10 @@ const commandMenuModal = "command_menu"
 // then the red confirmation. run gets the command with the answers bound
 // into its templates, so restarts (watch ticks, namespace follow) reuse
 // them without asking again. item and namespace are what the menu was
-// opened on; they fill the prompt defaults and the confirmation.
-func (a *App) guardCommand(targets []models.Item, namespace string, run func(appconfig.CommandConfig) tea.Cmd) func(appconfig.CommandConfig) tea.Cmd {
+// opened on; they fill the prompt defaults and the confirmation. conn is
+// the connection the targets were read from, the context the command
+// runs in.
+func (a *App) guardCommand(conn *panelConn, targets []models.Item, namespace string, run func(appconfig.CommandConfig) tea.Cmd) func(appconfig.CommandConfig) tea.Cmd {
 	return func(cmd appconfig.CommandConfig) tea.Cmd {
 		if err := appconfig.ValidateCommand(cmd); err != nil {
 			a.hideModalName(commandMenuModal)
@@ -41,10 +43,10 @@ func (a *App) guardCommand(targets []models.Item, namespace string, run func(app
 		a.hideModalName(commandMenuModal)
 		items, gvr := commandPreviewTarget(cmd, targets, namespace)
 		if len(cmd.Prompts) == 0 {
-			return a.confirmCommand(cmd, items, gvr, run)
+			return a.confirmCommand(conn, cmd, items, gvr, run)
 		}
 		return a.promptCommand(cmd, items, gvr, func(bound appconfig.CommandConfig) tea.Cmd {
-			return a.confirmCommand(bound, items, gvr, run)
+			return a.confirmCommand(conn, bound, items, gvr, run)
 		})
 	}
 }
@@ -139,8 +141,8 @@ func bindCommandInput(cmd appconfig.CommandConfig, values map[string]string) (ap
 
 // commandConfirmation describes cmd for the red dialog. The command is
 // rendered as it will run; a long one wraps over several lines.
-func (a *App) commandConfirmation(cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) (models.Confirmation, error) {
-	rendered, err := a.commandPreview(cmd, items, gvr)
+func (a *App) commandConfirmation(conn *panelConn, cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) (models.Confirmation, error) {
+	rendered, err := a.commandPreview(conn, cmd, items, gvr)
 	if err != nil {
 		return models.Confirmation{}, err
 	}
@@ -151,8 +153,8 @@ func (a *App) commandConfirmation(cmd appconfig.CommandConfig, items []models.It
 		}
 	}
 	c := models.Confirmation{Title: title, Action: "Run"}
-	if a.currentCtx != nil && a.currentCtx.Name != "" {
-		c.Details = append(c.Details, [2]string{"Context", a.currentCtx.Name})
+	if name := conn.name(); name != "" {
+		c.Details = append(c.Details, [2]string{"Context", name})
 	}
 	if len(items) > 0 {
 		if obj, ok := items[0].(models.ObjectItem); ok {
@@ -174,11 +176,11 @@ func (a *App) commandConfirmation(cmd appconfig.CommandConfig, items []models.It
 
 // commandPreview is cmd as it will run: the rendered command, or the
 // argument vector of a diagnostic, quoted as a shell would read it.
-func (a *App) commandPreview(cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) (string, error) {
+func (a *App) commandPreview(conn *panelConn, cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) (string, error) {
 	if cmd.Diagnostic == nil {
 		return RenderCommand(cmd.Command, items, gvr)
 	}
-	argv, err := RenderDiagnosticArgs(cmd.Diagnostic.Args, items, gvr, a.execContext(diagnosticNamespace(items)))
+	argv, err := RenderDiagnosticArgs(cmd.Diagnostic.Args, items, gvr, a.execContextFor(conn, diagnosticNamespace(items)))
 	if err != nil {
 		return "", err
 	}
@@ -207,11 +209,11 @@ func wrapCommandLine(line string, width int) []string {
 }
 
 // confirmCommand runs cmd, after the red dialog when it asks for one.
-func (a *App) confirmCommand(cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource, run func(appconfig.CommandConfig) tea.Cmd) tea.Cmd {
+func (a *App) confirmCommand(conn *panelConn, cmd appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource, run func(appconfig.CommandConfig) tea.Cmd) tea.Cmd {
 	if !cmd.Confirm.Enabled {
 		return run(cmd)
 	}
-	c, err := a.commandConfirmation(cmd, items, gvr)
+	c, err := a.commandConfirmation(conn, cmd, items, gvr)
 	if err != nil {
 		return a.commandError(cmd, err)
 	}

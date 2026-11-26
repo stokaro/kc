@@ -28,20 +28,22 @@ func (f *followUpAction) FollowUp() any { return models.NodeShellRequest{Node: "
 
 func TestConfirmFollowUpOnlyWhenApproved(t *testing.T) {
 	action := &followUpAction{fakeAction{SimpleItem: models.NewSimpleItem("a", []string{"a"}, nil, models.WhiteStyle())}}
-	app := &App{ctx: t.Context(), width: 100, height: 30, modalManager: NewModalManager(nil),
+	app := &App{ctx: t.Context(), cfg: appconfig.Default(), width: 100, height: 30, modalManager: NewModalManager(nil),
 		leftPanel: NewPanel("l"), rightPanel: NewPanel("r"), leftPanelWidthPercent: 50, rightPanelWidthPercent: 50}
 
-	app.showConfirm(action)
+	app.showConfirm(nil, action)
 	if cmd := app.handleConfirmResult(confirmResultMsg{ok: false}); cmd != nil {
 		t.Fatalf("cancel returned a command")
 	}
-	app.showConfirm(action)
+	app.showConfirm(nil, action)
 	cmd := app.handleConfirmResult(confirmResultMsg{ok: true})
 	if cmd == nil {
 		t.Fatalf("approval returned no follow-up")
 	}
-	if req, ok := cmd().(models.NodeShellRequest); !ok || req.Node != "n1" {
-		t.Fatalf("follow-up = %#v, want the node shell request", cmd())
+	// The follow-up starts the node shell in the cluster of the row that
+	// asked; this row has none.
+	if msg, ok := cmd().(showToastMsg); !ok || !strings.Contains(msg.text, "Node shell") {
+		t.Fatalf("follow-up = %#v, want the node shell start", cmd())
 	}
 }
 
@@ -54,7 +56,7 @@ func TestStartNodeShellRefuses(t *testing.T) {
 		setup func(a *App)
 		want  string
 	}{
-		{name: "disabled", cfg: appconfig.Default(), want: "not the current one"}, // no cluster in the test either
+		{name: "disabled", cfg: appconfig.Default(), want: "no panel shows the context"}, // no cluster in the test either
 		{name: "already open", cfg: enabled, setup: func(a *App) { a.nodeShellStarting = true }, want: "already open"},
 	}
 	for _, tt := range tests {
@@ -63,7 +65,7 @@ func TestStartNodeShellRefuses(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(app)
 			}
-			cmd := app.startNodeShell(models.NodeShellRequest{Context: "mba", Node: "n1", Pod: "p"})
+			cmd := app.startNodeShell(nil, models.NodeShellRequest{Context: "mba", Node: "n1", Pod: "p"})
 			msg, ok := cmd().(showToastMsg)
 			if !ok || msg.info || !strings.Contains(msg.text, tt.want) {
 				t.Fatalf("result = %#v, want an error toast with %q", cmd(), tt.want)

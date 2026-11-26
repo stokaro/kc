@@ -23,23 +23,28 @@ import (
 type workloadMessage interface{ workloadMessage() }
 
 // workloadStepMsg carries a prepared change. ask is true right after
-// Prepare, when the change may still want a value or a choice.
+// Prepare, when the change may still want a value or a choice. Every step
+// carries kubeContext, the context of the row the action came from, for
+// the read-only check when the change is approved.
 type workloadStepMsg struct {
-	change workloadaction.Change
-	err    error
-	ask    bool
+	change      workloadaction.Change
+	err         error
+	ask         bool
+	kubeContext string
 }
 
 // workloadInputMsg is the answer of the value dialog.
 type workloadInputMsg struct {
-	res   TextInputModalResult
-	asker workloadaction.Asker
+	res         TextInputModalResult
+	asker       workloadaction.Asker
+	kubeContext string
 }
 
 // workloadConfirmMsg is the answer of the red dialog.
 type workloadConfirmMsg struct {
-	ok     bool
-	change workloadaction.Change
+	ok          bool
+	change      workloadaction.Change
+	kubeContext string
 }
 
 // workloadDoneMsg reports a finished change.
@@ -61,11 +66,12 @@ const (
 
 // startWorkloadAction prepares the action of an entered row.
 func (a *App) startWorkloadAction(req workloadaction.Request) tea.Cmd {
+	kubeContext := req.Env.Context
 	return a.withBusy(req.Action.Label, 300*time.Millisecond, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 		defer cancel()
 		change, err := req.Prepare(ctx)
-		return workloadStepMsg{change: change, err: err, ask: true}
+		return workloadStepMsg{change: change, err: err, ask: true, kubeContext: kubeContext}
 	})
 }
 
@@ -77,13 +83,13 @@ func (a *App) handleWorkloadMsg(msg workloadMessage) tea.Cmd {
 		}
 		if msg.ask {
 			if asker, ok := msg.change.(workloadaction.Asker); ok {
-				return a.showWorkloadInput(asker)
+				return a.showWorkloadInput(asker, msg.kubeContext)
 			}
 			if chooser, ok := msg.change.(workloadaction.Chooser); ok {
-				return a.showWorkloadPicker(chooser)
+				return a.showWorkloadPicker(chooser, msg.kubeContext)
 			}
 		}
-		return a.showWorkloadConfirm(msg.change)
+		return a.showWorkloadConfirm(msg.change, msg.kubeContext)
 	case workloadInputMsg:
 		if msg.res.Close {
 			a.hideModalName(workloadInputModal)
@@ -92,13 +98,14 @@ func (a *App) handleWorkloadMsg(msg workloadMessage) tea.Cmd {
 			return nil
 		}
 		change, err := msg.asker.Answer(msg.res.Value)
-		return func() tea.Msg { return workloadStepMsg{change: change, err: err} }
+		kubeContext := msg.kubeContext
+		return func() tea.Msg { return workloadStepMsg{change: change, err: err, kubeContext: kubeContext} }
 	case workloadConfirmMsg:
 		a.hideModalName(workloadConfirmModal)
 		if !msg.ok || msg.change == nil {
 			return nil
 		}
-		return a.runWorkloadChange(msg.change)
+		return a.runWorkloadChange(msg.change, msg.kubeContext)
 	case workloadDoneMsg:
 		if msg.err != nil {
 			return a.ShowToast("Failed: "+msg.err.Error(), 5*time.Second)
@@ -115,7 +122,7 @@ func (m *workloadInputModel) HandleModalEscape(tea.KeyMsg) (bool, tea.Cmd) {
 	return true, m.emitResult(false, true)
 }
 
-func (a *App) showWorkloadInput(asker workloadaction.Asker) tea.Cmd {
+func (a *App) showWorkloadInput(asker workloadaction.Asker, kubeContext string) tea.Cmd {
 	q := asker.Question()
 	model := &workloadInputModel{NewTextInputModal(TextInputModalConfig{
 		Title:        q.Title,
@@ -128,7 +135,9 @@ func (a *App) showWorkloadInput(asker workloadaction.Asker) tea.Cmd {
 			_, err := asker.Answer(v)
 			return err
 		},
-		ResultMsg: func(res TextInputModalResult) tea.Msg { return workloadInputMsg{res: res, asker: asker} },
+		ResultMsg: func(res TextInputModalResult) tea.Msg {
+			return workloadInputMsg{res: res, asker: asker, kubeContext: kubeContext}
+		},
 	})}
 	modal := NewModal(q.Title, model)
 	a.modalManager.Register(workloadInputModal, modal)
@@ -138,7 +147,7 @@ func (a *App) showWorkloadInput(asker workloadaction.Asker) tea.Cmd {
 	return nil
 }
 
-func (a *App) showWorkloadPicker(chooser workloadaction.Chooser) tea.Cmd {
+func (a *App) showWorkloadPicker(chooser workloadaction.Chooser, kubeContext string) tea.Cmd {
 	title, list, selected := chooser.Choices()
 	choices := make([]scopeChoice, 0, len(list))
 	width := len([]rune(title)) + 4
@@ -149,7 +158,7 @@ func (a *App) showWorkloadPicker(chooser workloadaction.Chooser) tea.Cmd {
 	picker := NewScopePickerModel(choices, selected, func(c scopeChoice) tea.Cmd {
 		a.hideModalName(workloadPickModal)
 		change, err := chooser.Choose(c.Value)
-		return func() tea.Msg { return workloadStepMsg{change: change, err: err} }
+		return func() tea.Msg { return workloadStepMsg{change: change, err: err, kubeContext: kubeContext} }
 	}, func() tea.Cmd {
 		a.hideModalName(workloadPickModal)
 		return nil
@@ -167,7 +176,8 @@ func (a *App) showWorkloadPicker(chooser workloadaction.Chooser) tea.Cmd {
 // own path.
 type workloadConfirmModel struct {
 	*ConfirmModel
-	change workloadaction.Change
+	change      workloadaction.Change
+	kubeContext string
 }
 
 func (m *workloadConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -187,14 +197,14 @@ func (m *workloadConfirmModel) translate(cmd tea.Cmd) tea.Cmd {
 	return func() tea.Msg {
 		msg := cmd()
 		if r, ok := msg.(confirmResultMsg); ok {
-			return workloadConfirmMsg{ok: r.ok, change: m.change}
+			return workloadConfirmMsg{ok: r.ok, change: m.change, kubeContext: m.kubeContext}
 		}
 		return msg
 	}
 }
 
-func (a *App) showWorkloadConfirm(change workloadaction.Change) tea.Cmd {
-	model := &workloadConfirmModel{ConfirmModel: NewConfirmModel(change.Confirmation()), change: change}
+func (a *App) showWorkloadConfirm(change workloadaction.Change, kubeContext string) tea.Cmd {
+	model := &workloadConfirmModel{ConfirmModel: NewConfirmModel(change.Confirmation()), change: change, kubeContext: kubeContext}
 	modal := NewModal("Confirm", model)
 	modal.SetDanger(true)
 	a.modalManager.Register(workloadConfirmModal, modal)
@@ -206,12 +216,12 @@ func (a *App) showWorkloadConfirm(change workloadaction.Change) tea.Cmd {
 }
 
 // runWorkloadChange runs a confirmed change in the background.
-func (a *App) runWorkloadChange(change workloadaction.Change) tea.Cmd {
+func (a *App) runWorkloadChange(change workloadaction.Change, kubeContext string) tea.Cmd {
 	// Read-only mode refuses the write here, before anything is sent. It is
 	// checked on approval, so a context that became read-only while the
 	// dialog was open is refused too. Every workload change is a patch
 	// (scale patches the scale subresource).
-	if cmd := a.refuseReadOnly(confirmationName(change.Confirmation()), access.Check{Verb: "patch"}); cmd != nil {
+	if cmd := a.refuseReadOnly(kubeContext, confirmationName(change.Confirmation()), access.Check{Verb: "patch"}); cmd != nil {
 		return cmd
 	}
 	return a.withBusy(change.Confirmation().Action, 300*time.Millisecond, func() tea.Msg {

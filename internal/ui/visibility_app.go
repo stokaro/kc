@@ -22,9 +22,10 @@ const (
 )
 
 // panelVisibility returns the profile panel lists resource types under:
-// its own choice, the context's binding, the global default or Work.
+// its own choice, the binding of the panel's context, the global default
+// or Work.
 func (a *App) panelVisibility(panel *Panel) appconfig.EffectiveVisibility {
-	return a.ensurePanelConfig(panel).Resources.Visibility.Resolve(a.currentContextName())
+	return a.ensurePanelConfig(panel).Resources.Visibility.Resolve(a.connOfPanel(panel).name())
 }
 
 // setPanelVisibility makes panel list resource types under p named name.
@@ -36,7 +37,7 @@ func (a *App) setPanelVisibility(panel *Panel, name string, p visibility.Profile
 	v := &a.ensurePanelConfig(panel).Resources.Visibility
 	stored, err := v.Profile(name)
 	edited := err != nil || !stored.Equal(p)
-	if saved := v.ResolveSaved(a.currentContextName()); !edited && saved.Err == nil && saved.Name == name {
+	if saved := v.ResolveSaved(a.connOfPanel(panel).name()); !edited && saved.Err == nil && saved.Name == name {
 		v.Override = nil
 		return
 	}
@@ -54,14 +55,12 @@ func (a *App) setPanelProfile(panel *Panel, name string) error {
 	return nil
 }
 
-// resetPanelVisibility drops both panels' own profile choices and gives
-// them the saved settings again: a choice was made for the context that
-// was current then.
-func (a *App) resetPanelVisibility() {
-	for _, panel := range []*Panel{a.leftPanel, a.rightPanel} {
-		if panel != nil {
-			a.ensurePanelConfig(panel).Resources.Visibility = a.cfg.Resources.Visibility.Clone()
-		}
+// resetPanelVisibilityOf drops panel idx's own profile choice and gives
+// it the saved settings again: the choice was made for the context the
+// panel had then.
+func (a *App) resetPanelVisibilityOf(idx int) {
+	if panel := a.panelByIndex(idx); panel != nil {
+		a.ensurePanelConfig(panel).Resources.Visibility = a.cfg.Resources.Visibility.Clone()
 	}
 }
 
@@ -100,7 +99,7 @@ func (a *App) showVisibilityEditor(idx int) tea.Cmd {
 		return a.ShowToast("Cannot read the resource types: "+err.Error(), 3*time.Second)
 	}
 	cfg := a.ensurePanelConfig(panel)
-	editor := NewVisibilityEditorModel(a.currentContextName(), a.panelVisibility(panel), cfg.Resources.Visibility, types)
+	editor := NewVisibilityEditorModel(a.connOfPanel(panel).name(), a.panelVisibility(panel), cfg.Resources.Visibility, types)
 	editor.hideEmpty, _ = panel.ResourceViewOptions()
 	editor.onApply = func(name string, p visibility.Profile) tea.Cmd {
 		a.hideModalName(visibilityEditorModalKey)
@@ -271,13 +270,13 @@ func (a *App) applyTypeChoice(panel *Panel, m ResourcesOptionsChangedMsg) tea.Cm
 	return nil
 }
 
-// typeProfileSaver returns what "Save" in the panel options writes for
-// the Types row: the chosen profile where the saved settings decide the
-// context's profile, the context's binding when it has one and the global
-// default otherwise. A choice the settings already make writes nothing, so
-// saving another option never rebinds the context.
-func (a *App) typeProfileSaver(m ResourcesOptionsChangedMsg) func(*appconfig.ResourcesVisibilityConfig) {
-	ctxName := a.currentContextName()
+// typeProfileSaver returns what "Save" in the options of panel idx writes
+// for the Types row: the chosen profile where the saved settings decide
+// the profile of the panel's context, the context's binding when it has
+// one and the global default otherwise. A choice the settings already
+// make writes nothing, so saving another option never rebinds the context.
+func (a *App) typeProfileSaver(idx int, m ResourcesOptionsChangedMsg) func(*appconfig.ResourcesVisibilityConfig) {
+	ctxName := a.ownConn(idx).name()
 	saved := a.cfg.Resources.Visibility.ResolveSaved(ctxName)
 	name := m.TypeProfile
 	if !m.HasTypes || name == "" || (saved.Err == nil && saved.Name == name) {

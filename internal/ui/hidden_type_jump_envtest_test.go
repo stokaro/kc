@@ -63,11 +63,10 @@ func newHiddenTypeApp(t *testing.T) (app *App, nsA, nsB string) {
 	app.cancel()
 	app.ctx, app.cancel = context.WithCancel(ctx)
 	t.Cleanup(app.cancel)
-	app.cl = cl
 	app.cfg = appconfig.Default()
 	app.leftConfig, app.rightConfig = nil, nil
 	app.leftPanel.SetResourceViewOptions(true, string(appconfig.OrderAlpha))
-	app.currentCtx = &kubeconfig.Context{Name: "env", Namespace: nsA}
+	useTestCluster(app, &kubeconfig.Context{Name: "env", Namespace: nsA}, cl)
 	app.goToNamespace(nsA)
 
 	root := app.leftNav.Current()

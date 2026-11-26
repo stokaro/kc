@@ -70,7 +70,7 @@ func readOnlyTestApp(t *testing.T, writable bool) (*App, *Panel) {
 	app.width, app.height = 120, 30
 	model, _ := app.Update(tea.WindowSizeMsg{Width: app.width, Height: app.height})
 	app = model.(*App)
-	app.currentCtx = &kubeconfig.Context{Name: "eu-prod", Kubeconfig: &kubeconfig.Kubeconfig{Path: "/nonexistent/kubeconfig"}}
+	useTestCluster(app, &kubeconfig.Context{Name: "eu-prod", Kubeconfig: &kubeconfig.Kubeconfig{Path: "/nonexistent/kubeconfig"}}, nil)
 	app.cfg.ReadOnly = appconfig.ReadOnlyConfig{Contexts: []string{"*prod*"}}
 	if writable {
 		app.readOnlyOverride = ReadOnlyWriteForced
@@ -78,7 +78,7 @@ func readOnlyTestApp(t *testing.T, writable bool) (*App, *Panel) {
 	panel := app.leftPanel
 	// The app allows delete only with a cluster client; tests have none.
 	panel.SetEnvironmentSupplier(func() PanelEnvironment {
-		env := app.panelEnvironment()
+		env := app.panelEnvironment(panel)
 		env.AllowDeleteObjects = true
 		return env
 	})
@@ -88,8 +88,8 @@ func readOnlyTestApp(t *testing.T, writable bool) (*App, *Panel) {
 	panel.SelectByRowID(ctx, readOnlyTestObject.id)
 	panel.SetCurrentPath("/namespaces")
 	app.activePanel = 0
-	if got := app.readOnly(); got == writable {
-		t.Fatalf("readOnly() = %v with writable = %v", got, writable)
+	if got := app.readOnlyFor("eu-prod"); got == writable {
+		t.Fatalf("readOnlyFor(eu-prod) = %v with writable = %v", got, writable)
 	}
 	return app, panel
 }
@@ -151,7 +151,7 @@ func TestReadOnlyCapabilitiesAndFunctionBar(t *testing.T) {
 }
 
 func TestReadOnlyHandlersRefuse(t *testing.T) {
-	target := deleteTarget{gvr: readOnlyTestObject.GVR(), namespace: "ns", name: "foo"}
+	target := deleteTarget{gvr: readOnlyTestObject.GVR(), namespace: "ns", name: "foo", context: "eu-prod"}
 	tests := []struct {
 		name   string
 		action string
@@ -160,7 +160,7 @@ func TestReadOnlyHandlersRefuse(t *testing.T) {
 		sideEffect func(a *App) bool
 	}{
 		{name: "F4 handler", action: "Edit", run: func(a *App, p *Panel) tea.Cmd { return a.editSelectionForPanel(p) }},
-		{name: "kubectl edit", action: "Edit", run: func(a *App, p *Panel) tea.Cmd { return a.runKubectlEdit(0, "/", readOnlyTestObject) }},
+		{name: "kubectl edit", action: "Edit", run: func(a *App, p *Panel) tea.Cmd { return a.runKubectlEdit(a.ownConn(0), 0, "/", readOnlyTestObject) }},
 		{
 			name: "F8 handler", action: "Delete",
 			run:        func(a *App, p *Panel) tea.Cmd { return a.deleteResourceForPanel(p) },
@@ -243,7 +243,7 @@ func TestReadOnlyRefusesConfirmedActions(t *testing.T) {
 	t.Run("dialog is not opened", func(t *testing.T) {
 		app, _ := readOnlyTestApp(t, false)
 		confirmed := false
-		wantRefusal(t, app.showConfirm(stubConfirmed{confirmed: &confirmed}), "Start a debug helper")
+		wantRefusal(t, app.showConfirm(app.ownConn(0), stubConfirmed{confirmed: &confirmed}), "Start a debug helper")
 		if app.pendingConfirm != nil || app.modalManager.IsModalVisible() {
 			t.Fatal("read-only mode opened the confirmation dialog")
 		}
@@ -251,7 +251,7 @@ func TestReadOnlyRefusesConfirmedActions(t *testing.T) {
 	t.Run("approval after the context became read-only", func(t *testing.T) {
 		app, _ := readOnlyTestApp(t, true)
 		confirmed := false
-		if cmd := app.showConfirm(stubConfirmed{confirmed: &confirmed}); isRefusal(cmd) || app.pendingConfirm == nil {
+		if cmd := app.showConfirm(app.ownConn(0), stubConfirmed{confirmed: &confirmed}); isRefusal(cmd) || app.pendingConfirm == nil {
 			t.Fatal("a writable context must open the dialog")
 		}
 		app.readOnlyOverride = ReadOnlyForced
@@ -263,7 +263,7 @@ func TestReadOnlyRefusesConfirmedActions(t *testing.T) {
 	t.Run("writable context confirms", func(t *testing.T) {
 		app, _ := readOnlyTestApp(t, true)
 		confirmed := false
-		app.showConfirm(stubConfirmed{confirmed: &confirmed})
+		app.showConfirm(app.ownConn(0), stubConfirmed{confirmed: &confirmed})
 		app.handleConfirmResult(confirmResultMsg{ok: true})
 		if !confirmed {
 			t.Fatal("Confirm did not run in a writable context")
@@ -302,10 +302,10 @@ func TestReadOnlyDangerousCommands(t *testing.T) {
 		if entry := app.commandMenuItems()[0]; entry.Label != "&User menu" || !entry.Disabled {
 			t.Fatalf("F9 Command entry %q disabled=%v, want a dim User menu", entry.Label, entry.Disabled)
 		}
-		wantRefusal(t, app.refuseCommand(restart), `command "Restart"`)
+		wantRefusal(t, app.refuseCommand("eu-prod", restart), `command "Restart"`)
 		wantRefusal(t, app.runCommandHotkey(0), `command "Restart"`)
-		wantRefusal(t, app.startNamespaceCommand(1, restart, "ns"), `command "Restart"`)
-		if app.refuseCommand(top) != nil {
+		wantRefusal(t, app.startNamespaceCommand(1, restart, "ns", app.ownConn(0)), `command "Restart"`)
+		if app.refuseCommand("eu-prod", top) != nil {
 			t.Fatal("a command not marked dangerous was refused")
 		}
 	})
@@ -320,7 +320,7 @@ func TestReadOnlyDangerousCommands(t *testing.T) {
 		if entry := app.commandMenuItems()[0]; entry.Disabled {
 			t.Fatal("F9 Command > User menu is dim in a writable context")
 		}
-		if app.refuseCommand(restart) != nil {
+		if app.refuseCommand("eu-prod", restart) != nil {
 			t.Fatal("writable context refused a dangerous command")
 		}
 	})

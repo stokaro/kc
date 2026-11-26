@@ -32,8 +32,9 @@ panel is at is marked `current`.
 
 ## Limits
 
-- Going to an entry of another context switches kc to that context, and
-  the other panel goes to its root, as the context picker does.
+- Going to an entry of another context switches the panel to that
+  context first, as its context picker does. The other panel stays
+  where it is.
 - When a list is still loading, kc waits up to ten seconds for the rows
   it needs. A place whose objects are gone stops at the deepest folder
   that still exists, with a message.

@@ -4,8 +4,8 @@
 the object under the cursor of the right panel, as mc's "Compare files".
 kc opens a read-only unified diff of the two YAML manifests. Use it to
 see why two Deployments behave differently, or what differs between the
-same ConfigMap in staging and production (put the panels on two
-contexts).
+same ConfigMap in staging and production (switch one panel to the
+other context). Each side is read from its own panel's cluster.
 
 One side can be a local file instead: put one panel on a local folder
 (`M-l`) with the cursor on a YAML or JSON file, such as the output of

@@ -18,13 +18,13 @@ cluster.
   cannot be compared with a list of one namespace.
 - Two different namespaces pair with each other by name. The title then
   says `(metadata.namespace ignored)`.
-- `C-x c` opens a list of the other contexts; the current context is
-  not in it, since a list compared with itself is always equal. The
-  result names the right side by the context you picked. kc connects
-  to it only for the read, with kc's impersonation. It does not switch
-  to that context, and no panel shows it. kc works in one
-  context at a time; this is a read of another context, not a second
-  live panel.
+- `C-x c` opens a list of the other contexts; the active panel's
+  context is not in it, since a list compared with itself is always
+  equal. The result names the right side by the context you picked. kc
+  connects to it only for the read, with kc's impersonation, and no
+  panel switches to it. To browse the other context side by side,
+  switch the other panel's context instead; `C-x d` then compares the
+  two panels across the contexts.
 - Each pair is compared in the configuration view of `C-x C-d`: server
   fields and `status` are left out.
 

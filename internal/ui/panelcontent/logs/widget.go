@@ -217,6 +217,7 @@ func (w *Widget) Init(context.Context) tea.Cmd { return nil }
 // selection restarts an ended one.
 func (w *Widget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) tea.Cmd {
 	target, ok := Target(sel.Item)
+	target.Source = sel.Source
 	if !ok {
 		if w.state != stateIdle {
 			w.stop()
@@ -254,7 +255,7 @@ func (w *Widget) SetSettings(s Settings) tea.Cmd {
 // Containers returns the containers of the selected pod, known once a
 // stream of the pod has opened; nil before.
 func (w *Widget) Containers() []string {
-	if w.state == stateIdle || w.containersOf != podKey(w.target.Spec) {
+	if w.state == stateIdle || w.containersOf != w.target.Source+"|"+podKey(w.target.Spec) {
 		return nil
 	}
 	return append([]string(nil), w.containers...)
@@ -420,7 +421,7 @@ func (w *Widget) onOpened(m openedMsg) (tea.Cmd, bool) {
 		w.spec = m.stream.Spec
 	}
 	if m.stream.Containers != nil {
-		w.containers, w.containersOf = m.stream.Containers, podKey(w.target.Spec)
+		w.containers, w.containersOf = m.stream.Containers, w.target.Source+"|"+podKey(w.target.Spec)
 	}
 	w.viewer.SetContent("No log lines yet.", viewer.Metadata{Title: w.title()})
 	return read(w, w.gen, m.stream, bufio.NewReader(m.stream.Body)), true

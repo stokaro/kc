@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -185,12 +184,16 @@ type workloadLogsReadyMsg struct {
 	maxRequests int
 	open        logmux.Opener
 	err         error
+	// cl is the cluster of the row's connection; release ends the hold
+	// on it, which the viewer keeps until it closes.
+	cl      *kccluster.Cluster
+	release func()
 }
 
-// openWorkloadLogs resolves the pods of a logs row in a tea.Cmd: it reads
-// the workload from the cache.
-func (a *App) openWorkloadLogs(item models.Item, provider models.WorkloadLogsProvider) tea.Cmd {
-	if a.cl == nil {
+// openWorkloadLogs resolves the pods of a logs row read from conn in a
+// tea.Cmd: it reads the workload from the cache.
+func (a *App) openWorkloadLogs(conn *panelConn, item models.Item, provider models.WorkloadLogsProvider) tea.Cmd {
+	if conn.cluster() == nil {
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Logs unavailable: no active cluster"))
 		}
@@ -201,19 +204,23 @@ func (a *App) openWorkloadLogs(item models.Item, provider models.WorkloadLogsPro
 	if a.cfg != nil {
 		maxRequests = a.cfg.Viewer.Logs.EffectiveMaxRequests()
 	}
-	cl, ctx := a.cl, a.ctx
+	cl, ctx, release := conn.cluster(), a.ctx, conn.hold()
 	return func() tea.Msg {
 		open, err := clientLogOpener(cl.GetConfig())
 		if err != nil {
+			release()
 			return workloadLogsReadyMsg{item: item, err: err}
 		}
 		resolveCtx, cancel := context.WithTimeout(ctx, workloadLogsStartTimeout)
 		defer cancel()
 		pods, err := resolveWorkloadPods(resolveCtx, cl, spec)
 		if err != nil {
+			release()
 			return workloadLogsReadyMsg{item: item, err: err}
 		}
 		return workloadLogsReadyMsg{
+			cl:          cl,
+			release:     release,
 			item:        item,
 			provider:    provider,
 			spec:        spec,
@@ -242,8 +249,8 @@ func (a *App) showWorkloadLogs(msg workloadLogsReadyMsg) tea.Cmd {
 		}
 		return nil
 	}
-	cl, parent := a.cl, a.ctx
-	if cl == nil {
+	cl, parent, release := msg.cl, a.ctx, msg.release
+	if cl == nil || release == nil {
 		return nil
 	}
 	spec, maxRequests, openContainer := msg.spec, msg.maxRequests, msg.open
@@ -272,24 +279,6 @@ func (a *App) showWorkloadLogs(msg workloadLogsReadyMsg) tea.Cmd {
 		return provider.WorkloadLogsCommand(spec, ls, selector, limit)
 	})
 	logsViewer.SetOnSources(func() tea.Cmd { return a.showLogsSourcesModal(logsViewer, sel) })
-	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
-	logsViewer.SetOnFilter(func() tea.Cmd { return a.showLogsFilterModal(logsViewer) })
-	a.setupLogFields(logsViewer)
-	logsViewer.SetOnClose(func() tea.Cmd {
-		a.hideModal()
-		return nil
-	})
-	modal := NewModal(a.modalTitleFromItem(msg.item, title), logsViewer)
-	modal.SetMode(ModalModeFullscreen)
-	modal.SetDimensions(a.width, a.height)
-	modal.SetCloseOnSingleEsc(false)
-	modal.SetCloseOnEscTimeout(true)
-	modal.SetOnClose(func() tea.Cmd {
-		logsViewer.Close()
-		return nil
-	})
-	a.modalManager.Register("logs_viewer", modal)
-	a.showModal("logs_viewer")
-	return logsViewer.Init()
+	return a.presentLogsViewer(logsViewer, a.modalTitleFromItem(msg.item, title), release)
 }

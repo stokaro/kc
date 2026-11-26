@@ -140,14 +140,14 @@ func (w *Widget) load(ctx context.Context) tea.Cmd {
 		w.setStatic("Describe provider unavailable.", describeTitle(target, ""))
 		return nil
 	}
-	key := targetKey(target)
+	key := w.sel.Source + "|" + targetKey(target)
 	if key != w.loader.Key() {
 		w.target = target
 		if w.shownKey == "" {
 			w.viewer.SetContent("Loading...", viewer.Metadata{Title: describeTitle(target, "")})
 		}
 	}
-	return w.loader.Show(key, describeFetch(w.deps.Describe(target)))
+	return w.loader.Show(key, describeFetch(w.deps.Describe(w.sel.Source, target)))
 }
 
 // describeFetch skips the describe requests when the cached object still

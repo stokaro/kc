@@ -153,7 +153,7 @@ func TestCompareLocalFileWithLiveObject(t *testing.T) {
 		t.Fatal("a local file and a live object must pair")
 	}
 	a := &App{ctx: ctx}
-	msg, ok := a.readComparison(nil, 1, left, right, "envtest", manifestdiff.Options{})().(compareResultMsg)
+	msg, ok := a.readComparison(nil, 1, left, right, [2]string{"envtest", "envtest"}, manifestdiff.Options{})().(compareResultMsg)
 	if !ok || msg.err != nil {
 		t.Fatalf("compare = %#v", msg)
 	}

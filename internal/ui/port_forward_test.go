@@ -66,7 +66,7 @@ func TestPortForwardRowStopsWithF8(t *testing.T) {
 				leftPanel: p, rightPanel: NewPanel("r"), leftPanelWidthPercent: 50, rightPanelWidthPercent: 50,
 				readOnlyOverride: tc.override}
 			p.SetActionHandlers(app.panelActionHandlers())
-			p.SetEnvironmentSupplier(app.panelEnvironment)
+			p.SetEnvironmentSupplier(func() PanelEnvironment { return app.panelEnvironment(p) })
 
 			// F8 is offered on a forward row although it is no Kubernetes object.
 			if caps := p.Capabilities(ctx); !caps.CanDelete {

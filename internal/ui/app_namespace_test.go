@@ -23,7 +23,7 @@ func TestInitialNamespace(t *testing.T) {
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			app := NewApp()
-			app.currentCtx = &kubeconfig.Context{Name: "ctx", Namespace: tc.ctxNs}
+			useTestCluster(app, &kubeconfig.Context{Name: "ctx", Namespace: tc.ctxNs}, nil)
 			app.namespaceOverride = tc.override
 			if got := app.initialNamespace(); got != tc.want {
 				t.Fatalf("initialNamespace() = %q, want %q", got, tc.want)

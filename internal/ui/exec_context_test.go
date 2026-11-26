@@ -100,7 +100,7 @@ func newExecTestApp(t *testing.T, mode appconfig.TerminalMode) execTestEnv {
 	app := NewApp()
 	app.cfg.Terminal = appconfig.TerminalConfig{Follow: true, Mode: mode}
 	app.kubeMgr = mgr
-	app.currentCtx = env.ctxA
+	useTestCluster(app, env.ctxA, nil)
 	app.impersonateUser = execTestImp.User
 	app.impersonateUID = execTestImp.UID
 	app.impersonateGroups = execTestImp.Groups
@@ -216,11 +216,12 @@ func TestSwitchedContextReachesEverySubprocess(t *testing.T) {
 				t.Fatalf("shell starts on %q, want ctx-a", got.context)
 			}
 
-			// Switch kc to B, as applyContextSwitch does, then scope the
-			// active panel to a namespace.
-			app.currentCtx = e.ctxB
+			// Switch both panels to B, as applyContextSwitch does, then
+			// scope the active panel to a namespace.
+			useTestCluster(app, e.ctxB, nil)
 			app.ensureTermContext()
-			app.updateTermContextNamespace("team")
+			app.panelScope[app.activePanel] = "team"
+			app.ensureTermContext()
 
 			t.Run("embedded shell", func(t *testing.T) {
 				shellAfter, _ := envValue(app.terminal.env, "KUBECONFIG")
@@ -231,14 +232,16 @@ func TestSwitchedContextReachesEverySubprocess(t *testing.T) {
 			})
 
 			t.Run("all namespaces keeps impersonation", func(t *testing.T) {
-				app.updateTermContextNamespace(models.AllNamespaces)
+				app.panelScope[app.activePanel] = models.AllNamespaces
+				app.ensureTermContext()
 				v, _ := envValue(app.terminal.env, "KUBECONFIG")
 				assertTargetsB(t, "shell in all namespaces", resolveKubeconfig(t, v), "ns-b")
-				app.updateTermContextNamespace("team")
+				app.panelScope[app.activePanel] = "team"
+				app.ensureTermContext()
 			})
 
 			t.Run("F4 kubectl edit", func(t *testing.T) {
-				cmd, line := kubectlEditCommand(app.execContext("team"), "pods.v1./web")
+				cmd, line := kubectlEditCommand(app.execContextFor(app.ownConn(app.activePanel), "team"), "pods.v1./web")
 				gotKubeconfig, args := runOutput(t, cmd)
 				// The contexts come from KUBECONFIG=a:b, which kubectl merges;
 				// --kubeconfig takes one file, so the list goes in the
