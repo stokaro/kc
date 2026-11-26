@@ -27,3 +27,7 @@ The dashboard of one pod of the workload. `Space` to go live, `Shift+Tab` to the
 The Range menu. `F2`.
 
 ![](06-range-menu.png)
+
+The dashboard of a custom workload, the Rollout of the Info screenshot. `C-x g` with the cursor on it; `+` zooms to the last 5 minutes.
+
+![](07-custom-workload.png)

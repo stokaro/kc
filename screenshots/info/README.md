@@ -21,3 +21,7 @@ The cluster overview: capacity, health, risks and activity checks with their sta
 The objects behind one finding. Enter on a finding row.
 
 ![](05-finding.png)
+
+Info of a custom workload: a Rollout of a CRD that owns its pods through a ReplicaSet. The desired count comes from the scale subresource. Cursor on the Rollout in its resource folder.
+
+![](06-custom-workload.png)

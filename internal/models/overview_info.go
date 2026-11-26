@@ -265,6 +265,7 @@ type InfoFocus struct {
 func (o *OverviewInfo) Summary(focus InfoFocus) InfoSummary {
 	report, err := o.engine.snapshot()
 	if focus.Workload != nil {
+		o.engine.want(focus.Workload.GVR)
 		return workloadInfoSummary(report, err, o.engine.cfg, *focus.Workload)
 	}
 	return infoSummary(report, err, o.engine.cfg, focus.Node)

@@ -18,15 +18,22 @@ import (
 // Target is the workload whose history is read.
 type Target struct {
 	// Kind is the owner kind: Deployment, StatefulSet, DaemonSet,
-	// ReplicaSet, Job or CronJob.
-	Kind      string
+	// ReplicaSet, Job or CronJob, or the kind of a custom workload
+	// (Rollout) as its owner references name it.
+	Kind string
+	// Custom is true for a kind outside Kinds that kc saw own pods, itself
+	// or through Via: the kind between the pods and the workload,
+	// ReplicaSet or Job, whose owner series kube-state-metrics exports.
+	// Another kind is refused before any request.
+	Custom    bool
+	Via       string
 	Namespace string
 	Name      string
 }
 
 func (t Target) String() string { return t.Kind + " " + t.Namespace + "/" + t.Name }
 
-// Kinds lists the workload kinds a Target may name.
+// Kinds lists the built-in workload kinds a Target may name.
 var Kinds = []string{"Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob"}
 
 var labelNameRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -63,7 +70,8 @@ func eq(name, value string) string { return name + "=" + quote(value) }
 // podSet is a vector with one series per (namespace, pod) of the target,
 // value 1, at every point in time where kube-state-metrics tied the pod to
 // it. A Deployment's pods go through its ReplicaSets and a CronJob's
-// through its Jobs, matched by the owner series of that time.
+// through its Jobs, matched by the owner series of that time; a custom
+// workload's pods go through the kind Via names, or none.
 func podSet(s selector, t Target) (string, error) {
 	ns := eq("namespace", t.Namespace)
 	direct := func(kind, name string) string {
@@ -86,8 +94,19 @@ func podSet(s selector, t Target) (string, error) {
 		return through("ReplicaSet", "kube_replicaset_owner", "replicaset"), nil
 	case "CronJob":
 		return through("Job", "kube_job_owner", "job_name"), nil
-	default:
+	}
+	if !t.Custom || t.Kind == "" {
 		return "", fmt.Errorf("no history for kind %q", t.Kind)
+	}
+	switch t.Via {
+	case "":
+		return direct(t.Kind, t.Name), nil
+	case "ReplicaSet":
+		return through("ReplicaSet", "kube_replicaset_owner", "replicaset"), nil
+	case "Job":
+		return through("Job", "kube_job_owner", "job_name"), nil
+	default:
+		return "", fmt.Errorf("no history for kind %q through %q", t.Kind, t.Via)
 	}
 }
 

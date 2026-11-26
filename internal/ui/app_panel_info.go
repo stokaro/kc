@@ -52,10 +52,10 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 		Label: label,
 	}
 	if pin != nil {
-		narrowInfoTarget(&t, pin.item)
+		narrowInfoTarget(&t, pin.item, key)
 	} else if op := a.panelByIndex(other); op != nil {
 		if item, ok := op.SelectedNavItem(ctx); ok {
-			narrowInfoTarget(&t, item)
+			narrowInfoTarget(&t, item, key)
 		}
 	}
 	cl, cfg, root := a.cl, a.ensurePanelConfig(a.panelByIndex(other)), a.ctx
@@ -79,23 +79,28 @@ func infoHistory(root context.Context, restConfig func() *rest.Config, key kcclu
 	if !ok {
 		return nil
 	}
-	kind, ok := promhistory.KindFor(wl.GVR.Group, wl.GVR.Resource)
-	if !ok {
+	if !models.IsWorkloadTarget(key, wl.GVR) {
 		return nil
 	}
+	// A custom workload whose chain the owner series cannot join reads
+	// nothing: the history says why.
+	target, unreadable := workloadHistoryTarget(key, wl)
 	window, timeout := mh.EffectiveWindow(), mh.EffectiveTimeout()
-	target := promhistory.Target{Kind: kind, Namespace: wl.Namespace, Name: wl.Name}
 	label := win.Label(time.Local)
 	return &infowidget.PromHistorySource{
 		// The cluster key carries the impersonation, which changes what
-		// the proxy lets through; the window text changes what is read.
-		Key:    fmt.Sprintf("%+v|%s/%s|%s|%s/%s|%s|%s", key, backend.Namespace, backend.Service, wl.GVR, wl.Namespace, wl.Name, window, win.Text(time.UTC)),
+		// the proxy lets through; the window text changes what is read,
+		// and the target (or why there is none) changes how.
+		Key:    fmt.Sprintf("%+v|%s/%s|%s|%s/%s|%s|%s|%+v|%v", key, backend.Namespace, backend.Service, wl.GVR, wl.Namespace, wl.Name, window, win.Text(time.UTC), target, unreadable),
 		Window: window,
 		Label:  label,
 		Start: func() (func() (promhistory.History, error), func()) {
 			ctx, cancel := context.WithTimeout(root, timeout)
 			opts := historyOptions(window, win, time.Now())
 			return func() (promhistory.History, error) {
+				if unreadable != nil {
+					return promhistory.History{}, unreadable
+				}
 				c, err := promhistory.NewServiceProxyClient(restConfig(), backend)
 				if err != nil {
 					return promhistory.History{}, err
@@ -120,9 +125,10 @@ func historyOptions(window time.Duration, win investigation.Window, now time.Tim
 }
 
 // narrowInfoTarget points t at the row under the other panel's cursor: an
-// overview finding, a node or a workload. A finding describes itself from
-// the overview's own report, the one its row shows (ADR 0173).
-func narrowInfoTarget(t *infowidget.Target, item models.Item) {
+// overview finding, a node or a workload of the cluster connection key. A
+// finding describes itself from the overview's own report, the one its
+// row shows (ADR 0173).
+func narrowInfoTarget(t *infowidget.Target, item models.Item, key kccluster.Key) {
 	if fp, ok := item.(models.FindingPreviewer); ok {
 		if p, ok := fp.FindingPreview(); ok {
 			t.Finding = &p
@@ -135,7 +141,7 @@ func narrowInfoTarget(t *infowidget.Target, item models.Item) {
 	switch gvr := obj.GVR(); {
 	case gvr == infoNodesGVR:
 		t.Node = obj.Name()
-	case models.IsInfoWorkload(gvr) && obj.Namespace() != "":
+	case models.IsWorkloadTarget(key, gvr) && obj.Namespace() != "":
 		t.Workload = &models.InfoWorkload{GVR: gvr, Namespace: obj.Namespace(), Name: obj.Name()}
 	}
 }

@@ -164,6 +164,133 @@ EOF
 	} >"$LOCAL/access.log"
 }
 
+# custom_workload_up creates the workload of the custom-workload scenes in
+# a namespace of its own: a small CRD shaped like Argo Rollouts (a scale
+# subresource at .spec.replicas), a Rollout of it, and a ReplicaSet that
+# names the Rollout as its controller by UID. There is no Rollout
+# controller; kind's ReplicaSet controller makes the pods. It returns once
+# metrics-server measures them. custom_workload_down removes it all, so no
+# other scene shows it.
+CUSTOM_CRD=rollouts.apps.example.com
+CUSTOM_NS=rollouts
+
+custom_workload_up() {
+	kk kubectl apply --server-side -f - <<EOF
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: $CUSTOM_CRD
+spec:
+  group: apps.example.com
+  scope: Namespaced
+  names:
+    plural: rollouts
+    singular: rollout
+    kind: Rollout
+    listKind: RolloutList
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        scale:
+          specReplicasPath: .spec.replicas
+          statusReplicasPath: .status.replicas
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: $CUSTOM_NS
+EOF
+	kk kubectl wait --for condition=Established "crd/$CUSTOM_CRD" --timeout=60s
+	kk kubectl apply --server-side -f - <<EOF
+apiVersion: apps.example.com/v1alpha1
+kind: Rollout
+metadata:
+  name: storefront
+  namespace: $CUSTOM_NS
+spec:
+  replicas: 3
+EOF
+	local uid
+	uid=$(kk kubectl -n "$CUSTOM_NS" get "$CUSTOM_CRD" storefront -o 'jsonpath={.metadata.uid}')
+	[ -n "$uid" ] || die "the Rollout has no UID"
+	# Each pod burns CPU for 5 seconds out of 15 and holds a 12 MiB file
+	# in a memory-backed emptyDir, which counts as the container's memory,
+	# so the bars and the charts have usage to show.
+	kk kubectl apply --server-side -f - <<EOF
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: storefront-7c9d8f6b5
+  namespace: $CUSTOM_NS
+  labels:
+    app: storefront
+  ownerReferences:
+    - apiVersion: apps.example.com/v1alpha1
+      kind: Rollout
+      name: storefront
+      uid: $uid
+      controller: true
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: storefront
+  template:
+    metadata:
+      labels:
+        app: storefront
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: storefront
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              trap 'exit 0' TERM
+              head -c 12582912 /dev/zero > /buf/block
+              while true; do
+                end=\$(( \$(date +%s) + 5 ))
+                while [ "\$(date +%s)" -lt "\$end" ]; do :; done
+                sleep 10
+              done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: buf
+              mountPath: /buf
+      volumes:
+        - name: buf
+          emptyDir:
+            medium: Memory
+EOF
+	kk kubectl -n "$CUSTOM_NS" wait --for=jsonpath='{.status.readyReplicas}'=3 rs/storefront-7c9d8f6b5 --timeout=180s
+	local n=0
+	until [ "$(kk kubectl -n "$CUSTOM_NS" top pods --no-headers 2>/dev/null | wc -l)" -ge 3 ]; do
+		n=$((n + 1))
+		[ $n -lt 60 ] || die "metrics-server measures no pods of the Rollout"
+		sleep 5
+	done
+}
+
+custom_workload_down() {
+	stop_kc_if_running
+	kk kubectl delete namespace "$CUSTOM_NS" --ignore-not-found --wait=true --timeout=180s
+	kk kubectl delete crd "$CUSTOM_CRD" --ignore-not-found --wait=true --timeout=60s
+}
+
 # hotlist prints the saved places and views of the hotlist scene, in the
 # format kc writes to ~/.kc/hotlist.yaml.
 hotlist() {

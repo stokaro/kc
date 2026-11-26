@@ -126,6 +126,9 @@ type overviewReport struct {
 	info overviewInfoInput
 	// amounts is what the dashboard plots (UsageAmounts).
 	amounts overviewAmounts
+	// learnt is what the walks found for the engine: owner kinds to
+	// resolve and the custom kinds seen in controller chains.
+	learnt workloadLearning
 }
 
 // finding returns the finding with id, if any.
@@ -162,7 +165,7 @@ func computeOverviewWith(in *overviewInput, cfg appconfig.OverviewConfig, now ti
 	addGraceNotes(&rc, report.findings)
 	report.nodes = summarizeNodes(&rc)
 	var byPod map[string][]InfoWorkload
-	report.workloads, byPod = summarizeWorkloads(&rc)
+	report.workloads, byPod, report.learnt = summarizeWorkloads(&rc)
 	report.workloadsReason = rc.in.missingReason(ovPodsGVR)
 	report.replicaSetsReason = rc.in.missingReason(ovReplicaSetsGVR)
 	report.pods = summarizePods(&rc, byPod)

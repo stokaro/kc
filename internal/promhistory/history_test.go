@@ -410,9 +410,52 @@ func TestNewServiceProxyClientRefuses(t *testing.T) {
 
 func TestUnknownKind(t *testing.T) {
 	t.Parallel()
-	b := &backend{t: t}
-	_, err := newClient(t, b, promBackend).Fetch(t.Context(), promhistory.Target{Kind: "Pod", Namespace: "a", Name: "b"}, promhistory.Options{Window: time.Hour})
-	if err == nil || len(b.queries) != 0 {
-		t.Errorf("err = %v after %d queries, want a refusal before any request", err, len(b.queries))
+	for _, target := range []promhistory.Target{
+		{Kind: "Pod", Namespace: "a", Name: "b"},
+		{Custom: true, Namespace: "a", Name: "b"},
+		{Kind: "Rollout", Custom: true, Via: "Deployment", Namespace: "a", Name: "b"},
+	} {
+		b := &backend{t: t}
+		_, err := newClient(t, b, promBackend).Fetch(t.Context(), target, promhistory.Options{Window: time.Hour})
+		if err == nil || len(b.queries) != 0 {
+			t.Errorf("%+v: err = %v after %d queries, want a refusal before any request", target, err, len(b.queries))
+		}
+	}
+}
+
+// TestCustomKindQueries checks the pod sets of a custom workload: the
+// owner series name its kind as owner references do, directly or through
+// the ReplicaSets or Jobs it owns.
+func TestCustomKindQueries(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		via  string
+		want []string
+	}{
+		{via: "", want: []string{`kube_pod_owner{namespace="shop",owner_kind="Rollout",owner_name="web"}`}},
+		{via: "ReplicaSet", want: []string{
+			`kube_pod_owner{namespace="shop",owner_kind="ReplicaSet"}`,
+			`kube_replicaset_owner{namespace="shop",owner_kind="Rollout",owner_name="web"}`,
+		}},
+		{via: "Job", want: []string{
+			`kube_pod_owner{namespace="shop",owner_kind="Job"}`,
+			`kube_job_owner{namespace="shop",owner_kind="Rollout",owner_name="web"}`,
+		}},
+	}
+	for _, tt := range tests {
+		t.Run("via "+tt.via, func(t *testing.T) {
+			t.Parallel()
+			b := &backend{t: t, path: "/api/", cpu: emptyMatrix, mem: emptyMatrix, pods: emptyVector, owners: emptyVector}
+			target := promhistory.Target{Kind: "Rollout", Custom: true, Via: tt.via, Namespace: "shop", Name: "web"}
+			if _, err := newClient(t, b, promBackend).Fetch(t.Context(), target, promhistory.Options{Window: time.Hour, Now: now}); err != nil {
+				t.Fatalf("Fetch: %v", err)
+			}
+			all := strings.Join(b.queries, "\n")
+			for _, w := range tt.want {
+				if !strings.Contains(all, w) {
+					t.Errorf("no %s in the queries:\n%s", w, all)
+				}
+			}
+		})
 	}
 }

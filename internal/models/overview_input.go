@@ -125,6 +125,9 @@ type overviewInput struct {
 	hpas         []autoscalingv2.HorizontalPodAutoscaler
 	replicaSets  []metav1.PartialObjectMetadata
 	certificates []certificateInfo
+	// owners are the owner kinds outside overviewKinds that the walks of
+	// earlier recomputes met, with their objects (overview_owners.go).
+	owners ownerInput
 
 	// missing holds the resources that could not be read, with the reason.
 	// Rows that need them are shown dim with that reason.

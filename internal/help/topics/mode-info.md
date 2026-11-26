@@ -15,6 +15,20 @@ workload is short of resources.
 - On a Deployment, StatefulSet, DaemonSet, ReplicaSet, Job or CronJob:
   its pods (found through owner references), their usage against their
   limits (requests when a pod has no limit) and ready of desired pods.
+- On an object of a custom kind that controls pods, such as an Argo
+  Rollout: the same bars, titled as kubectl names the object
+  (`Pods of rollouts.argoproj.io shop/web`). kc follows the controller
+  references of the pods through any namespaced kind, directly or
+  through ReplicaSets or other kinds in between, and counts a pod for
+  every workload in its chain. A kind becomes a workload once kc has
+  seen one of its pods in this connection, or when discovery lists its
+  scale subresource, so a Rollout scaled to 0 shows `scaled to 0`. The
+  desired count comes from the CRD's scale subresource
+  (`specReplicasPath`); a kind without one shows the ready pods only and
+  says `no desired count: <kind> declares no scale subresource`. A row
+  of a kind that controls no pods keeps the namespace scope. A pod whose
+  owner was deleted and created again under the same name (another UID)
+  does not count for the new owner.
 - On an `/overview` finding: that finding, its value, how it is
   computed and the first objects behind it. Long lines wrap at the
   panel width, as the rest of Info does.
@@ -132,7 +146,13 @@ space, the terminal does not support Unicode placeholders: set
   the metric; `no finite samples in this window` means it returned a
   series whose values are all `NaN` or infinite. Neither is zero usage.
   It covers `metricsHistory.window`, or the investigation window
-  (`C-x w`) while one is set; the heading names it.
+  (`C-x w`) while one is set; the heading names it. For a custom kind
+  the history uses the kube-state-metrics owner series: `kube_pod_owner`
+  when the object owns its pods, `kube_replicaset_owner` or
+  `kube_job_owner` when a ReplicaSet or Job is in between. Those series
+  name the kind without its API group, so a custom kind named like a
+  built-in one (StatefulSet) and a chain with more kinds in between have
+  no history, and Info says why.
 
 ## See also
 

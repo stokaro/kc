@@ -81,6 +81,9 @@ type overviewEngine struct {
 	// beside a dialog, and a drain or a delete made there must show in it
 	// at once. A recompute reads the cache only.
 	computeBehindDialogs bool
+	// owners follows controller chains through kinds outside
+	// overviewKinds (ADR 0364); nil without a cluster.
+	owners *ownerWatch
 
 	dirty atomic.Bool
 	// rediscover asks the running engine to have its connection read API
@@ -132,6 +135,7 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 		now:       time.Now,
 		life:      newOverviewLifecycle(),
 		listeners: make(map[int]func()),
+		owners:    newOwnerWatch(deps, namespace),
 	}
 	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps, namespace) }
 	e.measure = func() *overviewMeasured {
@@ -178,6 +182,14 @@ func (e *overviewEngine) snapshot() (*overviewReport, error) {
 func (e *overviewEngine) reread() {
 	e.rediscover.Store(true)
 	e.dirty.Store(true)
+}
+
+// want asks the engine to read the objects of gvr, the kind of a focused
+// workload, when it is a custom kind with a scale subresource (ADR 0364).
+func (e *overviewEngine) want(gvr schema.GroupVersionResource) {
+	if e.owners.want(gvr) {
+		e.dirty.Store(true)
+	}
 }
 
 // subscribe calls fn after every recompute until the returned cancel.
@@ -247,7 +259,12 @@ func (e *overviewEngine) run(stop <-chan struct{}) {
 	}
 	log.Info("overview started")
 	stopWatch := conn.Watch(ctx, func() { e.dirty.Store(true) })
+	stopOwners := func() {}
+	if e.owners != nil {
+		stopOwners = e.owners.start(conn, func() { e.dirty.Store(true) })
+	}
 	defer func() {
+		stopOwners()
 		stopWatch()
 		log.Info("overview stopped")
 	}()
@@ -318,11 +335,22 @@ func (e *overviewEngine) recompute(ctx context.Context, conn overviewConn) bool 
 			in.onlyIn[k.gvr] = ns
 		}
 	}
+	if e.owners != nil && e.owners.read(ctx, in) {
+		pending = true
+	}
 	e.mu.Lock()
 	m := e.measuredLocked()
 	e.mu.Unlock()
 	now := e.now()
 	report := computeOverviewWith(in, e.cfg, now, m, e.life)
+	if e.owners != nil {
+		// The kinds the walks met but could not follow yet are resolved
+		// and watched for the next recompute.
+		if e.owners.learn(ctx, report.learnt.met) {
+			pending = true
+		}
+		learnedWorkloads.recordChains(e.deps.ClusterKey, report.learnt.chains)
+	}
 	if e.life != nil {
 		e.life.apply(report, now)
 	}

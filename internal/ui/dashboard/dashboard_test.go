@@ -36,6 +36,7 @@ type fakes struct {
 	ranges   []promhistory.Range
 	canceled int
 	usage    func(promhistory.Scope, promhistory.Range) (promhistory.Usage, error)
+	history  dashboard.HistoryFunc
 	win      investigation.Window
 }
 
@@ -54,6 +55,14 @@ func (f *fakes) sources(prom bool) dashboard.Sources {
 			f.focuses = append(f.focuses, focus)
 			return f.amounts
 		},
+	}
+	if f.history != nil {
+		src.History = func(w models.InfoWorkload) (promhistory.Target, error) {
+			f.mu.Lock()
+			h := f.history
+			f.mu.Unlock()
+			return h(w)
+		}
 	}
 	if prom {
 		src.Backend = "monitoring/prometheus"
@@ -384,6 +393,42 @@ func TestPrometheusFailureFallsBackToTheSession(t *testing.T) {
 	ticks(t, f, m, 1, 30*time.Second)
 	if len(f.reads) != 2 {
 		t.Errorf("%d reads after 60s, want a retry", len(f.reads))
+	}
+}
+
+// TestCustomWorkloadHistory: a custom workload is named as kubectl names
+// it; while kc does not know how its pods are owned the charts plot the
+// session and say why, then Prometheus reads it through the owner series.
+func TestCustomWorkloadHistory(t *testing.T) {
+	t.Parallel()
+	rollouts := schema.GroupVersionResource{Group: "argoproj.io", Version: "v1alpha1", Resource: "rollouts"}
+	target := dashboard.Target{Kind: dashboard.KindWorkload, Namespace: "shop", Name: "web", Workload: rollouts}
+	f := &fakes{now: t0, amounts: measured()}
+	f.history = func(models.InfoWorkload) (promhistory.Target, error) {
+		return promhistory.Target{}, errors.New("no pod of rollouts.argoproj.io seen yet")
+	}
+	m := open(t, f, true, target, 240, 42)
+	ticks(t, f, m, 2, 10*time.Second)
+	lines := screen(t, m, 240, 42)
+	requireText(t, lines, "namespace shop › rollouts.argoproj.io web", "Metrics API: no Prometheus history: no pod of rollouts.argoproj.io seen yet")
+	if len(f.reads) != 0 {
+		t.Fatalf("%d reads of a kind Prometheus cannot read", len(f.reads))
+	}
+
+	f.mu.Lock()
+	f.history = func(w models.InfoWorkload) (promhistory.Target, error) {
+		return promhistory.Target{Kind: "Rollout", Custom: true, Via: "ReplicaSet", Namespace: w.Namespace, Name: w.Name}, nil
+	}
+	f.mu.Unlock()
+	ticks(t, f, m, 1, 10*time.Second)
+	if len(f.reads) != 1 {
+		t.Fatalf("%d reads once the chain is known, want 1", len(f.reads))
+	}
+	if s := f.reads[0]; s.Kind != promhistory.ScopeWorkload || s.Workload != (promhistory.Target{Kind: "Rollout", Custom: true, Via: "ReplicaSet", Namespace: "shop", Name: "web"}) || s.UID != "dep-uid" {
+		t.Errorf("scope = %+v, want the Rollout through its ReplicaSets", s)
+	}
+	if lines := screen(t, m, 240, 42); contains(lines, "no Prometheus history") {
+		t.Errorf("the source still says there is no history:\n%s", strings.Join(lines, "\n"))
 	}
 }
 

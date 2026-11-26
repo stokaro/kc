@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
@@ -28,9 +29,16 @@ import (
 // pool, as kc runs: the overview engine's namespace caches need it.
 func pooledTestApp(t *testing.T, ns string) *App {
 	t.Helper()
+	return pooledTestAppOn(t, testCfg, ns)
+}
+
+// pooledTestAppOn is pooledTestApp on the API server of cfg, for a test
+// with a control plane of its own.
+func pooledTestAppOn(t *testing.T, cfg *rest.Config, ns string) *App {
+	t.Helper()
 	kc := clientcmdapi.NewConfig()
-	kc.Clusters["envtest"] = &clientcmdapi.Cluster{Server: testCfg.Host, CertificateAuthorityData: testCfg.CAData}
-	kc.AuthInfos["envtest"] = &clientcmdapi.AuthInfo{ClientCertificateData: testCfg.CertData, ClientKeyData: testCfg.KeyData, Token: testCfg.BearerToken}
+	kc.Clusters["envtest"] = &clientcmdapi.Cluster{Server: cfg.Host, CertificateAuthorityData: cfg.CAData}
+	kc.AuthInfos["envtest"] = &clientcmdapi.AuthInfo{ClientCertificateData: cfg.CertData, ClientKeyData: cfg.KeyData, Token: cfg.BearerToken}
 	kc.Contexts["envtest"] = &clientcmdapi.Context{Cluster: "envtest", AuthInfo: "envtest", Namespace: ns}
 	kc.CurrentContext = "envtest"
 	path := filepath.Join(t.TempDir(), "kubeconfig")
