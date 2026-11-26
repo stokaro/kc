@@ -69,12 +69,13 @@ func (a *App) showDashboard() tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	scope := a.overviewNamespace(a.activePanel)
-	return a.openDashboard(conn, scope, a.dashboardTarget(ctx, scope))
+	return a.openDashboard(conn, scope, a.dashboardTarget(ctx, conn, scope))
 }
 
 // dashboardTarget is the dashboard target of the row under the active
-// panel's cursor, else of scope.
-func (a *App) dashboardTarget(ctx context.Context, scope string) dashboard.Target {
+// panel's cursor, else of scope. conn is the active panel's connection, the
+// one the row was read from.
+func (a *App) dashboardTarget(ctx context.Context, conn *panelConn, scope string) dashboard.Target {
 	t := dashboard.Target{Kind: dashboard.KindScope, Namespace: scope}
 	p := a.panelByIndex(a.activePanel)
 	if p == nil {
@@ -93,7 +94,7 @@ func (a *App) dashboardTarget(ctx context.Context, scope string) dashboard.Targe
 		return dashboard.Target{Kind: dashboard.KindNode, Namespace: scope, Name: obj.Name()}
 	case gvr == dashboardPodsGVR && obj.Namespace() != "":
 		return dashboard.Target{Kind: dashboard.KindPod, Namespace: obj.Namespace(), Name: obj.Name()}
-	case models.IsWorkloadTarget(a.currentClusterKey(), gvr) && obj.Namespace() != "":
+	case models.IsWorkloadTarget(conn.clusterKey(), gvr) && obj.Namespace() != "":
 		return dashboard.Target{Kind: dashboard.KindWorkload, Namespace: obj.Namespace(), Name: obj.Name(), Workload: gvr}
 	}
 	return t
@@ -170,7 +171,7 @@ func (a *App) dashboardSources(conn *panelConn, engine *gatedInfo, scope string)
 		a.promShared = promhistory.NewShared(promhistory.DefaultConcurrency, promhistory.DefaultCacheEntries)
 	}
 	src.Backend = backend.Namespace + "/" + backend.Service
-	src.Usage = dashboardUsage(a.ctx, a.cl.GetConfig, key, backend, a.cfg.MetricsHistory, a.promShared)
+	src.Usage = dashboardUsage(a.ctx, conn.cluster().GetConfig, key, backend, a.cfg.MetricsHistory, a.promShared)
 	src.History = func(w models.InfoWorkload) (promhistory.Target, error) { return workloadHistoryTarget(key, w) }
 	return src
 }
