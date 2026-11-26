@@ -35,6 +35,14 @@ reason. `n/a` with the value `none` means there was nothing to check,
 which is not a pass. `(partial)` means some of the types could not be
 read.
 
+A check that needs an add-on is `n/a` while the cluster does not serve
+its type, for example `cert-manager is not installed` for the
+Certificate check. kc notices an add-on that is installed or removed
+while it runs at the next discovery refresh
+(`kubernetes.discovery.refresh`, 30s), or at once after `C-r`. When an
+add-on is removed, its objects go with it: they are not listed as
+recovered.
+
 A capacity row takes the state of its worst node, for example
 `node full, 1 of 2 nodes`. Its bases are those of the Info panel:
 `pods 22% req 25% lim 116% of alloc, node 40% of cap`. A node is
@@ -66,6 +74,9 @@ of their section.
 - `M-c` copies all input commands of the row in focus. The command line
   reads `Inputs (N):` because no single command gives the value.
 - `C-z` keeps only the rows in a fault state.
+- `C-r` recomputes at once and reads API discovery again, so a type
+  installed or removed since counts without waiting for the refresh.
+  `C-r` in the Info panel does the same for its summary.
 
 ## Limits
 

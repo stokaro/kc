@@ -89,6 +89,8 @@ Workloads have Scale, Restart and Roll back rows; CronJobs have Run now and Susp
 
 The first row of every panel root is `/overview`, a report of checks about the cluster and the namespace (`M-i`, or `kc overview`). See [Cluster overview](../internal/help/topics/overview.md), [Needs attention](../internal/help/topics/attention.md) and [Quiet checks](../internal/help/topics/quiet-checks.md). The Info panel mode shows the load of the other panel's scope; see [Info mode](../internal/help/topics/mode-info.md).
 
+Info and the dashboard (`C-x g`) treat an object of a custom kind that controls pods, such as an Argo Rollout, as a workload: its pods, their usage and its desired replicas from the CRD's scale subresource. kc follows the pods' controller references through any namespaced kind and watches only the kinds it meets there. See [Info mode](../internal/help/topics/mode-info.md) and [Dashboard](../internal/help/topics/dashboard.md#custom-workloads).
+
 ### Pin, freeze and the investigation window
 
 `C-x p` pins a Describe, Manifest, Logs or Info panel to what it shows, `C-x f` freezes its display, and `C-x w` sets one time window for the Logs and Info panels and the dashboard. See [Pin and freeze a panel](../internal/help/topics/pin-freeze.md) and [Investigation window](../internal/help/topics/investigation-window.md).

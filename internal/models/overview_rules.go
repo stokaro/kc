@@ -99,6 +99,9 @@ type overviewFinding struct {
 	// notApplicable says why there is nothing to check (no objects of the
 	// kind in scope, an add-on not installed). It is not a pass.
 	notApplicable string
+	// addonMissing is set with notApplicable when the cluster does not
+	// serve the add-on kind the rule needs (optionalNotServed).
+	addonMissing bool
 }
 
 // overviewReport is the result of one recompute.
@@ -123,6 +126,9 @@ type overviewReport struct {
 	info overviewInfoInput
 	// amounts is what the dashboard plots (UsageAmounts).
 	amounts overviewAmounts
+	// learnt is what the walks found for the engine: owner kinds to
+	// resolve and the custom kinds seen in controller chains.
+	learnt workloadLearning
 }
 
 // finding returns the finding with id, if any.
@@ -159,7 +165,7 @@ func computeOverviewWith(in *overviewInput, cfg appconfig.OverviewConfig, now ti
 	addGraceNotes(&rc, report.findings)
 	report.nodes = summarizeNodes(&rc)
 	var byPod map[string][]InfoWorkload
-	report.workloads, byPod = summarizeWorkloads(&rc)
+	report.workloads, byPod, report.learnt = summarizeWorkloads(&rc)
 	report.workloadsReason = rc.in.missingReason(ovPodsGVR)
 	report.replicaSetsReason = rc.in.missingReason(ovReplicaSetsGVR)
 	report.pods = summarizePods(&rc, byPod)
@@ -242,7 +248,7 @@ var overviewRules = []overviewRule{
 // severity is the worst target's.
 func countFinding(rc *ruleContext, f overviewFinding, needs []schema.GroupVersionResource, targets func() []overviewTarget) overviewFinding {
 	if reason := optionalNotServed(rc.in, needs); reason != "" {
-		return notApplicable(f, reason)
+		return addonNotServed(f, reason)
 	}
 	if reason := rc.in.missingReason(needs...); reason != "" {
 		f.unavailable = reason

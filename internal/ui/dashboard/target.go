@@ -6,6 +6,7 @@
 package dashboard
 
 import (
+	"errors"
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -79,11 +80,17 @@ func (t Target) Title() string {
 	}
 }
 
+// workloadKind names the kind of a workload: Deployment for a built-in
+// one, the resource as kubectl names it (rollouts.argoproj.io) for any
+// other, so a custom StatefulSet is not taken for the apps one.
 func workloadKind(gvr schema.GroupVersionResource) string {
 	if k, ok := promhistory.KindFor(gvr.Group, gvr.Resource); ok {
 		return k
 	}
-	return gvr.Resource
+	if gvr.Group == "" {
+		return gvr.Resource
+	}
+	return gvr.Resource + "." + gvr.Group
 }
 
 // Focus is the overview focus of the target.
@@ -100,19 +107,34 @@ func (t Target) Focus() models.UsageFocus {
 	}
 }
 
+// HistoryFunc names the Prometheus target of a workload, or says why
+// Prometheus cannot read its pods.
+type HistoryFunc func(models.InfoWorkload) (promhistory.Target, error)
+
 // Scope is the Prometheus scope of the target, with the identity of the
-// live object; ok is false when Prometheus cannot read this kind.
-func (t Target) Scope(uid types.UID, created time.Time) (promhistory.Scope, bool) {
+// live object; the error says why Prometheus cannot read it. history names
+// the target of a workload; nil knows the built-in kinds only.
+func (t Target) Scope(uid types.UID, created time.Time, history HistoryFunc) (promhistory.Scope, error) {
 	s := promhistory.Scope{Namespace: t.Namespace, Name: t.Name, UID: string(uid), Since: created}
 	switch t.Kind {
 	case KindNode:
 		s.Kind, s.Namespace = promhistory.ScopeNode, ""
 	case KindWorkload:
-		kind, ok := promhistory.KindFor(t.Workload.Group, t.Workload.Resource)
-		if !ok {
-			return s, false
+		w := models.InfoWorkload{GVR: t.Workload, Namespace: t.Namespace, Name: t.Name}
+		target := promhistory.Target{Namespace: t.Namespace, Name: t.Name}
+		var err error
+		switch kind, ok := promhistory.KindFor(t.Workload.Group, t.Workload.Resource); {
+		case history != nil:
+			target, err = history(w)
+		case ok:
+			target.Kind = kind
+		default:
+			err = errors.New("no owner series for " + workloadKind(t.Workload))
 		}
-		s.Kind, s.Workload, s.Name = promhistory.ScopeWorkload, promhistory.Target{Kind: kind, Namespace: t.Namespace, Name: t.Name}, ""
+		if err != nil {
+			return s, err
+		}
+		s.Kind, s.Workload, s.Name = promhistory.ScopeWorkload, target, ""
 	case KindPod:
 		s.Kind = promhistory.ScopePod
 	default:
@@ -121,7 +143,7 @@ func (t Target) Scope(uid types.UID, created time.Time) (promhistory.Scope, bool
 			s.Namespace = ""
 		}
 	}
-	return s, true
+	return s, nil
 }
 
 // Object is the Kubernetes object of the target, to open in Commander;

@@ -205,7 +205,9 @@ func (l *overviewLifecycle) wasActive(k lifecycleKey) bool {
 //     computed, is listed as recovered (severity ok) for recoveredRetention;
 //   - when a finding cannot be computed (its source is denied or not
 //     synced), its last active targets are listed as unknown: a gap in the
-//     observation never resolves a finding.
+//     observation never resolves a finding;
+//   - when the add-on a finding needs is not served (removed while kc
+//     ran), its targets are forgotten: they went with the add-on.
 //
 // The value and severity of a row stay those the rules computed from the
 // current input.
@@ -219,6 +221,12 @@ func (l *overviewLifecycle) apply(report *overviewReport, now time.Time) {
 		}
 		if f.unavailable != "" {
 			f.targets = append(f.targets, l.unknownTargets(f.id, f.unavailable)...)
+			continue
+		}
+		if f.addonMissing {
+			// The add-on is gone and its objects with it: nothing
+			// recovered, and nothing is left to follow.
+			l.forget(f.id)
 			continue
 		}
 		current := make(map[lifecycleKey]bool, len(f.targets))
@@ -258,6 +266,16 @@ func (l *overviewLifecycle) apply(report *overviewReport, now time.Time) {
 		}
 		if f.partial != "" {
 			f.targets = append(f.targets, l.unknownTargets(f.id, f.partial, f.partialGVRs...)...)
+		}
+	}
+}
+
+// forget drops what the session knows about the targets of finding.
+// l.mu must be held.
+func (l *overviewLifecycle) forget(findingID string) {
+	for k := range l.entries {
+		if k.finding == findingID {
+			delete(l.entries, k)
 		}
 	}
 }

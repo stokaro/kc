@@ -39,6 +39,16 @@ func notApplicable(f overviewFinding, reason string) overviewFinding {
 	return f
 }
 
+// addonNotServed is notApplicable for a rule whose add-on the cluster does
+// not serve, reason being optionalNotServed's. When the add-on was removed
+// while kc ran, its objects went with it: they did not recover, and the
+// session lifecycle lists none of them.
+func addonNotServed(f overviewFinding, reason string) overviewFinding {
+	f = notApplicable(f, reason)
+	f.addonMissing = true
+	return f
+}
+
 // stillApplicable undoes notApplicable for a finding that lists recovered
 // targets: their objects are gone, so the rules found nothing to check, yet
 // the row describes them and must not read as nothing to check or fold

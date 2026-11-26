@@ -93,7 +93,7 @@ func (a *App) dashboardTarget(ctx context.Context, scope string) dashboard.Targe
 		return dashboard.Target{Kind: dashboard.KindNode, Namespace: scope, Name: obj.Name()}
 	case gvr == dashboardPodsGVR && obj.Namespace() != "":
 		return dashboard.Target{Kind: dashboard.KindPod, Namespace: obj.Namespace(), Name: obj.Name()}
-	case models.IsInfoWorkload(gvr) && obj.Namespace() != "":
+	case models.IsWorkloadTarget(a.currentClusterKey(), gvr) && obj.Namespace() != "":
 		return dashboard.Target{Kind: dashboard.KindWorkload, Namespace: obj.Namespace(), Name: obj.Name(), Workload: gvr}
 	}
 	return t
@@ -170,7 +170,8 @@ func (a *App) dashboardSources(conn *panelConn, engine *gatedInfo, scope string)
 		a.promShared = promhistory.NewShared(promhistory.DefaultConcurrency, promhistory.DefaultCacheEntries)
 	}
 	src.Backend = backend.Namespace + "/" + backend.Service
-	src.Usage = dashboardUsage(a.ctx, conn.cluster().GetConfig, key, backend, a.cfg.MetricsHistory, a.promShared)
+	src.Usage = dashboardUsage(a.ctx, a.cl.GetConfig, key, backend, a.cfg.MetricsHistory, a.promShared)
+	src.History = func(w models.InfoWorkload) (promhistory.Target, error) { return workloadHistoryTarget(key, w) }
 	return src
 }
 

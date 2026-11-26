@@ -189,6 +189,15 @@ func (c *scopedOverviewConn) OnlyNamespace(gvr schema.GroupVersionResource) stri
 // Watch's stop gives them up.
 func (c *scopedOverviewConn) KeepAlive(context.Context) {}
 
+// Rediscover refreshes the discovery of every cache the overview reads.
+// The scope decisions stay: a kind denied when the overview started stays
+// denied (ADR 0182).
+func (c *scopedOverviewConn) Rediscover() {
+	for _, p := range c.parts {
+		p.Rediscover()
+	}
+}
+
 // errNoCluster is returned when the overview has no cluster to read.
 var errNoCluster = errors.New("no cluster")
 

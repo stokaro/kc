@@ -96,3 +96,21 @@ scene_dashboard_range_menu() {
 	shot
 	esc
 }
+
+scene_dashboard_custom_workload() {
+	custom_workload_up
+	fresh --context "$CONTEXT" -n "$CUSTOM_NS"
+	shell_line "cd $CUSTOM_CRD"
+	wait_for "storefront"
+	search storefront
+	wait_for "Pods of $CUSTOM_CRD $CUSTOM_NS/storefront" 60
+	cx g
+	wait_for "› $CUSTOM_CRD storefront  LIVE" 30
+	key +
+	wait_for "last 5 minutes"
+	log "collecting custom workload samples for $((DASH_WAIT / 2))s"
+	sleep $((DASH_WAIT / 2))
+	wait_for_images 2
+	shot
+	custom_workload_down
+}

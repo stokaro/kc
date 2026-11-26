@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -29,6 +30,10 @@ type Sources struct {
 	// Usage starts a Prometheus read; nil when the context has no
 	// backend. read runs in a tea.Cmd; cancel ends it early.
 	Usage func(scope promhistory.Scope, r promhistory.Range) (read func() (promhistory.Usage, error), cancel func())
+	// History names the Prometheus target of a workload, custom kinds
+	// included, or says why Prometheus cannot read its pods; nil knows the
+	// built-in kinds only. It runs on the UI goroutine and does no I/O.
+	History HistoryFunc
 	// Backend names the backend for the source labels.
 	Backend string
 	// Now is the clock; Loc the time zone of the labels.
@@ -109,6 +114,12 @@ type view struct {
 	seen bool
 	prom promState
 }
+
+// noHistoryError is why Prometheus cannot read a target at all, as opposed
+// to a read that failed.
+type noHistoryError struct{ err error }
+
+func (e noHistoryError) Error() string { return e.err.Error() }
 
 // promState is the Prometheus read of a view.
 type promState struct {
@@ -431,9 +442,16 @@ func (m *Model) maybeRead() tea.Cmd {
 		// Wait for the object's identity: the read starts at its creation.
 		return nil
 	}
-	scope, ok := v.target.Scope(v.now.UID, v.now.Created)
-	if !ok {
+	scope, err := v.target.Scope(v.now.UID, v.now.Created, m.src.History)
+	if err != nil {
+		// Nothing to read: the charts show the session, and the source
+		// label says why.
+		v.prom.err, v.prom.usage = noHistoryError{err}, nil
 		return nil
+	}
+	if errors.As(v.prom.err, new(noHistoryError)) {
+		// The kind became readable: kc saw how its pods are owned.
+		v.prom.err = nil
 	}
 	if !v.now.Found {
 		scope.UID, scope.Since = "", time.Time{}

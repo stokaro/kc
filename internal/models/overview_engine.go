@@ -2,13 +2,12 @@ package models
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -51,6 +50,10 @@ type overviewConn interface {
 	OnlyNamespace(gvr schema.GroupVersionResource) string
 	// KeepAlive renews the cache's pool entry.
 	KeepAlive(ctx context.Context)
+	// Rediscover reads API discovery again now instead of at the next
+	// periodic refresh, and retries or drops the kinds whose served state
+	// changed (C-r).
+	Rediscover()
 }
 
 // overviewEngine recomputes the overview in the background, at most once per
@@ -78,8 +81,14 @@ type overviewEngine struct {
 	// beside a dialog, and a drain or a delete made there must show in it
 	// at once. A recompute reads the cache only.
 	computeBehindDialogs bool
+	// owners follows controller chains through kinds outside
+	// overviewKinds (ADR 0364); nil without a cluster.
+	owners *ownerWatch
 
 	dirty atomic.Bool
+	// rediscover asks the running engine to have its connection read API
+	// discovery again before the next recompute (C-r).
+	rediscover atomic.Bool
 
 	mu          sync.Mutex
 	running     bool
@@ -126,6 +135,7 @@ func newOverviewEngine(deps Deps, namespace string) *overviewEngine {
 		now:       time.Now,
 		life:      newOverviewLifecycle(),
 		listeners: make(map[int]func()),
+		owners:    newOwnerWatch(deps, namespace),
 	}
 	e.connect = func(ctx context.Context) (overviewConn, error) { return acquireOverviewConn(ctx, deps, namespace) }
 	e.measure = func() *overviewMeasured {
@@ -166,8 +176,21 @@ func (e *overviewEngine) snapshot() (*overviewReport, error) {
 
 // reread asks for a recompute on the next tick, at most overviewInterval
 // away, instead of after the next event or overviewRefreshEvery. The
-// recompute reads the shared cache.
-func (e *overviewEngine) reread() { e.dirty.Store(true) }
+// recompute reads the shared cache. It also has API discovery read again,
+// so a kind installed or removed since (an add-on such as cert-manager)
+// shows without waiting for the periodic discovery refresh.
+func (e *overviewEngine) reread() {
+	e.rediscover.Store(true)
+	e.dirty.Store(true)
+}
+
+// want asks the engine to read the objects of gvr, the kind of a focused
+// workload, when it is a custom kind with a scale subresource (ADR 0364).
+func (e *overviewEngine) want(gvr schema.GroupVersionResource) {
+	if e.owners.want(gvr) {
+		e.dirty.Store(true)
+	}
+}
 
 // subscribe calls fn after every recompute until the returned cancel.
 func (e *overviewEngine) subscribe(fn func()) func() {
@@ -236,7 +259,12 @@ func (e *overviewEngine) run(stop <-chan struct{}) {
 	}
 	log.Info("overview started")
 	stopWatch := conn.Watch(ctx, func() { e.dirty.Store(true) })
+	stopOwners := func() {}
+	if e.owners != nil {
+		stopOwners = e.owners.start(conn, func() { e.dirty.Store(true) })
+	}
 	defer func() {
+		stopOwners()
 		stopWatch()
 		log.Info("overview stopped")
 	}()
@@ -246,6 +274,9 @@ func (e *overviewEngine) run(stop <-chan struct{}) {
 	lastKeep := e.now()
 	var lastCompute time.Time
 	for {
+		if e.rediscover.Swap(false) {
+			conn.Rediscover()
+		}
 		e.refreshMeasured(ctx)
 		if e.now().Sub(lastCompute) >= e.refresh {
 			e.dirty.Store(true)
@@ -304,11 +335,22 @@ func (e *overviewEngine) recompute(ctx context.Context, conn overviewConn) bool 
 			in.onlyIn[k.gvr] = ns
 		}
 	}
+	if e.owners != nil && e.owners.read(ctx, in) {
+		pending = true
+	}
 	e.mu.Lock()
 	m := e.measuredLocked()
 	e.mu.Unlock()
 	now := e.now()
 	report := computeOverviewWith(in, e.cfg, now, m, e.life)
+	if e.owners != nil {
+		// The kinds the walks met but could not follow yet are resolved
+		// and watched for the next recompute.
+		if e.owners.learn(ctx, report.learnt.met) {
+			pending = true
+		}
+		learnedWorkloads.recordChains(e.deps.ClusterKey, report.learnt.chains)
+	}
 	if e.life != nil {
 		e.life.apply(report, now)
 	}
@@ -409,19 +451,33 @@ func acquireOverviewConn(ctx context.Context, deps Deps, namespace string) (over
 }
 
 func newClusterOverviewConn(cl *kccluster.Cluster, release func(), kinds []overviewKind) *clusterOverviewConn {
-	return &clusterOverviewConn{cl: cl, release: release, kinds: kinds, informers: make(map[schema.GroupVersionResource]crcache.Informer), failed: make(map[schema.GroupVersionResource]string)}
+	return &clusterOverviewConn{
+		cl: cl, release: release, kinds: kinds,
+		informers: make(map[schema.GroupVersionResource]crcache.Informer),
+		failed:    make(map[schema.GroupVersionResource]string),
+		since:     make(map[schema.GroupVersionResource]time.Time),
+		regs:      make(map[schema.GroupVersionResource]func()),
+	}
 }
 
 // clusterOverviewConn reads some overview kinds from a kc cluster's cache.
+// After every discovery refresh of the cluster it starts the informers of
+// the kinds that are served now and drops those that are not served any
+// more (overview_served.go).
 type clusterOverviewConn struct {
 	cl      *kccluster.Cluster
 	release func() // gives up the pool lease; called once by Watch's stop
-	kinds   []overviewKind
 
 	mu        sync.Mutex
-	started   time.Time
+	kinds     []overviewKind
 	informers map[schema.GroupVersionResource]crcache.Informer
 	failed    map[schema.GroupVersionResource]string
+	// since is when each informer was got; its sync grace counts from there.
+	since map[schema.GroupVersionResource]time.Time
+	// regs remove the overview's handler from each informer.
+	regs map[schema.GroupVersionResource]func()
+	// onEvent is Watch's callback, nil outside Watch.
+	onEvent func()
 }
 
 func (c *clusterOverviewConn) Reader(schema.GroupVersionResource) crclient.Reader {
@@ -435,48 +491,19 @@ func (c *clusterOverviewConn) OnlyNamespace(schema.GroupVersionResource) string 
 
 func (c *clusterOverviewConn) Watch(ctx context.Context, onEvent func()) func() {
 	log := ctrllog.FromContext(ctx).WithName("overview")
-	handler := toolscache.ResourceEventHandlerFuncs{
-		AddFunc:    func(any) { onEvent() },
-		UpdateFunc: func(any, any) { onEvent() },
-		DeleteFunc: func(any) { onEvent() },
-	}
-	var regs []func()
 	c.mu.Lock()
-	c.started = time.Now()
+	c.onEvent = onEvent
+	kinds := slices.Clone(c.kinds)
 	c.mu.Unlock()
-	for _, k := range c.kinds {
-		getCtx, cancel := context.WithTimeout(ctx, informerStartTimeout)
-		// Do not wait for the sync: rows of a kind that cannot be listed
-		// say so instead of blocking the overview.
-		inf, err := c.cl.GetCache().GetInformer(getCtx, k.newObject(), crcache.BlockUntilSynced(false))
-		cancel()
-		if err != nil {
-			reason := err.Error()
-			if meta.IsNoMatchError(err) {
-				reason = notServedReason
-			}
+	for _, k := range kinds {
+		if reason := c.startKind(ctx, k); reason != "" {
 			log.Info("overview kind unavailable", "gvr", k.gvr.String(), "reason", reason)
-			c.mu.Lock()
-			c.failed[k.gvr] = reason
-			c.mu.Unlock()
-			continue
 		}
-		reg, err := inf.AddEventHandler(handler)
-		if err != nil {
-			c.mu.Lock()
-			c.failed[k.gvr] = err.Error()
-			c.mu.Unlock()
-			continue
-		}
-		c.mu.Lock()
-		c.informers[k.gvr] = inf
-		c.mu.Unlock()
-		regs = append(regs, func() { _ = inf.RemoveEventHandler(reg) })
 	}
+	stopFollowing := c.followDiscovery(ctx)
 	return func() {
-		for _, r := range regs {
-			r()
-		}
+		stopFollowing()
+		c.stopKinds()
 		c.giveUp()
 	}
 }
@@ -505,7 +532,7 @@ func (c *clusterOverviewConn) Unavailable(gvr schema.GroupVersionResource) (stri
 	if inf.HasSynced() {
 		return "", false
 	}
-	if time.Since(c.started) < overviewSyncGrace {
+	if time.Since(c.since[gvr]) < overviewSyncGrace {
 		return "loading", true
 	}
 	return "the cache did not sync (no list or watch permission?)", false
@@ -514,3 +541,7 @@ func (c *clusterOverviewConn) Unavailable(gvr schema.GroupVersionResource) (stri
 // KeepAlive does nothing: the lease taken in acquireOverviewConn keeps the
 // pool entry alive until Watch's stop gives it up.
 func (c *clusterOverviewConn) KeepAlive(context.Context) {}
+
+// Rediscover refreshes the cluster's discovery. Its listeners run, and
+// followDiscovery among them retries and drops kinds.
+func (c *clusterOverviewConn) Rediscover() { c.cl.RefreshDiscovery() }

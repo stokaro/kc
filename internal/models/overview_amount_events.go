@@ -63,7 +63,10 @@ var knownKinds = map[schema.GroupKind]schema.GroupVersionResource{
 	{Group: "autoscaling", Kind: "HorizontalPodAutoscaler"}: {Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"},
 }
 
-func involvedGVR(ref corev1.ObjectReference) (schema.GroupVersionResource, bool) {
+// involvedGVR maps the object an Event is about to its GVR: a workload the
+// walks can reach (built in, or an owner kind the engine resolved) or one
+// of knownKinds.
+func involvedGVR(idx *workloadIndex, ref corev1.ObjectReference) (schema.GroupVersionResource, bool) {
 	gv, err := schema.ParseGroupVersion(ref.APIVersion)
 	if err != nil {
 		return schema.GroupVersionResource{}, false
@@ -71,6 +74,9 @@ func involvedGVR(ref corev1.ObjectReference) (schema.GroupVersionResource, bool)
 	gk := schema.GroupKind{Group: gv.Group, Kind: ref.Kind}
 	if gvr, ok := workloadKinds[gk]; ok {
 		return gvr, true
+	}
+	if k, ok := idx.ownerKinds[gk]; ok && k.namespaced {
+		return k.gvr, true
 	}
 	gvr, ok := knownKinds[gk]
 	return gvr, ok
@@ -119,7 +125,7 @@ func summarizeEvents(rc *ruleContext, idx *workloadIndex, byPod map[string][]Inf
 			Kind:  io.Kind, Type: e.Type, Reason: e.Reason, Message: e.Message, Count: count,
 			First: first, Last: last, FirstKnown: firstKnown,
 		}}
-		gvr, known := involvedGVR(io)
+		gvr, known := involvedGVR(idx, io)
 		ns := cmp.Or(io.Namespace, e.Namespace)
 		oe.ev.Object = ObjectRef{Namespaced: io.Kind != "Node", Namespace: ns, Name: io.Name, UID: io.UID}
 		if io.Kind == "Node" {
@@ -134,7 +140,7 @@ func summarizeEvents(rc *ruleContext, idx *workloadIndex, byPod map[string][]Inf
 			oe.pod, oe.node, oe.subjects = io.Name, nodeOf[key], byPod[key]
 		case io.Kind == "Node":
 			oe.node = io.Name
-		case known && IsInfoWorkload(gvr):
+		case known && idx.isWorkload(gvr):
 			oe.subjects = workloadChain(idx, InfoWorkload{GVR: gvr, Namespace: ns, Name: io.Name}, io.UID)
 		}
 		out = append(out, oe)

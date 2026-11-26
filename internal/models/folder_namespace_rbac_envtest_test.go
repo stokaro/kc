@@ -58,8 +58,15 @@ func newNamespaceUserEnv(t *testing.T, user string, grantNamespaces ...string) *
 	if testCfg == nil {
 		t.Skip("envtest not available")
 	}
+	return newNamespaceUserEnvOn(t, testCfg, user, grantNamespaces...)
+}
+
+// newNamespaceUserEnvOn is newNamespaceUserEnv on the API server of cfg,
+// for a test that needs a control plane of its own (CRDs).
+func newNamespaceUserEnvOn(t *testing.T, cfg *rest.Config, user string, grantNamespaces ...string) *namespaceUserEnv {
+	t.Helper()
 	ctx := t.Context()
-	admin, err := kccluster.New(testCfg)
+	admin, err := kccluster.New(cfg)
 	if err != nil {
 		t.Fatalf("admin cluster: %v", err)
 	}
@@ -74,7 +81,7 @@ func newNamespaceUserEnv(t *testing.T, user string, grantNamespaces ...string) *
 	pool.Start()
 	t.Cleanup(pool.Stop)
 	key := kccluster.Key{
-		KubeconfigPath:  writeEnvtestKubeconfig(t, testCfg),
+		KubeconfigPath:  writeEnvtestKubeconfig(t, cfg),
 		ContextName:     "envtest",
 		ImpersonateUser: user,
 	}

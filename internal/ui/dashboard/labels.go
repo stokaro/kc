@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -259,6 +260,8 @@ func (m *Model) sourceTitle(v *view) string {
 	switch {
 	case m.src.Usage == nil:
 		return "no Prometheus (C-x m)"
+	case errors.As(v.prom.err, new(noHistoryError)):
+		return "Metrics API: no Prometheus history: " + firstLine(v.prom.err.Error())
 	case v.prom.err != nil:
 		// promhistory names the backend first; the title bar has it.
 		msg := strings.TrimPrefix(firstLine(v.prom.err.Error()), "prometheus "+m.src.Backend+": ")
