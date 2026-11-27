@@ -41,7 +41,9 @@ type Widget struct {
 	folderHasBack bool
 	folderHandler func(back bool, selID string, next models.Folder)
 
-	bt            *table.BigTable
+	bt *table.BigTable
+	// marksGen counts the tables the widget built; see MarksGeneration.
+	marksGen      uint64
 	lastColTitles []string
 	lastHeader    []string // lastColTitles with the sort mark
 
@@ -301,6 +303,11 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 		info.BottomIndicator = "v"
 	}
 	info.FooterStatus = fmt.Sprintf("%d/%d • %d%%", current, totalReal, percent)
+	// The count comes first, so a status cut in a narrow panel still
+	// says that F8 and the other set actions take the marked rows.
+	if n := w.MarkedCount(ctx); n > 0 {
+		info.FooterStatus = fmt.Sprintf("%d marked • %s", n, info.FooterStatus)
+	}
 	return info
 }
 
@@ -1178,6 +1185,7 @@ func (w *Widget) ensureBigTable(ctx context.Context) {
 	bt.SetMode(ctx, w.tableMode)
 	w.decorateBigTable(ctx, &bt)
 	w.bt = &bt
+	w.marksGen++
 }
 
 func (w *Widget) decorateBigTable(ctx context.Context, bt *table.BigTable) {
