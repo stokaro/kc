@@ -27,9 +27,14 @@ type deleteTarget struct {
 	uid       types.UID
 	cluster   *kccluster.Cluster
 	context   string
-	// label names the object for the user, as kubectl's output does:
-	// "pod shop/web-1", "deployment.apps shop/web".
+	// noun names the object's kind for the user, as kubectl's output
+	// does: "pod", "deployment.apps"; label adds namespace/name:
+	// "pod shop/web-1".
+	noun  string
 	label string
+	// rowID is the ID of the marked row the target came from, so the row
+	// can be unmarked after the delete; empty for the cursor row.
+	rowID string
 }
 
 // errNoInstance means the row does not say which object instance it shows,
@@ -56,6 +61,7 @@ func deleteTargetFor(panelIdx int, item models.Item) (deleteTarget, error) {
 		uid:       obj.UID(),
 		cluster:   origin.Cluster,
 		context:   origin.Context,
+		noun:      objectNoun(gvr, itemKind(obj)),
 		label:     objectLabel(gvr, itemKind(obj), obj.Namespace(), obj.Name()),
 	}, nil
 }
@@ -73,6 +79,13 @@ func itemKind(item models.Item) string {
 // case, with the API group unless it is the core group, then
 // namespace/name. Without a kind it uses the resource name.
 func objectLabel(gvr schema.GroupVersionResource, kind, namespace, name string) string {
+	return objectNoun(gvr, kind) + " " + objectRef(namespace, name)
+}
+
+// objectNoun names a kind as kubectl's output does: in lower case, with
+// the API group unless it is the core group. Without a kind it uses the
+// resource name.
+func objectNoun(gvr schema.GroupVersionResource, kind string) string {
 	noun := strings.ToLower(kind)
 	if noun == "" {
 		noun = gvr.Resource
@@ -80,10 +93,15 @@ func objectLabel(gvr schema.GroupVersionResource, kind, namespace, name string) 
 	if gvr.Group != "" {
 		noun += "." + gvr.Group
 	}
+	return noun
+}
+
+// objectRef is namespace/name, or name for a cluster-scoped object.
+func objectRef(namespace, name string) string {
 	if namespace != "" {
-		name = namespace + "/" + name
+		return namespace + "/" + name
 	}
-	return noun + " " + name
+	return name
 }
 
 // executeDelete deletes target on the cluster it was read from. It never

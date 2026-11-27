@@ -265,6 +265,7 @@ type App struct {
 	pendingCopy          *copyRequest
 	closeViewer          func() // releases the open F3 viewer's file; see showViewerModal
 	pendingDelete        *deleteTarget
+	pendingDeleteSet     *deleteSet // the marked rows the F8 dialog asks about
 	lastCopyDir          string
 	transfer             *transferJob // the open copy dialog, if any
 	transferGen          int
@@ -1300,6 +1301,9 @@ func (a *App) panelActionHandlers() PanelActionHandlers {
 			return a.createNamespaceForPanel(p)
 		},
 		PanelActionDelete: func(p *Panel) tea.Cmd {
+			if marked := p.markedRows(); len(marked) > 0 {
+				return a.deleteMarkedForPanel(p, marked)
+			}
 			if cmd, ok := a.stopSelectionForPanel(p); ok {
 				return cmd
 			}
@@ -1964,20 +1968,26 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	if cmd := a.refuseReadOnly(target.context, "Delete", access.DeleteChecks(objectAccessTarget(obj))...); cmd != nil {
 		return cmd
 	}
-	a.pendingDelete = &target
+	a.pendingDelete, a.pendingDeleteSet = &target, nil
+	a.showDeleteDialog(func(m *DeleteConfirmModel) { m.Configure(target.label, target.context) })
+	return nil
+}
 
+// showDeleteDialog opens the F8 dialog with the content configure sets.
+// The caller records what a Yes deletes; closing the dialog forgets it.
+func (a *App) showDeleteDialog(configure func(*DeleteConfirmModel)) {
 	modal := a.modalManager.modals["delete_confirm"]
 	if modal == nil {
-		return nil
+		return
 	}
 	if a.deleteConfirm == nil {
 		model, ok := modal.content.(*DeleteConfirmModel)
 		if !ok {
-			return nil
+			return
 		}
 		a.deleteConfirm = model
 	}
-	a.deleteConfirm.Configure(target.label, target.context)
+	configure(a.deleteConfirm)
 	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
 	modal.SetContent(a.deleteConfirm)
 	modal.SetDimensions(a.width, a.height)
@@ -1987,11 +1997,10 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 	modal.SetWindowed(winW, winH, "")
 	a.setBackdrop(modal, "")
 	modal.SetOnClose(func() tea.Cmd {
-		a.pendingDelete = nil
+		a.pendingDelete, a.pendingDeleteSet = nil, nil
 		return nil
 	})
 	a.showModal("delete_confirm")
-	return nil
 }
 
 // createNamespaceWithName creates the namespace in the cluster of the

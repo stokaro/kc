@@ -54,7 +54,7 @@ func TestDeleteTargetFor(t *testing.T) {
 			t.Fatalf("deleteTargetFor() error = %v", err)
 		}
 		want := deleteTarget{panelIdx: 1, gvr: gvrConfigMaps, namespace: "team", name: "demo", uid: "uid-1", cluster: cl, context: "kind-dev",
-			label: "configmaps team/demo"}
+			noun: "configmaps", label: "configmaps team/demo"}
 		if got != want {
 			t.Fatalf("deleteTargetFor() = %+v, want %+v", got, want)
 		}
