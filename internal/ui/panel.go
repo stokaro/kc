@@ -1621,6 +1621,35 @@ func (p *Panel) GetSelectedItems() []Item {
 	return nil
 }
 
+// markedRows returns the marked rows of the list the panel shows, in list
+// order. Outside list mode it returns none: the panel then shows something
+// else than the rows the marks are on.
+func (p *Panel) markedRows() []Item {
+	if p == nil || p.Mode() != PanelModeList {
+		return nil
+	}
+	return p.GetSelectedItems()
+}
+
+// marksGeneration identifies the marks of the panel's list; see
+// listwidget.Widget.MarksGeneration.
+func (p *Panel) marksGeneration() uint64 {
+	if lw := p.accessorListWidget(); lw != nil {
+		return lw.MarksGeneration()
+	}
+	return 0
+}
+
+// unmarkRows removes the marks of the rows ids while the list still holds
+// the marks of generation gen.
+func (p *Panel) unmarkRows(ctx context.Context, gen uint64, ids []string) {
+	lw := p.listWidget(ctx)
+	if lw == nil || lw.Unmark(ctx, gen, ids) == 0 {
+		return
+	}
+	p.invalidateRenderCache()
+}
+
 func (p *Panel) GetCurrentItem() *Item {
 	if lw := p.accessorListWidget(); lw != nil {
 		if item := lw.CurrentItem(context.Background()); item != nil {

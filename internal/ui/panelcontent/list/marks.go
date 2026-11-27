@@ -51,6 +51,50 @@ func (w *Widget) folderMarks() bool {
 	return w.useFolder && w.folder != nil && w.bt != nil
 }
 
+// MarkedCount is the number of marked rows the list shows. It counts what
+// SelectedItems returns, without sorting the rows.
+func (w *Widget) MarkedCount(ctx context.Context) int {
+	n := 0
+	if w.folderMarks() {
+		for _, id := range w.bt.SelectedIDs() {
+			if _, ok := w.folder.ItemByID(ctx, id); ok {
+				n++
+			}
+		}
+		return n
+	}
+	for _, it := range w.items {
+		if it.Selected {
+			n++
+		}
+	}
+	return n
+}
+
+// MarksGeneration identifies the marks the widget holds now. It changes
+// when the widget shows another folder: a new table starts without marks,
+// and its rows may have the IDs of the old one's.
+func (w *Widget) MarksGeneration() uint64 { return w.marksGen }
+
+// Unmark removes the marks of the rows ids while the widget still holds
+// the marks of generation gen, and returns how many it removed. After a
+// change of folder it removes none, so rows that only share an ID keep
+// their marks.
+func (w *Widget) Unmark(ctx context.Context, gen uint64, ids []string) int {
+	if !w.folderMarks() || gen != w.marksGen || len(ids) == 0 {
+		return 0
+	}
+	drop := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		drop[id] = struct{}{}
+	}
+	n := w.markRows(ctx, func(r markableRow, was bool) (bool, bool) {
+		_, ok := drop[r.id]
+		return false, ok && was
+	})
+	return n
+}
+
 // markRows marks (or unmarks) every row keep accepts and redraws the table.
 // It returns how many rows changed.
 func (w *Widget) markRows(ctx context.Context, keep func(markableRow, bool) (bool, bool)) int {

@@ -728,13 +728,16 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		log.Info("copy completed", "subject", msg.subject, "path", msg.path)
 		return a, nil
 	case DeleteConfirmMsg:
-		target := a.pendingDelete
+		target, set := a.pendingDelete, a.pendingDeleteSet
 		if msg.Close {
 			a.hideModal()
 		}
 		// Clear pending delete regardless of confirmation outcome once we've captured it.
-		a.pendingDelete = nil
-		if target != nil && msg.Confirm {
+		a.pendingDelete, a.pendingDeleteSet = nil, nil
+		switch {
+		case msg.Confirm && set != nil:
+			return a, a.performDeleteSet(*set)
+		case msg.Confirm && target != nil:
 			return a, a.performDelete(*target)
 		}
 		return a, nil
@@ -807,6 +810,11 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			}
 		}
 		return a, tea.Batch(cmds...)
+	case deleteSetResultMsg:
+		cmd := a.finishDeleteSet(msg)
+		// Refresh on failure too, as for one object.
+		a.refreshPanelAfterEdit(msg.set.panelIdx)
+		return a, cmd
 	case resourceDeletedMsg:
 		if msg.err != nil {
 			text := deleteResultText(msg)

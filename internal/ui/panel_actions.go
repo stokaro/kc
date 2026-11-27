@@ -146,6 +146,10 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 			}
 		}
 	}
+	if marked := p.markedRows(); len(marked) > 0 {
+		// F8 works on the marked rows, never on the cursor row (#373).
+		caps.CanDelete = markedDeleteEnabled(env, marked)
+	}
 	// Namespace creation depends on both environment and location.
 	if env.AllowCreateNamespaces && env.permits(access.CreateNamespaceChecks()...) {
 		if strings.EqualFold(strings.TrimSpace(p.GetCurrentPath()), "/namespaces") {
@@ -153,6 +157,24 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 		}
 	}
 	return caps
+}
+
+// markedDeleteEnabled reports whether F8 is enabled with the marked rows:
+// when one of them is an object kc may delete, as for the cursor row, or a
+// row F8 stops. The handler refuses the whole set, saying which rows are in
+// the way, when another marked row cannot be deleted; a grayed key would
+// not name them.
+func markedDeleteEnabled(env PanelEnvironment, marked []Item) bool {
+	for _, row := range marked {
+		if _, ok := row.Item.(models.Stoppable); ok {
+			return true
+		}
+		obj, ok := row.Item.(models.ObjectItem)
+		if ok && env.AllowDeleteObjects && obj.SupportsVerb("delete") && env.permits(access.DeleteChecks(objectAccessTarget(obj))...) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Panel) environment() PanelEnvironment {
