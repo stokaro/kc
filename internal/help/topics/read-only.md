@@ -12,6 +12,8 @@ cannot delete or edit anything while you browse.
 - The keys that would write are grayed out in the function bar.
 - Pressing one anyway shows "Read-only mode: <action> is disabled".
 - A context switch says "Context: <name> (read-only)".
+- A red bar above the command line says when the configuration file
+  did not load; see below.
 
 ## What it refuses
 
@@ -45,12 +47,31 @@ readOnly:
 ```
 
 - `kc --readonly` makes every context read-only for this run.
-- `kc --write` ignores the config and allows writes everywhere.
+- `kc --write` ignores the config and allows writes everywhere, also
+  when the config file does not load.
 - Without either flag the config decides. Switching a panel's context
   applies the setting of the new context to that panel.
 - An action is refused or allowed by the context of the row it acts on,
   whichever panel is active: `F8` on a prod row is refused while the
   staging panel next to it still deletes.
+
+## When the config file does not load
+
+kc reads `~/.kc/config.yaml` once, when it starts. When its `readOnly`
+section does not load, or nothing of the file does (it is not valid
+YAML, or it cannot be read), kc cannot tell which contexts the file
+protects, so every context is read-only. A red bar above the command
+line says so for the whole session, with the file and the field:
+
+```
+Config not loaded, every context read-only: ~/.kc/config.yaml:
+yaml: line 3: did not find expected key
+```
+
+A bad value in another section, such as a panel mode or a duration,
+keeps `readOnly` in force: only that section uses its defaults, and the
+bar names it. Fix the file and restart kc; meanwhile `kc --write`
+allows writes for one run.
 
 ## Limits
 

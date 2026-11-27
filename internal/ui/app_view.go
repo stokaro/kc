@@ -106,7 +106,8 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Reserve space for the inline terminal (if visible) and function keys (1)
 	commandHeight := a.commandLineHeight()
 	menuRows := a.menuBarRows()
-	reserved := menuRows + terminalHeight + commandHeight + 1
+	configErrorRows := a.configErrorRows()
+	reserved := menuRows + configErrorRows + terminalHeight + commandHeight + 1
 	panelHeight := max(a.height-reserved, 3)
 	leftPanelWidth, rightPanelWidth := a.panelWidthsFor(a.width)
 
@@ -169,11 +170,12 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 
 	// Add function key bar
 	functionKeys := a.renderFunctionKeys()
-	parts := make([]string, 0, 5)
+	parts := make([]string, 0, 5+configErrorRows)
 	if menuRows > 0 {
 		parts = append(parts, a.renderIdleMenuBar())
 	}
 	parts = append(parts, panels)
+	parts = append(parts, a.renderConfigError()...)
 	if commandHeight > 0 {
 		parts = append(parts, a.renderCommandLine())
 	}

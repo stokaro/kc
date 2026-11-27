@@ -45,7 +45,7 @@ type cliFlags struct {
 	AsGroup       []string       `help:"Group to impersonate for the operation (repeatable)"`
 	AsUID         string         `help:"UID to impersonate for the operation"`
 	ReadOnly      bool           `name:"readonly" xor:"readonly" help:"Open every context read-only: no edit, delete, namespace creation, debug helper or dangerous commands"`
-	Write         bool           `xor:"readonly" help:"Allow writes in every context, ignoring the readOnly config"`
+	Write         bool           `xor:"readonly" help:"Allow writes in every context, ignoring the readOnly config, also when the config file does not load"`
 	ShowVersion   versionFlag    `name:"version" help:"Print the kc version and exit; does not read a kubeconfig or contact a cluster"`
 	Root          rootCommand    `cmd:"" hidden:"true" default:"1"`
 	Get           getCommand     `cmd:"get" help:"Mirror kubectl get"`

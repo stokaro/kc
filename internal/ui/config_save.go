@@ -2,7 +2,6 @@ package ui
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -21,7 +20,6 @@ type configSavedMsg struct {
 
 const (
 	configToastTTL      = 8 * time.Second
-	configLoadToastTTL  = 15 * time.Second
 	sessionOnlyNotice   = "Applied to this session only; C-s saves as defaults"
 	sessionOnlyNotSaved = "Not saved, applied to this session only: "
 )
@@ -37,17 +35,25 @@ func (a *App) configStore() *appconfig.Store {
 }
 
 // loadConfig reads the configuration file into a.cfg. A file that does not
-// load leaves the defaults in place and returns a toast that says so; the
-// store then refuses to save over that file.
-func (a *App) loadConfig() tea.Cmd {
+// load in full keeps the sections that did and the defaults for the others,
+// and every context is read-only when its readOnly settings did not load
+// (appconfig.Store.Load). The error stays on screen for the session, above
+// the command line, and the store refuses to save over that file.
+func (a *App) loadConfig() {
 	cfg, err := a.configStore().Load()
 	*a.cfg = *cfg
+	a.cfgLoadErr = nil
 	if err == nil {
-		return nil
+		return
 	}
+	le, ok := errors.AsType[*appconfig.LoadError](err)
+	if !ok {
+		le = &appconfig.LoadError{Path: a.configStore().Path(), Err: err}
+	}
+	a.cfgLoadErr = le
 	log := ctrllog.FromContext(a.ctx).WithName("config")
-	log.Error(err, "configuration did not load; using defaults and refusing to save over it")
-	return a.ShowToast(fmt.Sprintf("Config ignored, using defaults (saving is off): %v", err), configLoadToastTTL)
+	log.Error(err, "configuration did not load in full; refusing to save over it",
+		"path", le.Path, "defaultSections", le.Sections, "everyContextReadOnly", le.ReadOnlyLost())
 }
 
 // saveDefaults writes change into the configuration file in the background.

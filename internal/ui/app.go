@@ -256,7 +256,8 @@ type App struct {
 	window               investigation.Window
 	pendingCmdsMu        sync.Mutex
 	pendingCmds          []tea.Cmd
-	cfgStore             *appconfig.Store // ~/.kc/config.yaml; see configStore
+	cfgStore             *appconfig.Store     // ~/.kc/config.yaml; see configStore
+	cfgLoadErr           *appconfig.LoadError // the file did not load in full; see configErrorLines
 	leftConfig           *appconfig.Config
 	rightConfig          *appconfig.Config
 	namespaceInput       *NamespaceCreateModel
@@ -772,7 +773,7 @@ const panelHeaderOffset = 1
 // panelsHeight returns the height of the panel area.
 func (a *App) panelsHeight() int {
 	// A toast replaces the function key bar; it takes no row of its own.
-	reserved := 1 + a.menuBarRows() + a.inlineTerminalHeight() + a.commandLineHeight()
+	reserved := 1 + a.menuBarRows() + a.configErrorRows() + a.inlineTerminalHeight() + a.commandLineHeight()
 	return max(a.height-reserved, 0)
 }
 
@@ -3332,10 +3333,10 @@ func resetKeyboardProtocol() {
 // initConfigAndData reads the configuration file, then builds the data
 // model. initData makes the clusters, the panels and their folders with
 // the settings of that moment, and a folder keeps the panel configuration
-// it was given, so the file comes first. A file that does not load leaves
-// the defaults; its toast shows once the UI runs.
+// it was given, so the file comes first. What a file that does not load in
+// full leaves in place is described by loadConfig.
 func (a *App) initConfigAndData(ctx context.Context) error {
-	a.enqueueCmd(a.loadConfig())
+	a.loadConfig()
 	return a.initData(ctx)
 }
 

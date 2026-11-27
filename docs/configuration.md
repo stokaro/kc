@@ -23,7 +23,7 @@
 - `panel.skin`, `contexts` – panel colors and per-context frame colors (see [Panel colors](#panel-colors)).
 - `portForward.address` – local address port forwards listen on (default `127.0.0.1`).
 - `overview.*` – thresholds of the `/overview` folder: the window for events and restarts, the restart count, requests and limits against allocatable, measured pod and node usage, the under-requested factor, containers near their memory or CPU limit, node disk and volume use, pods per node, ResourceQuota use, and the node count above which the kubelet stats are not read.
-- `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](features.md#read-only-mode)).
+- `readOnly.enabled`, `readOnly.contexts` – contexts that open in read-only mode (see [Read-only mode](features.md#read-only-mode)). A file whose `readOnly` section does not load makes every context read-only; see [When the file does not load](#when-the-file-does-not-load).
 - `metricsHistory.window`, `metricsHistory.timeout`, `metricsHistory.backends` – past workload usage from Prometheus in the Info panel mode (off by default; see [Cluster Overview](features.md#cluster-overview)). `C-x m` tests a backend and saves it for the current context; see [Metric sources](../internal/help/topics/metric-sources.md). The dashboard (`C-x g`, `kc dashboard`) reads the same backend; see [Dashboard](../internal/help/topics/dashboard.md).
 - `charts.graphics` – how the dashboard draws its charts and Info mode its bars and history: `auto` (the default) draws images in iTerm2 3.7 or later, kitty and Ghostty, and under tmux with `allow-passthrough on`; `text` always draws text (braille or blocks in the charts); `kitty` always draws images. See [Dashboard](../internal/help/topics/dashboard.md) and [Info mode](../internal/help/topics/mode-info.md).
 
@@ -108,7 +108,17 @@ health:
 
 `C-s` ("Save as defaults") in an option dialog reads the file again and writes only the settings that dialog shows, so custom commands and keys kc does not know stay as they are. The file is replaced atomically and keeps its permissions; a symbolic link is written through to its target. The command line says whether the settings were saved or apply to this session only.
 
-If the file cannot be read or parsed, kc starts with the defaults and shows the file path and the error on the command line. It never writes over that file: `C-s` is refused until the file loads again. Fix the file (or move it away to start from scratch) and press `C-s` again, or restart kc to load it.
+## When the file does not load
+
+kc reads the file once, when it starts. When the file does not load in full, a red bar between the panels and the command line says so for the whole session, with the file and the field:
+
+```
+Config layout not loaded, using its defaults: ~/.kc/config.yaml: layout.rightPanelMode: unknown panel mode "describ"; use list, describe, manifest, logs or info
+```
+
+- Each top-level section (`layout`, `readOnly`, `commands`, ...) loads on its own. A section with a bad value keeps all of its defaults, and the other sections load. A list such as `commands` counts as one value: one bad command drops all of them, so no command runs without its `dangerous` flag.
+- When the `readOnly` section does not load, or nothing of the file does (it cannot be read, or it is not valid YAML), every context is read-only: `Config not loaded, every context read-only: ...`. kc cannot tell which contexts the file protects, so it protects all of them. `kc --write` still allows writes for one run.
+- kc never writes over such a file: `C-s` is refused while any part of it does not load. Fix the file (or move it away to start from scratch) and press `C-s` again; restart kc to load the fixed file and remove the bar.
 
 ## All settings with their defaults
 
