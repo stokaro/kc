@@ -133,7 +133,11 @@ func writeLineDump(t *testing.T, path, label string, img *image.RGBA, tail strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Errorf("closing snapshot: %v", err)
+		}
+	}()
 	if err := png.Encode(w, out); err != nil {
 		t.Fatal(err)
 	}

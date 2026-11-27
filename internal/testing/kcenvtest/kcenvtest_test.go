@@ -318,6 +318,8 @@ func TestStartForTestCapsRunningControlPlanes(t *testing.T) {
 func TestTune(t *testing.T) {
 	t.Parallel()
 	const flag = "shutdown-watch-termination-grace-period"
+	const advertiseFlag = "advertise-address"
+	const reconcilerFlag = "endpoint-reconciler-type"
 	t.Run("defaults", func(t *testing.T) {
 		t.Parallel()
 		env := Tune(&envtest.Environment{}, envMap())
@@ -327,11 +329,19 @@ func TestTune(t *testing.T) {
 		if got := env.ControlPlane.GetAPIServer().Configure().Get(flag).Get(nil); !slices.Equal(got, []string{WatchDrainGrace}) {
 			t.Errorf("--%s = %v, want %s", flag, got, WatchDrainGrace)
 		}
+		if got := env.ControlPlane.GetAPIServer().Configure().Get(advertiseFlag).Get(nil); !slices.Equal(got, []string{"127.0.0.1"}) {
+			t.Errorf("--%s = %v, want loopback", advertiseFlag, got)
+		}
+		if got := env.ControlPlane.GetAPIServer().Configure().Get(reconcilerFlag).Get(nil); !slices.Equal(got, []string{"none"}) {
+			t.Errorf("--%s = %v, want none for loopback", reconcilerFlag, got)
+		}
 	})
 	t.Run("caller and environment win", func(t *testing.T) {
 		t.Parallel()
 		env := &envtest.Environment{ControlPlaneStopTimeout: time.Second}
 		env.ControlPlane.GetAPIServer().Configure().Set(flag, "5s")
+		env.ControlPlane.GetAPIServer().Configure().Set(advertiseFlag, "192.0.2.1")
+		env.ControlPlane.GetAPIServer().Configure().Set(reconcilerFlag, "lease")
 		Tune(env, envMap(startTimeoutEnv, "3s"))
 		if env.ControlPlaneStartTimeout != 0 {
 			t.Errorf("start timeout = %v, want 0 so envtest reads %s", env.ControlPlaneStartTimeout, startTimeoutEnv)
@@ -341,6 +351,12 @@ func TestTune(t *testing.T) {
 		}
 		if got := env.ControlPlane.GetAPIServer().Configure().Get(flag).Get(nil); !slices.Equal(got, []string{"5s"}) {
 			t.Errorf("--%s = %v, want the caller's 5s", flag, got)
+		}
+		if got := env.ControlPlane.GetAPIServer().Configure().Get(advertiseFlag).Get(nil); !slices.Equal(got, []string{"192.0.2.1"}) {
+			t.Errorf("--%s = %v, want the caller's address", advertiseFlag, got)
+		}
+		if got := env.ControlPlane.GetAPIServer().Configure().Get(reconcilerFlag).Get(nil); !slices.Equal(got, []string{"lease"}) {
+			t.Errorf("--%s = %v, want the caller's lease reconciler", reconcilerFlag, got)
 		}
 	})
 }

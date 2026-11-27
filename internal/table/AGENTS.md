@@ -1,47 +1,46 @@
-# Repository Guidelines
+# Table component
 
-This folder is self-contained for the table component. See `./REQUIREMENTS.md` for specs and `./TODO.md` for tasks.
+This directory is the reusable `table` package. Follow the root `AGENTS.md`;
+use the repository's `kc-tui` skill for event, layout, or selection changes.
+Paths in this file are relative to `internal/table` unless stated otherwise.
 
-## Structure
-- `main.go`: demo app showcasing the table.
-- `truncate_test.go`: width/truncation tests (extend as features land).
-- Future: component source under this folder with tests next to code.
+## Entry points and contracts
 
-## Interfaces
-- `Row`: `Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool)` — ASCII cells + per-cell style, stable ID.
-- `List`: `Lines(top, num int) []Row`, `Above(rowID string, num int) []Row`, `Below(rowID string, num int) []Row`, `Len() int` — windowed access for large datasets.
+- `model.go`: `Row`, `List`, `Column`, `SimpleRow`, and the slice/list providers.
+- `bigtable.go`: `BigTable`, rendering, focus, scrolling, and selection.
+- `linked_provider.go`: adapts the linked provider to windowed access.
+- `demo/main.go`: the runnable synthetic-data demo. It needs no cluster.
 
-## Default Data Sources
-- `SimpleRow`: reusable row with `ID`, `Cells []string`, `Styles []*lipgloss.Style` and `SetColumn(col, text, style)`.
-- `SliceList` (slice-backed, stores `[]Row`): fast indexing; supports `InsertBefore/After`, `Append/Prepend`, `RemoveIDs`, `RemoveAt` by copying surrounding slices.
-- `LinkedList` (doubly linked, stores `Row` nodes): efficient inserts/removes by pointer; linear indexing. Exposes `InsertBeforeID/InsertAfterID`, `Append/Prepend`, `RemoveIDs`.
+Read the current interfaces in `model.go` before implementing a provider:
 
-Example:
-```go
-rows := []SliceRow{{ID:"a"}, {ID:"b"}}
-list := NewSliceList(rows)
-list.InsertAfter("a", SliceRow{ID:"a1"})
-// Swap data in the table:
-// bt.SetList(list)
-```
+- `Row.Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool)`
+  returns a stable ID, ASCII cell strings, and per-cell styles. Keep ANSI styling
+  out of the cell data. Do not broaden the cell contract as an incidental fix.
+- `List` provides `Lines(ctx, top, num)`, `Above(ctx, rowID, num)`,
+  `Below(ctx, rowID, num)`, `Len(ctx)`, and `Find(ctx, rowID)`. Every method takes
+  `context.Context`; `Find` returns `(int, Row, bool)`.
+- Construct a slice provider with `NewSliceList([]Row{SimpleRow{ID: "a"}})`.
+  Use the actual provider APIs rather than copying outdated examples.
 
-## Build & Test
-- Run demo: `go run ./internal/table`
-- Build: `go build ./internal/table`
-- Tests: `go test ./internal/table -v` (coverage: `-cover`)
-- Format/lint: `go fmt ./internal/table/...`, `go vet ./internal/table/...`
+## Change invariants
 
-## Style & Dependencies
-- Go fmt–clean code; early returns; small, focused types.
-- Naming: packages lower-case; exported `CamelCase`, unexported `camelCase`.
-- Errors: wrap with `%w` (e.g., `fmt.Errorf("reading config: %w", err)`).
-- Bubble Tea/Bubbles/Lipgloss v2 only: import paths must include `/v2`.
+- Keep reads windowed for large datasets; avoid materializing every row during
+  paint. Preserve cursor and marks by row ID when data is reordered or replaced.
+- The parent routes keys to the focused table. Preserve that boundary when
+  changing focus, selection, or mouse handling.
+- Check both `ModeFit` and `ModeScroll`, resize, empty data, deleted focused
+  rows, and the changed width/border condition. Use the nearby focused tests;
+  `view_safety_test.go` and `view_height_explicit_test.go` cover rendering edges.
+- Keep dependency and formatting policy in the root guide. Existing
+  `REQUIREMENTS.md` describes the product contract; current source defines
+  signatures when older documentation omits arguments.
 
-## Testing
-- Standard `testing` with table-driven tests and `t.Run`.
-- Keep tests deterministic; no live clusters or network.
+## Commands from the repository root
 
-## Commits & PRs
-- Short, imperative subjects; focused diffs with relevant tests/docs.
-- Before pushing: `go build ./...` and `go test ./...`.
-- Never run `git add -A`; stage files explicitly so unrelated changes stay untouched.
+- Tests: `make test-unit PACKAGES='./internal/table'`.
+- Build component and demo: `go build ./internal/table/...`.
+- Interactive demo: `go run ./internal/table/demo slice` or
+  `go run ./internal/table/demo linked`.
+
+Do not run the whole repository suite merely to exercise this isolated package;
+use the root verification policy when a change also affects its consumers.

@@ -52,7 +52,7 @@ func Upload(ctx context.Context, dst Destination, req UploadRequest, counter *Co
 	if err != nil {
 		return nil, fmt.Errorf("opening source: %w", err)
 	}
-	defer root.Close()
+	defer root.Close() //nolint:errcheck // this releases the read-only source directory descriptor
 	// The listing decides skip and overwrite now, not when the dialog
 	// opened; the container side checks again before it moves an entry.
 	listing, err := dst.List(ctx, req.Dir)
@@ -245,7 +245,7 @@ func (a *archiver) addFile(ctx context.Context, tw *tar.Writer, rel string, info
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // source is read-only; Stat and CopyN report data errors
 	st, err := f.Stat()
 	if err != nil {
 		return err

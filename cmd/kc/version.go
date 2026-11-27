@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"runtime/debug"
+	"strings"
 
 	"github.com/alecthomas/kong"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
@@ -35,7 +37,9 @@ type versionFlag bool
 
 // BeforeReset is the kong hook that runs before flag values are applied.
 func (versionFlag) BeforeReset(app *kong.Kong) error {
-	printVersionInfo(app.Stdout, clientVersionInfo())
+	if err := printVersionInfo(app.Stdout, clientVersionInfo()); err != nil {
+		return err
+	}
 	app.Exit(0)
 	return nil
 }
@@ -45,21 +49,19 @@ func (versionFlag) BeforeReset(app *kong.Kong) error {
 // cluster for its version and fails, like `kubectl version`, when it cannot.
 func runVersionCommand(ctx context.Context, stdout, stderr io.Writer, clientOnly bool) error {
 	if clientOnly {
-		printVersionInfo(stdout, clientVersionInfo())
-		return nil
+		return printVersionInfo(stdout, clientVersionInfo())
 	}
 	discoveryClient, err := buildDiscoveryClient(ctx)
 	info, serverErr := collectVersionInfo(ctx, discoveryClient)
 	if err != nil {
 		serverErr = err
 	}
-	printVersionInfo(stdout, info)
+	writeErr := printVersionInfo(stdout, info)
 	if serverErr != nil {
-		fmt.Fprintf(stderr, "Error fetching server version: %v\n", serverErr)
-		fmt.Fprintln(stderr, "Use 'kc version --client' or 'kc --version' to print only the client version.")
-		return serverErr
+		_, diagnosticErr := fmt.Fprintf(stderr, "Error fetching server version: %v\nUse 'kc version --client' or 'kc --version' to print only the client version.\n", serverErr)
+		return errors.Join(serverErr, writeErr, diagnosticErr)
 	}
-	return nil
+	return writeErr
 }
 
 func buildDiscoveryClient(ctx context.Context) (serverVersionGetter, error) {
@@ -134,14 +136,19 @@ func collectVersionInfo(ctx context.Context, discoveryClient serverVersionGetter
 	return info, nil
 }
 
-func printVersionInfo(out io.Writer, info versionInfo) {
-	fmt.Fprintf(out, "kc Version: %s\n", info.kcVersion)
-	fmt.Fprintf(out, "Client Version (client-go): %s\n", info.clientGo)
+func printVersionInfo(out io.Writer, info versionInfo) error {
+	var text strings.Builder
+	fmt.Fprintf(&text, "kc Version: %s\n", info.kcVersion)
+	fmt.Fprintf(&text, "Client Version (client-go): %s\n", info.clientGo)
 	if info.serverVersion != nil {
-		fmt.Fprintf(out, "Server Version: %s\n", info.serverVersion.GitVersion)
+		fmt.Fprintf(&text, "Server Version: %s\n", info.serverVersion.GitVersion)
 	}
-	fmt.Fprintf(out, "Commit: %s\n", info.commit)
-	fmt.Fprintf(out, "Date: %s\n", info.date)
+	fmt.Fprintf(&text, "Commit: %s\n", info.commit)
+	fmt.Fprintf(&text, "Date: %s\n", info.date)
+	if _, err := io.WriteString(out, text.String()); err != nil {
+		return fmt.Errorf("writing version information: %w", err)
+	}
+	return nil
 }
 
 type loggingDiscoveryClient struct {

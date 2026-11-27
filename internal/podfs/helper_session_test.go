@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"testing/iotest"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,6 +17,7 @@ type recordingSession struct {
 	lists, reads []string
 	files        map[string]string
 	listErr      error
+	readErr      error
 }
 
 func (s *recordingSession) List(_ context.Context, p string) ([]FileEntry, error) {
@@ -25,6 +27,9 @@ func (s *recordingSession) List(_ context.Context, p string) ([]FileEntry, error
 
 func (s *recordingSession) ReadFile(_ context.Context, p string, _ int64) (io.ReadCloser, error) {
 	s.reads = append(s.reads, p)
+	if s.readErr != nil {
+		return io.NopCloser(iotest.ErrReader(s.readErr)), nil
+	}
 	return io.NopCloser(strings.NewReader(s.files[p])), nil
 }
 
@@ -41,6 +46,16 @@ func TestHelperSessionServesTargetFilesystem(t *testing.T) {
 }
 
 func TestHelperSessionCheckTarget(t *testing.T) {
+	t.Run("process identity read fails", func(t *testing.T) {
+		inner := &recordingSession{readErr: io.ErrUnexpectedEOF}
+		err := (&helperAwareSession{ExecSession: inner}).checkTarget(t.Context())
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("checkTarget = %v, want process identity read failure", err)
+		}
+		if len(inner.lists) != 0 {
+			t.Fatalf("checked filesystem %v without knowing the target process identity", inner.lists)
+		}
+	})
 	t.Run("shared namespace", func(t *testing.T) {
 		inner := &recordingSession{files: map[string]string{"/proc/1/cmdline": "/coredns\x00-conf\x00/etc/coredns/Corefile"}}
 		if err := (&helperAwareSession{ExecSession: inner}).checkTarget(t.Context()); err != nil {

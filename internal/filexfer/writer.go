@@ -162,7 +162,7 @@ func (w *writer) link(ctx context.Context, name, target string, mode fs.FileMode
 		w.skip(name, "hard link target missing")
 		return nil
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // the hard-link source is read-only; w.file checks the destination write and close
 	return w.file(ctx, name, mode, mtime, f)
 }
 

@@ -143,7 +143,7 @@ func KeepaliveCommand() []string {
 // heartbeatEvery until ctx ends. It blocks.
 func Keepalive(ctx context.Context, cfg *rest.Config, client kubernetes.Interface, pod *corev1.Pod) error {
 	stdinR, stdinW := io.Pipe()
-	defer stdinW.Close()
+	defer stdinW.Close() //nolint:errcheck // io.PipeWriter.Close always returns nil and signals EOF to the reader
 	go func() {
 		t := time.NewTicker(heartbeatEvery)
 		defer t.Stop()

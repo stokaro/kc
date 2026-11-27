@@ -805,7 +805,7 @@ func (f *PodContainerFSFolder) readFileContent(ctx context.Context, fsPath strin
 			return nil, err
 		}
 		data, readErr := io.ReadAll(reader)
-		reader.Close()
+		reader.Close() //nolint:errcheck // ReadAll reports stream errors; Close only releases the completed reader
 		release()
 		cancelRead()
 		cancelSession()

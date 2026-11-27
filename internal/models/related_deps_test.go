@@ -376,7 +376,9 @@ func TestScopedReader(t *testing.T) {
 		t.Fatalf("a denied read reached a cache: %v %v", shared.reads, namespaced.reads)
 	}
 	// Each pair is decided once.
-	r.GetByGVR(ctx, podGVR, "shop", "web")
+	if _, err := r.GetByGVR(ctx, podGVR, "shop", "web"); err != nil {
+		t.Fatalf("repeated namespace get: %v", err)
+	}
 	if rec.calls != 3 {
 		t.Fatalf("resolve calls = %d, want 3 (one per type)", rec.calls)
 	}

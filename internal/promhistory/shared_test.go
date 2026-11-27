@@ -95,7 +95,9 @@ func TestSharedCancelsWhenEveryCallerLeft(t *testing.T) {
 		default:
 		}
 		cancel2()
-		<-errs
+		if err := <-errs; !errors.Is(err, context.Canceled) {
+			t.Fatalf("second caller: %v, want context cancellation", err)
+		}
 		synctest.Wait()
 		// The read saw its context end: a new call reads again, the
 		// canceled result was not kept.

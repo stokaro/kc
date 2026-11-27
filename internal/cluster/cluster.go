@@ -675,7 +675,7 @@ func (c *Cluster) fetchStorageMetrics(ctx context.Context) (map[schema.GroupReso
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response read errors are checked; closing the read body is best-effort
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
 		return nil, fmt.Errorf("%w (status %d)", errStorageMetricsForbidden, resp.StatusCode)
 	}

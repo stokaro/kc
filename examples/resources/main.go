@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -51,8 +52,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("cluster: %v", err)
 	}
-	ctx := context.TODO()
-	go cl.Start(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		if err := cl.Start(ctx); err != nil && !errors.Is(err, ctx.Err()) {
+			log.Printf("Cluster stopped: %v", err)
+		}
+	}()
 
 	// Start the manager
 	fmt.Println("Starting cluster...")

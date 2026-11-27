@@ -2,6 +2,7 @@ package kctesting
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -14,20 +15,27 @@ const stopWait = 30 * time.Second
 // t.Context. A cleanup cancels the context and waits until start returns,
 // so informers started by it have closed their watches before cleanups
 // registered earlier run, such as the one that stops a per-test envtest
-// control plane. start returning before the cleanup is not an error; what
-// it returns is ignored, as in the code it stands in for.
+// control plane. Unexpected errors fail the test, including errors returned
+// before cleanup. An error wrapping this context's cancellation is expected
+// only if the context was already canceled when start returned.
 func RunInBackground(t testing.TB, name string, start func(context.Context) error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		defer close(done)
-		_ = start(ctx)
+		err := start(ctx)
+		if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			err = nil
+		}
+		done <- err
 	}()
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case <-done:
+		case err := <-done:
+			if err != nil {
+				t.Errorf("%s returned an unexpected error: %v", name, err)
+			}
 		case <-time.After(stopWait):
 			t.Errorf("%s still running %v after its context was canceled", name, stopWait)
 		}

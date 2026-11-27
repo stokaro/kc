@@ -14,7 +14,8 @@
 // docs/adr/0244-envtest-under-load.md): longer start and stop timeouts, an
 // API server that does not wait for open watches when it stops, and at most
 // MaxPerTestControlPlanes per-test control planes running at once in one
-// test binary.
+// test binary. Local control planes advertise loopback and omit bootstrap
+// default/kubernetes endpoint reconciliation, which requires a non-loopback IP.
 package kcenvtest
 
 import (
@@ -150,7 +151,7 @@ func Main(m *testing.M, cfg **rest.Config) int {
 	return runMain(m, Tune(&envtest.Environment{}, os.LookupEnv), os.LookupEnv, os.Stderr, cfg)
 }
 
-// Tune applies the settings for loaded machines to env and returns it.
+// Tune applies loopback isolation and settings for loaded machines to env and returns it.
 // envtest's own timeout variables, read through lookup, and fields already
 // set on env take precedence.
 func Tune(env *envtest.Environment, lookup func(string) (string, bool)) *envtest.Environment {
@@ -165,13 +166,27 @@ func Tune(env *envtest.Environment, lookup func(string) (string, bool)) *envtest
 	if args.Get(drainFlag).Get(nil) == nil {
 		args.Set(drainFlag, WatchDrainGrace)
 	}
+	// Keep local test control planes independent of the host's network routes.
+	// Without this flag kube-apiserver tries to infer an address from a default
+	// route, which need not exist in an otherwise functional test container.
+	const advertiseFlag = "advertise-address"
+	if args.Get(advertiseFlag).Get(nil) == nil {
+		args.Set(advertiseFlag, "127.0.0.1")
+	}
+	// No nodes use the bootstrap kubernetes Service in envtest. Its endpoint
+	// reconciler rejects loopback, so leave only that endpoint maintenance off;
+	// the Service and the Endpoints/EndpointSlice APIs remain available.
+	const reconcilerFlag = "endpoint-reconciler-type"
+	if args.Get(reconcilerFlag).Get(nil) == nil {
+		args.Set(reconcilerFlag, "none")
+	}
 	return env
 }
 
 func runMain(m interface{ Run() int }, env controlPlane, lookup func(string) (string, bool), stderr io.Writer, cfg **rest.Config) int {
 	mode, err := ModeFromEnv(lookup)
 	if err != nil {
-		fmt.Fprintf(stderr, "kcenvtest: %v\n", err)
+		fmt.Fprintf(stderr, "kcenvtest: %v\n", err) //nolint:errcheck // stderr diagnostics are best-effort; the exit code carries the failure
 		return 2
 	}
 	if mode == Skipped {
@@ -181,17 +196,17 @@ func runMain(m interface{ Run() int }, env controlPlane, lookup func(string) (st
 	c, err := start(env, lookup)
 	if err != nil {
 		if mode == Required {
-			fmt.Fprintf(stderr, "kcenvtest: %s is set and envtest cannot start: %v\n", RequireEnv, err)
+			fmt.Fprintf(stderr, "kcenvtest: %s is set and envtest cannot start: %v\n", RequireEnv, err) //nolint:errcheck // stderr is best-effort; return failure below
 			return 1
 		}
 		unavailable = fmt.Sprintf("envtest cannot start (set %s=1 to fail instead): %v", RequireEnv, err)
-		fmt.Fprintf(stderr, "kcenvtest: %s\n", unavailable)
+		fmt.Fprintf(stderr, "kcenvtest: %s\n", unavailable) //nolint:errcheck // optional envtest unavailability is also reported by skipped tests
 		return m.Run()
 	}
 	*cfg = c
 	code := m.Run()
 	if err := env.Stop(); err != nil {
-		fmt.Fprintf(stderr, "kcenvtest: stop envtest: %v\n", err)
+		fmt.Fprintf(stderr, "kcenvtest: stop envtest: %v\n", err) //nolint:errcheck // stderr cleanup diagnostics are best-effort after the tests finish
 	}
 	return code
 }

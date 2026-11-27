@@ -91,7 +91,7 @@ func startNativeSession(ctx context.Context, spec SessionSpec, exec remotecomman
 	go session.stdoutLoop(stdoutReader)
 
 	if err := session.bootstrap(ctx); err != nil {
-		session.Close()
+		session.Close() //nolint:errcheck // nativeSession.Close only cancels the failed bootstrap and always returns nil
 		return nil, classifyError(err)
 	}
 	return session, nil

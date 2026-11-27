@@ -155,7 +155,7 @@ func (s *podFSSource) readRange(ctx context.Context, offset, length int64) ([]by
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rc.Close()
+	defer rc.Close() //nolint:errcheck // ReadAll reports stream errors; Close only releases the completed reader
 	data, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, 0, err
