@@ -30,7 +30,7 @@ func newStartModeApp(t *testing.T, file string) *App {
 		}
 	}
 	app.cfgStore = appconfig.NewStore(path)
-	_ = app.loadConfig()
+	app.loadConfig()
 	model, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	app = model.(*App)
 	_ = app.initPanels()
@@ -50,7 +50,7 @@ func TestPanelStartModes(t *testing.T) {
 		{name: "describe on the right", file: "layout:\n  rightPanelMode: describe\n", wantLeft: PanelModeList, wantRight: PanelModeDescribe},
 		{name: "manifest on the right", file: "layout:\n  rightPanelMode: manifest\n", wantLeft: PanelModeList, wantRight: PanelModeManifest},
 		{name: "logs on the right", file: "layout:\n  rightPanelMode: logs\n", wantLeft: PanelModeList, wantRight: PanelModeLogs},
-		// A file that does not load leaves the defaults in place.
+		// A layout that does not load keeps its defaults.
 		{name: "invalid mode", file: "layout:\n  rightPanelMode: tree\n", wantLeft: PanelModeList, wantRight: PanelModeInfo},
 	}
 	for _, tc := range tests {
@@ -160,7 +160,7 @@ func TestStartTargetsKeepTheRightStartModeEnvtest(t *testing.T) {
 			t.Cleanup(createPod(t, cl, ns, "start-pod", nil))
 			waitForNamespaceReady(t, app, ns)
 			app.cfgStore = appconfig.NewStore(filepath.Join(t.TempDir(), "config.yaml"))
-			_ = app.loadConfig()
+			app.loadConfig()
 			app.goToNamespace(ns)
 			_ = app.initPanels()
 			if got := app.rightPanel.Mode(); got != PanelModeInfo {

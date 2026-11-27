@@ -101,7 +101,7 @@ Info and the dashboard (`C-x g`) treat an object of a custom kind that controls 
 
 ## Read-only mode
 
-In read-only mode kc refuses its own changes to the cluster. Turn it on per context, or with `kc --readonly`; `kc --write` turns it off for a run. See [Read-only mode](../internal/help/topics/read-only.md).
+In read-only mode kc refuses its own changes to the cluster. Turn it on per context, or with `kc --readonly`; `kc --write` turns it off for a run. A configuration file whose `readOnly` section does not load makes every context read-only, and a red bar names the problem until the file loads. See [Read-only mode](../internal/help/topics/read-only.md).
 
 ```yaml
 readOnly:

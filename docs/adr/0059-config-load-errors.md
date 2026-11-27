@@ -1,6 +1,6 @@
 # 0059. Show configuration errors and never save over a file that does not load
 
-- Status: Accepted
+- Status: Accepted; decisions 1 and 2 (a broken file is used not at all, the error is a toast) superseded by [0372](0372-config-load-fails-closed.md)
 - Date: 2026-11-22
 - Issue: #59
 

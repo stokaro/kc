@@ -271,7 +271,9 @@ contexts: []
 
 # Read-only mode: kc refuses edits (F4), deletes (F8), namespace creation
 # (F7), the pod filesystem debug helper and commands marked dangerous.
-# --readonly turns it on for every context, --write turns it off.
+# --readonly turns it on for every context, --write turns it off. When
+# this section, or the whole file, does not load, every context is
+# read-only until it does.
 readOnly:
   # true makes every context read-only.
   enabled: false

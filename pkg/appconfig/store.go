@@ -6,30 +6,48 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
 	yaml "sigs.k8s.io/yaml"
 )
 
-// LoadError reports a configuration file that exists but cannot be read or
-// parsed. Store.Update returns it, too, when it refuses to write over such a
+// LoadError reports a configuration file that exists but did not load in
+// full. Store.Update returns it, too, when it refuses to write over such a
 // file.
 type LoadError struct {
 	Path string
-	Err  error
+	// Err is why: the read or YAML error of the whole file, or the problems
+	// of the sections that did not load, one per section, each naming the
+	// field that failed.
+	Err error
+	// Sections names the top-level sections that did not load, in the
+	// order of Config and spelled as kc spells them ("readOnly"). Load
+	// kept the other sections. Empty when nothing of the file loaded.
+	Sections []string
 }
 
-func (e *LoadError) Error() string { return fmt.Sprintf("%s: %v", e.Path, e.Err) }
+func (e *LoadError) Error() string { return e.Path + ": " + e.Reason() }
 func (e *LoadError) Unwrap() error { return e.Err }
 
-// Load reads ~/.kc/config.yaml. It returns the defaults when the file does
-// not exist, and the defaults with a *LoadError when the file cannot be read
-// or parsed.
+// Reason is the error without the path, on one line.
+func (e *LoadError) Reason() string { return strings.ReplaceAll(e.Err.Error(), "\n", "; ") }
+
+// ReadOnlyLost reports whether the readOnly settings of the file are not in
+// force: nothing of the file loaded, or its readOnly section did not. Load
+// then makes every context read-only.
+func (e *LoadError) ReadOnlyLost() bool {
+	return len(e.Sections) == 0 || slices.Contains(e.Sections, readOnlySection)
+}
+
+// Load reads ~/.kc/config.yaml like Store.Load. A home directory that
+// cannot be found is a file that did not load.
 func Load() (*Config, error) {
 	p, err := DefaultPath()
 	if err != nil {
-		return Default(), &LoadError{Path: "~/.kc/config.yaml", Err: err}
+		lerr := &LoadError{Path: "~/.kc/config.yaml", Err: err}
+		return failClosed(nil, lerr), lerr
 	}
 	return NewStore(p).Load()
 }
@@ -58,24 +76,45 @@ func (s *Store) LoadErr() error {
 	return s.loadErr
 }
 
-// Load reads the file. A missing file yields the defaults and no error. A file
-// that cannot be read or parsed yields the defaults and a *LoadError; nothing
-// of that file is used, so a partly valid file never mixes with defaults.
+// Load reads the file. A missing file yields the defaults and no error.
+//
+// A file that does not load in full yields a *LoadError. One that cannot be
+// read or is not valid YAML is not used at all: Load returns the defaults.
+// Otherwise every top-level section that loads is kept, and a section that
+// does not keeps its defaults as a whole (see decodeFile).
+//
+// Load fails closed: whenever the readOnly settings of the file are not in
+// force (LoadError.ReadOnlyLost), the configuration it returns makes every
+// context read-only, so a file that does not load never protects fewer
+// contexts than it asked for. The --write flag still overrides it.
 func (s *Store) Load() (*Config, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cfg, _, err := s.read()
 	s.loadErr = err
 	if err != nil {
-		return Default(), err
+		return failClosed(cfg, err), err
 	}
 	return cfg, nil
 }
 
+// failClosed returns cfg, or the defaults when nothing loaded, with every
+// context read-only when err says the readOnly settings did not load.
+func failClosed(cfg *Config, err error) *Config {
+	if cfg == nil {
+		cfg = Default()
+	}
+	if le, ok := errors.AsType[*LoadError](err); !ok || le.ReadOnlyLost() {
+		cfg.ReadOnly = ReadOnlyConfig{Enabled: true}
+	}
+	return cfg
+}
+
 // Update reads the file again, applies change to it and writes the result
 // atomically. It fails with a *LoadError, and leaves the file untouched,
-// when the file on disk cannot be read or parsed. Keys kc does not know are
-// kept. Update returns the configuration it wrote.
+// when the file on disk does not load in full: writing kc's defaults for a
+// section that did not load would replace what the user wrote there. Keys
+// kc does not know are kept. Update returns the configuration it wrote.
 func (s *Store) Update(change func(*Config)) (*Config, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -96,7 +135,9 @@ func (s *Store) Update(change func(*Config)) (*Config, error) {
 }
 
 // read parses the file into a normalized Config and into a generic map that
-// keeps keys kc does not know. A missing file is not an error.
+// keeps keys kc does not know. A missing file is not an error. When a
+// section does not load, read returns the sections that did together with
+// the *LoadError; when nothing loads, the Config is nil.
 func (s *Store) read() (*Config, map[string]any, error) {
 	if s.path == "" {
 		return nil, nil, &LoadError{Path: "~/.kc/config.yaml", Err: errors.New("the configuration path is unknown")}
@@ -108,22 +149,14 @@ func (s *Store) read() (*Config, map[string]any, error) {
 	if err != nil {
 		return nil, nil, &LoadError{Path: s.path, Err: err}
 	}
-	cfg := Default()
-	if err := unmarshalOverDefaults(data, cfg); err != nil {
+	f, err := decodeFile(data)
+	if err != nil {
 		return nil, nil, &LoadError{Path: s.path, Err: err}
 	}
-	var raw map[string]any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, nil, &LoadError{Path: s.path, Err: err}
+	if len(f.problems) > 0 {
+		return f.cfg, f.raw, loadError(s.path, f.problems)
 	}
-	normalizeLoaded(cfg)
-	if err := cfg.Layout.Validate(); err != nil {
-		return nil, nil, &LoadError{Path: s.path, Err: err}
-	}
-	if err := cfg.Charts.Validate(); err != nil {
-		return nil, nil, &LoadError{Path: s.path, Err: err}
-	}
-	return cfg, raw, nil
+	return f.cfg, f.raw, nil
 }
 
 // marshalOver encodes cfg on top of raw, the file as it was read, so keys kc
