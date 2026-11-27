@@ -4,6 +4,9 @@ Read the section needed for the current task. The root [AGENTS.md](../AGENTS.md)
 contains the always-applicable rules; this guide is not additional startup
 reading. Go, TUI and Kubernetes skills hold their domain-specific contracts.
 
+The choices and tradeoffs are recorded in
+[ADR 0392](adr/0392-agent-skills-and-quality-checks.md).
+
 ## Execution and context
 
 Use one implementer for an ordinary change. Identify the affected files,
