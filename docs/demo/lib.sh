@@ -74,10 +74,16 @@ start_tunnel() {
 	if [ -f "$tunnel_pidfile" ] && kill -0 "$(cat "$tunnel_pidfile")" 2>/dev/null; then
 		return 0
 	fi
-	ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N -L "$PORT:127.0.0.1:$PORT" "$SSH_DEST" &
+	# The tunnel outlives this script when a kc session runs detached, so it
+	# must not hold the caller's stdout or stderr open.
+	ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N -L "$PORT:127.0.0.1:$PORT" "$SSH_DEST" \
+		</dev/null >/dev/null 2>"$WORK/tunnel.log" &
 	echo $! >"$tunnel_pidfile"
 	sleep 2
-	kill -0 "$(cat "$tunnel_pidfile")" || die "ssh tunnel did not start"
+	if ! kill -0 "$(cat "$tunnel_pidfile")" 2>/dev/null; then
+		cat "$WORK/tunnel.log" >&2
+		die "ssh tunnel did not start"
+	fi
 }
 
 stop_tunnel() {
@@ -147,19 +153,28 @@ build_kc() {
 	(cd "$REPO" && go build -o "$WORK/bin/kc" ./cmd/kc && go build -o "$WORK/bin/bubbleheadless" ./cmd/bubbleheadless)
 }
 
-# start_kc starts kc in the driver, in $LOCAL, with the arguments given. The
-# environment is empty apart from what kc needs, and PS1 keeps user and host
-# names out of the integrated terminal. Set KC_EDITOR for the editor F4 runs
-# on a local file.
-start_kc() {
+# launch_kc starts kc in the driver in the background, in $LOCAL, with the
+# arguments given; the driver reads its commands from $BH_FIFO and writes
+# its answers to $BH_LOG. The environment is empty apart from what kc needs,
+# and PS1 keeps user and host names out of the integrated terminal. Set
+# KC_EDITOR for the editor F4 runs on a local file. The driver starts
+# reading once a writer opens the FIFO: start_kc, or the keeper of a
+# detached session.
+launch_kc() {
 	rm -f "$BH_FIFO" "$BH_LOG"
 	mkfifo "$BH_FIFO"
 	# Assert the target once more, then start kc on the throwaway kubeconfig only.
 	kk true
-	(cd "$LOCAL" && env -i PATH="$PATH" HOME="$WORK/home" KUBECONFIG="${KC_KUBECONFIG:-$KCFG}" TZ=UTC LANG=en_US.UTF-8 \
+	(cd "$LOCAL" && exec env -i PATH="$PATH" HOME="$WORK/home" KUBECONFIG="${KC_KUBECONFIG:-$KCFG}" TZ=UTC LANG=en_US.UTF-8 \
 		SHELL=/bin/sh PS1='$ ' PWD="$LOCAL" EDITOR="${KC_EDITOR:-vi}" \
-		"$WORK/bin/bubbleheadless" -cols "$COLS" -rows "$ROWS" -- "$WORK/bin/kc" "$@" <"$BH_FIFO" >"$BH_LOG" 2>&1) &
+		"$WORK/bin/bubbleheadless" -cols "$COLS" -rows "$ROWS" -- "$WORK/bin/kc" "$@") <"$BH_FIFO" >"$BH_LOG" 2>&1 &
 	bh_pid=$!
+}
+
+# start_kc starts kc in the driver for this script: bh writes to fd 3, and
+# the EXIT trap stops kc.
+start_kc() {
+	launch_kc "$@"
 	exec 3>"$BH_FIFO"
 	trap 'bh exit 2>/dev/null || true; exec 3>&-; kill '"$bh_pid"' 2>/dev/null || true; '"${ON_EXIT:-:}" EXIT
 }
