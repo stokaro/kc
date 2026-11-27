@@ -139,7 +139,7 @@ func main() {
 
 	intent, nsOverride, err := deriveStartupIntent(ctx.Command(), &cli)
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -153,22 +153,12 @@ func main() {
 	runCfg.DebugLogPath = debugLogPath
 	runCfg.SwitchToFileLogger = switchToUILogger
 	runCfg.ReadOnly = readOnlyOverride(&cli)
-	if err := runUI(runCfg); err != nil {
-		fmt.Printf("Error: %v\n", err)
+	// ui.Run resets the terminal after the UI exits; an error that stops
+	// kc before the UI starts comes back with the terminal untouched.
+	if err := ui.Run(context.Background(), runCfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-// runUI runs the TUI. After the UI exits, it runs a minimal cleanup
-// mirroring the manual sequence: hop to alt screen, disable kitty keyboard
-// protocol, return to primary.
-func runUI(cfg ui.RunConfig) error {
-	defer func() {
-		fmt.Print("\033[?1049h") // alt screen on
-		fmt.Print("\033[>u")     // kitty: push zero (disable)
-		fmt.Print("\033[?1049l") // back to primary
-	}()
-	return ui.Run(context.Background(), cfg)
 }
 
 // cliOptions returns the kong options main parses the command line with.

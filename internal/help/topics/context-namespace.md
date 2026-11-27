@@ -33,10 +33,10 @@ Context:
   running streams.
 - "Context for both panels..." in the Command menu switches both
   panels at once.
-- The picker lists every context of the kubeconfig files kc loaded. The
-  panel's context is marked `current`, the other panel's with that
-  panel's name (`left` or `right`); a name defined in several files
-  shows the file.
+- The picker lists every context of the kubeconfig files kc loaded,
+  sorted by name. The panel's context is marked `current`, the other
+  panel's with that panel's name (`left` or `right`); a name defined in
+  several files shows the file.
 - The files of `$KUBECONFIG` (or `--kubeconfig a:b`) are one kubeconfig,
   as for kubectl: a context may use a cluster or user from another file
   of the list, and a name defined in several of them comes from the
@@ -64,7 +64,12 @@ What follows which context:
   when it showed another one.
 
 At startup, `--context NAME`, `-n NAME` and `-A` set the context and
-scope of both panels, as in kubectl; `-A` wins over `-n`.
+scope of both panels, as in kubectl; `-A` wins over `-n`. Without
+`--context`, both panels start in the kubeconfig's `current-context`.
+When it names a context the kubeconfig does not define, or when no file
+sets one and there are several contexts, kc does not open: it prints
+the contexts and asks for `--context`. With one context and no
+`current-context`, kc opens that context and says so.
 
 ## Keys
 

@@ -444,6 +444,56 @@ func (m *Manager) ContextNames() []string {
 	return slices.Compact(names)
 }
 
+// CurrentContext is the current-context that the loaded kubeconfig names.
+type CurrentContext struct {
+	// Name is the current-context; empty when no file names one.
+	Name string
+	// File is the path of the file that names it.
+	File string
+	// Context is the context that Name selects. It is nil when the
+	// kubeconfig that names it does not define it.
+	Context *Context
+}
+
+// CurrentContext returns the current-context of the loaded files: the one
+// that the first file names, in load order ($KUBECONFIG's order, else
+// ~/.kube/config and then the other files under ~/.kube in lexical order).
+//
+// For the files of $KUBECONFIG this is the merged current-context, as
+// kubectl reads it, and the context may come from any file of the list. A
+// file kc found under ~/.kube stands alone: its current-context selects a
+// context of that file only. A current-context that names no context is
+// returned as it is, with Context nil; a later file does not replace it.
+func (m *Manager) CurrentContext() CurrentContext {
+	for i, kc := range m.kubeconfigs {
+		name := kc.Context
+		if name == "" && kc.Config != nil {
+			name = kc.Config.CurrentContext
+		}
+		if name == "" {
+			continue
+		}
+		cur := CurrentContext{Name: name, File: kc.Path}
+		for _, c := range m.contexts {
+			if c.Name == name && m.mayName(i, c) {
+				cur.Context = c
+				break
+			}
+		}
+		return cur
+	}
+	return CurrentContext{}
+}
+
+// mayName reports whether the current-context of kubeconfig i may name c:
+// c is defined in that file, or in the $KUBECONFIG list the file is in.
+func (m *Manager) mayName(i int, c *Context) bool {
+	if i < m.fromEnv {
+		return slices.Contains(m.kubeconfigs[:m.fromEnv], c.Kubeconfig)
+	}
+	return c.Kubeconfig == m.kubeconfigs[i]
+}
+
 // GetClusters returns all discovered clusters
 func (m *Manager) GetClusters() []*Cluster {
 	return m.clusters
