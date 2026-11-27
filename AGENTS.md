@@ -41,7 +41,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for options and [docs/agent-workflow.md](
 
 ## Workspace and clusters
 
-- Never run kc, kubectl, headless drivers or tests against a real cluster, including apparently disposable local contexts. Use fakes or envtest; isolate child configuration from the user's kubeconfig and home. Report features envtest cannot exercise.
+- Never run kc, kubectl, headless drivers or tests against a real cluster: any context of the user's kubeconfig, including local ones that look disposable. Tests use fakes or envtest, with child configuration isolated from the user's kubeconfig and home.
+- Check live behavior envtest cannot show (running pods, logs, exec, port forwards, metrics, controllers, screenshots) on a throwaway kind cluster made by `screenshots/capture.sh`: its kubeconfig is a temporary file, every command checks its context and server, and `down` deletes it. See [throwaway kind clusters](docs/agent-workflow.md#throwaway-kind-clusters).
 - Never commit kubeconfigs, credentials, secrets or generated test artifacts. Do not override `GOPATH` or `GOCACHE`.
 - Preserve unrelated changes and stage intended paths explicitly; never use `git add -A`. Do not remove active Git locks or race another writer. Inspect lock ownership and use an isolated worktree when appropriate.
 - Respect actual environment permissions. Do not prescribe nonexistent escalation flags or bypass a denied action.

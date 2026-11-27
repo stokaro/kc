@@ -111,7 +111,9 @@ RBAC authorizer and cache propagation are asynchronous.
 Envtest provides an API server and etcd, not kubelets, scheduler or controllers.
 It can test API, cache, watch and RBAC behavior, but does not prove running-pod
 exec, streaming logs, port forwarding, scheduling or live metrics. Test those
-boundaries with controlled fakes and report the remaining E2E gap.
+boundaries with controlled fakes, check them live on a
+[throwaway kind cluster](#throwaway-kind-clusters), and report what neither
+covered.
 
 The shared helper advertises loopback explicitly, so a test container does not
 need a default network route. It disables the API server's bootstrap
@@ -169,10 +171,50 @@ graphics mode kc therefore uses text; a fixture configured with
 drawing and Kitty graphics; see
 [headless Kitty support](adr/0352-bubbleheadless-kitty-graphics.md).
 
-`docs/demo/record.sh` and `screenshots/capture.sh` create kind clusters and are
-not agent validation shortcuts under the no-live-cluster rule. Use fake/envtest
-fixtures. If a journey needs a real workload, report that coverage gap rather
-than substituting a real cluster, including a local one.
+A journey that needs running pods goes to a
+[throwaway kind cluster](#throwaway-kind-clusters), driven the same way.
+
+## Throwaway kind clusters
+
+A kind cluster created for the task and deleted afterwards is not a real
+cluster in the sense of AGENTS.md: nothing runs on it but what the task put
+there, and its kubeconfig exists only in a temporary directory. Use one to check
+what envtest cannot show: running pods, logs, exec and attach, port forwards,
+metrics, controllers acting on objects (rollouts, ReplicaSets, Jobs), node
+shells and drains. The screenshot catalog and the demo GIF are made on one too.
+Tests stay on envtest and fakes, which CI runs; a live check is extra evidence
+for the PR, not a replacement for a regression test.
+
+`screenshots/capture.sh` creates the cluster and drives kc on it, one command
+per call; its header lists every command and variable:
+
+```sh
+screenshots/capture.sh up                       # create the cluster
+screenshots/capture.sh seed                     # optional: demo objects, metrics-server, a Helm release
+screenshots/capture.sh run kubectl get pods -A  # kubectl or helm on this cluster only
+screenshots/capture.sh start                    # kc in the driver, in the background
+screenshots/capture.sh text 'cd deploy'
+screenshots/capture.sh keys enter               # driver key tokens: f3, esc, ctrl+x, ...
+screenshots/capture.sh wait report 30           # bounded wait for text on the screen
+screenshots/capture.sh screen                   # the frame as plain text
+screenshots/capture.sh snap /tmp/frame.png      # a color frame for the PR
+screenshots/capture.sh stop
+screenshots/capture.sh down                     # delete the cluster and the work directory
+```
+
+- Create the cluster through the script, so that kc and kubectl run with a
+  temporary `HOME` and a kubeconfig that holds only this cluster, and every
+  command first checks the context (`kind-<cluster>`) and the server
+  (`127.0.0.1:<port>`). Never merge that kubeconfig into the user's, pass a real
+  context name, or use a kind cluster you did not create for the task.
+- Docker can run locally or on another host (`KC_SHOTS_SSH`, reached through an
+  ssh tunnel); use the Docker host the user prefers. Remove only what you
+  created, never with blanket prunes.
+- Give each concurrent session its own `KC_SHOTS_CLUSTER`, `KC_SHOTS_PORT`,
+  `KC_SHOTS_WORK` and `KC_SHOTS_LOCAL`.
+- Run `down` when done, also after a failure, and check on the Docker host that
+  the cluster is gone (`kind get clusters`). Report anything left behind.
+- In the PR, say what was checked live, at which revision, and what was not.
 
 ## Evaluate agent changes
 

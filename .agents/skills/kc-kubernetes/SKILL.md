@@ -60,7 +60,9 @@ fake object stores do not establish those server guarantees.
 - Run `make test-unit PACKAGES='./internal/cluster'` for pure pool logic or
   `make test-integration PACKAGES='./internal/ui'` for panel integration,
   substituting the actual changed packages. Add targeted race checks when
-  ownership or concurrency changes. Never use a live cluster, even read-only.
+  ownership or concurrency changes. Never use a real cluster, even read-only;
+  check running pods, streams and controllers on a
+  [throwaway kind cluster](../../../docs/agent-workflow.md#throwaway-kind-clusters).
 
 Reference tests: [pool lifetimes](../../../internal/cluster/pool_test.go),
 [two-context actions and switches](../../../internal/ui/panel_contexts_envtest_test.go),

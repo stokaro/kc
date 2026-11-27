@@ -24,7 +24,9 @@ the implementation's private arrangement. Do not add tests for prose edits.
 
 Substitute the affected package; read the Makefile for flags. `test-tui` covers
 models/rendering and driver units, not application E2E. Skipped envtest is not
-integration evidence. Use only fake clients or envtest, never a real kubeconfig.
+integration evidence. Tests use only fake clients or envtest, never a real
+kubeconfig; behavior envtest cannot show is checked live on a
+[throwaway kind cluster](../../../docs/agent-workflow.md#throwaway-kind-clusters).
 Read [envtest setup](../../../docs/agent-workflow.md#envtest-constraints) or
 [headless limits](../../../docs/agent-workflow.md#headless-tui-checks) as needed.
 
