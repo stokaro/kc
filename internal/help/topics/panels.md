@@ -71,9 +71,10 @@ the copy button at its right copies it.
   character, `[a-z]` a set. The pattern matches the whole name and
   ignores case, so `web-*` takes `web-0` and `web-1`. The `..` row is
   never marked.
-  `F2` commands, node actions (`M-n`) and `F5` between a container and
-  a local panel work on the marked rows instead of the cursor row.
-  `F8` always deletes the row under the cursor.
+  While rows are marked, the status in the bottom border starts with
+  their count (`3 marked • 4/9 • 100%`). `F8` delete, `F2` commands, node actions (`M-n`) and
+  `F5` between a container and a local panel work on the marked rows
+  instead of the cursor row; see [Delete](delete.md).
 - `M-c` copies the kubectl command shown above the shell line.
 - `M-y` and `M-u` go back and forward in the panel's history.
 - `C-u` swaps the two panels.

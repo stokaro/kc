@@ -35,7 +35,9 @@ failed or could not be evaluated.
 
 `F4`, `F8`, and `F3` on container logs are grayed out when the review
 says denied (`F4` needs get and patch). Unknown keeps the key enabled:
-the API server still decides each request.
+the API server still decides each request. With marked rows, `F8` is
+grayed out when every marked object is denied, and names the denied
+ones when only some are.
 
 ## Keys
 

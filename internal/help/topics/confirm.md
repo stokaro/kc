@@ -44,7 +44,8 @@ The buttons are the action, named after it (`Scale`, `Restart`, `Stop`,
   since, the action still runs with the values shown.
 - The API server decides each request: a missing permission shows as an
   error after you confirm.
-- `F8` delete has its own Yes/No dialog; see Delete.
+- `F8` delete has its own Yes/No dialog, with the same keys plus `M-y`
+  and `M-n`; see Delete.
 
 ## See also
 

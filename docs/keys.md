@@ -10,13 +10,13 @@ The keys of the panels and viewers. `F1` in kc opens the help page of what has f
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object. In a local panel (`M-l`) it opens the file in `$KUBE_EDITOR`, `$EDITOR` or `vi`, the editor `kubectl edit` uses, and the editor saves it in place. |
 | `F5`       | Copy – download the current YAML/log/file to the local filesystem. Between a container folder and a local panel (`M-l`), copy the marked files and directories in either direction. |
 | `F7`       | Create namespace (panels) / Search dialog (viewers/logs).                       |
-| `F8`       | Delete – confirms the object and its context, then deletes that instance only (UID precondition); a replaced or already deleted object is reported and left alone. In `/port-forwards` it stops the selected forward, also in read-only mode (the forward runs in kc). |
+| `F8`       | Delete – the marked rows, or the object under the cursor when none is marked. A red dialog names the context and the object, or the count, kind and first names of the marked set; `No` has the focus, `M-y` deletes, `M-n` cancels, `y` alone does nothing. Each object is deleted as the instance the row showed (UID precondition); a replaced or already deleted object is reported and left alone, and one line reports a marked set. In `/port-forwards` it stops the selected forward, also in read-only mode (the forward runs in kc). See [Delete](../internal/help/topics/delete.md). |
 | `F9`       | Menu bar – Left, File, Command, Options, Right, as in mc (see [Menu Bar](features.md#menu-bar)).            |
 | `F10`      | Quit (`Esc+0` alternative; `C-q` also exits).                                |
 | `M-F1`, `M-F2` | Panel options of the left or right panel: sort order, columns, non-empty only, width. |
 | `Tab`      | Switch panels.                                                                  |
 | `C-o`      | Toggle the integrated terminal.                                                 |
-| `Ins`, `C-t` | Mark the row under the cursor and move down, as in mc. `C-a` marks every row. |
+| `Ins`, `C-t` | Mark the row under the cursor and move down, as in mc. `C-a` marks every row. The bottom border shows how many rows are marked (`3 marked`). |
 | `+`, `-`   | Select group and Unselect group, as in mc: a dialog asks for a shell pattern (`*`, `?`, `[a-z]`, matched against the whole name, case ignored) and marks or unmarks the rows whose name matches. |
 | `*`        | Invert the marks of the list. `+`, `-` and `*` go to the shell line while it holds typed text. |
 | `C-s`      | Quick search, as in mc: type to jump to the first row whose name starts with the text (case-insensitive); `C-s` again goes to the next match, `Backspace` removes a character, `Esc` ends the search, and any other key ends it and does its usual job (`Enter` opens the found row). Text typed while the list is still loading is kept and applied when the rows arrive. `M-s` and `Esc s` do the same. |
