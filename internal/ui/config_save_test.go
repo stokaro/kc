@@ -41,13 +41,14 @@ func findMsg[T tea.Msg](msgs []tea.Msg) (T, bool) {
 	return zero, false
 }
 
-// newConfigApp returns an App whose configuration file is p.
-func newConfigApp(t *testing.T, p string) (*App, tea.Cmd) {
+// newConfigApp returns an App that loaded its configuration from p.
+func newConfigApp(t *testing.T, p string) *App {
 	t.Helper()
 	app := NewApp()
 	t.Cleanup(app.cancel)
 	app.cfgStore = appconfig.NewStore(p)
-	return app, app.loadConfig()
+	app.loadConfig()
+	return app
 }
 
 // saveObjectsDefaults sends C-s from the object options and returns the
@@ -75,11 +76,10 @@ func TestBrokenConfigIsReportedAndNotOverwritten(t *testing.T) {
 	if err := os.WriteFile(p, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	app, loadCmd := newConfigApp(t, p)
+	app := newConfigApp(t, p)
 
-	loadToast, ok := findMsg[showToastMsg](runCmd(loadCmd))
-	if !ok || loadToast.info || !strings.Contains(loadToast.text, p) {
-		t.Fatalf("load toast = %+v, want an error naming %s", loadToast, p)
+	if app.cfgLoadErr == nil || app.cfgLoadErr.Path != p {
+		t.Fatalf("load error = %v, want one naming %s", app.cfgLoadErr, p)
 	}
 	if app.cfg.Viewer.Theme != appconfig.Default().Viewer.Theme {
 		t.Fatalf("theme = %q, want the default", app.cfg.Viewer.Theme)
@@ -108,9 +108,9 @@ func TestSaveDefaultsKeepsCustomCommands(t *testing.T) {
 	if err := os.WriteFile(p, []byte("viewer:\n  theme: monokai\ncommands:\n  - name: Mine\n    command: echo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	app, loadCmd := newConfigApp(t, p)
-	if msgs := runCmd(loadCmd); len(msgs) != 0 {
-		t.Fatalf("a good config showed %v", msgs)
+	app := newConfigApp(t, p)
+	if app.cfgLoadErr != nil {
+		t.Fatalf("a good config reported %v", app.cfgLoadErr)
 	}
 
 	toast := saveObjectsDefaults(t, app)
@@ -132,7 +132,7 @@ func TestSaveDefaultsKeepsCustomCommands(t *testing.T) {
 func TestPanelWidthSaveAndSessionNotice(t *testing.T) {
 	t.Parallel()
 	p := filepath.Join(t.TempDir(), "config.yaml")
-	app, _ := newConfigApp(t, p)
+	app := newConfigApp(t, p)
 
 	app.modalManager.Show("view_options")
 	_, cmd := app.Update(ViewOptionsCommittedMsg{PanelIndex: 0, SetPanelWidth: true, PanelWidthPercent: 33, Accept: true, Close: true})

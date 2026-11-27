@@ -89,6 +89,8 @@ func TestLoadMissingFileUsesDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadReportsBrokenFiles covers files of which nothing loads; files
+// with a section that does not load are in load_sections_test.go.
 func TestLoadReportsBrokenFiles(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -96,8 +98,8 @@ func TestLoadReportsBrokenFiles(t *testing.T) {
 		data string
 	}{
 		{name: "syntax error", data: "viewer:\n  theme: monokai\n commands: [\n"},
-		{name: "wrong type", data: "viewer:\n  theme: monokai\nkubernetes:\n  clusters:\n    ttl: 120\n"},
 		{name: "list at the top", data: "- viewer\n- panel\n"},
+		{name: "text at the top", data: "viewer\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,9 +117,16 @@ func TestLoadReportsBrokenFiles(t *testing.T) {
 			if !errors.Is(s.LoadErr(), le.Err) {
 				t.Fatalf("LoadErr = %v, want %v", s.LoadErr(), err)
 			}
-			// Nothing of a broken file is used, not even the parts that parse.
+			if len(le.Sections) != 0 || !le.ReadOnlyLost() {
+				t.Fatalf("sections = %v, readOnly lost = %v; want none and true", le.Sections, le.ReadOnlyLost())
+			}
+			// Nothing of a file that does not parse is used, not even the
+			// parts that would, and every context is read-only.
 			if cfg.Viewer.Theme != appconfig.Default().Viewer.Theme {
 				t.Fatalf("theme = %q, want the default", cfg.Viewer.Theme)
+			}
+			if !cfg.ReadOnly.For("any-context") {
+				t.Fatalf("readOnly = %+v, want every context read-only", cfg.ReadOnly)
 			}
 		})
 	}
@@ -129,10 +138,26 @@ func TestLoadReportsUnreadableFile(t *testing.T) {
 		t.Skip("file modes do not deny reads here")
 	}
 	p := writeConfig(t, customConfig, 0o000)
-	_, err := appconfig.NewStore(p).Load()
+	cfg, err := appconfig.NewStore(p).Load()
 	var le *appconfig.LoadError
 	if !errors.As(err, &le) || !errors.Is(err, os.ErrPermission) {
 		t.Fatalf("Load error = %v, want a *LoadError for a permission error", err)
+	}
+	if !cfg.ReadOnly.For("any-context") {
+		t.Fatalf("readOnly = %+v, want every context read-only", cfg.ReadOnly)
+	}
+}
+
+// TestLoadWithoutPathFailsClosed is a store whose file kc cannot locate:
+// it cannot tell what the file asks for, so every context is read-only.
+func TestLoadWithoutPathFailsClosed(t *testing.T) {
+	t.Parallel()
+	cfg, err := appconfig.NewStore("").Load()
+	if _, ok := errors.AsType[*appconfig.LoadError](err); !ok {
+		t.Fatalf("Load error = %v, want a *LoadError", err)
+	}
+	if !cfg.ReadOnly.For("any-context") {
+		t.Fatalf("readOnly = %+v, want every context read-only", cfg.ReadOnly)
 	}
 }
 
@@ -157,25 +182,38 @@ func TestLoadUsesHomeDirectory(t *testing.T) {
 }
 
 // TestUpdateRefusesBrokenFile covers the data loss in issue 59: a file that
-// fails to load followed by "Save as defaults" must keep its bytes.
+// fails to load followed by "Save as defaults" must keep its bytes. A file
+// of which only one section did not load is refused too: writing kc's
+// defaults for that section would replace what the user wrote there.
 func TestUpdateRefusesBrokenFile(t *testing.T) {
 	t.Parallel()
-	original := customConfig + "  broken: [\n"
-	p := writeConfig(t, original, 0o600)
-	s := appconfig.NewStore(p)
-	if _, err := s.Load(); err == nil {
-		t.Fatal("Load succeeded on a broken file")
+	tests := []struct {
+		name     string
+		original string
+	}{
+		{name: "syntax error", original: customConfig + "  broken: [\n"},
+		{name: "one section does not load", original: customConfig + "kubernetes:\n  clusters:\n    ttl: 120\n"},
 	}
-	_, err := s.Update(func(c *appconfig.Config) { c.Viewer.Theme = "nord" })
-	var le *appconfig.LoadError
-	if !errors.As(err, &le) || le.Path != p {
-		t.Fatalf("Update error = %v, want a *LoadError for %s", err, p)
-	}
-	if got := readFile(t, p); !bytes.Equal(got, []byte(original)) {
-		t.Fatalf("file changed:\n%s", got)
-	}
-	if names := dirEntries(t, filepath.Dir(p)); len(names) != 1 {
-		t.Fatalf("directory holds %v, want only config.yaml", names)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := writeConfig(t, tc.original, 0o600)
+			s := appconfig.NewStore(p)
+			if _, err := s.Load(); err == nil {
+				t.Fatal("Load succeeded on a broken file")
+			}
+			_, err := s.Update(func(c *appconfig.Config) { c.Viewer.Theme = "nord" })
+			var le *appconfig.LoadError
+			if !errors.As(err, &le) || le.Path != p {
+				t.Fatalf("Update error = %v, want a *LoadError for %s", err, p)
+			}
+			if got := readFile(t, p); !bytes.Equal(got, []byte(tc.original)) {
+				t.Fatalf("file changed:\n%s", got)
+			}
+			if names := dirEntries(t, filepath.Dir(p)); len(names) != 1 {
+				t.Fatalf("directory holds %v, want only config.yaml", names)
+			}
+		})
 	}
 }
 
