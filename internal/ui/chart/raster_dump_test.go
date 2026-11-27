@@ -264,7 +264,11 @@ func writeDump(t *testing.T, path string, c chart.Chart, img *image.RGBA, cw, ch
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() {
+		if err := w.Close(); err != nil {
+			t.Errorf("closing snapshot: %v", err)
+		}
+	}()
 	if err := png.Encode(w, out); err != nil {
 		t.Fatal(err)
 	}

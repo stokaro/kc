@@ -438,10 +438,12 @@ func snapshotToPNG(frame emulator.EmittedFrame, path string) error {
 	if err != nil {
 		return fmt.Errorf("create snapshot: %w", err)
 	}
-	defer file.Close()
-
 	if err := png.Encode(file, img); err != nil {
+		_ = file.Close() // Preserve the encoding error while releasing the file.
 		return fmt.Errorf("encode png: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close snapshot: %w", err)
 	}
 	return nil
 }

@@ -27,7 +27,11 @@ func TestWriteIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer root.Close()
+	t.Cleanup(func() {
+		if err := root.Close(); err != nil {
+			t.Errorf("closing root: %v", err)
+		}
+	})
 
 	if err := atomicfile.WriteIn(t.Context(), root, "sub/new.txt", 0o750, strings.NewReader("data")); err != nil {
 		t.Fatalf("WriteIn: %v", err)

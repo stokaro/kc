@@ -27,7 +27,11 @@ func TestViewContentCopyRequestKeepsBytes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("fetch: %v", err)
 			}
-			defer rc.Close()
+			t.Cleanup(func() {
+				if err := rc.Close(); err != nil {
+					t.Errorf("closing reader: %v", err)
+				}
+			})
 			got, err := io.ReadAll(rc)
 			if err != nil {
 				t.Fatalf("read: %v", err)

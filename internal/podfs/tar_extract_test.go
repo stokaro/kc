@@ -360,7 +360,11 @@ func TestHelperTarStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rc.Close()
+	t.Cleanup(func() {
+		if err := rc.Close(); err != nil {
+			t.Errorf("closing tar stream: %v", err)
+		}
+	})
 	tr := tar.NewReader(rc)
 	hdr, err := tr.Next()
 	if err != nil {

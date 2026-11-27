@@ -118,8 +118,11 @@ func (h *helperAwareSession) checkTarget(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("debug helper cannot see the container's processes: %w", err)
 	}
-	defer rc.Close()
-	data, _ := io.ReadAll(rc)
+	defer rc.Close() //nolint:errcheck // closing the process-identity read stream is best-effort cleanup
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return fmt.Errorf("debug helper cannot read the target process identity: %w", err)
+	}
 	if strings.Contains(string(data), helperSleepMarker) {
 		return fmt.Errorf("debug helper does not share the container's process namespace; the runtime may not support targeting containers")
 	}

@@ -3,13 +3,50 @@ package cluster
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr/funcr"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+func TestRunClusterReportsUnexpectedErrors(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		err      error
+		canceled bool
+		wantLog  bool
+	}{
+		{name: "clean exit"},
+		{name: "startup error", err: errors.New("cache failed"), wantLog: true},
+		{name: "early canceled error", err: context.Canceled, wantLog: true},
+		{name: "expected cancellation", err: context.Canceled, canceled: true},
+		{name: "unrelated shutdown error", err: errors.New("cache failed"), canceled: true, wantLog: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var output strings.Builder
+			log := funcr.New(func(prefix, args string) { output.WriteString(prefix + args) }, funcr.Options{})
+			ctx, cancel := context.WithCancel(ctrllog.IntoContext(t.Context(), log))
+			defer cancel()
+			if tt.canceled {
+				cancel()
+			}
+			runCluster(ctx, Key{ContextName: "test-context", Namespace: "test-ns"}, func(context.Context) error { return tt.err })
+			if got := output.Len() > 0; got != tt.wantLog {
+				t.Fatalf("logged = %v, want %v; output %q", got, tt.wantLog, output.String())
+			}
+			if tt.wantLog && (!strings.Contains(output.String(), "test-context") || !strings.Contains(output.String(), tt.err.Error())) {
+				t.Fatalf("log %q lacks the failing context or cause", output.String())
+			}
+		})
+	}
+}
 
 const testTTL = 2 * time.Minute
 

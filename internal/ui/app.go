@@ -2883,7 +2883,9 @@ func (a *App) logCommandToTerminal(command string) {
 	if command == "" {
 		return
 	}
-	fmt.Fprintf(os.Stdout, "\n[kc] %s\n", command)
+	if _, err := fmt.Fprintf(os.Stdout, "\n[kc] %s\n", command); err != nil {
+		ctrllog.FromContext(a.ctx).WithName("terminal").Error(err, "writing command to terminal")
+	}
 }
 
 func (a *App) refreshPanelAfterEdit(panelIdx int) {
@@ -3125,7 +3127,7 @@ func (a *App) copyToPath(req *copyRequest, dest string) error {
 		}
 		reader = rc
 	}
-	defer reader.Close()
+	defer reader.Close() //nolint:errcheck // atomicfile.Write checks stream and destination errors; Close only releases the reader
 	// The destination changes only after the whole stream was written, and a
 	// new export is private: it may hold decoded Secret values.
 	return atomicfile.Write(ctx, dest, reader)

@@ -19,6 +19,7 @@ linters:
     - copyloopvar
     - depguard
     - dupl
+    - errcheck
     - forbidigo
     - funlen
     - gochecknoinits
@@ -40,13 +41,18 @@ linters:
     - unused
     - whitespace
   settings:
+    errcheck:
+      # Explicit discards are reviewed at their call sites. Do not hide all
+      # Close/Flush/print errors with the std-error-handling preset: writes
+      # and final flushes can fail. Best-effort cleanup uses a local reason.
+      check-blank: false
     depguard:
       rules:
         main:
           # `pkg` matches by prefix, and when a deny and an allow entry both
           # match, the longer one wins. So `charm.land/bubbletea` refuses the
           # v1 path and every v1 subpackage, and the allow entry lets the /v2
-          # module through. See AGENTS.md, "Dependencies Policy".
+          # module through. See AGENTS.md and the kc-go skill.
           list-mode: lax
           allow:
             - charm.land/bubbletea/v2
@@ -121,7 +127,6 @@ linters:
       require-specific: true
       allow-no-explanation:
         # the following linters are allowed without explanations because usually there's nothing to explain
-        - errcheck
         - lll
     # nolintguard does not register as a golangci-lint module plugin. It is
     # pinned as a Go tool and run through go vet by `make lint-nolintguard`.
@@ -281,7 +286,6 @@ linters:
       - comments
       - common-false-positives
       - legacy
-      - std-error-handling
     rules:
       # The context.Background/TODO ban is for tests. Production code creates
       # its root context in cmd/kc and in Deps.Ctx (see AGENTS.md).

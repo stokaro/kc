@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: build-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     name: ${{ matrix.goos }}-${{ matrix.goarch }}
@@ -54,7 +58,11 @@ jobs:
           # envtest suites fail instead of skipping when the control plane
           # cannot start. See docs/adr/0060-require-envtest-in-ci.md.
           KC_REQUIRE_ENVTEST: "1"
-        run: go test ./...
+        run: make test-integration
+
+      - name: Check kc through the headless terminal
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: make test-headless
 
       - name: Build
         env:

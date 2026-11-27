@@ -122,7 +122,7 @@ func (c *Client) get(ctx context.Context, path string, params url.Values) ([]ser
 		}
 		return nil, nil, fmt.Errorf("prometheus %s: %w", c.Source, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response read errors are checked; closing the read body is best-effort
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, nil, fmt.Errorf("prometheus %s: reading response: %w", c.Source, err)

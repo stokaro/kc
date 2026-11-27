@@ -92,7 +92,7 @@ func Download(ctx context.Context, src Source, req Request, counter *Counter) ([
 	if err != nil {
 		return nil, fmt.Errorf("opening destination: %w", err)
 	}
-	defer root.Close()
+	defer root.Close() //nolint:errcheck // this releases a directory descriptor; destination file closes are checked separately
 	results := make([]Result, 0, len(req.Entries))
 	for i, e := range req.Entries {
 		if ctx.Err() != nil {
@@ -225,7 +225,7 @@ func extractStream(ctx context.Context, ts TarSource, dir, name string, w *write
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer rc.Close() //nolint:errcheck // the stream is drained below to check the remote exit status; Close only releases it
 	if err := extract(ctx, rc, w); err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -186,8 +187,14 @@ func (p *Pool) startCluster(ctx context.Context, k Key, selectors map[schema.Gro
 		return nil, nil, fmt.Errorf("cluster: %w", err)
 	}
 	cctx, cancel := context.WithCancel(ctx)
-	go func() { _ = cl.Start(cctx) }()
+	go runCluster(cctx, k, cl.Start)
 	return cl, cancel, nil
+}
+
+func runCluster(ctx context.Context, k Key, start func(context.Context) error) {
+	if err := start(ctx); err != nil && !errors.Is(err, ctx.Err()) {
+		ctrllog.FromContext(ctx).WithName("pool").Error(err, "cluster cache stopped", "context", k.ContextName, "namespace", k.Namespace)
+	}
 }
 
 func (p *Pool) evictLoop() {

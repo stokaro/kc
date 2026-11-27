@@ -49,7 +49,11 @@ func TestIdleTimeoutReaderEndsAStalledStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := newIdleTimeoutReader(&stalledReader{ctx: ctx}, 20*time.Millisecond, cancel)
-	defer r.Close()
+	t.Cleanup(func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("closing reader: %v", err)
+		}
+	})
 	_, err := io.ReadAll(r)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled after the pause", err)

@@ -72,7 +72,9 @@ func TestPrintVersionInfo(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	printVersionInfo(&buf, info)
+	if err := printVersionInfo(&buf, info); err != nil {
+		t.Fatalf("printVersionInfo: %v", err)
+	}
 
 	output := buf.String()
 	expect := []string{
@@ -214,6 +216,34 @@ func TestRunVersionCommandClientOnly(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+type failingVersionWriter struct{ err error }
+
+func (w failingVersionWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestVersionOutputFailure(t *testing.T) {
+	t.Parallel()
+	want := errors.New("output unavailable")
+	writer := failingVersionWriter{err: want}
+	if err := runVersionCommand(t.Context(), writer, writer, true); !errors.Is(err, want) {
+		t.Fatalf("runVersionCommand(clientOnly) = %v, want output error %v", err, want)
+	}
+	var cli cliFlags
+	exited := false
+	parser, err := kong.New(&cli, append(cliOptions(),
+		kong.Writers(writer, writer),
+		kong.Exit(func(int) { exited = true }),
+	)...)
+	if err != nil {
+		t.Fatalf("kong.New: %v", err)
+	}
+	if err := versionFlag(false).BeforeReset(parser); !errors.Is(err, want) {
+		t.Fatalf("BeforeReset = %v, want output error %v", err, want)
+	}
+	if exited {
+		t.Fatal("version flag exited successfully after output failed")
 	}
 }
 

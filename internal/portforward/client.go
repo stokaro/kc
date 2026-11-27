@@ -51,7 +51,7 @@ func (c ClientRunner) Run(ctx context.Context, spec Spec, ready func(int32)) err
 	ports := []string{fmt.Sprintf("%d:%d", spec.LocalPort, spec.RemotePort)}
 	readyCh := make(chan struct{})
 	errOut := logWriter(log)
-	defer errOut.Close()
+	defer errOut.Close() //nolint:errcheck // logWriter returns an io.PipeWriter whose Close always returns nil
 	pf, err := clientportforward.NewOnAddressesForStreamingWithContext(ctx, dialer, []string{address}, ports, readyCh, io.Discard, errOut)
 	if err != nil {
 		return err
