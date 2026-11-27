@@ -11,8 +11,21 @@
 #   seed     apply the demo objects, metrics-server and a Helm release
 #   capture  write the PNGs of the given scenes or groups (default: all)
 #   list     print the scenes in capture order
-#   down     delete the cluster and the work directory
+#   down     stop a kc session, delete the cluster and the work directory
 #   all      up, seed, capture and down; down runs also when a step fails
+#
+# Live checks on the same cluster, one command per call (see README.md):
+#
+#   run CMD...       run CMD (kubectl, helm) against the throwaway cluster only
+#   start [ARGS...]  build kc and start it in the driver in the background,
+#                    with ARGS (default: --context kind-<cluster> -n shop)
+#   keys TOKEN...    send keys (driver tokens: f3, enter, esc, ctrl+x, ...)
+#   text TEXT        type text
+#   send LINE...     send driver commands as they are (resize 80 24, ...)
+#   screen           print the screen as plain text
+#   wait TEXT [SEC]  wait until the screen shows TEXT (default 20 seconds)
+#   snap FILE.png    write a color snapshot of the screen
+#   stop             stop the kc session
 #
 # Environment:
 #   KC_SHOTS_CLUSTER      kind cluster name (default kc-shots)
@@ -27,8 +40,12 @@
 #                         show it (default /tmp/kc-shots)
 #   KC_SHOTS_DASH_WAIT    seconds the dashboard collects samples before its
 #                         first screenshot (default 300)
-#   KC_SHOTS_COLS         terminal width kc runs in (default 150); the
-#                         committed screenshots use the default
+#   KC_SHOTS_COLS         terminal width kc runs in (default 150)
+#   KC_SHOTS_ROWS         terminal height (default 42); the committed
+#                         screenshots use the defaults
+#
+# Two sessions at the same time need their own KC_SHOTS_CLUSTER, KC_SHOTS_PORT,
+# KC_SHOTS_WORK and KC_SHOTS_LOCAL.
 set -euo pipefail
 
 CLUSTER=${KC_SHOTS_CLUSTER:-kc-shots}
@@ -41,7 +58,7 @@ REMOTE_KIND=${KC_SHOTS_REMOTE_KIND:-}
 # shellcheck disable=SC2034 # used by scenes/04-dashboard.sh
 DASH_WAIT=${KC_SHOTS_DASH_WAIT:-300}
 COLS=${KC_SHOTS_COLS:-150}
-ROWS=42
+ROWS=${KC_SHOTS_ROWS:-42}
 WORKERS=2
 LIB_TAG=shots
 SHOTS=$REPO/screenshots
@@ -89,6 +106,7 @@ cmd_seed() {
 
 cmd_down() {
 	stop_kc_if_running
+	session_stop
 	cluster_down
 	rm -rf "$WORK" "$LOCAL"
 }
@@ -515,6 +533,7 @@ scene_ids() {
 }
 
 cmd_capture() {
+	! session_running || die "a kc session is running; run '$0 stop' first"
 	start_tunnel
 	build_kc
 	mirror_kubeconfig
@@ -545,6 +564,114 @@ cmd_capture() {
 	log "captured ${#ids[@]} scenes"
 }
 
+# --- a kc session for live checks ---------------------------------------------
+#
+# start runs kc in the driver in the background and returns, so that later
+# calls of this script (keys, screen, snap, stop) drive the same kc. A keeper
+# process holds the FIFO open between the calls; its PID and the driver's
+# are in $WORK.
+
+session_pidfile=$WORK/session.pid
+session_keeperfile=$WORK/session-keeper.pid
+
+session_running() {
+	[ -f "$session_pidfile" ] && kill -0 "$(cat "$session_pidfile")" 2>/dev/null
+}
+
+# use_session sends what bh sends to the session's FIFO.
+use_session() {
+	session_running || die "no kc session; run '$0 start' first"
+	bh() { printf '%s\n' "$*" >"$BH_FIFO"; }
+}
+
+cmd_start() {
+	! session_running || die "a kc session is running; run '$0 stop' first"
+	start_tunnel
+	build_kc
+	mirror_kubeconfig
+	local_files
+	if [ $# -eq 0 ]; then
+		set -- --context "$CONTEXT" -n shop
+	fi
+	launch_kc "$@"
+	echo "$bh_pid" >"$session_pidfile"
+	# Without the keeper the driver would see the end of its input each time
+	# a call of this script closes the FIFO.
+	(exec sleep 2147483647 >"$BH_FIFO") </dev/null >/dev/null 2>&1 &
+	echo $! >"$session_keeperfile"
+	use_session
+	wait_for Quit 60
+	log "kc runs at ${COLS}x${ROWS}; '$0 screen' shows it, '$0 stop' ends it"
+}
+
+session_stop() {
+	if session_running; then
+		use_session
+		bh exit || true
+		local i=0
+		while session_running && [ $i -lt 50 ]; do
+			sleep 0.1
+			i=$((i + 1))
+		done
+		if session_running; then
+			kill "$(cat "$session_pidfile")" 2>/dev/null || true
+		fi
+	fi
+	if [ -f "$session_keeperfile" ]; then
+		kill "$(cat "$session_keeperfile")" 2>/dev/null || true
+	fi
+	pkill -f "$WORK/bin/kc" 2>/dev/null || true
+	rm -f "$session_pidfile" "$session_keeperfile"
+}
+
+cmd_keys() {
+	use_session
+	local t
+	for t in "$@"; do
+		key "$t"
+		sleep 0.3
+	done
+}
+
+cmd_text() {
+	use_session
+	typetext "$*"
+}
+
+cmd_send() {
+	use_session
+	local line
+	for line in "$@"; do
+		bh "$line"
+	done
+}
+
+# cmd_screen prints the screen without the marker line ask uses.
+cmd_screen() {
+	use_session
+	screen | grep -vF "unknown command \"$LIB_TAG-mark-" || true
+}
+
+cmd_wait() {
+	use_session
+	wait_for "$1" "${2:-20}"
+}
+
+cmd_snap() {
+	use_session
+	local file=$1
+	case $file in /*) ;; *) file=$PWD/$file ;; esac
+	write_png "$file"
+	log "wrote $file"
+}
+
+# cmd_run runs a command against the throwaway cluster: kk checks the context
+# and the server first, and HOME and KUBECONFIG are the throwaway ones.
+cmd_run() {
+	start_tunnel
+	kk "$@"
+}
+
 case "${1:-all}" in
 up) cmd_up ;;
 seed) cmd_seed ;;
@@ -554,6 +681,36 @@ capture)
 	;;
 list) scene_ids ;;
 down) cmd_down ;;
+run)
+	shift
+	cmd_run "$@"
+	;;
+start)
+	shift
+	cmd_start "$@"
+	;;
+keys)
+	shift
+	cmd_keys "$@"
+	;;
+text)
+	shift
+	cmd_text "$@"
+	;;
+send)
+	shift
+	cmd_send "$@"
+	;;
+screen) cmd_screen ;;
+wait)
+	shift
+	cmd_wait "$@"
+	;;
+snap)
+	shift
+	cmd_snap "$@"
+	;;
+stop) session_stop ;;
 all)
 	ON_EXIT=cmd_down
 	trap cmd_down EXIT

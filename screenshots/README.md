@@ -45,4 +45,24 @@ screenshots/capture.sh down
 
 The cluster name, the API server port, an ssh host for Docker and the dashboard wait are set through `KC_SHOTS_*` variables; the header of `capture.sh` lists them. Run kind elsewhere with, for example, `KC_SHOTS_SSH=user@docker-host`.
 
+## Live checks
+
+The same cluster serves to try a change by hand, or to check what envtest cannot show: running pods, logs, exec, port forwards, metrics and controllers. `start` runs kc in the driver in the background and returns, and each later call drives it:
+
+```bash
+screenshots/capture.sh up
+screenshots/capture.sh run kubectl -n default create deployment web --image=nginx:1.28-alpine
+screenshots/capture.sh start -n default         # kc arguments; default --context kind-kc-shots -n shop
+screenshots/capture.sh text 'cd deploy'
+screenshots/capture.sh keys enter               # driver key tokens: f3, esc, ctrl+x, down, ...
+screenshots/capture.sh wait web 30              # wait until the screen shows the text
+screenshots/capture.sh screen                   # print the screen as text
+screenshots/capture.sh send 'resize 80 24'      # any driver command
+screenshots/capture.sh snap /tmp/web.png        # color snapshot
+screenshots/capture.sh stop
+screenshots/capture.sh down
+```
+
+`run` runs kubectl or helm with the same temporary `HOME` and kubeconfig, after the same context and server check. kc keeps its settings in the work directory's `home/.kc` between sessions; `down` removes them with the cluster. Two sessions at the same time need their own `KC_SHOTS_CLUSTER`, `KC_SHOTS_PORT`, `KC_SHOTS_WORK` and `KC_SHOTS_LOCAL`.
+
 The scenes are shell functions in [`scenes/`](scenes), one file per group. A function `scene_<group>_<name>` becomes `<group>/NN-<name>.png`, numbered in the order of the file. A scene that continues another one calls `after <group>/<name>`. The dashboard scenes collect samples first: five minutes for the namespace and half of that for each drilldown. Each of them waits until the screen shows the chart images, sent at the cell size of the PNG, and fails when they do not come; `screenshots/capture.sh capture dashboard` captures the group again after a change to the charts. Before each screenshot the capture waits until the images kc sends have stopped changing, so an Info bar is not caught as text while its image is on its way. The drain scenes cordon and uncordon `kc-shots-worker2`, and the timeline scenes scale `shop/web` and set it back, so a capture can run again on the same cluster.
