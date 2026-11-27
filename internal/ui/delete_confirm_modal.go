@@ -2,7 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -16,13 +16,18 @@ type DeleteConfirmMsg struct {
 	Close   bool
 }
 
-// DeleteConfirmModel renders a simple Yes/No confirmation prompt.
+// DeleteConfirmModel is the red Yes/No dialog of F8. It asks about one
+// object, or about the marked rows: their count, kind and first names.
 type DeleteConfirmModel struct {
 	width, height int
-	target        string
+	title         string // the question, "Delete pod shop/web-1?"
 	context       string
-	focus         int // 0=yes, 1=no
-	buttonRect    [2]buttonRect
+	// names are the objects of a marked set the dialog lists, more the
+	// number of objects the set holds beyond them.
+	names      []string
+	more       int
+	focus      int // 0=yes, 1=no
+	buttonRect [2]buttonRect
 }
 
 type buttonRect struct{ x, y, w, h int }
@@ -38,43 +43,53 @@ func NewDeleteConfirmModel() *DeleteConfirmModel {
 func (m *DeleteConfirmModel) Init() tea.Cmd          { return nil }
 func (m *DeleteConfirmModel) SetDimensions(w, h int) { m.width, m.height = w, h }
 
-// Configure sets the resource details displayed in the dialog. context is
+// Configure asks about one object, target ("pod shop/web-1"). context is
 // the kubeconfig context the object was read from; empty hides the line.
 func (m *DeleteConfirmModel) Configure(target, context string) {
-	m.target = target
+	m.ConfigureSet(fmt.Sprintf("Delete %s?", target), context, nil, 0)
+}
+
+// ConfigureSet asks title about a set of objects, listing names and
+// saying how many more the set holds.
+func (m *DeleteConfirmModel) ConfigureSet(title, context string, names []string, more int) {
+	m.title = title
 	m.context = context
+	m.names = append([]string(nil), names...)
+	m.more = more
 	m.focus = 1 // default to "No"
 }
 
+// answerDelete is the dialog's answer.
+func answerDelete(confirm bool) tea.Cmd {
+	return func() tea.Msg { return DeleteConfirmMsg{Confirm: confirm, Close: true} }
+}
+
+// Update handles the keys of a red dialog: a plain letter does nothing, so
+// a "y" typed for the shell line or a fast double press cannot delete.
+// Enter runs the focused button, No when the dialog opens; M-y and M-n
+// pick the button whose letter is highlighted.
 func (m *DeleteConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch key := msg.(type) {
-	case tea.KeyMsg:
-		switch strings.ToLower(key.String()) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
 		case "esc", "ctrl+c", "ctrl+g":
-			return m, func() tea.Msg { return DeleteConfirmMsg{Confirm: false, Close: true} }
-		case "shift+tab":
-			m.focus = (m.focus + 1) % 2
+			return m, answerDelete(false)
+		case "enter":
+			return m, answerDelete(m.focus == 0)
+		case "left", "right", "tab", "shift+tab":
+			m.focus = 1 - m.focus
 			return m, nil
-		case "y":
-			return m, func() tea.Msg { return DeleteConfirmMsg{Confirm: true, Close: true} }
-		case "n":
-			return m, func() tea.Msg { return DeleteConfirmMsg{Confirm: false, Close: true} }
 		}
-		k := key.Key()
-		switch k.Code {
-		case tea.KeyEnter:
-			return m, func() tea.Msg {
-				return DeleteConfirmMsg{
-					Confirm: m.focus == 0,
-					Close:   true,
-				}
+		if key := msg.Key(); key.Mod == tea.ModAlt {
+			switch unicode.ToLower(key.Code) {
+			case 'y':
+				return m, answerDelete(true)
+			case 'n':
+				return m, answerDelete(false)
 			}
-		case tea.KeyLeft, tea.KeyRight, tea.KeyTab:
-			m.focus = (m.focus + 1) % 2
-			return m, nil
 		}
 	case tea.MouseMsg:
-		mouse := key.Mouse()
+		mouse := msg.Mouse()
 		if mouse.Button != tea.MouseLeft {
 			return m, nil
 		}
@@ -87,12 +102,7 @@ func (m *DeleteConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if _, ok := msg.(tea.MouseReleaseMsg); ok {
-				return m, func() tea.Msg {
-					return DeleteConfirmMsg{
-						Confirm: idx == 0,
-						Close:   true,
-					}
-				}
+				return m, answerDelete(idx == 0)
 			}
 		}
 	}
@@ -103,16 +113,26 @@ func (m *DeleteConfirmModel) View() tea.View {
 	innerWidth := max(30, m.width-4)
 	skin := dialog.Danger()
 	row := skin.Normal.Width(innerWidth)
-	// The title wraps rather than cuts: the name is what the user checks
-	// before confirming.
-	lines := []string{row.Bold(true).Align(lipgloss.Center).Render(fmt.Sprintf("Delete %s?", m.target))}
+	// The title and the names wrap rather than cut: the names are what
+	// the user checks before confirming.
+	lines := []string{row.Bold(true).Align(lipgloss.Center).Render(m.title)}
 	if m.context != "" {
 		lines = append(lines, row.Align(lipgloss.Center).Render(fmt.Sprintf("Context: %s", m.context)))
+	}
+	if len(m.names) > 0 {
+		lines = append(lines, row.Render(""))
+		item := row.PaddingLeft(2)
+		for _, name := range m.names {
+			lines = append(lines, item.Render(name))
+		}
+		if m.more > 0 {
+			lines = append(lines, item.Render(fmt.Sprintf("and %d more", m.more)))
+		}
 	}
 	lines = append(lines, row.Render(""))
 	top := lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, lines...))
 	// No is the default answer, so Enter right after opening keeps the
-	// object, as mc's confirm dialogs do.
+	// objects, as mc's confirm dialogs do.
 	buttons, rects := dialog.RenderButtons(skin, innerWidth, []dialog.Button{
 		{Label: "&Yes"}, {Label: "&No", Default: true},
 	}, m.focus)
@@ -129,8 +149,8 @@ func (m *DeleteConfirmModel) View() tea.View {
 }
 
 // Height is the number of lines the dialog shows in a window whose inner
-// width is innerW: the title (wrapped), the context, a blank line and
-// the buttons.
+// width is innerW: the title (wrapped), the context, the names of a set
+// after a blank line, a blank line and the buttons.
 func (m *DeleteConfirmModel) Height(innerW int) int {
 	w, h := m.width, m.height
 	m.SetDimensions(innerW, h)
@@ -139,9 +159,10 @@ func (m *DeleteConfirmModel) Height(innerW int) int {
 	return n
 }
 
+// FooterHints leaves Enter out: it runs the focused button, which is No
+// when the dialog opens, so "Enter Confirm" would promise a delete.
 func (m *DeleteConfirmModel) FooterHints() []FooterHint {
 	return []FooterHint{
-		{Key: "Enter", Label: "Confirm", Enabled: true},
 		{Key: "Esc", Label: "Cancel", Enabled: true},
 	}
 }
