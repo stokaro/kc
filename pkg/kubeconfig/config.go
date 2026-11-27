@@ -3,9 +3,11 @@ package kubeconfig
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -220,33 +222,43 @@ func kubeDirCandidates(kubeDir, mainConfigPath string) ([]string, error) {
 	return candidates, err
 }
 
-// addCandidates loads the candidate files and keeps the ones that parse as
-// kubeconfigs.
+// addCandidates loads the candidate files in parallel and keeps the ones
+// that parse as kubeconfigs, in the order of candidates (the walk's lexical
+// order). The order decides which file's current-context kc starts in, so
+// it must be the same on every run.
 func (m *Manager) addCandidates(log logr.Logger, candidates []string, seen map[string]struct{}) {
-	var mu sync.Mutex
-	workerCount := max(runtime.NumCPU(), 2)
-	jobs := make(chan string)
+	paths := make([]string, len(candidates))
+	configs := make([]*api.Config, len(candidates))
+	jobs := make(chan int)
 	var wg sync.WaitGroup
-	wg.Add(workerCount)
-	for range workerCount {
-		go func() {
-			defer wg.Done()
-			for path := range jobs {
-				mu.Lock()
-				err := m.addKubeconfig(path, seen)
-				mu.Unlock()
+	for range max(runtime.NumCPU(), 2) {
+		wg.Go(func() {
+			for i := range jobs {
+				path, err := absKubeconfigPath(candidates[i])
 				if err != nil {
 					continue
 				}
-				log.V(1).Info("added kubeconfig candidate", "path", path)
+				if config, err := clientcmd.LoadFromFile(path); err == nil {
+					paths[i], configs[i] = path, config
+				}
 			}
-		}()
+		})
 	}
-	for _, path := range candidates {
-		jobs <- path
+	for i := range candidates {
+		jobs <- i
 	}
 	close(jobs)
 	wg.Wait()
+	for i, config := range configs {
+		if config == nil {
+			continue
+		}
+		if _, ok := seen[paths[i]]; ok {
+			continue
+		}
+		m.appendKubeconfig(paths[i], config, seen)
+		log.V(1).Info("added kubeconfig candidate", "path", paths[i])
+	}
 }
 
 // finishDiscovery builds the context and cluster lists from the loaded
@@ -291,12 +303,7 @@ func normalizeKubeconfigPath(path, homeDir string) (string, error) {
 }
 
 func (m *Manager) addKubeconfig(path string, seen map[string]struct{}) error {
-	if path == "" {
-		return fmt.Errorf("kubeconfig path is empty")
-	}
-
-	normalized := filepath.Clean(path)
-	absPath, err := filepath.Abs(normalized)
+	absPath, err := absKubeconfigPath(path)
 	if err != nil {
 		return err
 	}
@@ -309,14 +316,23 @@ func (m *Manager) addKubeconfig(path string, seen map[string]struct{}) error {
 	if err != nil {
 		return err
 	}
-
-	kubeconfig := &Kubeconfig{
-		Path:   absPath,
-		Config: config,
-	}
-	m.kubeconfigs = append(m.kubeconfigs, kubeconfig)
-	seen[absPath] = struct{}{}
+	m.appendKubeconfig(absPath, config, seen)
 	return nil
+}
+
+// absKubeconfigPath is the clean absolute form of a kubeconfig path, the
+// key of the seen set.
+func absKubeconfigPath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("kubeconfig path is empty")
+	}
+	return filepath.Abs(filepath.Clean(path))
+}
+
+// appendKubeconfig adds the file loaded from absPath to the list.
+func (m *Manager) appendKubeconfig(absPath string, config *api.Config, seen map[string]struct{}) {
+	m.kubeconfigs = append(m.kubeconfigs, &Kubeconfig{Path: absPath, Config: config})
+	seen[absPath] = struct{}{}
 }
 
 // buildContextsAndClusters builds the context and cluster lists from
@@ -324,6 +340,12 @@ func (m *Manager) addKubeconfig(path string, seen map[string]struct{}) error {
 // kubectl: a context name defined in several of them is listed once, from
 // the first, and its cluster and user may be in any of them. Every other
 // file (kc also reads the files under ~/.kube) stands alone.
+//
+// The contexts are sorted by name, so every list and pick is the same on
+// each run. A name that several standalone files define is listed once per
+// file, in the order of the files, so GetContextByName finds the first
+// file's entry. The clusters are in file order, sorted by name within each
+// file.
 func (m *Manager) buildContextsAndClusters() error {
 	m.contexts = make([]*Context, 0)
 	m.clusters = make([]*Cluster, 0)
@@ -338,7 +360,8 @@ func (m *Manager) buildContextsAndClusters() error {
 			source = merged
 		}
 		// Build contexts
-		for contextName, context := range kubeconfig.Config.Contexts {
+		for _, contextName := range slices.Sorted(maps.Keys(kubeconfig.Config.Contexts)) {
+			context := kubeconfig.Config.Contexts[contextName]
 			if i < m.fromEnv && merged.Config.Contexts[contextName] != context {
 				// An earlier file of $KUBECONFIG defines this name.
 				continue
@@ -355,15 +378,16 @@ func (m *Manager) buildContextsAndClusters() error {
 		}
 
 		// Build clusters
-		for clusterName, cluster := range kubeconfig.Config.Clusters {
+		for _, clusterName := range slices.Sorted(maps.Keys(kubeconfig.Config.Clusters)) {
 			clusterObj := &Cluster{
 				Name:   clusterName,
-				Server: cluster.Server,
+				Server: kubeconfig.Config.Clusters[clusterName].Server,
 			}
 			m.clusters = append(m.clusters, clusterObj)
 		}
 	}
-
+	// Stable: the entries of one name keep the order of their files.
+	slices.SortStableFunc(m.contexts, func(a, b *Context) int { return strings.Compare(a.Name, b.Name) })
 	return nil
 }
 
@@ -404,9 +428,70 @@ func (m *Manager) GetKubeconfigs() []*Kubeconfig {
 	return m.kubeconfigs
 }
 
-// GetContexts returns all discovered contexts
+// GetContexts returns all discovered contexts, sorted by name. A name that
+// several standalone files define comes once per file, in file order.
 func (m *Manager) GetContexts() []*Context {
 	return m.contexts
+}
+
+// ContextNames returns the names of the discovered contexts, sorted, each
+// once.
+func (m *Manager) ContextNames() []string {
+	names := make([]string, 0, len(m.contexts))
+	for _, c := range m.contexts {
+		names = append(names, c.Name)
+	}
+	return slices.Compact(names)
+}
+
+// CurrentContext is the current-context that the loaded kubeconfig names.
+type CurrentContext struct {
+	// Name is the current-context; empty when no file names one.
+	Name string
+	// File is the path of the file that names it.
+	File string
+	// Context is the context that Name selects. It is nil when the
+	// kubeconfig that names it does not define it.
+	Context *Context
+}
+
+// CurrentContext returns the current-context of the loaded files: the one
+// that the first file names, in load order ($KUBECONFIG's order, else
+// ~/.kube/config and then the other files under ~/.kube in lexical order).
+//
+// For the files of $KUBECONFIG this is the merged current-context, as
+// kubectl reads it, and the context may come from any file of the list. A
+// file kc found under ~/.kube stands alone: its current-context selects a
+// context of that file only. A current-context that names no context is
+// returned as it is, with Context nil; a later file does not replace it.
+func (m *Manager) CurrentContext() CurrentContext {
+	for i, kc := range m.kubeconfigs {
+		name := kc.Context
+		if name == "" && kc.Config != nil {
+			name = kc.Config.CurrentContext
+		}
+		if name == "" {
+			continue
+		}
+		cur := CurrentContext{Name: name, File: kc.Path}
+		for _, c := range m.contexts {
+			if c.Name == name && m.mayName(i, c) {
+				cur.Context = c
+				break
+			}
+		}
+		return cur
+	}
+	return CurrentContext{}
+}
+
+// mayName reports whether the current-context of kubeconfig i may name c:
+// c is defined in that file, or in the $KUBECONFIG list the file is in.
+func (m *Manager) mayName(i int, c *Context) bool {
+	if i < m.fromEnv {
+		return slices.Contains(m.kubeconfigs[:m.fromEnv], c.Kubeconfig)
+	}
+	return c.Kubeconfig == m.kubeconfigs[i]
 }
 
 // GetClusters returns all discovered clusters

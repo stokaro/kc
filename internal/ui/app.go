@@ -3205,10 +3205,6 @@ func fetchLogsSnapshot(ctx context.Context, cl *kccluster.Cluster, spec models.L
 	return req.Stream(ctx)
 }
 
-// ErrUnknownContext reports a --context name that no loaded kubeconfig
-// defines.
-var ErrUnknownContext = errors.New("unknown context")
-
 // RunConfig allows callers to customize the UI startup.
 type RunConfig struct {
 	// Context, when non-empty, is the kubeconfig context kc starts in
@@ -3254,15 +3250,17 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// Initialize data model (best-effort; UI can still run without it)
 	log.Info("initializing data")
 	if err := app.initConfigAndData(ctx); err != nil {
-		if errors.Is(err, ErrUnknownContext) {
-			// A wrong --context is a usage error: stop before the UI
-			// takes over the terminal.
+		if _, ok := errors.AsType[*startContextError](err); ok {
+			// No context to start in is a usage error: stop before the
+			// UI takes over the terminal, and write nothing to it.
 			app.cancel()
 			return err
 		}
 		log.Error(err, "initialization warning")
 		fmt.Printf("Data init warning: %v\n", err)
 	}
+	// Runs after the cleanup below, once the program has stopped.
+	defer resetKeyboardProtocol()
 	if cfg.DebugLogPath != "" {
 		log.Info("initialization complete, launching UI; check debug.log for further log output while the UI is running", "debugLogPath", cfg.DebugLogPath)
 	} else {
@@ -3320,6 +3318,17 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	return nil
 }
 
+// resetKeyboardProtocol runs, after the UI exits, the manual sequence that
+// turns the kitty keyboard protocol off: hop to the alternate screen, push
+// zero flags, return to the primary screen. Run skips it when it stops
+// before the UI starts, so a usage error is not mixed with escape
+// sequences.
+func resetKeyboardProtocol() {
+	_, _ = os.Stdout.WriteString("\033[?1049h" + // alt screen on
+		"\033[>u" + // kitty: push zero (disable)
+		"\033[?1049l") // back to primary
+}
+
 // initConfigAndData reads the configuration file, then builds the data
 // model. initData makes the clusters, the panels and their folders with
 // the settings of that moment, and a folder keeps the panel configuration
@@ -3348,8 +3357,8 @@ func (a *App) initData(ctx context.Context) error {
 	if raw, err := clientcmd.NewDefaultClientConfigLoadingRules().Load(); err == nil {
 		a.kubectlCtx = raw.CurrentContext
 	}
-	// Select the --context, else the current context (prefer env KUBECONFIG
-	// first path). Both panels start there.
+	// Select the --context, else the current context. Both panels start
+	// there.
 	var kctx *kubeconfig.Context
 	if name := strings.TrimSpace(a.contextOverride); name != "" {
 		c, err := a.startupContext(name)
@@ -3359,7 +3368,16 @@ func (a *App) initData(ctx context.Context) error {
 		}
 		kctx = c
 	} else {
-		kctx = a.selectCurrentContext()
+		c, only, err := a.selectCurrentContext()
+		if err != nil {
+			log.Error(err, "no context to start in")
+			return err
+		}
+		if only {
+			log.Info("no current-context, starting in the only context", "context", c.Name)
+			a.enqueueCmd(a.ShowInfo(onlyContextNotice(c), onlyContextNoticeTTL))
+		}
+		kctx = c
 	}
 	if kctx == nil {
 		log.Error(nil, "no current context found")
@@ -3661,60 +3679,6 @@ func (a *App) namespaceExists(idx int, ns string) bool {
 		return false
 	}
 	return true
-}
-
-// startupContext returns the context called name. When several kubeconfig
-// files define it, the first one wins, as when kubectl merges $KUBECONFIG.
-func (a *App) startupContext(name string) (*kubeconfig.Context, error) {
-	if c := a.kubeMgr.GetContextByName(name); c != nil {
-		return c, nil
-	}
-	paths := make([]string, 0, len(a.kubeMgr.GetKubeconfigs()))
-	for _, kc := range a.kubeMgr.GetKubeconfigs() {
-		paths = append(paths, kc.Path)
-	}
-	if len(paths) == 0 {
-		return nil, fmt.Errorf("%w %q (no kubeconfig loaded)", ErrUnknownContext, name)
-	}
-	return nil, fmt.Errorf("%w %q (kubeconfig: %s)", ErrUnknownContext, name, strings.Join(paths, string(os.PathListSeparator)))
-}
-
-// selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
-func (a *App) selectCurrentContext() *kubeconfig.Context {
-	if env := os.Getenv("KUBECONFIG"); env != "" {
-		for p := range strings.SplitSeq(env, string(os.PathListSeparator)) {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			for _, kc := range a.kubeMgr.GetKubeconfigs() {
-				if sameFilepath(kc.Path, p) {
-					if c := a.kubeMgr.GetCurrentContext(kc); c != nil {
-						return c
-					}
-				}
-			}
-		}
-	}
-	for _, kc := range a.kubeMgr.GetKubeconfigs() {
-		if c := a.kubeMgr.GetCurrentContext(kc); c != nil {
-			return c
-		}
-	}
-	cs := a.kubeMgr.GetContexts()
-	if len(cs) > 0 {
-		return cs[0]
-	}
-	return nil
-}
-
-func sameFilepath(a, b string) bool {
-	ap, err1 := filepath.Abs(a)
-	bp, err2 := filepath.Abs(b)
-	if err1 != nil || err2 != nil {
-		return a == b
-	}
-	return ap == bp
 }
 
 // logMsg appends Bubble Tea messages to a bounded buffer for later inspection.

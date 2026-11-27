@@ -1,6 +1,6 @@
 # 0072. Startup context and all-namespaces scope
 
-- Status: Accepted
+- Status: Accepted; in decision 4, the message of an unknown context and the rule that other startup problems open the UI are superseded by [0371](0371-startup-current-context.md)
 - Date: 2026-11-22
 - Issue: #72
 
