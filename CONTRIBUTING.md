@@ -17,7 +17,7 @@ Read [AGENTS.md](AGENTS.md) for repository invariants. The four skills in `.agen
 | `make test-integration` | All tests, with envtest required |
 | `make test-race` | Concurrency-sensitive packages under the race detector; envtest skipped |
 | `make test-tui` | UI state/render tests, the table and headless-driver unit tests |
-| `make test-headless` | Real kc/terminal-driver startup, resize, help and clean exit against isolated envtest |
+| `make test-headless` | Real kc/terminal-driver startup, resize, help and clean exit against isolated envtest; startup against a server that never answers |
 | `make test-fuzz` | Log formatter fuzz target, bounded by `FUZZ_TIME` (default `10s`) |
 | `make lint` | Pinned golangci-lint and nolintguard over the whole tree; zero issues |
 | `make lint-fix` | Apply available fixes, then check the whole tree |
@@ -56,7 +56,7 @@ Use `internal/testing/kcenvtest`, not `envtest.Environment.Start` directly. Pref
 
 Never use a real kubeconfig or cluster. Envtest has an API server and etcd, not a kubelet or controller manager: it cannot validate real container exec, log streaming, scheduling or metrics. Use controlled fake transports for those boundaries and report what remains unverified.
 
-`make test-headless` builds kc and its driver into a temporary directory, creates an isolated home and kubeconfig, and polls for observable terminal states. It checks 120x30 and 100x24 layouts, contextual help and kc's successful exit. Ordinary `go test` skips this opt-in process test; the Linux CI job runs it explicitly after integration tests.
+`make test-headless` builds kc and its driver into a temporary directory, creates an isolated home and kubeconfig, and polls for observable terminal states. It checks 120x30 and 100x24 layouts, contextual help and kc's successful exit, and the connecting screen against a server that never answers. Ordinary `go test` skips this opt-in process test; the Linux CI job runs it explicitly after integration tests.
 
 ## Changes and review
 

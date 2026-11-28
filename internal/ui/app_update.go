@@ -55,6 +55,12 @@ func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 //
 //nolint:funlen,gocognit,gocyclo,nestif // the app-wide Bubble Tea message switch, one case per message type; splitting it is a larger refactor than the lint baseline (#128)
 func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
+	// The connecting screen takes the keys and its own messages.
+	if a.startup != nil {
+		if cmd, handled := a.updateStartup(msg); handled {
+			return a, cmd
+		}
+	}
 	// The result of a withBusy command goes to the main switch even when a
 	// dialog is open: the dialog did not ask for it, and it would be lost.
 	pastModal := false

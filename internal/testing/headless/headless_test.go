@@ -6,10 +6,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,8 +34,6 @@ func TestHeadlessSession(t *testing.T) {
 	if os.Getenv("KC_HEADLESS") != "1" {
 		t.Skip("run make test-headless for the binary smoke test")
 	}
-	kc := binary(t, "KC_HEADLESS_KC_BINARY")
-	driver := binary(t, "KC_HEADLESS_DRIVER_BINARY")
 	cfg := kcenvtest.Start(t)
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
@@ -59,45 +59,7 @@ func TestHeadlessSession(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	t.Cleanup(cancel)
-	// #nosec G204 G702 -- make supplies the executable; arguments are fixed and the test creates the kubeconfig.
-	cmd := exec.CommandContext(ctx, driver, "-cols", "120", "-rows", "30", "--", os.Args[0], "-test.run=^TestKCChild$", "-test.timeout=75s")
-	cmd.Dir = home
-	// Do not inherit user kubeconfigs, configuration, shell startup files, or
-	// credential helpers. The child only sees this test's certificate identity.
-	cmd.Env = []string{
-		"PATH=" + os.Getenv("PATH"), "HOME=" + home, "SHELL=/bin/sh",
-		"XDG_CONFIG_HOME=" + home, "XDG_CACHE_HOME=" + home,
-		"KUBECONFIG=" + kubeconfig, "KC_HEADLESS_KC_BINARY=" + kc,
-		"KC_HEADLESS=1", "KC_HEADLESS_CHILD=1",
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	in, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = in.Close() }) // The driver may already have closed its input on exit.
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	finished := false
-	t.Cleanup(func() {
-		cancel()
-		if !finished {
-			_ = cmd.Wait() // Cancellation intentionally kills a stuck or failed session.
-		}
-		if t.Failed() {
-			t.Logf("driver stderr: %s", stderr.String())
-		}
-	})
-	s := session{t: t, in: in, out: bufio.NewReader(out), rows: 30}
-	for range 3 { // Driver welcome: readiness, command, and supported commands.
-		s.line()
-	}
+	s := startKC(t, ctx, home, kubeconfig)
 	ready := func(screen string) bool {
 		lines := strings.Split(screen, "\n")
 		footer := lines[len(lines)-1]
@@ -136,19 +98,149 @@ func TestHeadlessSession(t *testing.T) {
 	})
 	s.send("key ctrl+o")
 	s.until(ctx, "panels after C-o", ready)
+	s.quit(ctx)
+}
+
+// TestHeadlessStalledServer starts kc against a server that accepts
+// connections and never answers (#378). The screen shows the context and
+// its server while kc connects, the elapsed time counts up, and F10 quits.
+// Before, kc connected before it drew, and the screen stayed empty.
+func TestHeadlessStalledServer(t *testing.T) {
+	if os.Getenv("KC_HEADLESS") != "1" {
+		t.Skip("run make test-headless for the binary smoke test")
+	}
+	server := stalledServer(t)
+	home := t.TempDir()
+	kubeconfig := filepath.Join(home, "kubeconfig")
+	kcfg := clientcmdapi.NewConfig()
+	kcfg.Clusters["stalled"] = &clientcmdapi.Cluster{Server: server, InsecureSkipTLSVerify: true}
+	kcfg.AuthInfos["stalled"] = &clientcmdapi.AuthInfo{Token: "headless-token"}
+	kcfg.Contexts["kc-smoke"] = &clientcmdapi.Context{Cluster: "stalled", AuthInfo: "stalled", Namespace: "kc-smoke"}
+	kcfg.CurrentContext = "kc-smoke"
+	if err := clientcmd.WriteToFile(*kcfg, kubeconfig); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	t.Cleanup(cancel)
+	started := time.Now()
+	s := startKC(t, ctx, home, kubeconfig)
+	connecting := "Connecting to kc-smoke (" + server + ")…"
+	s.until(ctx, "connecting screen", func(screen string) bool {
+		return strings.Contains(screen, connecting) && strings.Contains(screen, "F10 quits")
+	})
+	// The process start is part of this time; the unit test bounds the
+	// drawing itself to a second.
+	if took := time.Since(started); took > 10*time.Second {
+		t.Fatalf("the connecting screen took %v to show", took)
+	} else {
+		t.Logf("connecting screen %v after the driver started", took)
+	}
+	s.until(ctx, "elapsed time counting up", func(screen string) bool {
+		return strings.Contains(screen, connecting+" 2s")
+	})
+	s.quit(ctx)
+}
+
+// stalledServer accepts connections and never answers. It returns the
+// server URL.
+func stalledServer(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var (
+		mu    sync.Mutex
+		conns []net.Conn
+	)
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, c)
+			mu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		_ = l.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range conns {
+			_ = c.Close()
+		}
+	})
+	return "https://" + l.Addr().String()
+}
+
+// startKC runs kc (through TestKCChild) in the driver at 120x30, with
+// home as its home directory and kubeconfig as its only kubeconfig.
+func startKC(t *testing.T, ctx context.Context, home, kubeconfig string) *session {
+	t.Helper()
+	kc := binary(t, "KC_HEADLESS_KC_BINARY")
+	driver := binary(t, "KC_HEADLESS_DRIVER_BINARY")
+	ctx, cancel := context.WithCancel(ctx)
+	// #nosec G204 G702 -- make supplies the executable; arguments are fixed and the test creates the kubeconfig.
+	cmd := exec.CommandContext(ctx, driver, "-cols", "120", "-rows", "30", "--", os.Args[0], "-test.run=^TestKCChild$", "-test.timeout=75s")
+	cmd.Dir = home
+	// Do not inherit user kubeconfigs, configuration, shell startup files, or
+	// credential helpers. The child only sees this test's identity.
+	cmd.Env = []string{
+		"PATH=" + os.Getenv("PATH"), "HOME=" + home, "SHELL=/bin/sh",
+		"XDG_CONFIG_HOME=" + home, "XDG_CACHE_HOME=" + home,
+		"KUBECONFIG=" + kubeconfig, "KC_HEADLESS_KC_BINARY=" + kc,
+		"KC_HEADLESS=1", "KC_HEADLESS_CHILD=1",
+	}
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = in.Close() }) // The driver may already have closed its input on exit.
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	s := &session{t: t, in: in, out: bufio.NewReader(out), rows: 30, cmd: cmd}
+	t.Cleanup(func() {
+		cancel()
+		if !s.finished {
+			_ = cmd.Wait() // Cancellation intentionally kills a stuck or failed session.
+		}
+		if t.Failed() {
+			t.Logf("driver stderr: %s", stderr.String())
+		}
+	})
+	for range 3 { // Driver welcome: readiness, command, and supported commands.
+		s.line()
+	}
+	return s
+}
+
+// quit presses F10, waits for kc to exit successfully and stops the
+// driver.
+func (s *session) quit(ctx context.Context) {
+	s.t.Helper()
 	s.send("key f10\nwait")
 	if got := s.line(); got != "waiting for process to exit..." {
-		t.Fatalf("wait response: %q", got)
+		s.t.Fatalf("wait response: %q", got)
 	}
 	if got := s.line(); got != "process exited" {
-		t.Fatalf("child exit response: %q", got)
+		s.t.Fatalf("child exit response: %q", got)
 	}
 	s.until(ctx, "successful kc exit", func(screen string) bool { return strings.Contains(screen, cleanExit) })
 	s.send("exit")
-	err = cmd.Wait()
-	finished = true
+	err := s.cmd.Wait()
+	s.finished = true
 	if err != nil {
-		t.Fatalf("driver exit: %v", err)
+		s.t.Fatalf("driver exit: %v", err)
 	}
 }
 
@@ -189,6 +281,9 @@ type session struct {
 	in   io.Writer
 	out  *bufio.Reader
 	rows int
+	cmd  *exec.Cmd
+	// finished is set once the driver exited and was waited for.
+	finished bool
 }
 
 func (s *session) send(command string) {

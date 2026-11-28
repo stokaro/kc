@@ -38,7 +38,7 @@ expand according to changed contracts, not a fixed ritual on every edit.
 | `make test-integration` | Tests with envtest required; unavailable assets fail |
 | `make test-race` | Race detector for the selected package scope |
 | `make test-tui` | UI model/rendering, table and headless-driver unit tests; no application E2E claim |
-| `make test-headless` | Actual kc/driver session against isolated envtest; startup, resize, help and clean exit |
+| `make test-headless` | Actual kc/driver session against isolated envtest; startup, resize, help and clean exit; startup against a server that never answers |
 | `make test-fuzz` | Bounded fuzz checks of existing targets |
 | `make check-agents` | Agent-file structure, references and budget checks |
 | `make build` / `make lint` | Build and the repository's pinned lint checks |
@@ -140,7 +140,9 @@ kubeconfig. Building the binaries first avoids rebuilding between observations.
 The repository harness is `make test-headless`. It builds both binaries once,
 uses a temporary home and envtest kubeconfig, observes startup at 120x30 and
 resize to 100x24, opens/closes help, kills a typed shell line with `C-u` in
-the full-screen terminal (`C-o`), and checks the actual kc exit status. It
+the full-screen terminal (`C-o`), and checks the actual kc exit status. A
+second session starts kc against a listener that never answers and checks the
+connecting screen, its elapsed time and that F10 quits. It
 requires envtest assets; regular package tests skip it unless explicitly enabled.
 Extend this fixture for a relevant terminal regression instead of introducing
 another setup path. Its passing smoke journey does not cover all application
