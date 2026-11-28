@@ -44,7 +44,7 @@ func (f *ContextRootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	}
 
 	groupItems := []resourceGroupSpec{namespacesSpec}
-	clusterItems, err := f.ClusterResourcesFolder.resourceGroupSpecs()
+	clusterItems, err := f.ClusterResourcesFolder.resourceGroupSpecs(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -26,7 +26,7 @@ func NewClusterResourcesFolder(deps Deps, path []string) *ClusterResourcesFolder
 }
 
 func (f *ClusterResourcesFolder) populate(ctx context.Context) ([]table.Row, error) {
-	specs, err := f.resourceGroupSpecs()
+	specs, err := f.resourceGroupSpecs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -34,10 +34,13 @@ func (f *ClusterResourcesFolder) populate(ctx context.Context) ([]table.Row, err
 	return rows, nil
 }
 
-func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, error) {
+// resourceGroupSpecs lists the cluster-scoped types of the cluster's last
+// discovery read; populate runs on the UI goroutine and must not wait for
+// the server.
+func (f *ClusterResourcesFolder) resourceGroupSpecs(ctx context.Context) ([]resourceGroupSpec, error) {
 	_, order, favorites := f.viewSettings()
 	favSet := favoritesMap(favorites)
-	infos, err := f.Deps.Cl.GetResourceInfos()
+	infos, _, err := f.Deps.Cl.DiscoveredResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +73,7 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 		cellsCopy := append([]string(nil), cells...)
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
+		kind := entry.info.GVK.Kind
 		detail := resourceDetail(entry, entries)
 		style := nameStyle
 		if highlightFavorites && favSet[strings.ToLower(entry.info.Resource)] {
@@ -88,7 +92,9 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 			verbs:      verbsCopy,
 			shortNames: slices.Clone(entry.info.ShortNames),
 			enter: func() (Folder, error) {
-				return NewClusterObjectsFolder(f.Deps, gvr, pathCopy, verbsCopy), nil
+				folder := NewClusterObjectsFolder(f.Deps, gvr, pathCopy, verbsCopy)
+				folder.setKind(kind)
+				return folder, nil
 			},
 		})
 	}

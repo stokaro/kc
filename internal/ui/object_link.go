@@ -93,7 +93,9 @@ func (a *App) openObjectRef(src *panelConn, from int, ref models.ObjectRef, miss
 func (a *App) adoptConn(idx int, c *panelConn) {
 	var infos []kccluster.ResourceInfo
 	if cl := c.cluster(); cl != nil {
-		infos, _ = cl.GetResourceInfos()
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		infos, _, _ = cl.DiscoveredResources(ctx)
+		cancel()
 	}
 	if p := a.panelByIndex(idx); p != nil && a.switchSeq != nil {
 		// A switch of the panel still on its way loses to the link.
@@ -191,7 +193,9 @@ func (a *App) linkedTypeFolder(panel *Panel, ref models.ObjectRef) models.Folder
 	if cl == nil {
 		return nil
 	}
-	infos, err := cl.GetResourceInfos()
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	infos, _, err := cl.DiscoveredResources(ctx)
+	cancel()
 	if err != nil {
 		return nil
 	}

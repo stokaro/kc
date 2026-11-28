@@ -49,6 +49,8 @@ func NewObjectEventsFolder(deps Deps, gvr schema.GroupVersionResource, namespace
 	// namespaces.
 	scoped, _, release := deps.resolveListScope(ovEventsGVR, namespace)
 	folder := NewObjectsFolder(scoped, ovEventsGVR, namespace, path, nil)
+	folder.setNamespaced(true)
+	folder.setKind("Event")
 	folder.release = release
 	folder.objectOrder, folder.hasObjOrder = eventLastSeenKey, true
 	// The UID is known only once the object is read; kubectl selects by

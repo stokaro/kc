@@ -24,6 +24,7 @@ func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, name
 		ObjectsFolder: NewObjectsFolder(deps, gvr, namespace, path, verbs),
 		release:       sync.OnceFunc(release),
 	}
+	folder.setNamespaced(true)
 	return folder
 }
 

@@ -94,7 +94,9 @@ func (a *App) showVisibilityEditor(idx int) tea.Cmd {
 	if panel == nil || !ok {
 		return a.ShowToast("No list of resource types here", 2*time.Second)
 	}
-	types, err := list.source.ContextTypes()
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	types, err := list.source.ContextTypes(ctx)
+	cancel()
 	if err != nil {
 		return a.ShowToast("Cannot read the resource types: "+err.Error(), 3*time.Second)
 	}

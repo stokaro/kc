@@ -30,6 +30,8 @@ func (d Deps) ForNodePods(nodeName string) (Deps, func()) {
 func NewNodePodsFolder(deps Deps, path []string, nodeName string) *ObjectsFolder {
 	scoped, release := deps.ForNodePods(nodeName)
 	folder := NewObjectsFolder(scoped, podGVR, "", path, nil)
+	folder.setNamespaced(true)
+	folder.setKind("Pod")
 	folder.release = release
 	folder.kubectlArgs = []string{"--field-selector", "spec.nodeName=" + nodeName}
 	folder.FilterUnstructured = func(u *unstructured.Unstructured) bool {

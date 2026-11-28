@@ -14,5 +14,6 @@ func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, path, v
 	folder := &ClusterObjectsFolder{
 		ObjectsFolder: NewObjectsFolder(deps, gvr, "", path, verbs),
 	}
+	folder.setNamespaced(false)
 	return folder
 }

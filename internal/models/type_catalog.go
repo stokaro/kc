@@ -82,7 +82,7 @@ type TypeCatalogSource interface {
 	TypeDecision(id string) (d visibility.Decision, profile appconfig.EffectiveVisibility, ok bool)
 	// ContextTypes reads the types of the folder's context from cached
 	// discovery, for the visibility editor.
-	ContextTypes() (ContextTypes, error)
+	ContextTypes(ctx context.Context) (ContextTypes, error)
 }
 
 // TypeProfileFollower folders list resource types under the profile their
@@ -204,12 +204,13 @@ func (f *ResourcesFolder) TypeDecision(id string) (visibility.Decision, appconfi
 }
 
 // ContextTypes reads every type of the folder's context that kc can
-// browse (list and watch) from cached discovery, both scopes.
-func (f *ResourcesFolder) ContextTypes() (ContextTypes, error) {
+// browse (list and watch) from the cluster's last discovery read, both
+// scopes. It never waits for the server.
+func (f *ResourcesFolder) ContextTypes(ctx context.Context) (ContextTypes, error) {
 	if f.Deps.Cl == nil {
 		return ContextTypes{}, errors.New("no cluster")
 	}
-	infos, failed, err := f.Deps.Cl.GetResourceInfosPartial()
+	infos, failed, err := f.Deps.Cl.DiscoveredResources(ctx)
 	if err != nil {
 		return ContextTypes{}, err
 	}

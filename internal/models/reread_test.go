@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	table "github.com/stokaro/kc/internal/table"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
 // These tests are white-box: they count the loads and watch starts of the
@@ -33,9 +34,21 @@ func countingLiveFolder(t *testing.T, populate func(context.Context) ([]table.Ro
 	return f, src, watches
 }
 
+// settledWatches waits until no background watch start of src runs and
+// returns the number of watch starts so far.
+func settledWatches(t *testing.T, src *liveObjectRowSource, watches *atomic.Int32) int32 {
+	t.Helper()
+	kctesting.Eventually(t, 5*time.Second, time.Millisecond, func() bool {
+		src.mu.Lock()
+		defer src.mu.Unlock()
+		return !src.watchStarting
+	}, "a background watch start did not end")
+	return watches.Load()
+}
+
 func TestRereadLiveFolderLoadsAtOnceOnTheRunningWatch(t *testing.T) {
 	var loads atomic.Int32
-	f, _, watches := countingLiveFolder(t, func(context.Context) ([]table.Row, error) {
+	f, src, watches := countingLiveFolder(t, func(context.Context) ([]table.Row, error) {
 		loads.Add(1)
 		return oneRow("a"), nil
 	})
@@ -43,6 +56,7 @@ func TestRereadLiveFolderLoadsAtOnceOnTheRunningWatch(t *testing.T) {
 	if n := f.Len(ctx); n != 1 {
 		t.Fatalf("Len = %d, want 1", n)
 	}
+	settledWatches(t, src, watches)
 
 	// Within listRefreshInterval of the first load a refresh waits; a
 	// reread loads at once.
@@ -51,7 +65,7 @@ func TestRereadLiveFolderLoadsAtOnceOnTheRunningWatch(t *testing.T) {
 	if n := loads.Load(); n != 2 {
 		t.Fatalf("loads = %d after the reread, want 2", n)
 	}
-	if n := watches.Load(); n != 1 {
+	if n := settledWatches(t, src, watches); n != 1 {
 		t.Fatalf("watch starts = %d, want 1: a reread reads the shared cache and starts no watch", n)
 	}
 }
@@ -69,6 +83,7 @@ func TestRereadRetriesListAfterForbidden(t *testing.T) {
 	})
 	ctx := t.Context()
 	f.Len(ctx)
+	settledWatches(t, src, watches)
 	src.mu.Lock()
 	blocked := src.listBlocked
 	src.mu.Unlock()
@@ -87,7 +102,7 @@ func TestRereadRetriesListAfterForbidden(t *testing.T) {
 	if n := f.Len(ctx); n != 1 {
 		t.Fatalf("Len = %d after the reread, want 1", n)
 	}
-	if n := watches.Load(); n != 2 {
+	if n := settledWatches(t, src, watches); n != 2 {
 		t.Fatalf("watch starts = %d, want 2: the watch given up after forbidden starts again", n)
 	}
 }
@@ -97,10 +112,11 @@ func TestRereadClosedSourceStaysClosed(t *testing.T) {
 		return nil, apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "", nil)
 	})
 	f.Len(t.Context())
+	settledWatches(t, src, watches)
 	src.Close()
 	f.Reread(t.Context())
 	f.Len(t.Context())
-	if n := watches.Load(); n != 1 {
+	if n := settledWatches(t, src, watches); n != 1 {
 		t.Fatalf("watch starts = %d, want 1: a closed source must not watch again", n)
 	}
 }

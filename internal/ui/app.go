@@ -563,14 +563,17 @@ func (a *App) watchDiscovery() tea.Cmd {
 
 // handleDiscoveryRefresh refreshes the type lists of both panels, each
 // from its own connection: the signal does not say which cluster's
-// discovery changed.
+// discovery changed. It reads the clusters' last discovery reads and never
+// waits for a server (ADR 0378).
 func (a *App) handleDiscoveryRefresh() {
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
 	for idx := range 2 {
 		cl := a.ownConn(idx).cluster()
 		if cl == nil {
 			continue
 		}
-		if infos, err := cl.GetResourceInfos(); err == nil {
+		if infos, _, err := cl.DiscoveredResources(ctx); err == nil {
 			a.panelByIndex(idx).SetResourceCatalog(infos)
 		} else if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Discovery refresh failed: %v", err))
