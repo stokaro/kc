@@ -177,8 +177,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		return a, nil
 
 	case "f10":
-		// F10 quits; in the full-screen terminal it went to the shell above.
-		return a, tea.Quit
+		// F10 quits, after a question while sessions would stop; in the
+		// full-screen terminal it went to the shell above.
+		return a, a.requestQuit()
 	}
 
 	// Handle Esc+number escape sequences (Esc then number)
@@ -208,7 +209,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		switch keyStr {
 		case "0":
 			a.escPressed = false
-			return a, tea.Quit // Esc 0 = F10
+			return a, a.requestQuit() // Esc 0 = F10
 		case "1":
 			a.escPressed = false
 			if caps.HasHelp {
@@ -491,10 +492,13 @@ func (a *App) toggleTerminal() tea.Cmd {
 	a.invalidateTerminalArea("terminal toggle")
 	// Always keep terminal focused for typing
 	a.terminal.Focus()
-	if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
-		return tea.Batch(resizeCmds...)
+	var cmds []tea.Cmd
+	if a.showTerminal {
+		// C-o with no shell running starts one (shell_restart.go).
+		cmds = append(cmds, a.terminal.StartShellNow())
 	}
-	return nil
+	cmds = append(cmds, a.resizePanelsForCurrentLayout()...)
+	return tea.Batch(cmds...)
 }
 
 // shouldRouteToPanel reports whether a key typed at the panels, with an

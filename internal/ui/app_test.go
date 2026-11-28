@@ -66,8 +66,8 @@ func TestNewTerminal(t *testing.T) {
 	if terminal.hasTyped != false {
 		t.Errorf("Expected hasTyped to be false, got %v", terminal.hasTyped)
 	}
-	if terminal.shellExited != false {
-		t.Errorf("Expected shellExited to be false, got %v", terminal.shellExited)
+	if terminal.ShellDown() {
+		t.Error("a new terminal reports its shell down before it started one")
 	}
 }
 

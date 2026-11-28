@@ -127,6 +127,11 @@ portForward:
   # addresses like kubectl; 0.0.0.0 exposes them to the network.
   address: 127.0.0.1
 
+confirm:
+  # When F10 (Esc 0, File > Exit) asks before kc exits: sessions asks while
+  # port forwards, a node shell or a copy would stop, always asks every time.
+  quit: sessions
+
 # Columns per resource type, keyed by group/version/resource (v1/pods for
 # the core group). An entry with jsonPath adds a column computed from the
 # object, like `kubectl get -o custom-columns`; wide: true shows it only in

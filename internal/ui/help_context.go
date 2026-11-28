@@ -34,6 +34,8 @@ var modalHelpPages = map[string]help.ID{
 	commandPromptModal:         help.CustomCommands,
 	commandConfirmModal:        help.CustomCommands,
 	"confirm_action":           help.Confirm,
+	quitModal:                  help.Confirm,
+	attachModal:                help.Shell,
 	"context_picker":           help.ContextNamespace,
 	"namespace_picker":         help.ContextNamespace,
 	diagnosticStopModal:        help.Diagnostics,

@@ -57,7 +57,7 @@ kc reads your kubeconfig and never changes it. On a cluster that matters, start 
 | `C-o` | The terminal under the panels |
 | `F9` | Menu bar |
 | `F1` | Help for what has focus |
-| `F10` | Quit |
+| `F10` | Quit; asks first while port forwards, a node shell or a copy run |
 
 `F1` opens the help page of the dialog, panel mode or row in focus. The pages ship inside the binary; they are also readable [here](internal/help/topics/index.md).
 

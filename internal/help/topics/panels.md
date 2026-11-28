@@ -46,7 +46,8 @@ the copy button at its right copies it.
 - `Tab` switches to the other panel.
 - `F1` help, `F2` user menu, `F3` view, `F4` edit, `F5` copy,
   `F7` create namespace (in `/namespaces`), `F8` delete,
-  `F9` menu bar, `F10` quit. `Esc` then a digit works as the F-key.
+  `F9` menu bar, `F10` quit (it asks first while port forwards, a node
+  shell or a copy would stop). `Esc` then a digit works as the F-key.
 - `C-s` (or `M-s`) starts quick search: type to jump to the first row
   whose name starts with the text. `C-s` again finds the next match,
   `Backspace` removes a character, `Esc` ends it, and any other key ends

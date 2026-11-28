@@ -98,10 +98,21 @@ func (a *App) handleExecResolved(msg execResolvedMsg) tea.Cmd {
 	if err := a.execGate(msg.target, msg.mode); err != nil {
 		return a.execError(fmt.Sprintf("%s in %s: %v", titleCase(msg.mode.String()), msg.target.Label(), err))
 	}
+	if msg.mode == models.ExecAttach {
+		// Attach hands the keys to the container's main process: ask
+		// first (#375).
+		return a.confirmAttach(msg.target)
+	}
+	return a.launchContainerSession(msg.target, msg.mode)
+}
+
+// launchContainerSession hands the terminal to kubectl for a shell or an
+// attach that passed execGate (and, for an attach, its question).
+func (a *App) launchContainerSession(target models.ExecTarget, mode models.ExecMode) tea.Cmd {
 	log := ctrllog.FromContext(a.ctx).WithName("container_exec")
-	command := msg.target.Command(msg.mode)
-	log.Info("launching kubectl session", "mode", msg.mode.String(), "namespace", msg.target.Namespace,
-		"pod", msg.target.Pod, "container", msg.target.Container, "command", command)
+	command := target.Command(mode)
+	log.Info("launching kubectl session", "mode", mode.String(), "namespace", target.Namespace,
+		"pod", target.Pod, "container", target.Container, "command", command)
 
 	// Return to the panels first, as kubectl edit does, so the screen kc
 	// comes back to is the one the session started from.
@@ -120,12 +131,74 @@ func (a *App) handleExecResolved(msg execResolvedMsg) tea.Cmd {
 		a.invalidateTerminalArea("terminal exit")
 	}
 
-	session := newExecSession(msg.target, msg.mode)
+	session := newExecSession(target, mode)
 	session.interrupts = &a.interrupts
-	target, mode := msg.target, msg.mode
-	return tea.Exec(session, func(err error) tea.Msg {
+	run := a.execCommand
+	if run == nil {
+		run = tea.Exec
+	}
+	return run(session, func(err error) tea.Msg {
 		return execFinishedMsg{target: target, mode: mode, err: err, stderr: session.stderrTail()}
 	})
+}
+
+// attachModal is the question before kubectl attach.
+const attachModal = "confirm_attach"
+
+// confirmAttach asks before attaching to target: the keys go to the
+// container's main process, and ending that process can end the
+// container, as the red dialogs of ADR 0373 ask before a change. The
+// target keeps the cluster of the row it was resolved from, whichever
+// panel is active when the user answers.
+func (a *App) confirmAttach(target models.ExecTarget) tea.Cmd {
+	kubeContext := target.Cluster.ContextName
+	if kubeContext == "" {
+		kubeContext = a.activeConn().name()
+	}
+	m := newQuestionModel("Attach to the main process of "+target.Label()+"?", func(yes bool) tea.Cmd {
+		a.hideModalName(attachModal)
+		if !yes {
+			return nil
+		}
+		// The context may have become read-only while the dialog was open.
+		if err := a.execGate(target, models.ExecAttach); err != nil {
+			return a.execError(fmt.Sprintf("Attach in %s: %v", target.Label(), err))
+		}
+		return a.launchContainerSession(target, models.ExecAttach)
+	})
+	m.details = [][2]string{
+		{"Context", kubeContext},
+		{"Namespace", target.Namespace},
+		{"Pod", target.Pod},
+		{"Container", target.Container},
+	}
+	m.notes = attachNotes(target)
+	modal := newQuestionModal("Attach", m)
+	a.modalManager.Register(attachModal, modal)
+	a.showQuestion(attachModal, modal, m, a.activePanel)
+	return nil
+}
+
+// attachNotes say what an attach does with the keys, which depends on
+// what the container offers (kubectl attach adds -i and -t only for stdin
+// and a TTY).
+func attachNotes(target models.ExecTarget) []string {
+	switch {
+	case !target.Stdin:
+		return []string{
+			"The container has no stdin: the session only shows the output of its main process. C-c leaves.",
+		}
+	case target.TTY:
+		return []string{
+			"Keys go to the container's main process, not to a new shell. C-c, C-d or exit there can end that process, and with it the container.",
+			"kubectl attach has no key to detach. M-x opens a shell instead.",
+		}
+	default:
+		return []string{
+			"Typed lines go to the container's main process, without a terminal. C-d closes its input, which can end the process, and with it the container.",
+			"kubectl attach has no key to detach. M-x opens a shell instead.",
+		}
+	}
 }
 
 func (a *App) handleExecFinished(msg execFinishedMsg) tea.Cmd {

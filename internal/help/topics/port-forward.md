@@ -35,7 +35,8 @@ the local address, target, pod, namespace, context and age.
   names the pod. A pod created again under the same name, as a
   StatefulSet does, is another pod. A forward also ends when the
   connection is lost. kc does not reconnect.
-- All forwards stop when kc exits.
+- All forwards stop when kc exits. While forwards run, `F10` asks
+  first and lists them; see [Confirmation dialog](confirm.md).
 
 ## Keys
 
