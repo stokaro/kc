@@ -200,6 +200,7 @@ func resolvePortForward(deps Deps, t PortForwardTarget, address, value string, p
 			return portforward.Spec{}, err
 		}
 		spec.Pod = pod.Name
+		spec.PodUID = pod.UID
 		spec.RemotePort = remote
 	case "service":
 		backing, err := portforward.SelectServicePod(svc, pods)
@@ -211,6 +212,7 @@ func resolvePortForward(deps Deps, t PortForwardTarget, address, value string, p
 			return portforward.Spec{}, err
 		}
 		spec.Pod = backing.Name
+		spec.PodUID = backing.UID
 		spec.ServicePort = svcPort
 		spec.RemotePort = podPort
 	default:

@@ -21,8 +21,11 @@ func TestClientRunnerRefusedBeforeReady(t *testing.T) {
 	var requests atomic.Int32
 	var path atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		path.Store(r.URL.Path)
+		// The pod watch of the forward lists pods too.
+		if strings.HasSuffix(r.URL.Path, "/portforward") {
+			requests.Add(1)
+			path.Store(r.URL.Path)
+		}
 		http.Error(w, `pods "web-0" is forbidden`, http.StatusForbidden)
 	}))
 	defer srv.Close()
@@ -35,7 +38,7 @@ func TestClientRunnerRefusedBeforeReady(t *testing.T) {
 		t.Fatal("Start succeeded against a server that refuses every request")
 	}
 	if requests.Load() == 0 {
-		t.Fatal("the runner sent no request")
+		t.Fatal("the runner sent no forward request")
 	}
 	if got, _ := path.Load().(string); got != "/api/v1/namespaces/ns/pods/web-0/portforward" {
 		t.Fatalf("request path = %q", got)

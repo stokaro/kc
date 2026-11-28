@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/stokaro/kc/internal/portforward"
@@ -51,7 +52,7 @@ func TestPortForwardTargetFor(t *testing.T) {
 
 func runningPod(name string, labels map[string]string) corev1.Pod {
 	return corev1.Pod{
-		Name: name, Namespace: "ns", Labels: labels,
+		Name: name, Namespace: "ns", Labels: labels, UID: types.UID("uid-" + name),
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
 			Name:  "app",
 			Ports: []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}},
@@ -89,12 +90,12 @@ func TestResolvePortForward(t *testing.T) {
 	}{
 		{
 			name: "pod with numbers", target: podTarget, value: "9000:8080", address: "127.0.0.1", pod: &pod,
-			want: portforward.Spec{Context: "prod", Namespace: "ns", Kind: "pod", Name: "web-0", Pod: "web-0", Container: "app", Address: "127.0.0.1", LocalPort: 9000, RemotePort: 8080,
+			want: portforward.Spec{Context: "prod", Namespace: "ns", Kind: "pod", Name: "web-0", Pod: "web-0", PodUID: "uid-web-0", Container: "app", Address: "127.0.0.1", LocalPort: 9000, RemotePort: 8080,
 				Command: "kubectl --context prod port-forward -n ns pod/web-0 9000:8080 --address 127.0.0.1"},
 		},
 		{
 			name: "pod with a port name keeps the port locally", target: podTarget, value: "http", address: "localhost", pod: &pod,
-			want: portforward.Spec{Context: "prod", Namespace: "ns", Kind: "pod", Name: "web-0", Pod: "web-0", Container: "app", Address: "localhost", LocalPort: 8080, RemotePort: 8080,
+			want: portforward.Spec{Context: "prod", Namespace: "ns", Kind: "pod", Name: "web-0", Pod: "web-0", PodUID: "uid-web-0", Container: "app", Address: "localhost", LocalPort: 8080, RemotePort: 8080,
 				Command: "kubectl --context prod port-forward -n ns pod/web-0 http"},
 		},
 		{
@@ -104,13 +105,13 @@ func TestResolvePortForward(t *testing.T) {
 		{
 			name: "service maps to the target port of a running pod", target: svcTarget, value: "8000:80", address: "127.0.0.1", svc: svc,
 			pods: []corev1.Pod{pending, pod},
-			want: portforward.Spec{Context: "prod", Namespace: "ns", Kind: "service", Name: "web", Pod: "web-0", Address: "127.0.0.1", LocalPort: 8000, RemotePort: 8080, ServicePort: 80,
+			want: portforward.Spec{Context: "prod", Namespace: "ns", Kind: "service", Name: "web", Pod: "web-0", PodUID: "uid-web-0", Address: "127.0.0.1", LocalPort: 8000, RemotePort: 8080, ServicePort: 80,
 				Command: "kubectl --context prod port-forward -n ns service/web 8000:80 --address 127.0.0.1"},
 		},
 		{
 			name: "service port by name", target: svcTarget, value: ":http", address: "127.0.0.1", svc: svc,
 			pods: []corev1.Pod{pod},
-			want: portforward.Spec{Context: "prod", Namespace: "ns", Kind: "service", Name: "web", Pod: "web-0", Address: "127.0.0.1", LocalPort: 0, RemotePort: 8080, ServicePort: 80,
+			want: portforward.Spec{Context: "prod", Namespace: "ns", Kind: "service", Name: "web", Pod: "web-0", PodUID: "uid-web-0", Address: "127.0.0.1", LocalPort: 0, RemotePort: 8080, ServicePort: 80,
 				Command: "kubectl --context prod port-forward -n ns service/web :http --address 127.0.0.1"},
 		},
 		{

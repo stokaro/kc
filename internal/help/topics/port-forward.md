@@ -31,7 +31,9 @@ count. It lists every forward of this kc process, across contexts, with
 the local address, target, pod, namespace, context and age.
 
 - Forwards keep running when you switch context or namespace.
-- A forward ends with a red message when its pod goes away or the
+- A forward ends as soon as its pod is deleted, with a red message that
+  names the pod. A pod created again under the same name, as a
+  StatefulSet does, is another pod. A forward also ends when the
   connection is lost. kc does not reconnect.
 - All forwards stop when kc exits.
 
@@ -53,7 +55,9 @@ the local address, target, pod, namespace, context and age.
 - A service without a selector cannot be forwarded.
 - Read-only mode refuses new forwards. Stopping one with `F8` stays
   allowed: the forward runs in kc, so the cluster does not change.
-- You need create on `pods/portforward` in the namespace.
+- You need create on `pods/portforward` in the namespace. Ending with
+  the pod needs list and watch on pods; without them a forward of a
+  deleted pod ends only when something connects to it.
 
 ## See also
 

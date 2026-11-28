@@ -27,20 +27,29 @@ type ClientRunner struct {
 
 var _ Runner = ClientRunner{}
 
-// Run implements Runner.
+// Run implements Runner. The forward ends with a *PodGoneError when its
+// pod is deleted.
 func (c ClientRunner) Run(ctx context.Context, spec Spec, ready func(int32)) error {
 	log := ctrllog.FromContext(ctx).WithName("portforward")
 	cs, err := kubernetes.NewForConfig(c.Config)
 	if err != nil {
 		return fmt.Errorf("building client: %w", err)
 	}
+	return endWhenPodGone(ctx, log, cs.CoreV1().Pods(spec.Namespace), spec, func(ctx context.Context) error {
+		return forward(ctx, log, c.Config, cs, spec, ready)
+	})
+}
+
+// forward carries the traffic of spec until ctx ends or the connection
+// to the pod is lost.
+func forward(ctx context.Context, log logr.Logger, cfg *rest.Config, cs kubernetes.Interface, spec Spec, ready func(int32)) error {
 	u := cs.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Namespace(spec.Namespace).
 		Name(spec.Pod).
 		SubResource("portforward").
 		URL()
-	dialer, err := newDialer(log, c.Config, u)
+	dialer, err := newDialer(log, cfg, u)
 	if err != nil {
 		return err
 	}
