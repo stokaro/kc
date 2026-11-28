@@ -241,6 +241,80 @@ func TestWorkloadLogsFollowsPodsThroughTheSharedCache(t *testing.T) {
 	}
 }
 
+// TestWorkloadLogsReadThePreviousInstanceOfACrashLoopingPod (issue #379)
+// runs the merged logs of a Deployment on the shared pod informer: the
+// container of its pod waits in back-off, so its last instance is read
+// with previous, and the coverage counts it as waiting.
+func TestWorkloadLogsReadThePreviousInstanceOfACrashLoopingPod(t *testing.T) {
+	if testCfg == nil {
+		t.Skip("envtest not available")
+	}
+	ctx := t.Context()
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+	cli, err := crclient.New(testCfg, crclient.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ns := generatedNamespace(t, cli, "workload-logs-backoff-")
+	lbls := map[string]string{"app": "report"}
+	deploy := &appsv1.Deployment{
+		Namespace: ns, Name: "report",
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: lbls},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: lbls},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "report", Image: "busybox"}}},
+			},
+		},
+	}
+	if err := cli.Create(ctx, deploy); err != nil {
+		t.Fatal(err)
+	}
+	pod := crashLoopingPod("report-1")
+	pod.Namespace, pod.UID, pod.Labels = ns, "", lbls
+	pod.Spec.Containers[0].Image = "busybox"
+	status := pod.Status
+	pod.Status = corev1.PodStatus{}
+	if err := cli.Create(ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	// No kubelet runs in envtest; write the status it reports for a
+	// container in back-off.
+	pod.Status = status
+	if err := cli.Status().Update(ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+
+	cl, err := kccluster.New(testCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kctesting.RunInBackground(t, "cluster", cl.Start)
+
+	spec := models.WorkloadLogsSpec{
+		Namespace:    ns,
+		Workload:     schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
+		WorkloadName: "report",
+		Follow:       true,
+	}
+	src, err := startWorkloadLogs(ctx, cl, spec, spec.LogsSpec(), 10, previousOnlyOpener, false, nil)
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() { _ = src.Close() }()
+	readUntil(t, readLines(src),
+		"[kc] + report-1/report: previous instance (container waiting: CrashLoopBackOff)",
+		"[report-1/report] loading config /etc/report/config.yaml",
+		"[report-1/report] error: config file not found",
+		"[kc] - report-1/report (end of the previous instance)",
+	)
+	if got, want := src.Coverage(), "0 streaming, 1 waiting (CrashLoopBackOff)"; got != want {
+		t.Fatalf("Coverage() = %q, want %q", got, want)
+	}
+}
+
 func TestWorkloadLogsSinglePodAndNoMatch(t *testing.T) {
 	if testCfg == nil {
 		t.Skip("envtest not available")

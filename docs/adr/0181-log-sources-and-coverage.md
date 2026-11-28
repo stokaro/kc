@@ -1,6 +1,6 @@
 # 0181. Choose the sources of a merged log and show its coverage
 
-- Status: Accepted
+- Status: Accepted; source rows and coverage amended by 0379 (waiting containers)
 - Date: 2026-11-23
 - Issue: #181
 

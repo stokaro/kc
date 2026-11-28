@@ -158,7 +158,7 @@ func TestSourceRowsPutProblemsFirst(t *testing.T) {
 		logmux.Source{Target: muxTarget("w", "app"), State: logmux.SourceWaiting},
 		logmux.Source{Target: muxTarget("f", "app"), State: logmux.SourceFailed, Err: errors.New("forbidden")},
 	)
-	rows := sourceRows(sources, 4)
+	rows := sourceRows(sources, 4, 0)
 	want := []string{
 		"failed       f/app: forbidden",
 		"waiting      w/app",
@@ -168,10 +168,10 @@ func TestSourceRowsPutProblemsFirst(t *testing.T) {
 	if strings.Join(rows, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("rows =\n%s\nwant\n%s", strings.Join(rows, "\n"), strings.Join(want, "\n"))
 	}
-	if rows := sourceRows(sources[:2], 4); len(rows) != 4 || rows[2] != "" {
+	if rows := sourceRows(sources[:2], 4, 0); len(rows) != 4 || rows[2] != "" {
 		t.Fatalf("a short list is not padded: %q", rows)
 	}
-	if rows := sourceRows(sources[:4], 4); rows[3] != "streaming    p-3/app" {
+	if rows := sourceRows(sources[:4], 4, 0); rows[3] != "streaming    p-3/app" {
 		t.Fatalf("a list that fits is cut: %q", rows)
 	}
 }
@@ -233,7 +233,9 @@ func TestWorkloadLogsStartWithASelection(t *testing.T) {
 	runningPod(t, cli, ns, "api-3", api)
 	readUntil(t, lines, "[kc] 1 stream waits for a free slot: at most 1 run at once")
 	deadline := time.Now().Add(30 * time.Second)
-	for src.Coverage() != "incomplete: 1 streaming, 1 waiting (limit 1), 1 excluded" {
+	// The sidecars wait to start (runningPod) and count as sources; api-2's
+	// two containers are excluded.
+	for src.Coverage() != "incomplete: 1 streaming, 1 waiting (limit 1), 2 waiting (ContainerCreating), 2 excluded" {
 		if time.Now().After(deadline) {
 			t.Fatalf("Coverage() = %q", src.Coverage())
 		}

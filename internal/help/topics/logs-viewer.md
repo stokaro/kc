@@ -13,10 +13,12 @@ matter, and to copy what you found.
 ## How to read it
 
 In a merged log every line starts with a colored `[pod/container]`
-prefix that names its source. A pod's containers are added once they
-start; new pods join, deleted pods leave. Lines from kc itself start
-with `[kc]`: `+ pod/container` when a stream opens, `- pod/container`
-when it ends, `~` while it reconnects.
+prefix that names its source. A pod's containers stream once they
+start; a container that crashed and waits to restart shows the lines of
+its last run. New pods join, deleted pods leave. Lines from kc itself
+start with `[kc]`: `+ pod/container` when a stream opens, `- pod/container`
+when it ends, `~` while it reconnects, and a line that says why nothing
+is shown yet ([log sources](logs-sources.md)).
 
 Lines that hold one JSON object are shown formatted: time, level
 (colored by severity), message, then the other fields as `key=value`.
@@ -29,7 +31,8 @@ options (`tail 200, since 1h, timestamps`), the view (`formatted, 12 of
 `(reconnecting)`, `(ended)` or `(failed)`. `(reconnecting)` shows only
 while a retry is pending; a stream that gave up or was refused shows
 `(failed)`. A merged log starts with its coverage, for example
-`incomplete: 50 streaming, 20 waiting (limit 50)`. While a search is
+`incomplete: 50 streaming, 20 waiting (limit 50)` or
+`0 streaming, 1 waiting (CrashLoopBackOff)`. While a search is
 applied it shows the search (`/timeout (2/7)`) and, after `|`, what
 the search must not hide: missing sources, a stream that is not
 streaming, and dropped lines. A narrow line cuts the search first.

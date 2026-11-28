@@ -17,9 +17,10 @@ import (
 	"github.com/stokaro/kc/internal/logresume"
 )
 
-// TargetSetter receives the current target set. *Mux implements it.
+// TargetSetter receives the current target set, with the state of each
+// target's container. *Mux implements it.
 type TargetSetter interface {
-	SetTargets([]Target)
+	SetCandidates([]Candidate)
 }
 
 // PodMatcher picks the pods whose containers are streamed. It sees only
@@ -50,7 +51,7 @@ type Follower struct {
 	match PodMatcher
 
 	mu   sync.Mutex
-	pods map[types.NamespacedName][]Target
+	pods map[types.NamespacedName][]Candidate
 	// instances holds the container states of the matching pods, by pod
 	// and container name, for Instance.
 	instances map[types.NamespacedName]map[string]logresume.Instance
@@ -81,17 +82,10 @@ func NewFollower(set TargetSetter, match PodMatcher) *Follower {
 	return &Follower{
 		set:       set,
 		match:     match,
-		pods:      make(map[types.NamespacedName][]Target),
+		pods:      make(map[types.NamespacedName][]Candidate),
 		instances: make(map[types.NamespacedName]map[string]logresume.Instance),
 		seen:      make(map[types.NamespacedName]bool),
 	}
-}
-
-// Pods returns the number of matching pods seen so far.
-func (f *Follower) Pods() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.pods)
 }
 
 // OnAdd handles an added pod.
@@ -141,7 +135,7 @@ func (f *Follower) upsert(obj any) {
 	if err != nil {
 		return
 	}
-	f.pods[key] = PodTargets(pod)
+	f.pods[key] = PodCandidates(pod)
 	f.instances[key] = logresume.PodInstances(pod)
 	f.seen[key] = true
 	f.publishLocked()
@@ -153,11 +147,11 @@ func (f *Follower) publishLocked() {
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i].String() < keys[j].String() })
-	var all []Target
+	var all []Candidate
 	for _, k := range keys {
 		all = append(all, f.pods[k]...)
 	}
-	f.set.SetTargets(all)
+	f.set.SetCandidates(all)
 }
 
 func toPod(obj any) (*corev1.Pod, error) {
