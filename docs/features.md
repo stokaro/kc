@@ -53,7 +53,7 @@ The root and the other lists of resource types show the Work profile: the types 
 
 ## Marks and Delete
 
-`Ins`, `+`, `*` and `C-a` mark rows, as in mc, and the bottom border says how many (`3 marked`). `F8` deletes the marked rows, or the object under the cursor when none is marked, after a red dialog that names the context and the objects: `Delete 3 marked configmaps?` with the first five names. `No` has the focus and `y` alone does nothing; `M-y` deletes. Each object is deleted as the instance its row showed, with its UID as a precondition. One line then reports what was deleted and what was not; a row whose delete failed for another reason than a gone or replaced object stays marked. See [Delete](../internal/help/topics/delete.md).
+`Ins`, `+`, `*` and `C-a` mark rows, as in mc, and the bottom border says how many (`3 marked`). `F8` deletes the marked rows, or the object under the cursor when none is marked, after a red dialog that names the context and the objects: `Delete 3 marked configmaps?` with the first five names. `No` has the focus and `y` alone does nothing; `M-y` deletes. Each object is deleted as the instance its row showed, with its UID as a precondition. One line then reports what was deleted and what was not; a row whose delete failed for another reason than a gone or replaced object stays marked. Deleting a namespace, a CustomResourceDefinition, a PersistentVolume or a node takes other objects with it: the dialog says what (`It holds 5 deployments, 9 pods, 1 PVC and 1 Helm release.`, counted in the background while the dialog is open) and `Yes` stays grayed until you type the object's name. Such an object is deleted alone, not as part of a marked set. See [Delete](../internal/help/topics/delete.md).
 
 ## Saved Views
 

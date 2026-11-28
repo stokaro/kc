@@ -734,6 +734,7 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		// Clear pending delete regardless of confirmation outcome once we've captured it.
 		a.pendingDelete, a.pendingDeleteSet = nil, nil
+		a.stopDeleteImpact()
 		switch {
 		case msg.Confirm && set != nil:
 			return a, a.performDeleteSet(*set)
@@ -810,6 +811,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			}
 		}
 		return a, tea.Batch(cmds...)
+	case deleteImpactMsg:
+		a.applyDeleteImpact(msg)
+		return a, nil
 	case deleteSetResultMsg:
 		cmd := a.finishDeleteSet(msg)
 		// Refresh on failure too, as for one object.
@@ -1121,6 +1125,9 @@ func (a *App) resizeActiveModal() {
 	if vm, ok := m.content.(*ViewOptionsModel); ok {
 		a.layoutViewOptionsModal(m, vm, vm.PanelIndex(), "")
 	}
+	if _, ok := m.content.(*DeleteConfirmModel); ok {
+		a.layoutDeleteDialog()
+	}
 }
 
 func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (panelMouseDispatch, bool) {
@@ -1215,6 +1222,10 @@ func (a *App) handleCommandWatchTick(msg commandWatchTickMsg) (tea.Model, tea.Cm
 func passesModal(msg tea.Msg) bool {
 	switch msg.(type) {
 	case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg, RowFilterResultMsg, markGroupResultMsg, viewNameMsg:
+		return true
+	case deleteImpactMsg:
+		// The count of what goes with an object arrives while its delete
+		// dialog is open; the dialog decides whether it is stale.
 		return true
 	case viewer.CopyRequestMsg:
 		// The app owns the clipboard; the viewer only asks.

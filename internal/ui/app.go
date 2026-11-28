@@ -266,7 +266,10 @@ type App struct {
 	pendingCopy          *copyRequest
 	closeViewer          func() // releases the open F3 viewer's file; see showViewerModal
 	pendingDelete        *deleteTarget
-	pendingDeleteSet     *deleteSet // the marked rows the F8 dialog asks about
+	pendingDeleteSet     *deleteSet         // the marked rows the F8 dialog asks about
+	deleteImpactSeq      uint64             // numbers the counts of what goes with an F8 target
+	deleteImpactCancel   context.CancelFunc // stops the running count
+	countImpact          impactCounter      // replaces countDeleteImpact in tests
 	lastCopyDir          string
 	transfer             *transferJob // the open copy dialog, if any
 	transferGen          int
@@ -1970,38 +1973,60 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 		return cmd
 	}
 	a.pendingDelete, a.pendingDeleteSet = &target, nil
-	a.showDeleteDialog(func(m *DeleteConfirmModel) { m.Configure(target.label, target.context) })
-	return nil
+	var named *deleteTarget
+	if takesOthersAlong(target.gvr) {
+		named = &target
+	}
+	return a.showDeleteDialog(func(m *DeleteConfirmModel) { m.Configure(target.label, target.context) }, named)
 }
 
 // showDeleteDialog opens the F8 dialog with the content configure sets.
 // The caller records what a Yes deletes; closing the dialog forgets it.
-func (a *App) showDeleteDialog(configure func(*DeleteConfirmModel)) {
+// With named, an object whose delete takes others with it, the dialog asks
+// for its name and the returned command counts what goes with it.
+func (a *App) showDeleteDialog(configure func(*DeleteConfirmModel), named *deleteTarget) tea.Cmd {
 	modal := a.modalManager.modals["delete_confirm"]
 	if modal == nil {
-		return
+		return nil
 	}
 	if a.deleteConfirm == nil {
 		model, ok := modal.content.(*DeleteConfirmModel)
 		if !ok {
-			return
+			return nil
 		}
 		a.deleteConfirm = model
 	}
+	a.stopDeleteImpact()
 	configure(a.deleteConfirm)
-	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
+	var count tea.Cmd
+	if named != nil {
+		count = a.startDeleteImpact(*named)
+	}
 	modal.SetContent(a.deleteConfirm)
+	a.layoutDeleteDialog()
+	a.setBackdrop(modal, "")
+	modal.SetOnClose(func() tea.Cmd {
+		a.pendingDelete, a.pendingDeleteSet = nil, nil
+		a.stopDeleteImpact()
+		return nil
+	})
+	a.showModal("delete_confirm")
+	return count
+}
+
+// layoutDeleteDialog sizes the F8 dialog's window to its content, which
+// grows when the count of what goes with the object arrives.
+func (a *App) layoutDeleteDialog() {
+	modal := a.modalManager.modals["delete_confirm"]
+	if modal == nil || a.deleteConfirm == nil {
+		return
+	}
+	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
 	modal.SetDimensions(a.width, a.height)
 	winW := max(min(max(50, a.width/2), a.width-4), 40)
 	// The frame fits the content exactly: two border lines around it.
 	winH := min(a.deleteConfirm.Height(winW-2)+2, max(5, a.height-4))
 	modal.SetWindowed(winW, winH, "")
-	a.setBackdrop(modal, "")
-	modal.SetOnClose(func() tea.Cmd {
-		a.pendingDelete, a.pendingDeleteSet = nil, nil
-		return nil
-	})
-	a.showModal("delete_confirm")
 }
 
 // createNamespaceWithName creates the namespace in the cluster of the

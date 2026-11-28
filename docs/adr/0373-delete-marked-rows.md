@@ -1,6 +1,10 @@
 # 0373. F8 deletes the marked rows
 
-- Status: Accepted
+- Status: Accepted; for namespaces, CustomResourceDefinitions,
+  PersistentVolumes and nodes, decisions 1, 3 and 4 are extended by
+  [0374](0374-delete-what-goes-with-it.md) (the dialog shows what goes
+  with the object and waits for its name; such an object is deleted only
+  alone)
 - Date: 2026-11-27
 - Issue: #373
 

@@ -91,13 +91,39 @@ func (a *App) deleteMarkedForPanel(panel *Panel, marked []Item) tea.Cmd {
 		return a.ShowToast(fmt.Sprintf("Cannot delete the marked rows: you may not delete %s (M-k shows why); unmark %s first",
 			listNames(denied), plural(len(denied), "it", "them")), 5*time.Second)
 	}
+	// An object whose delete takes others with it is deleted alone, after
+	// its name is typed (#374).
+	var named *deleteTarget
+	if along := takeOthersAlong(set.targets); len(along) > 0 {
+		switch {
+		case len(set.targets) == 1:
+			named = &set.targets[0]
+		case len(along) == len(set.targets):
+			return a.ShowToast(fmt.Sprintf("Cannot delete %d marked %s together: each asks for its name to be typed. Unmark all but one",
+				len(set.targets), setNoun(set.targets)), 5*time.Second)
+		default:
+			return a.ShowToast(fmt.Sprintf("Cannot delete the marked rows together: %s %s typed. Delete %s alone",
+				listNames(along), plural(len(along), "asks for its name to be", "ask for their names to be"), plural(len(along), "it", "each")), 5*time.Second)
+		}
+	}
 	set.marks = panel.marksGeneration()
 	title, names, more := deleteSetSummary(set.targets)
 	a.pendingDelete, a.pendingDeleteSet = nil, &set
-	a.showDeleteDialog(func(m *DeleteConfirmModel) {
+	return a.showDeleteDialog(func(m *DeleteConfirmModel) {
 		m.ConfigureSet(title, strings.Join(deleteContexts(set.targets, ""), ", "), names, more)
-	})
-	return nil
+	}, named)
+}
+
+// takeOthersAlong names the targets whose delete takes other objects with
+// it: "namespace ux-a".
+func takeOthersAlong(targets []deleteTarget) []string {
+	var out []string
+	for _, t := range targets {
+		if takesOthersAlong(t.gvr) {
+			out = append(out, t.label)
+		}
+	}
+	return out
 }
 
 // buildDeleteSet captures the object instance of every marked row. It

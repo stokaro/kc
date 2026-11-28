@@ -45,7 +45,9 @@ The buttons are the action, named after it (`Scale`, `Restart`, `Stop`,
 - The API server decides each request: a missing permission shows as an
   error after you confirm.
 - `F8` delete has its own Yes/No dialog, with the same keys plus `M-y`
-  and `M-n`; see Delete.
+  and `M-n`; see Delete. For a namespace, a CRD, a PersistentVolume or
+  a node it says what goes with the object and waits until you typed its
+  name.
 
 ## See also
 

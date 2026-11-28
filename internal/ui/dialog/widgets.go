@@ -61,10 +61,13 @@ func (l Label) render(prefix, suffix string, base, hot lipgloss.Style) string {
 
 // Button is a push button. The default button, the one Enter presses from
 // any widget but another button, is drawn "[< OK >]"; the others "[ OK ]".
+// A disabled button is drawn grayed, without its hotkey; the owner keeps
+// the focus off it and ignores it.
 type Button struct {
-	ID      string
-	Label   Label
-	Default bool
+	ID       string
+	Label    Label
+	Default  bool
+	Disabled bool
 }
 
 func (b Button) ends() (open, closing string) {
@@ -83,6 +86,9 @@ func (b Button) Width() int {
 // Render draws the button, focused or not, in skin s.
 func (b Button) Render(s Skin, focused bool) string {
 	open, closing := b.ends()
+	if b.Disabled {
+		return s.Disabled.Render(open + b.Label.Text() + closing)
+	}
 	if focused {
 		return b.Label.render(open, closing, s.Focus, s.HotFocus)
 	}
