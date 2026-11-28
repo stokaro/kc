@@ -99,8 +99,7 @@ func (a *App) pin(idx int, panel *Panel) tea.Cmd {
 	// panel may switch its context meanwhile.
 	pin := &panelPin{conn: a.targetConn(idx), scope: a.targetScope(idx)}
 	if panel.Mode() == PanelModeInfo {
-		pin.item = a.otherPanelRow(ctx, idx)
-		pin.scope = a.overviewNamespace(1 - idx)
+		pin.item, pin.scope = a.infoPinTarget(ctx, idx, panel)
 	} else {
 		sel := panel.CurrentSelection(ctx)
 		pin.item, pin.id = sel.Item, sel.ID
@@ -123,12 +122,24 @@ func (a *App) pin(idx int, panel *Panel) tea.Cmd {
 		pin.watch = &pinWatch{}
 	}
 	panel.SetPin(pin)
+	// The pin holds the connection now.
+	panel.follow(panel.lastSelection, panel.lastSource, followOrigin{})
 	label := ident.label()
 	if !watchable {
 		label = namespaceScopeLabel(pin.scope)
 	}
 	a.invalidateView("pin")
 	return tea.Batch(a.ShowInfo("Pinned "+label+"; C-x p unpins", 2*time.Second), a.startPinWatch(pin))
+}
+
+// infoPinTarget is the row and namespace a pin of Info panel idx keeps:
+// the object the panel follows, which the other cursor may have left
+// (followOrigin), else the other panel's row and namespace.
+func (a *App) infoPinTarget(ctx context.Context, idx int, panel *Panel) (models.Item, string) {
+	if o := panel.origin; o.conn != nil {
+		return panel.lastSelection, o.overview
+	}
+	return a.otherPanelRow(ctx, idx), a.overviewNamespace(1 - idx)
 }
 
 // otherPanelRow is the row under the cursor of the panel other than idx,
@@ -274,14 +285,18 @@ func shortUID(uid types.UID) string {
 func (a *App) unpin(panel *Panel) tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
+	if pin := panel.pinned(); pin != nil {
+		unpinFollow(panel, pin)
+	}
 	panel.ClearPin()
 	panel.Thaw()
-	// The panel shows the other panel's context again, which may not be
-	// the pinned one: its frame and the shell follow.
-	a.syncPanelScopeLabels()
-	a.ensureTermContext()
 	cmds := []tea.Cmd{a.ShowInfo("Unpinned: the panel follows the other panel again", 2*time.Second)}
 	cmds = append(cmds, a.followOtherPanel(ctx, panel), panel.RefreshContent(ctx))
+	// The panel shows the other panel's context again, which may not be
+	// the pinned one, or keeps the pinned object: its frame and the shell
+	// follow.
+	a.syncPanelScopeLabels()
+	a.ensureTermContext()
 	a.invalidateView("unpin")
 	return tea.Batch(cmds...)
 }

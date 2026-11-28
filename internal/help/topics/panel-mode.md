@@ -32,9 +32,12 @@ row under the other panel's cursor at once. It follows the cursor
 however it moves: cursor keys, quick search, `cd` on the shell line, a
 namespace or context switch, the history and the hotlist, and a refresh
 that removed the row under the cursor. On a row that is not an object,
-such as `/..` after a `cd`, Describe and Manifest show nothing. Their
-frame names the context and namespace of the other panel, and what they
-show is read from that context.
+such as `/..` after a `cd` or a folder, Describe and Manifest show
+nothing, while Logs goes on streaming its pod and Info goes on showing
+its node, workload or finding until the cursor reaches another object.
+The frame of a panel in these modes names the context and namespace
+what it shows was read from: the other panel's, or, while Logs or Info
+keeps an object the other panel has moved away from, the object's.
 
 ## Keys
 

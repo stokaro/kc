@@ -29,24 +29,30 @@ func (a *App) newPanelInfoWidget(p *Panel) PanelWidget {
 // infoTarget is what the Info mode of panel shows: the namespace scope of
 // the other panel (the namespace of the list it shows, as M-i uses), and
 // the node or workload under its cursor when it is on one. A pinned panel
-// keeps the scope and row it was pinned to. It runs on the UI
-// goroutine and does no I/O; the engine behind Open starts on first read.
+// keeps the scope and row it was pinned to. A panel that follows an
+// object shows it with the scope it was read in, also after the other
+// cursor has moved to a row that names no object (followOrigin). It runs
+// on the UI goroutine and does no I/O; the engine behind Open starts on
+// first read.
 func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 	idx, ok := a.panelIndexFor(panel)
 	if !ok {
 		return infowidget.Target{Hint: "No panel."}
 	}
 	other := 1 - idx
-	// The other panel's connection, or the pin's: the panels may show two
-	// contexts.
+	// The other panel's connection, the pin's, or the one the followed
+	// object was read from: the panels may show two contexts.
 	conn := a.targetConn(idx)
 	if conn.cluster() == nil {
 		return infowidget.Target{Hint: "Not connected to a cluster."}
 	}
 	ns := a.overviewNamespace(other)
-	pin := panel.pinned()
-	if pin != nil {
+	pin, origin := panel.pinned(), panel.origin
+	switch {
+	case pin != nil:
 		ns = pin.scope
+	case origin.conn != nil:
+		ns = origin.overview
 	}
 	key := conn.clusterKey()
 	label := key.ContextName + ": " + namespaceScopeLabel(ns)
@@ -56,9 +62,12 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 		Key:   conn.connID() + "|" + key.ContextName + "|" + key.KubeconfigPath + "|" + ns,
 		Label: label,
 	}
-	if pin != nil {
+	switch op := a.panelByIndex(other); {
+	case pin != nil:
 		narrowInfoTarget(&t, pin.item, key)
-	} else if op := a.panelByIndex(other); op != nil {
+	case origin.conn != nil:
+		narrowInfoTarget(&t, panel.lastSelection, key)
+	case op != nil:
 		if item, ok := op.SelectedNavItem(ctx); ok {
 			narrowInfoTarget(&t, item, key)
 		}

@@ -11,8 +11,12 @@ side and watch each log on the other, without opening a viewer per pod.
   else the first container.
 - A container row, or a container's `logs` row, streams that container.
   A pod's `logs (all containers)` row streams every container.
-- Any other row shows "Select a pod or container in the other panel to
-  show its log." and stops the stream.
+- A row of any other object shows "Select a pod or container in the
+  other panel to show its log." and stops the stream.
+- A row that is not an object, such as `/..`, a folder or a file in a
+  container, keeps the stream. After a `cd` or a context switch of the
+  other panel, the frame goes on naming the context and namespace of the
+  pod, and `F2`, the shell line and the other keys act on that pod.
 - The stream opens after the cursor rests on a row for 300 ms, so
   scrolling through a list does not open a stream per row. Moving on
   closes the old stream.
