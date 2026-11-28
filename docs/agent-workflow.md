@@ -208,8 +208,12 @@ screenshots/capture.sh down                     # delete the cluster and the wor
   (`127.0.0.1:<port>`). Never merge that kubeconfig into the user's, pass a real
   context name, or use a kind cluster you did not create for the task.
 - Docker can run locally or on another host (`KC_SHOTS_SSH`, reached through an
-  ssh tunnel); use the Docker host the user prefers. Remove only what you
-  created, never with blanket prunes.
+  ssh tunnel). The script reads the user's choice from
+  `~/.config/kc/capture.env` (`KC_SHOTS_NAME=value` lines, outside the
+  repository), and `up` logs where kind runs; check that line before going on.
+  Without that file or an explicit variable kind uses the local Docker, so when
+  the user has said where Docker should run, set it instead of falling back.
+  Remove only what you created, never with blanket prunes.
 - Give each concurrent session its own `KC_SHOTS_CLUSTER`, `KC_SHOTS_PORT`,
   `KC_SHOTS_WORK` and `KC_SHOTS_LOCAL`.
 - Run `down` when done, also after a failure, and check on the Docker host that
