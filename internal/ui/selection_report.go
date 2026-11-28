@@ -21,7 +21,7 @@ type selectionKey struct {
 // key, a cd, a namespace or context switch, the history, the hotlist or a
 // refresh that removed the row under the cursor. Update runs it after
 // every message, so a follower hears about a move in the Update that made
-// it and its frame and content change together (ADR 0377).
+// it and its frame and content change together (ADR 0377, 0403).
 func (a *App) reportMovedSelections() tea.Cmd {
 	if a.ctx == nil || a.showTerminal {
 		// The panels are hidden behind the full-screen terminal; the

@@ -11,7 +11,7 @@ import (
 // Info keep the object they show while that cursor is on a row that names
 // no object, and the frame of every follower names the connection and
 // namespace its object was read in; see
-// docs/adr/0377-follow-every-selection-change.md.
+// docs/adr/0403-logs-info-keep-their-object.md.
 
 // followOrigin is where the object a follower shows was read: the
 // connection, which the follower holds while it shows the object, and the
