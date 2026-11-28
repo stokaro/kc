@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"slices"
+	"sync"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -20,6 +21,12 @@ const AllNamespaces = ""
 type RootFolder struct {
 	*ClusterResourcesFolder
 	namespace string
+
+	// nsMissing is the answer of the last namespace check: the NotFound
+	// error when the namespace scope names a namespace that does not
+	// exist, else nil.
+	nsMu      sync.Mutex
+	nsMissing error
 }
 
 // NewRootFolder scaffolds a root folder scoped to namespace; AllNamespaces
@@ -28,11 +35,52 @@ func NewRootFolder(deps Deps, namespace string) *RootFolder {
 	cluster := NewClusterResourcesFolder(deps, nil)
 	root := &RootFolder{ClusterResourcesFolder: cluster, namespace: namespace}
 	cluster.BaseFolder.SetPopulate(root.populate)
+	root.checkNamespace()
 	return root
 }
 
 // NamespaceScope returns the namespace the root lists, or AllNamespaces.
 func (f *RootFolder) NamespaceScope() string { return f.namespace }
+
+// ListProblem is the error of the root's last populate when it left the
+// list empty, else the namespace of the scope when it does not exist: the
+// namespaced types then list nothing, and a mistyped kc -n would look like
+// an empty namespace.
+func (f *RootFolder) ListProblem() error {
+	if err := f.ClusterResourcesFolder.ListProblem(); err != nil {
+		return err
+	}
+	f.nsMu.Lock()
+	defer f.nsMu.Unlock()
+	return f.nsMissing
+}
+
+// Reread also asks again whether the namespace of the scope exists.
+func (f *RootFolder) Reread(ctx context.Context) {
+	f.ClusterResourcesFolder.Reread(ctx)
+	f.checkNamespace()
+}
+
+// checkNamespace asks, in the background, whether the namespace of the
+// scope exists, and repaints the root when the answer changed. The check
+// sends one request bounded by namespaceCheckTimeout, so the goroutine
+// ends on its own.
+func (f *RootFolder) checkNamespace() {
+	if f.namespace == AllNamespaces || f.Deps.Cl == nil || f.Deps.Ctx == nil {
+		return
+	}
+	deps, ns := f.Deps, f.namespace
+	go func() {
+		missing := namespaceMissing(deps.Ctx, deps, ns)
+		f.nsMu.Lock()
+		changed := (f.nsMissing == nil) != (missing == nil)
+		f.nsMissing = missing
+		f.nsMu.Unlock()
+		if changed {
+			f.Refresh()
+		}
+	}()
+}
 
 func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, 64)

@@ -109,7 +109,8 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	columnsMode := o.requestedColumnsMode()
 	order := o.requestedOrder()
 	cc := planCustomColumns(o.Deps, o.gvr, columnsMode)
-	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
+	rl, tableErr := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace)
+	if tableErr == nil && rl != nil && len(rl.Items) > 0 {
 		cc.loadObjects(ctx, o.Deps, o.namespace)
 		objs := loadRowObjects(ctx, o.Deps, o.gvr, o.namespace)
 		if o.FilterObject != nil && objs == nil {
@@ -118,11 +119,17 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 			return nil, fmt.Errorf("%s: the objects to filter by could not be read", o.gvr.Resource)
 		}
 		return o.rowsFromRowListWithObjects(o.withUsageColumns(rl), columnsMode, order, cc, objs), nil
-	} else if err != nil && apierrors.IsForbidden(err) {
-		return nil, err
+	} else if tableErr != nil && apierrors.IsForbidden(tableErr) {
+		return nil, tableErr
 	}
 	list, err := o.Deps.Cl.ListByGVR(ctx, o.gvr, o.namespace)
 	if err != nil {
+		if tableErr != nil {
+			// The table list's error names the cause (a refused
+			// connection, a timeout); the informer's only says that
+			// it did not sync.
+			return nil, tableErr
+		}
 		return nil, err
 	}
 	cc.setObjects(list.Items)
@@ -763,9 +770,17 @@ type liveSourceTarget struct {
 // liveObjectRowSource adapts an ObjectsFolder to the rowSource interface while
 // keeping rows synced with informer events for the target GVR.
 type liveObjectRowSource struct {
-	populate        func(context.Context) ([]table.Row, error)
-	reportErr       func(error) // shows a read failure to the user; may be nil
-	failingSince    time.Time
+	populate     func(context.Context) ([]table.Row, error)
+	reportErr    func(error) // shows a read failure to the user; may be nil
+	failingSince time.Time
+	// loadErr is the error of the last load, nil after a load that
+	// succeeded. A forbidden list keeps it while the list is blocked.
+	loadErr error
+	// namespaceCheck, when set, asks whether the namespace of the list
+	// exists after a load that listed nothing (namespaceMissing), and
+	// nsMissing keeps its answer until the next load.
+	namespaceCheck  func(context.Context) error
+	nsMissing       error
 	onFolderDirty   func()
 	mu              sync.Mutex
 	rows            []table.Row // the rows that pass filter
@@ -818,6 +833,10 @@ func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
 	rows.useBackground(owner.Deps)
 	rows.watchTTL = watchDuration(owner.Deps)
 	rows.reportErr = listErrorReporter(owner.Deps, owner.gvr, owner.namespace)
+	if ns := owner.namespace; ns != AllNamespaces {
+		deps := owner.Deps
+		rows.namespaceCheck = func(ctx context.Context) error { return namespaceMissing(ctx, deps, ns) }
+	}
 	return rows
 }
 
@@ -995,8 +1014,8 @@ func (s *liveObjectRowSource) ensureLocked(ctx context.Context) {
 		return
 	}
 	if s.deps == nil {
-		rows, err := s.populate(ctx)
-		s.applyLoadLocked(ctx, rows, err)
+		rows, missing, err := loadChecked(ctx, s.populate, s.namespaceCheck)
+		s.applyLoadLocked(ctx, rows, missing, err)
 		return
 	}
 	if s.loaded && s.deps.Activity.Paused() {
@@ -1033,13 +1052,14 @@ func (s *liveObjectRowSource) startLoadLocked() {
 	done := make(chan struct{})
 	s.loadDone = done
 	root := s.deps.Ctx
+	check := s.namespaceCheck
 	go func() {
 		ctx, cancel := context.WithTimeout(root, listLoadTimeout)
-		rows, err := s.populate(ctx)
+		rows, missing, err := loadChecked(ctx, s.populate, check)
 		cancel()
 		s.mu.Lock()
 		if !s.closed {
-			s.applyLoadLocked(root, rows, err)
+			s.applyLoadLocked(root, rows, missing, err)
 		}
 		s.loading = false
 		s.loaded = true
@@ -1091,8 +1111,35 @@ func (s *liveObjectRowSource) Close() {
 	}
 }
 
-// applyLoadLocked stores the result of a list load.
-func (s *liveObjectRowSource) applyLoadLocked(ctx context.Context, rows []table.Row, err error) {
+// loadChecked runs populate and, when it lists nothing and check is set,
+// asks check whether the list's namespace exists. missing is check's
+// answer for a namespace that does not.
+func loadChecked(ctx context.Context, populate func(context.Context) ([]table.Row, error), check func(context.Context) error) (rows []table.Row, missing, err error) {
+	rows, err = populate(ctx)
+	if err == nil && len(rows) == 0 && check != nil {
+		missing = check(ctx)
+	}
+	return rows, missing, err
+}
+
+// listProblem is why the list is empty: the error of the last load, or a
+// namespace that does not exist. It is nil while the source keeps rows.
+func (s *liveObjectRowSource) listProblem() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.all) > 0 {
+		return nil
+	}
+	if s.loadErr != nil {
+		return s.loadErr
+	}
+	return s.nsMissing
+}
+
+// applyLoadLocked stores the result of a list load: its rows, or its
+// error, and missing, the answer of the namespace check.
+func (s *liveObjectRowSource) applyLoadLocked(ctx context.Context, rows []table.Row, missing, err error) {
+	s.loadErr, s.nsMissing = err, missing
 	if err != nil {
 		if apierrors.IsForbidden(err) {
 			s.blockListLocked(ctx, err)

@@ -224,7 +224,7 @@ func (a *App) applyContextSwitch(msg contextSwitchedMsg) tea.Cmd {
 				a.dropPendingJump(idx)
 			}
 		}
-		return a.ShowToast(fmt.Sprintf("Cannot switch to %s: %v", msg.target.Name, msg.err), 5*time.Second)
+		return a.ShowToast(fmt.Sprintf("Cannot switch to %s: %s", msg.target.Name, errorCause(msg.err)), 5*time.Second)
 	}
 	var switched []int
 	for _, ps := range msg.panels {

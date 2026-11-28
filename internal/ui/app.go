@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -46,6 +47,7 @@ import (
 	"github.com/stokaro/kc/internal/ui/menubar"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	describewidget "github.com/stokaro/kc/internal/ui/panelcontent/describe"
+	listwidget "github.com/stokaro/kc/internal/ui/panelcontent/list"
 	manifestwidget "github.com/stokaro/kc/internal/ui/panelcontent/manifest"
 	"github.com/stokaro/kc/internal/ui/skin"
 	viewpkg "github.com/stokaro/kc/internal/ui/viewer"
@@ -321,7 +323,10 @@ type App struct {
 	startupIntentApplied   bool
 	// startup is set while kc connects to its start context and the
 	// connecting screen is up.
-	startup       *startup
+	startup *startup
+	// startProblem is why kc started without a connection (no kubeconfig,
+	// no client for the start context), shown in the lists and in Info.
+	startProblem  listwidget.Notice
 	helpViewer    *HelpViewer
 	folderDirtyCh chan FolderDirtyMsg
 	// describeRenderers keeps one renderer per connection the panels
@@ -512,6 +517,11 @@ func (a *App) waitReadErrors() tea.Cmd {
 
 // readErrorText turns a read failure into a short message for the status line.
 func readErrorText(err error) string {
+	if re, ok := errors.AsType[*models.ReadError](err); ok {
+		return "Could not read " + re.What + ": " + errorCause(re.Err) + ". Try again."
+	}
+	// Another report names its own context, such as an ended port
+	// forward, which the plain words would drop.
 	text := err.Error()
 	if errors.Is(err, context.DeadlineExceeded) {
 		text = strings.Replace(text, context.DeadlineExceeded.Error(), "timed out", 1)
@@ -3318,8 +3328,10 @@ func Run(ctx context.Context, cfg RunConfig) error {
 			app.cancel()
 			return err
 		}
-		log.Error(err, "initialization warning")
-		fmt.Printf("Data init warning: %v\n", err)
+		// The UI starts without a connection and its lists say why;
+		// a line printed here would show only after kc exits.
+		log.Error(err, "starting without a connection")
+		app.showStartProblem(err, "")
 	}
 	// Runs after the cleanup below, once the program has stopped.
 	defer resetKeyboardProtocol()
@@ -3435,11 +3447,11 @@ func (a *App) beginStartup(ctx context.Context) (*startup, error) {
 	a.kubeMgr = kubeconfig.NewManager()
 	log.Info("discovering kubeconfigs")
 	if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
-		// Log and show toast
-		if a.toastLogger != nil {
-			a.enqueueCmd(a.toastLogger.Errorf("Kubeconfig discovery failed: %v", err))
-		}
 		log.Error(err, "failed to discover kubeconfigs")
+		if errors.Is(err, fs.ErrNotExist) {
+			// No KUBECONFIG and no ~/.kube.
+			return nil, a.noContextsError()
+		}
 		return nil, fmt.Errorf("discover kubeconfigs: %w", err)
 	}
 	log.Info("kubeconfigs discovered", "count", len(a.kubeMgr.GetKubeconfigs()), "contexts", len(a.kubeMgr.GetContexts()))
@@ -3472,8 +3484,9 @@ func (a *App) beginStartup(ctx context.Context) (*startup, error) {
 		kctx, only = c, onlyOne
 	}
 	if kctx == nil {
-		log.Error(nil, "no current context found")
-		return nil, fmt.Errorf("no current context found")
+		err := a.noContextsError()
+		log.Error(err, "no context to start in")
+		return nil, err
 	}
 	ctxNamespace := strings.TrimSpace(kctx.Namespace)
 	override := strings.TrimSpace(a.namespaceOverride)
@@ -3527,7 +3540,7 @@ func (a *App) finishStartup(st *startup, msg startupConnectedMsg) error {
 		a.leftPanel.SetResourceCatalog(msg.infos)
 		a.rightPanel.SetResourceCatalog(msg.infos)
 	} else if a.toastLogger != nil {
-		a.enqueueCmd(a.toastLogger.Errorf("Discovery resources failed: %v", msg.discoveryErr))
+		a.enqueueCmd(a.toastLogger.Errorf("Cannot read the API discovery of %s: %s", kctx.Name, errorCause(msg.discoveryErr)))
 	}
 	a.ensureTermContext()
 	a.enqueueCmd(a.watchDiscovery())

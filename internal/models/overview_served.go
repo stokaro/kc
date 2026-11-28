@@ -10,6 +10,8 @@ import (
 	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/stokaro/kc/internal/kubeerr"
 )
 
 // overviewRediscoverTimeout bounds one round of followDiscovery: the
@@ -26,7 +28,9 @@ func (c *clusterOverviewConn) startKind(ctx context.Context, k overviewKind) str
 	// so instead of blocking the overview.
 	inf, err := c.cl.GetCache().GetInformer(getCtx, k.newObject(), crcache.BlockUntilSynced(false))
 	if err != nil {
-		reason := err.Error()
+		// In plain words, as Info draws it: no request URL or dial
+		// details.
+		reason := kubeerr.Cause(err)
 		if meta.IsNoMatchError(err) {
 			reason = notServedReason
 		}

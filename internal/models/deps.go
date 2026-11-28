@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -62,12 +61,22 @@ type Deps struct {
 	Usage *UsageMetrics
 }
 
+// ReadError is a read failure Deps.ReportError reports: what could not
+// be read, such as "pods in shop", and why.
+type ReadError struct {
+	What string
+	Err  error
+}
+
+func (e *ReadError) Error() string { return "could not read " + e.What + ": " + e.Err.Error() }
+func (e *ReadError) Unwrap() error { return e.Err }
+
 // reportReadError reports that reading what failed.
 func (d Deps) reportReadError(what string, err error) {
 	if d.ReportError == nil || err == nil {
 		return
 	}
-	d.ReportError(fmt.Errorf("could not read %s: %w", what, err))
+	d.ReportError(&ReadError{What: what, Err: err})
 }
 
 // ForNamespace derives a copy of Deps using a namespace-scoped cluster when

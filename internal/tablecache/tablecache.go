@@ -3,6 +3,7 @@ package tablecache
 import (
 	"fmt"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -23,7 +24,7 @@ func New(cfg *rest.Config, opts Options) (cache.Cache, error) {
 
 	sch := opts.Options.Scheme
 	if sch == nil {
-		sch = runtime.NewScheme()
+		sch = fetcherScheme()
 	}
 
 	httpClient := opts.Options.HTTPClient
@@ -48,6 +49,16 @@ func New(cfg *rest.Config, opts Options) (cache.Cache, error) {
 	}
 
 	return newRowCache(base, mapper, fetcher), nil
+}
+
+// fetcherScheme is the scheme of the table requests when the caller gives
+// none. It knows the meta types, Status among them: without it client-go
+// cannot decode an error answer, and a 403 reads "unknown (get pods)"
+// instead of the server's message, which names the user and the verb.
+func fetcherScheme() *runtime.Scheme {
+	sch := runtime.NewScheme()
+	metav1.AddToGroupVersion(sch, metav1.SchemeGroupVersion)
+	return sch
 }
 
 // NewFromOptions is a convenience wrapper that accepts a plain cache.Options value.
