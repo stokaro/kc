@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -26,7 +27,11 @@ type Spec struct {
 	Kind string
 	Name string
 	// Pod is the pod that carries the traffic; equal to Name for pods.
-	Pod       string
+	Pod string
+	// PodUID is the uid of Pod when the forward started. A pod created
+	// again under the name is another pod, and the forward ends. Empty
+	// takes the uid of the pod the forward first sees.
+	PodUID    types.UID
 	Container string // container the user started from, informational
 	Address   string // local bind address
 	// LocalPort 0 lets the system choose.
