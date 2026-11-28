@@ -1,6 +1,6 @@
 # 0236. Panel reread (C-r)
 
-- Status: Accepted
+- Status: Accepted; with text on the shell line `C-r` goes to the shell (superseded by [0376](0376-keys-reach-the-shell.md))
 - Date: 2026-11-23
 - PR: #236
 

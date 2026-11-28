@@ -121,6 +121,21 @@ func TestHeadlessSession(t *testing.T) {
 	s.until(ctx, "help window", func(screen string) bool { return strings.Contains(screen, "Using the help") })
 	s.send("key f10")
 	s.until(ctx, "closed help", func(screen string) bool { return ready(screen) && !strings.Contains(screen, "Using the help") })
+	// The full-screen terminal hands every key but C-o to the shell: C-u
+	// kills the typed line instead of swapping the hidden panels (#376).
+	s.send("key ctrl+o")
+	s.until(ctx, "full-screen terminal", func(screen string) bool { return !strings.Contains(screen, "headless-probe") })
+	s.send("text echo kept\nkey ctrl+u\ntext echo routed\nkey enter")
+	s.until(ctx, "C-u killing the shell line", func(screen string) bool {
+		for line := range strings.SplitSeq(screen, "\n") {
+			if strings.TrimSpace(line) == "routed" {
+				return true
+			}
+		}
+		return false
+	})
+	s.send("key ctrl+o")
+	s.until(ctx, "panels after C-o", ready)
 	s.send("key f10\nwait")
 	if got := s.line(); got != "waiting for process to exit..." {
 		t.Fatalf("wait response: %q", got)

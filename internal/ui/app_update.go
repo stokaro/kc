@@ -1100,8 +1100,6 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
-// shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
-
 // panelMouseDispatch is what dispatchPanelMouse did with a mouse event.
 type panelMouseDispatch struct {
 	cmd      tea.Cmd

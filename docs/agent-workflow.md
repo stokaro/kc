@@ -139,7 +139,8 @@ kubeconfig. Building the binaries first avoids rebuilding between observations.
 
 The repository harness is `make test-headless`. It builds both binaries once,
 uses a temporary home and envtest kubeconfig, observes startup at 120x30 and
-resize to 100x24, opens/closes help, and checks the actual kc exit status. It
+resize to 100x24, opens/closes help, kills a typed shell line with `C-u` in
+the full-screen terminal (`C-o`), and checks the actual kc exit status. It
 requires envtest assets; regular package tests skip it unless explicitly enabled.
 Extend this fixture for a relevant terminal regression instead of introducing
 another setup path. Its passing smoke journey does not cover all application
