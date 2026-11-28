@@ -14,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/stokaro/kc/internal/kubeerr"
 )
 
 // The resources the overview reads. Every one comes from an overview cache
@@ -200,7 +202,9 @@ func loadOverviewInputFrom(ctx context.Context, readerFor func(schema.GroupVersi
 			opts = append(opts, crclient.InNamespace(namespace))
 		}
 		if err := r.List(ctx, list, opts...); err != nil {
-			in.missing[k.gvr] = err.Error()
+			// In plain words: the reason is drawn in Info, where a raw
+			// client error repeats the request URL and the dial details.
+			in.missing[k.gvr] = kubeerr.Cause(err)
 			if meta.IsNoMatchError(err) {
 				in.missing[k.gvr] = notServedReason
 			}

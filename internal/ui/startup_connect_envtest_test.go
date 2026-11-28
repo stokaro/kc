@@ -103,8 +103,8 @@ func TestStartupDropsTheDiscoveryErrorARetryFixed(t *testing.T) {
 	if _, cmd := app.Update(msg); cmd != nil || app.startup == nil {
 		t.Fatal("a connection with a discovery error did not stay on the error screen")
 	}
-	if frame := startupFrame(app); !strings.Contains(frame, "the server was not ready") {
-		t.Fatalf("the error screen lacks the discovery error:\n%s", frame)
+	if want, frame := describeError(msg.discoveryErr), startupFrame(app); !strings.Contains(frame, want) {
+		t.Fatalf("the error screen lacks the discovery error %q:\n%s", want, frame)
 	}
 	if _, cmd := app.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || app.startup != nil {
 		t.Fatal("Enter on the error did not open the panels")

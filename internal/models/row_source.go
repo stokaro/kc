@@ -99,6 +99,18 @@ func (s *sliceRowSource) LoadError() error {
 	return s.failure
 }
 
+// listProblem is the error of the last populate when it failed and left
+// the list empty. A failure after rows were read keeps those rows and is
+// no reason for an empty list.
+func (s *sliceRowSource) listProblem() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.rows) > 0 {
+		return nil
+	}
+	return s.failure
+}
+
 func (s *sliceRowSource) ensureLocked(ctx context.Context) {
 	s.once.Do(func() { s.dirty = true })
 	for {

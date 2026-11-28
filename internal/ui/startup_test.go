@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -206,8 +207,15 @@ func TestStartupShowsTheConnectError(t *testing.T) {
 	if got := app.ownConn(0).name(); got != "staging" {
 		t.Errorf("the left panel opened on %q, want staging", got)
 	}
-	if frame := startupFrame(app); strings.Contains(frame, "Cannot connect") {
+	frame = startupFrame(app)
+	if strings.Contains(frame, "Enter opens the panels") {
 		t.Errorf("the panels screen still shows the error:\n%s", frame)
+	}
+	// The left panel says why it lists nothing, in its first column below
+	// the header. Before, it showed an empty list.
+	want := "│ Cannot reach " + strings.TrimPrefix(server, "https://") + ": connection refused"
+	if !slices.ContainsFunc(strings.Split(frame, "\n"), func(l string) bool { return strings.HasPrefix(l, want) }) {
+		t.Errorf("no line of the panels screen starts with %q:\n%s", want, frame)
 	}
 	// Discovery still fails, so the panels say so.
 	if toasts := pendingToasts(t, app); !slices.ContainsFunc(toasts, isDiscoveryErrorToast) {
@@ -329,6 +337,134 @@ func TestFitStartupLines(t *testing.T) {
 			t.Parallel()
 			if got := fitStartupLines(tt.body, "hint", tt.gap, tt.width, tt.rows); !slices.Equal(got, tt.want) {
 				t.Errorf("fitStartupLines = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A start context kc cannot build a client for opens panels that name the
+// context and the reason, in the lists and in Info. Before, the lists said
+// "No items" and Info "Not connected to a cluster."
+func TestStartupWithoutAClientNamesTheReason(t *testing.T) {
+	useStartKubeconfig(t, refusedServer(t))
+	// A CA file that does not exist: the client cannot be built.
+	path := os.Getenv("KUBECONFIG")
+	kcfg, err := clientcmd.LoadFromFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingCA := filepath.Join(filepath.Dir(path), "missing-ca.crt")
+	kcfg.Clusters["remote"].InsecureSkipTLSVerify = false
+	kcfg.Clusters["remote"].CertificateAuthority = missingCA
+	if err := clientcmd.WriteToFile(*kcfg, path); err != nil {
+		t.Fatal(err)
+	}
+	app := newStartApp(t)
+	if err := app.beginConfigAndStartup(t.Context()); err != nil {
+		t.Fatalf("startup: %v", err)
+	}
+	app.Init()
+	app.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+	msg := app.connectStartup(app.startup)()
+	if msg.acquireErr == nil {
+		t.Fatalf("building a client with a missing CA file succeeded (discovery error: %v)", msg.discoveryErr)
+	}
+	app.Update(msg)
+	if _, cmd := app.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil || app.startup != nil {
+		t.Fatal("Enter on the error did not open the panels")
+	}
+	frame := startupFrame(app)
+	left := leftPanelText(frame)
+	for _, want := range []string{"Cannot connect to staging:", missingCA, hintPickContext} {
+		if !strings.Contains(left, strings.ReplaceAll(want, " ", "")) {
+			t.Errorf("the left panel does not say %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "No items") {
+		t.Errorf("the panels say No items:\n%s", frame)
+	}
+	if got := app.notConnectedHint(); !strings.Contains(got, "Cannot connect to staging:") || !strings.Contains(got, missingCA) {
+		t.Errorf("Info's hint = %q, want the context and the missing file", got)
+	}
+}
+
+// leftPanelText is the text of the left panel in frame without spaces,
+// so that a check reads a wrapped line as one.
+func leftPanelText(frame string) string {
+	var b strings.Builder
+	for line := range strings.SplitSeq(frame, "\n") {
+		_, rest, ok := strings.Cut(line, "│")
+		if !ok {
+			continue
+		}
+		inner, _, _ := strings.Cut(rest, "│")
+		b.WriteString(strings.ReplaceAll(inner, " ", ""))
+	}
+	return b.String()
+}
+
+// Without a kubeconfig the lists say which file kc looked for. Before,
+// Run printed a warning to the terminal the UI then covered, and the
+// panels said "No items".
+func TestStartupWithoutKubeconfigSaysWhichFile(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, home string) (kubeconfigEnv string)
+		want  func(home, env string) string
+	}{
+		{
+			name:  "KUBECONFIG names a missing file",
+			setup: func(_ *testing.T, home string) string { return filepath.Join(home, "missing") },
+			want:  func(_, env string) string { return "No kubeconfig: $KUBECONFIG=" + env + " not found" },
+		},
+		{
+			name:  "no KUBECONFIG and no ~/.kube",
+			setup: func(*testing.T, string) string { return "" },
+			want: func(home, _ string) string {
+				return "No kubeconfig: " + filepath.Join(home, ".kube", "config") + " not found"
+			},
+		},
+		{
+			name: "a kubeconfig without contexts",
+			setup: func(t *testing.T, home string) string {
+				path := filepath.Join(home, "empty")
+				if err := clientcmd.WriteToFile(*clientcmdapi.NewConfig(), path); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+			want: func(_, env string) string { return "No contexts in $KUBECONFIG=" + env },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			env := tt.setup(t, home)
+			t.Setenv("KUBECONFIG", env)
+			t.Setenv("HOME", home)
+			t.Setenv("SHELL", "/bin/sh")
+			app := newStartApp(t)
+			err := app.beginConfigAndStartup(t.Context())
+			if _, ok := errors.AsType[*noKubeconfigError](err); !ok {
+				t.Fatalf("startup error = %v (%T), want a missing kubeconfig", err, err)
+			}
+			want := tt.want(home, env)
+			if err.Error() != want {
+				t.Errorf("startup error = %q, want %q", err, want)
+			}
+			// As Run does with the error.
+			app.showStartProblem(err, "")
+			app.Init()
+			app.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+			frame := startupFrame(app)
+			if strings.Contains(frame, "No items") {
+				t.Errorf("the panels say No items:\n%s", frame)
+			}
+			if !strings.Contains(leftPanelText(frame), strings.ReplaceAll(want, " ", "")) {
+				t.Errorf("the left panel does not say %q:\n%s", want, frame)
+			}
+			if got := app.notConnectedHint(); !strings.Contains(got, want) {
+				t.Errorf("Info's hint = %q, want it to name %q", got, want)
 			}
 		})
 	}

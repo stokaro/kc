@@ -92,7 +92,9 @@ func (a *App) connectStartup(st *startup) func() startupConnectedMsg {
 			if err != nil {
 				log.Error(err, "cluster acquisition failed")
 				msg.releaseLeases()
-				msg.acquireErr = fmt.Errorf("cluster pool acquire: %w", err)
+				// Shown to the user as the reason: no prefix that
+				// names kc's internals.
+				msg.acquireErr = err
 				return msg
 			}
 			msg.leases[idx] = lease
@@ -162,8 +164,9 @@ func (a *App) openPanels() tea.Cmd {
 	cmds := append([]tea.Cmd(nil), st.deferred...)
 	if err := a.finishStartup(st, *st.done); err != nil {
 		ctrllog.FromContext(a.ctx).WithName("init").Error(err, "starting without a connection")
+		a.showStartProblem(err, st.kctx.Name)
 		if a.toastLogger != nil {
-			cmds = append(cmds, a.toastLogger.Errorf("Cannot connect to %s: %v", st.kctx.Name, err))
+			cmds = append(cmds, a.toastLogger.Errorf("Cannot connect to %s: %s", st.kctx.Name, errorCause(err)))
 		}
 	}
 	return tea.Batch(append(cmds, a.panelCmds())...)
@@ -201,7 +204,7 @@ func (a *App) renderStartup() tea.View {
 		hint = "F10 quits"
 	} else {
 		skin = dialog.Danger()
-		body = []string{"Cannot connect to " + where + ":", st.done.err().Error()}
+		body = []string{"Cannot connect to " + where + ":", describeError(st.done.err())}
 		hint = "Enter opens the panels · F10 quits"
 		gap = true
 	}

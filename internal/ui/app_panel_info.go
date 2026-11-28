@@ -44,7 +44,7 @@ func (a *App) infoTarget(ctx context.Context, panel *Panel) infowidget.Target {
 	// object was read from: the panels may show two contexts.
 	conn := a.targetConn(idx)
 	if conn.cluster() == nil {
-		return infowidget.Target{Hint: "Not connected to a cluster."}
+		return infowidget.Target{Hint: a.notConnectedHint()}
 	}
 	ns := a.overviewNamespace(other)
 	pin, origin := panel.pinned(), panel.origin
