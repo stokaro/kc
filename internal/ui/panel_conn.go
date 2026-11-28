@@ -211,17 +211,23 @@ func (a *App) setPanelConn(idx int, c *panelConn) {
 	old.drop()
 }
 
-// releasePanelConns gives up both panels' connections, when kc exits.
+// releasePanelConns gives up both panels' connections and the ones
+// their followers hold for the objects they show, when kc exits.
 func (a *App) releasePanelConns() {
 	for idx := range a.conns {
 		a.conns[idx].drop()
 		a.conns[idx] = heldConn{}
+		if p := a.panelByIndex(idx); p != nil {
+			p.follow(nil, "", followOrigin{})
+		}
 	}
 }
 
 // targetConn is the connection of what panel idx shows: its own in List
-// and Command mode; the pin's, else the other panel's, while it follows
-// the other panel.
+// and Command mode. While it follows the other panel: the pin's, else the
+// connection the object it shows was read from, which Logs and Info keep
+// after the other panel has moved on (followOrigin), else the other
+// panel's.
 func (a *App) targetConn(idx int) *panelConn {
 	p := a.panelByIndex(idx)
 	if p == nil || !followerMode(p.Mode()) {
@@ -229,6 +235,9 @@ func (a *App) targetConn(idx int) *panelConn {
 	}
 	if pin := p.pinned(); pin != nil && pin.conn != nil {
 		return pin.conn
+	}
+	if c := p.origin.conn; c != nil {
+		return c
 	}
 	return a.ownConn(1 - idx)
 }
@@ -243,6 +252,9 @@ func (a *App) targetScope(idx int) string {
 	if pin := p.pinned(); pin != nil && pin.conn != nil {
 		return pin.scope
 	}
+	if p.origin.conn != nil {
+		return p.origin.scope
+	}
 	return a.panelScope[1-idx]
 }
 
@@ -251,8 +263,9 @@ func (a *App) activeConn() *panelConn {
 	return a.targetConn(a.activePanel)
 }
 
-// connByID finds a connection a panel or a pin holds. A connection that
-// nobody on screen holds any more returns nil: its panel switched.
+// connByID finds a connection a panel, a pin or a follower holds. A
+// connection that nobody on screen holds any more returns nil: its panel
+// switched.
 func (a *App) connByID(id string) *panelConn {
 	if id == "" {
 		return nil
@@ -261,10 +274,15 @@ func (a *App) connByID(id string) *panelConn {
 		if c := a.conns[idx].conn; c != nil && c.id == id {
 			return c
 		}
-		if p := a.panelByIndex(idx); p != nil {
-			if pin := p.pinned(); pin != nil && pin.conn != nil && pin.conn.id == id {
-				return pin.conn
-			}
+		p := a.panelByIndex(idx)
+		if p == nil {
+			continue
+		}
+		if pin := p.pinned(); pin != nil && pin.conn != nil && pin.conn.id == id {
+			return pin.conn
+		}
+		if c := p.origin.conn; c != nil && c.id == id {
+			return c
 		}
 	}
 	return nil

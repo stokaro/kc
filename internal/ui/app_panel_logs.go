@@ -166,18 +166,14 @@ func openPanelAllContainers(root context.Context, cl *kccluster.Cluster, spec mo
 	return logswidget.Stream{Spec: spec, Containers: containers, Body: src, Cancel: cancel}, nil
 }
 
-// followOtherPanel starts a panel that just entered Describe, Manifest or
-// Logs mode on the other panel's selection. Panel.SetMode gives the new
-// widget the panel's own cursor row, and the mode chooser replays the
-// other selection itself, but the C-1 / C-2 cycle keys and the F9 menu do
-// not. Info mode resolves the other panel on its own.
+// followOtherPanel starts a panel that just entered a follower mode on
+// the other panel's selection. Panel.SetMode gives the new widget the row
+// the panel followed, and the mode chooser replays the other selection
+// itself, but the C-1 / C-2 cycle keys and the F9 menu do not. The replay
+// also decides whether the new mode keeps what the panel followed: Logs
+// and Info keep only a pod, or a node, workload or finding.
 func (a *App) followOtherPanel(ctx context.Context, panel *Panel) tea.Cmd {
-	if panel == nil {
-		return nil
-	}
-	switch panel.Mode() {
-	case PanelModeDescribe, PanelModeManifest, PanelModeLogs:
-	default:
+	if panel == nil || !followerMode(panel.Mode()) {
 		return nil
 	}
 	idx, ok := a.panelIndexFor(panel)

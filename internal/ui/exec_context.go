@@ -169,8 +169,8 @@ func (a *App) closeKubeconfigFiles() {
 }
 
 // termTarget is the connection and namespace of what the active panel
-// shows: its own list, or in Describe, Manifest, Logs and Info the other
-// panel's (or the pin's).
+// shows: its own list, or in Describe, Manifest, Logs and Info the pin's,
+// else where the object it shows was read, else the other panel's.
 func (a *App) termTarget() (*panelConn, string) {
 	idx := a.activePanel
 	panel := a.panelByIndex(idx)
@@ -179,6 +179,11 @@ func (a *App) termTarget() (*panelConn, string) {
 	}
 	if pin := panel.pinned(); pin != nil && pin.conn != nil {
 		return pin.conn, pin.scope
+	}
+	if o := panel.origin; o.conn != nil {
+		// The object the follower shows, which Logs and Info keep after
+		// the other panel has moved on (followOrigin).
+		return o.conn, o.exec
 	}
 	return a.ownConn(1 - idx), a.panelExecNamespace(a.panelByIndex(1 - idx))
 }

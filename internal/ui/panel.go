@@ -57,6 +57,14 @@ type Panel struct {
 	lastSelection        models.Item
 	// lastSource is the connection lastSelection was read from.
 	lastSource string
+	// origin is where lastSelection was read while the panel follows it;
+	// the panel holds its connection (followOrigin). originMoved says that
+	// it changed since App.takeOriginMoves last looked.
+	origin      followOrigin
+	originMoved bool
+	// followRule decides how a follower takes a selection (App.followRule);
+	// nil takes every selection as it comes.
+	followRule func(panelcontent.Selection) (followOrigin, bool)
 	// selectionSource names the connection of the panel's own list rows
 	// (list true) or of what the panel shows (false); see
 	// panelcontent.Selection.Source. Nil leaves Source empty.
@@ -384,7 +392,7 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 			p.ClearPin()
 			// The followed row means nothing to the panel's own list, and
 			// must not come back when the panel follows again.
-			p.lastSelection, p.lastSource = nil, ""
+			p.follow(nil, "", followOrigin{})
 		}
 		// The other panel hears this panel's selection again: it may
 		// have followed something else while this panel was in another
@@ -793,16 +801,24 @@ func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection)
 		return nil
 	}
 	sel = p.completeSelection(ctx, p.pinnedSelection(sel))
-	if sel.ID != "" {
-		p.lastSelectionID = sel.ID
-	}
 	// Only a follower keeps the row it was told about. A List panel on
 	// ".." or on an empty list has no row of its own and must not act on
-	// the other panel's. A selection without an item clears a follower:
-	// the other panel's cursor is on a row that is not an object, and the
-	// last object must not stay under the frame of the new location.
+	// the other panel's. A selection that names no object clears
+	// Describe and Manifest; Logs and Info keep the object they show, and
+	// their frame goes on naming where it was read (followOrigin).
 	if followerMode(p.mode) {
-		p.lastSelection, p.lastSource = sel.Item, sel.Source
+		var origin followOrigin
+		if p.followRule != nil {
+			var keep bool
+			if origin, keep = p.followRule(sel); keep {
+				ctrllog.FromContext(ctx).WithName("panel").Info("follower keeps what it shows", "panel", p.title, "mode", p.mode, "selectionID", sel.ID)
+				return nil
+			}
+		}
+		p.follow(sel.Item, sel.Source, origin)
+	}
+	if sel.ID != "" {
+		p.lastSelectionID = sel.ID
 	}
 	p.invalidateRenderCache()
 	ctrllog.FromContext(ctx).WithName("panel").Info("notify selection", "panel", p.title, "mode", p.mode, "selectionID", sel.ID, "force", sel.Force, "hasItem", sel.Item != nil)
@@ -1789,6 +1805,24 @@ func (p *Panel) selectedItemSource(ctx context.Context) (models.Item, string) {
 // SetSelectionSource installs the function that names the panel's
 // connections for panelcontent.Selection.Source.
 func (p *Panel) SetSelectionSource(f func(list bool) string) { p.selectionSource = f }
+
+// SetFollowRule installs what decides how the panel takes a selection
+// while it follows the other panel: f returns where the selection's
+// object was read, or that the panel keeps what it shows.
+func (p *Panel) SetFollowRule(f func(panelcontent.Selection) (followOrigin, bool)) { p.followRule = f }
+
+// follow makes item, read from connection source at origin, the row the
+// follower shows, and gives up the hold on the origin of the row it
+// showed. The new hold is taken first, so a connection that both rows
+// came from stays held.
+func (p *Panel) follow(item models.Item, source string, origin followOrigin) {
+	old := p.origin
+	p.lastSelection, p.lastSource, p.origin = item, source, origin
+	if old.conn != origin.conn || old.scope != origin.scope || old.exec != origin.exec {
+		p.originMoved = true
+	}
+	old.drop()
+}
 
 func (p *Panel) sourceOf(list bool) string {
 	if p.selectionSource == nil {

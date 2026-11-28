@@ -33,6 +33,13 @@ workload is short of resources.
   computed and the first objects behind it. Long lines wrap at the
   panel width, as the rest of Info does.
 
+Info keeps the node, workload or finding it shows while the other cursor
+is on a row that is not an object, such as `/..` after a `cd` or a
+folder: the frame and the label go on naming the context and namespace
+it was read in until the cursor reaches another object. After a pod or
+another object for which Info shows the namespace, Info keeps nothing
+and follows the other panel's namespace.
+
 ## How to read the bars
 
 Under CPU and memory, each line names its base:

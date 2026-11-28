@@ -36,6 +36,19 @@ type followPods struct {
 
 func newFollowPods(t *testing.T, mode PanelViewMode, shopPods ...string) *followPods {
 	t.Helper()
+	e := newFollowEnv(t, shopPods...)
+	e.openFirstRow(t, "cd pods", shopPods[0])
+	settle(t, e.app, e.app.setPanelMode(t.Context(), e.app.rightPanel, mode, "test"))
+	if got := assertFollowsLeft(t, e.app, mode); got != shopPods[0] {
+		t.Fatalf("the follower shows %q, want %s", got, shopPods[0])
+	}
+	return e
+}
+
+// newFollowEnv is followPods with the left panel at the root of namespace
+// shop and the right panel in the mode it starts in.
+func newFollowEnv(t *testing.T, shopPods ...string) *followPods {
+	t.Helper()
 	kcenvtest.Require(t, testCfg)
 	cl, err := kccluster.New(testCfg)
 	if err != nil {
@@ -76,18 +89,19 @@ func newFollowPods(t *testing.T, mode PanelViewMode, shopPods ...string) *follow
 	app.goToNamespace(e.shop)
 	app.setActivePanel(0, "test")
 	e.app = app
-
-	shellCd(t, app, "cd pods")
-	e.waitForRow(t, shopPods[0])
-	sendKey(t, app, tea.KeyPressMsg{Code: tea.KeyDown})
-	if id := app.leftPanel.currentSelectionID(ctx); id != shopPods[0] {
-		t.Fatalf("the left cursor is on %q, want %s", id, shopPods[0])
-	}
-	settle(t, app, app.setPanelMode(ctx, app.rightPanel, mode, "test"))
-	if got := assertFollowsLeft(t, app, mode); got != shopPods[0] {
-		t.Fatalf("the follower shows %q, want %s", got, shopPods[0])
-	}
 	return e
+}
+
+// openFirstRow runs line on the shell line and puts the left cursor on
+// row id, the first row after "..".
+func (e *followPods) openFirstRow(t *testing.T, line, id string) {
+	t.Helper()
+	shellCd(t, e.app, line)
+	e.waitForRow(t, id)
+	sendKey(t, e.app, tea.KeyPressMsg{Code: tea.KeyDown})
+	if got := e.app.leftPanel.currentSelectionID(t.Context()); got != id {
+		t.Fatalf("the left cursor is on %q, want %s", got, id)
+	}
 }
 
 // waitForRow waits until the left panel lists row id.

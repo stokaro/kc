@@ -1153,6 +1153,7 @@ func (a *App) setupPanelInputs() {
 			}
 			return a.targetConn(idx).connID()
 		})
+		panel.SetFollowRule(func(sel panelcontent.Selection) (followOrigin, bool) { return a.followRule(panel, sel) })
 		panel.RegisterMode(PanelModeDescribe, func(p *Panel) PanelWidget {
 			deps := p.manifestWidgetDeps()
 			deps.Describe = a.describeFunc()
@@ -1423,15 +1424,17 @@ func (a *App) setPanelMode(ctx context.Context, panel *Panel, mode PanelViewMode
 	}
 	prev := panel.Mode()
 	cmd := panel.SetMode(ctx, mode)
+	follow := a.followOtherPanel(ctx, panel)
 	if panel.Mode() != prev {
-		// A follower shows the other panel's context; the frame and the
-		// shell follow what the panel shows.
+		// A follower shows the other panel's context, or where the object
+		// it keeps was read; the frame and the shell follow what the panel
+		// shows.
 		a.syncPanelScopeLabels()
 		a.ensureTermContext()
 		a.invalidateView(reason)
 		a.invalidateFunctionBar(reason)
 	}
-	return tea.Batch(cmd, a.followOtherPanel(ctx, panel))
+	return tea.Batch(cmd, follow)
 }
 
 func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {

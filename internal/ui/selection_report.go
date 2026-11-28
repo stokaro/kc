@@ -21,7 +21,7 @@ type selectionKey struct {
 // key, a cd, a namespace or context switch, the history, the hotlist or a
 // refresh that removed the row under the cursor. Update runs it after
 // every message, so a follower hears about a move in the Update that made
-// it and its frame and content change together (ADR 0377).
+// it and its frame and content change together (ADR 0377, 0403).
 func (a *App) reportMovedSelections() tea.Cmd {
 	if a.ctx == nil || a.showTerminal {
 		// The panels are hidden behind the full-screen terminal; the
@@ -45,15 +45,34 @@ func (a *App) reportMovedSelections() tea.Cmd {
 		panel.reported = key
 		cmds = append(cmds, a.reportSelection(panel, sel))
 	}
+	if len(cmds) == 0 && !a.takeOriginMoves() {
+		return nil
+	}
+	// A follower's frame names the scope of the panel it follows, or where
+	// the object it keeps was read; set it in the same Update as the
+	// content. The shell line of an active follower runs there too.
+	a.syncPanelScopeLabels()
+	a.ensureTermContext()
 	if len(cmds) == 0 {
 		return nil
 	}
-	// A follower's frame names the scope of the panel it follows; set it
-	// in the same Update as the content.
-	a.syncPanelScopeLabels()
 	a.invalidateFunctionBar("selection changed")
 	a.invalidateView("selection changed")
 	return tea.Batch(cmds...)
+}
+
+// takeOriginMoves reports whether a follower showed an object of another
+// origin since the last call: a mode change or an unpin may have moved it
+// without a report.
+func (a *App) takeOriginMoves() bool {
+	moved := false
+	for idx := range 2 {
+		if p := a.panelByIndex(idx); p != nil && p.originMoved {
+			p.originMoved = false
+			moved = true
+		}
+	}
+	return moved
 }
 
 // listSelectionKey is the key of the selection of panel idx's own list.

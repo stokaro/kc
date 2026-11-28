@@ -1,6 +1,6 @@
 # 0377. A follower hears every move of the other panel's cursor
 
-- Status: Accepted
+- Status: Accepted; decision 3 and the first consequence are amended by [0403](0403-logs-info-keep-their-object.md) (Logs and Info keep the object they show, and a follower's frame names where its object was read)
 - Date: 2026-11-28
 - Issue: #377
 - Amends: decision 5 of
