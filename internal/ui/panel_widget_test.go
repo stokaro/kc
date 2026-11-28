@@ -47,23 +47,6 @@ func TestNextPanelModeCycles(t *testing.T) {
 	}
 }
 
-func TestPanelSelectionChangedMessage(t *testing.T) {
-	ctx := t.Context()
-	panel := NewPanel("test")
-	panel.listWidget(ctx) // ensure list widget initialized
-	cmd := panel.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "item-a", Path: "/"})
-	if cmd == nil {
-		t.Fatalf("expected selection change command")
-	}
-	if msg := cmd(); msg == nil {
-		t.Fatalf("expected selection change message")
-	} else if selMsg, ok := msg.(PanelSelectionChangedMsg); !ok {
-		t.Fatalf("expected PanelSelectionChangedMsg, got %#v", msg)
-	} else if selMsg.Selection.ID != "item-a" {
-		t.Fatalf("expected selection ID item-a, got %s", selMsg.Selection.ID)
-	}
-}
-
 type selectionSpyWidget struct {
 	panelcontent.Widget
 	events []panelcontent.Selection
@@ -99,33 +82,5 @@ func TestPanelDescribeModeReplaysSelection(t *testing.T) {
 	}
 	if got.Item == nil {
 		t.Fatalf("expected selection item to be populated")
-	}
-}
-
-func TestPanelSelectionForceMessage(t *testing.T) {
-	ctx := t.Context()
-	panel := NewPanel("test")
-	panel.listWidget(ctx)
-	// Seed first selection to populate lastSelectionID.
-	if cmd := panel.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "item-a"}); cmd == nil {
-		t.Fatalf("expected initial selection change command")
-	} else {
-		_ = cmd()
-	}
-	// Repeating the same selection without force should not emit a message.
-	if cmd := panel.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "item-a"}); cmd != nil {
-		t.Fatalf("unexpected command when selection unchanged without force")
-	}
-	// Forcing should emit a PanelSelectionChangedMsg even without ID change.
-	cmd := panel.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "item-a", Force: true})
-	if cmd == nil {
-		t.Fatalf("expected forced selection change command")
-	}
-	if msg := cmd(); msg == nil {
-		t.Fatalf("expected forced selection change message")
-	} else if selMsg, ok := msg.(PanelSelectionChangedMsg); !ok {
-		t.Fatalf("expected PanelSelectionChangedMsg, got %#v", msg)
-	} else if selMsg.Selection.ID != "item-a" {
-		t.Fatalf("expected selection ID item-a, got %s", selMsg.Selection.ID)
 	}
 }

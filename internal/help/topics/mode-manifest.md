@@ -15,10 +15,12 @@ one object in view next to its related objects.
   position.
 - `^` and `v` in the frame mean more text above or below.
 - While the first content for a new row loads, the old text stays and
-  the header says `loading...`.
+  the header says `loading...`. After the other panel switched context,
+  the panel shows `Loading...` instead: the frame already names the new
+  context, and the old text came from the old one.
 - A row that cannot be shown says "Selected resource does not expose
-  manifest content." With nothing selected the panel says "Select a
-  resource to view its manifest."
+  manifest content." With nothing selected, for example on `/..` after
+  a `cd`, the panel says "Select a resource to view its manifest."
 
 ## How it works
 

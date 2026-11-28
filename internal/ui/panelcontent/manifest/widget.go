@@ -96,9 +96,10 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 		if path := w.sel.Item.Path(); len(path) > 0 {
 			breadcrumb = "/" + strings.Join(path, "/")
 		}
-		if breadcrumb == "" {
-			breadcrumb = w.sel.Path
-		}
+	}
+	if breadcrumb == "" {
+		// Nothing to show: the location of the followed row.
+		breadcrumb = w.sel.Path
 	}
 	if breadcrumb == "" && w.deps.Path != nil {
 		breadcrumb = w.deps.Path()
@@ -138,9 +139,9 @@ func (w *Widget) apiPathForSelection() string {
 
 // OnSelectionChanged loads the manifest for a new selection, or refreshes it
 // when the selection still names the same item.
-func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
+func (w *Widget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) tea.Cmd {
 	w.sel = sel
-	return w.load(ctx)
+	return w.load()
 }
 
 // Refresh rereads the manifest; the viewer changes only when the text did.
@@ -161,13 +162,10 @@ type content struct {
 	title, body, lang, mime, filename string
 }
 
-func (w *Widget) load(ctx context.Context) tea.Cmd {
+// load reads the manifest of the selected item. A selection without an
+// item shows the hint: the widget never falls back to another row.
+func (w *Widget) load() tea.Cmd {
 	item := w.sel.Item
-	if item == nil && w.deps.SelectedItem != nil {
-		if i, ok := w.deps.SelectedItem(ctx); ok {
-			item = i
-		}
-	}
 	if item == nil {
 		w.setStatic("Select a resource to view its manifest.")
 		return nil
@@ -177,9 +175,17 @@ func (w *Widget) load(ctx context.Context) tea.Cmd {
 		w.setStatic("Selected resource does not expose manifest content.")
 		return nil
 	}
-	key := w.sel.Source + "|" + itemKey(item)
-	if key != w.loader.Key() && w.shownKey == "" {
-		w.viewer.SetContent("Loading...", viewer.Metadata{Title: "Manifest"})
+	key := panelcontent.SourceKey(w.sel.Source, itemKey(item))
+	if key != w.loader.Key() {
+		// The manifest of another item stays until the new one arrives
+		// (ADR 0047), but not one read from another connection: the
+		// frame already names the new one (ADR 0377).
+		if panelcontent.KeySource(w.shownKey) != w.sel.Source {
+			w.shownKey = ""
+		}
+		if w.shownKey == "" {
+			w.viewer.SetContent("Loading...", viewer.Metadata{Title: "Manifest"})
+		}
 	}
 	return w.loader.Show(key, func(known string) reload.Result {
 		title, body, lang, mime, filename, err := viewable.ViewContent()

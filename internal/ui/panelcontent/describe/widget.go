@@ -79,9 +79,10 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 		if path := w.sel.Item.Path(); len(path) > 0 {
 			breadcrumb = "/" + strings.Join(path, "/")
 		}
-		if breadcrumb == "" {
-			breadcrumb = w.sel.Path
-		}
+	}
+	if breadcrumb == "" {
+		// Nothing to describe: the location of the followed row.
+		breadcrumb = w.sel.Path
 	}
 	if breadcrumb == "" && w.deps.Path != nil {
 		breadcrumb = w.deps.Path()
@@ -109,9 +110,9 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 
 // OnSelectionChanged loads the describe output for a new selection, or
 // refreshes it when the selection still names the same object.
-func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
+func (w *Widget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) tea.Cmd {
 	w.sel = sel
-	return w.load(ctx)
+	return w.load()
 }
 
 // Refresh reloads the output when the object changed in the shared cache.
@@ -128,8 +129,10 @@ func (w *Widget) Reread(context.Context) tea.Cmd {
 	return w.loader.Reread()
 }
 
-func (w *Widget) load(ctx context.Context) tea.Cmd {
-	target, ok := w.selectionTarget(ctx)
+// load describes the selected object. A selection that is not an object
+// shows the hint: the widget never falls back to another row.
+func (w *Widget) load() tea.Cmd {
+	target, ok := w.selectionTarget()
 	if !ok {
 		w.loader.Show("", nil)
 		w.setStatic("Select a resource to describe.", "Describe")
@@ -140,9 +143,15 @@ func (w *Widget) load(ctx context.Context) tea.Cmd {
 		w.setStatic("Describe provider unavailable.", describeTitle(target, ""))
 		return nil
 	}
-	key := w.sel.Source + "|" + targetKey(target)
+	key := panelcontent.SourceKey(w.sel.Source, targetKey(target))
 	if key != w.loader.Key() {
 		w.target = target
+		// The output of another object stays until the new one arrives
+		// (ADR 0047), but not the output read from another connection:
+		// the frame already names the new one (ADR 0377).
+		if panelcontent.KeySource(w.shownKey) != w.sel.Source {
+			w.shownKey = ""
+		}
 		if w.shownKey == "" {
 			w.viewer.SetContent("Loading...", viewer.Metadata{Title: describeTitle(target, "")})
 		}
@@ -200,14 +209,8 @@ func targetKey(t describe.Target) string {
 	return t.GVR.GroupVersion().String() + "/" + t.GVR.Resource + "/" + t.Namespace + "/" + t.Name
 }
 
-func (w *Widget) selectionTarget(ctx context.Context) (describe.Target, bool) {
-	item := w.sel.Item
-	if item == nil && w.deps.SelectedItem != nil {
-		if selected, ok := w.deps.SelectedItem(ctx); ok {
-			item = selected
-		}
-	}
-	obj, ok := item.(models.ObjectItem)
+func (w *Widget) selectionTarget() (describe.Target, bool) {
+	obj, ok := w.sel.Item.(models.ObjectItem)
 	if !ok || obj == nil {
 		return describe.Target{}, false
 	}

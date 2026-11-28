@@ -1,7 +1,6 @@
 package describe
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -95,18 +94,52 @@ func TestDescribeRunsInTheCommandNotOnSelection(t *testing.T) {
 	}
 }
 
-func TestDescribeUsesSelectedItemFallback(t *testing.T) {
+// A selection without an object shows the hint and the followed location;
+// the widget does not keep the last object or look for another row.
+func TestDescribeWithoutItemShowsHint(t *testing.T) {
 	t.Parallel()
-	f := &fakeCluster{}
-	w := New(panelcontent.WidgetDeps{
-		SelectedItem: func(context.Context) (models.Item, bool) { return podRow("a"), true },
-		Describe:     f.describeFunc(),
-	})
+	f := &fakeCluster{body: map[string]string{"a": "body a"}}
+	w := New(panelcontent.WidgetDeps{Describe: f.describeFunc(), Path: func() string { return "/own" }})
 	w.SetFocus(t.Context(), true)
+	w.Resize(t.Context(), panelcontent.Size{Width: 40, Height: 3})
+	deliver(t, w, w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: podRow("a"), Source: "conn-1"}))
 
-	deliver(t, w, w.OnSelectionChanged(t.Context(), panelcontent.Selection{}))
-	if len(f.describes) != 1 || f.describes[0].Name != "a" {
-		t.Fatalf("expected the fallback item to be described, got %#v", f.describes)
+	if cmd := w.OnSelectionChanged(t.Context(), panelcontent.Selection{ID: "__back__", Path: "/pods", Source: "conn-1"}); cmd != nil {
+		t.Fatalf("expected no load without an object")
+	}
+	if got := w.viewer.PlainText(); !strings.Contains(got, "Select a resource to describe.") || strings.Contains(got, "body a") {
+		t.Fatalf("expected the hint instead of the last object, got %q", got)
+	}
+	if got := w.FrameInfo(t.Context(), panelcontent.FrameInfoRequest{Width: 40}).Breadcrumb; got != "/pods" {
+		t.Fatalf("expected the followed location /pods in the header, got %q", got)
+	}
+	if len(f.describes) != 1 {
+		t.Fatalf("expected no describe after the first, got %#v", f.describes)
+	}
+}
+
+// The output of one object stays while the next object of the same
+// connection loads (ADR 0047). Output read from another connection does
+// not: the frame already names the new connection.
+func TestDescribeReplacesOutputOfAnotherConnection(t *testing.T) {
+	t.Parallel()
+	f := &fakeCluster{body: map[string]string{"a": "body a", "b": "body b"}}
+	w := newWidget(t, f)
+	deliver(t, w, w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: podRow("a"), Source: "conn-1"}))
+
+	cmd := w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: podRow("b"), Source: "conn-1"})
+	if !strings.Contains(w.viewer.PlainText(), "body a") {
+		t.Fatalf("expected a's output while b loads from the same connection, got %q", w.viewer.PlainText())
+	}
+	deliver(t, w, cmd)
+
+	cmd = w.OnSelectionChanged(t.Context(), panelcontent.Selection{Item: podRow("b"), Source: "conn-2"})
+	if got := w.viewer.PlainText(); strings.Contains(got, "body b") || !strings.Contains(got, "Loading...") {
+		t.Fatalf("expected Loading... instead of the output of conn-1, got %q", got)
+	}
+	deliver(t, w, cmd)
+	if !strings.Contains(w.viewer.PlainText(), "body b") {
+		t.Fatalf("expected b's output from conn-2, got %q", w.viewer.PlainText())
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	models "github.com/stokaro/kc/internal/models"
+	navui "github.com/stokaro/kc/internal/navigation"
 	panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 	logswidget "github.com/stokaro/kc/internal/ui/panelcontent/logs"
 )
@@ -96,6 +97,13 @@ func logsPanelApp(t *testing.T) (*App, *logswidget.Widget) {
 	t.Helper()
 	app := NewApp()
 	app.width, app.height = 120, 40
+	// The pod is under the left cursor: the dialog's commit makes the
+	// follower follow that row again.
+	pods := newLateFolder()
+	pods.add(testPodItem())
+	app.leftNav = navui.NewNavigator(pods)
+	app.leftPanel.UseFolder(t.Context(), true)
+	app.syncPanelWithNavigator(0)
 	drainPanelLogs(t, app, app.setPanelMode(t.Context(), app.rightPanel, PanelModeLogs, "test"), 0)
 	_, cmd := app.Update(PanelSelectionChangedMsg{
 		Panel:     app.leftPanel,

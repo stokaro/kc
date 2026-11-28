@@ -67,6 +67,9 @@ type Panel struct {
 	renderCacheFocused bool
 	renderCacheValid   bool
 	selectionObservers []func(context.Context, panelcontent.Selection, string) tea.Msg
+	// reported is the list selection the App last reported for this panel
+	// (App.reportMovedSelections); the zero key makes it report again.
+	reported selectionKey
 	// pin and freeze: docs/adr/0187-pin-freeze-window.md.
 	pin    *panelPin
 	freeze *panelFreeze
@@ -229,22 +232,25 @@ func (p *Panel) CachedFrame(width, height int, focused bool) (string, bool) {
 
 func (p *Panel) listWidgetDeps() panelcontent.WidgetDeps {
 	return panelcontent.WidgetDeps{
-		InvokeAction:     p.invokeWidgetAction,
-		Path:             func() string { return p.currentPath },
-		SelectionChanged: p.widgetSelectionChanged,
-		Post:             p.messagePoster,
-		Config:           p.cfg,
+		InvokeAction: p.invokeWidgetAction,
+		Path:         func() string { return p.currentPath },
+		SelectionChanged: func(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
+			p.widgetSelectionChanged(ctx, sel)
+			return nil
+		},
+		Post:   p.messagePoster,
+		Config: p.cfg,
 	}
 }
 
+// manifestWidgetDeps are the deps of Describe and Manifest. These widgets
+// show the selection the panel hands them and nothing else: the panel's own
+// list is hidden while they follow the other panel.
 func (p *Panel) manifestWidgetDeps() panelcontent.WidgetDeps {
 	return panelcontent.WidgetDeps{
 		InvokeAction: p.invokeWidgetAction,
 		Path:         func() string { return p.currentPath },
-		SelectedItem: func(ctx context.Context) (models.Item, bool) {
-			return p.SelectedNavItem(ctx)
-		},
-		Config: p.cfg,
+		Config:       p.cfg,
 	}
 }
 
@@ -300,7 +306,11 @@ func (p *Panel) invokeWidgetAction(ctx context.Context, action panelcontent.Acti
 	}
 }
 
-func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Selection) tea.Cmd {
+// widgetSelectionChanged records the row under the list's cursor as the
+// panel's selection and tells the selection observers. The other panel
+// hears about it from the App, which reports a moved list after every
+// message, whatever moved it (App.reportMovedSelections).
+func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Selection) {
 	if sel.ID == "" {
 		if lw := p.listWidget(ctx); lw != nil {
 			sel.ID = lw.CurrentSelectionID(ctx)
@@ -329,17 +339,29 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 	if changed || sel.Force {
 		p.invalidateRenderCache()
 	}
-	if !changed && !sel.Force {
-		return nil
+}
+
+// followedSelection is what a widget that SetMode activates is told: the
+// row a follower follows, or, in Command mode, the panel's own row.
+func (p *Panel) followedSelection() panelcontent.Selection {
+	sel := panelcontent.Selection{Path: p.currentPath}
+	if followerMode(p.mode) {
+		sel.Item, sel.Source = p.lastSelection, p.lastSource
 	}
-	panel := p
-	selection := sel
-	return func() tea.Msg {
-		return PanelSelectionChangedMsg{
-			Panel:     panel,
-			Selection: selection,
+	return sel
+}
+
+// listSelection is the selection of the panel's own list with row under
+// the cursor: the item the row stands for (nil on ".." and in an empty
+// list) and the connection the rows were read from.
+func (p *Panel) listSelection(ctx context.Context, row string) panelcontent.Selection {
+	sel := panelcontent.Selection{ID: row, Path: p.currentPath, Source: p.sourceOf(true)}
+	if lw := p.listWidget(ctx); lw != nil {
+		if item, ok := lw.SelectedNavItem(ctx); ok {
+			sel.Item = item
 		}
 	}
+	return sel
 }
 
 // RegisterMode registers a widget factory for a panel view mode.
@@ -360,7 +382,14 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 		p.Thaw()
 		if !followerMode(mode) {
 			p.ClearPin()
+			// The followed row means nothing to the panel's own list, and
+			// must not come back when the panel follows again.
+			p.lastSelection, p.lastSource = nil, ""
 		}
+		// The other panel hears this panel's selection again: it may
+		// have followed something else while this panel was in another
+		// mode.
+		p.reported = selectionKey{}
 	}
 	var cmds []tea.Cmd
 	if current := p.ensureActiveWidget(ctx); current != nil && p.mode != mode {
@@ -388,14 +417,12 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 		cmds = append(cmds, initCmd)
 	}
 	if mode == PanelModeList {
-		if selCmd := p.widgetSelectionChanged(ctx, panelcontent.Selection{
+		p.widgetSelectionChanged(ctx, panelcontent.Selection{
 			ID:    p.currentSelectionID(ctx),
 			Path:  p.currentPath,
 			Force: true,
-		}); selCmd != nil {
-			cmds = append(cmds, selCmd)
-		}
-	} else if selCmd := p.notifySelectionListeners(ctx, panelcontent.Selection{Path: p.currentPath}); selCmd != nil {
+		})
+	} else if selCmd := p.notifySelectionListeners(ctx, p.followedSelection()); selCmd != nil {
 		cmds = append(cmds, selCmd)
 	}
 	switch len(cmds) {
@@ -771,8 +798,10 @@ func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection)
 	}
 	// Only a follower keeps the row it was told about. A List panel on
 	// ".." or on an empty list has no row of its own and must not act on
-	// the other panel's.
-	if sel.Item != nil && followerMode(p.mode) {
+	// the other panel's. A selection without an item clears a follower:
+	// the other panel's cursor is on a row that is not an object, and the
+	// last object must not stay under the frame of the new location.
+	if followerMode(p.mode) {
 		p.lastSelection, p.lastSource = sel.Item, sel.Source
 	}
 	p.invalidateRenderCache()
@@ -1650,14 +1679,19 @@ func (p *Panel) unmarkRows(ctx context.Context, gen uint64, ids []string) {
 	p.invalidateRenderCache()
 }
 
+// GetCurrentItem is the row the panel acts on: the row under its list's
+// cursor, or in Describe, Manifest, Logs and Info the row it follows.
 func (p *Panel) GetCurrentItem() *Item {
+	if followerMode(p.mode) {
+		if p.lastSelection != nil {
+			return &Item{Item: p.lastSelection}
+		}
+		return nil
+	}
 	if lw := p.accessorListWidget(); lw != nil {
 		if item := lw.CurrentItem(context.Background()); item != nil {
 			return item
 		}
-	}
-	if followerMode(p.mode) && p.lastSelection != nil {
-		return &Item{Item: p.lastSelection}
 	}
 	return nil
 }
@@ -1714,30 +1748,40 @@ func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.S
 	return cmd
 }
 
+// completeSelection fills in what sel leaves out. A List or Command panel
+// takes the row under its own cursor. A follower takes nothing: a
+// selection without an item tells it that the row it follows is not an
+// object, and the row under its own hidden list's cursor is not what it
+// follows.
 func (p *Panel) completeSelection(ctx context.Context, sel panelcontent.Selection) panelcontent.Selection {
 	if sel.Path == "" {
 		sel.Path = p.currentPath
 	}
-	if sel.Item == nil {
+	follower := followerMode(p.mode)
+	if sel.Item == nil && !follower {
 		sel.Item, sel.Source = p.selectedItemSource(ctx)
 	}
 	if sel.Source == "" {
-		sel.Source = p.sourceOf(!followerMode(p.mode))
+		sel.Source = p.sourceOf(!follower)
 	}
 	return sel
 }
 
 // selectedItemSource is SelectedNavItem with the connection the item was
-// read from. Describe, Manifest, Logs and Info fall back to the row they
-// follow; List and Command mode have only their own list's row.
+// read from. Describe, Manifest, Logs and Info have the row they follow,
+// never the row under their hidden list's cursor; List and Command mode
+// have only their own list's row.
 func (p *Panel) selectedItemSource(ctx context.Context) (models.Item, string) {
+	if followerMode(p.mode) {
+		if p.lastSelection == nil {
+			return nil, ""
+		}
+		return p.lastSelection, p.lastSource
+	}
 	if lw := p.listWidget(ctx); lw != nil {
 		if item, ok := lw.SelectedNavItem(ctx); ok {
 			return item, p.sourceOf(true)
 		}
-	}
-	if followerMode(p.mode) && p.lastSelection != nil {
-		return p.lastSelection, p.lastSource
 	}
 	return nil, ""
 }

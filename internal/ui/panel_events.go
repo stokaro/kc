@@ -2,7 +2,10 @@ package ui
 
 import panelcontent "github.com/stokaro/kc/internal/ui/panelcontent"
 
-// PanelSelectionChangedMsg is emitted when the selection within a panel changes.
+// PanelSelectionChangedMsg reports Selection as Panel's selection to both
+// panels. The App reports a moved list by itself after every message
+// (App.reportMovedSelections); this message reports a selection that is
+// not the row under the list's cursor, and it stands until the list moves.
 type PanelSelectionChangedMsg struct {
 	Panel     *Panel
 	Selection panelcontent.Selection

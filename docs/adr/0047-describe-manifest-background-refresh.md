@@ -1,6 +1,6 @@
 # 0047. Background loading and refresh for Describe and Manifest panels
 
-- Status: Accepted
+- Status: Accepted; in decision 5, the old content stays only for an object read from the same connection (amended by [0377](0377-follow-every-selection-change.md))
 - Date: 2026-11-22
 - Issue: #47
 

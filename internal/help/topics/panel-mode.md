@@ -28,7 +28,13 @@ There is no separate mode dialog. Pick a mode in one of these places:
 - `C-1` steps the left panel to its next mode, `C-2` the right one.
 
 A panel that switches to Describe, Manifest, Logs or Info picks up the
-row under the other panel's cursor at once.
+row under the other panel's cursor at once. It follows the cursor
+however it moves: cursor keys, quick search, `cd` on the shell line, a
+namespace or context switch, the history and the hotlist, and a refresh
+that removed the row under the cursor. On a row that is not an object,
+such as `/..` after a `cd`, Describe and Manifest show nothing. Their
+frame names the context and namespace of the other panel, and what they
+show is read from that context.
 
 ## Keys
 

@@ -73,6 +73,9 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			a.invalidateView("")
 		}
 	}()
+	// Whatever the message moved, the other panel hears about it as about
+	// a cursor key (ADR 0377).
+	defer func() { cmd = tea.Batch(cmd, a.reportMovedSelections()) }()
 	if a.cfg != nil {
 		a.logMsg(msg)
 	}
@@ -744,16 +747,12 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return a, nil
 	case PanelSelectionChangedMsg:
 		if panel := msg.Panel; panel != nil {
-			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-			cmds = append(cmds, panel.NotifySelection(ctxSel, msg.Selection))
-			cancelSel()
-			if idx, ok := a.panelIndexFor(panel); ok {
-				other := a.panelByIndex(1 - idx)
-				if other != nil {
-					ctxOther, cancelOther := context.WithTimeout(a.ctx, panelContextTimeout)
-					cmds = append(cmds, other.NotifySelection(ctxOther, msg.Selection))
-					cancelOther()
-				}
+			cmds = append(cmds, a.reportSelection(panel, msg.Selection))
+			// The explicit report stands until the panel's list moves.
+			if idx, ok := a.panelIndexFor(panel); ok && panel.Mode() == PanelModeList {
+				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+				panel.reported = a.listSelectionKey(ctx, idx, panel)
+				cancel()
 			}
 		}
 		a.invalidateFunctionBar("selection changed")

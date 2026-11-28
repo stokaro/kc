@@ -149,3 +149,76 @@ func TestManifestLoadsInBackgroundAndRefreshKeepsScroll(t *testing.T) {
 		t.Fatalf("refresh moved the view from %d to %d", before, after)
 	}
 }
+
+func newSizedWidget(t *testing.T, deps panelcontent.WidgetDeps) *Widget {
+	t.Helper()
+	w := New(deps)
+	_, _ = w.Update(t.Context(), tea.WindowSizeMsg{Width: 40, Height: 5})
+	w.SetFocus(t.Context(), true)
+	return w
+}
+
+// load hands the widget the result of cmd.
+func load(t *testing.T, w *Widget, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		t.Fatalf("expected a load command, got nil")
+	}
+	if _, handled := w.Update(t.Context(), cmd()); !handled {
+		t.Fatalf("expected the widget to take its load result")
+	}
+}
+
+func stubPod(name string) objectViewableStub {
+	return objectViewableStub{
+		body: []string{"name: " + name},
+		path: []string{"namespaces", "default", "pods", name},
+		gvr:  schema.GroupVersionResource{Version: "v1", Resource: "pods"},
+		ns:   "default",
+		nm:   name,
+	}
+}
+
+// A selection without an item shows the hint and the followed location;
+// the widget does not keep the last manifest or look for another row.
+func TestManifestWithoutItemShowsHint(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	w := newSizedWidget(t, panelcontent.WidgetDeps{Path: func() string { return "/own" }})
+	load(t, w, w.OnSelectionChanged(ctx, panelcontent.Selection{Item: stubPod("a"), Source: "conn-1"}))
+
+	if cmd := w.OnSelectionChanged(ctx, panelcontent.Selection{ID: "__back__", Path: "/pods", Source: "conn-1"}); cmd != nil {
+		t.Fatalf("expected no load without an item")
+	}
+	if got := w.viewer.PlainText(); !strings.Contains(got, "Select a resource to view its manifest.") || strings.Contains(got, "name: a") {
+		t.Fatalf("expected the hint instead of the last manifest, got %q", got)
+	}
+	if got := w.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: 40}).Breadcrumb; got != "/pods" {
+		t.Fatalf("expected the followed location /pods in the header, got %q", got)
+	}
+}
+
+// The manifest of one item stays while the next item of the same
+// connection loads (ADR 0047). A manifest read from another connection
+// does not: the frame already names the new connection.
+func TestManifestReplacesContentOfAnotherConnection(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	w := newSizedWidget(t, panelcontent.WidgetDeps{})
+	load(t, w, w.OnSelectionChanged(ctx, panelcontent.Selection{Item: stubPod("a"), Source: "conn-1"}))
+
+	cmd := w.OnSelectionChanged(ctx, panelcontent.Selection{Item: stubPod("b"), Source: "conn-1"})
+	if !strings.Contains(w.viewer.PlainText(), "name: a") {
+		t.Fatalf("expected a's manifest while b loads from the same connection, got %q", w.viewer.PlainText())
+	}
+	load(t, w, cmd)
+
+	cmd = w.OnSelectionChanged(ctx, panelcontent.Selection{Item: stubPod("b"), Source: "conn-2"})
+	if got := w.viewer.PlainText(); strings.Contains(got, "name: b") || !strings.Contains(got, "Loading...") {
+		t.Fatalf("expected Loading... instead of the manifest of conn-1, got %q", got)
+	}
+	load(t, w, cmd)
+	if !strings.Contains(w.viewer.PlainText(), "name: b") {
+		t.Fatalf("expected b's manifest from conn-2, got %q", w.viewer.PlainText())
+	}
+}
