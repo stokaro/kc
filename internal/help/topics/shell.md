@@ -16,12 +16,16 @@ and `M-t` attaches to its main process.
   panel cursor. `Enter` runs the line and `C-c` cancels it; then the
   keys belong to the panels again. Erasing the line gives them back too,
   unless a key such as `Tab` or `M-b` changed it in a way kc cannot
-  follow.
+  follow. Spaces alone do not count as text, nor do keys that type
+  nothing on an empty line, such as `C-l` or `C-e`.
 - Use `Esc` plus a digit or a letter for a function or Meta key while
   the shell line is empty; with text on it, `Esc` goes to the shell.
 - `C-o` switches to the full-screen terminal and back. There every key
   goes to the shell at once, `Esc`, `Tab`, `F9` and `F10` included; only
-  `C-o` or a click on the bottom line returns to the panels.
+  `C-o` or a click on the bottom line returns to the panels. Text typed
+  under the panels is still on the line there; erase it or press `C-c`,
+  and the panels get their keys back when you return. What you type in
+  `C-o` after `Enter` may go to another program, so it does not count.
 - The shell runs with `KUBECONFIG` set to a file kc generates, so
   `kubectl` talks to the context, namespace and identity of the active
   panel. A Describe, Manifest, Logs or Info panel gives the context of

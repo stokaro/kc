@@ -131,7 +131,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	//nolint:nestif // paste, mouse and key input to the PTY differ only in small steps
 	if t.terminal != nil {
 		if paste, ok := msg.(tea.PasteMsg); ok {
-			if t.showPanels {
+			if t.showPanels || t.hasTyped {
 				t.hasTyped = true
 				t.line.paste(paste.Content)
 			} else {
@@ -313,13 +313,18 @@ func cloneCursor(c *tea.Cursor) *tea.Cursor {
 func (t *Terminal) trackTyped(msg tea.Msg) {
 	if press, ok := msg.(tea.KeyPressMsg); ok {
 		switch {
-		case press.String() == "enter":
+		case press.String() == "enter", press.String() == "ctrl+c":
+			// Both end the shell line, in the full-screen terminal too.
 			t.line.reset()
-		case t.showPanels:
+			t.hasTyped = false
+			return
+		case t.showPanels || t.hasTyped:
+			// Text typed under the panels is still on the shell line in
+			// the full-screen terminal until Enter or C-c.
 			t.line.key(press)
 		default:
-			// Keys typed in the fullscreen terminal may edit the line in
-			// ways kc cannot follow, or go to another program.
+			// Otherwise a key in the full-screen terminal may go to
+			// another program (after Enter, say); kc stops following.
 			t.line.invalidate()
 		}
 	}
@@ -400,14 +405,14 @@ func (t *Terminal) IsProcessExited() bool {
 }
 
 // HasInput returns whether the terminal has non-empty input. When kc knows
-// the shell line, an erased line counts as empty; otherwise any key typed
-// since the last Enter or C-c counts.
+// the shell line, an erased or blank line counts as empty; otherwise any key
+// typed since the last Enter or C-c counts.
 func (t *Terminal) HasInput() bool {
 	if !t.hasTyped {
 		return false
 	}
 	if line, ok := t.line.current(); ok {
-		return line != ""
+		return strings.TrimSpace(line) != ""
 	}
 	return true
 }

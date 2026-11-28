@@ -49,6 +49,21 @@ func TestShellLine(t *testing.T) {
 			l.key(tea.KeyPressMsg{Code: tea.KeyEnter})
 			typeKeys(l, "cd x")
 		}, want: "cd x", wantOK: true},
+		{name: "keys that add no text keep an empty line", run: func(l *shellLine) {
+			for _, r := range "abdefgkl" {
+				l.key(tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl})
+			}
+			typeKeys(l, "cd")
+		}, want: "cd", wantOK: true},
+		{name: "C-e after text", run: func(l *shellLine) {
+			typeKeys(l, "cd")
+			l.key(tea.KeyPressMsg{Code: 'e', Mod: tea.ModCtrl})
+		}},
+		{name: "Delete on an empty line", run: func(l *shellLine) { l.key(tea.KeyPressMsg{Code: tea.KeyDelete}) }},
+		{name: "C-Right on an empty line", run: func(l *shellLine) {
+			l.key(tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModCtrl})
+		}},
+		{name: "C-y on an empty line", run: func(l *shellLine) { l.key(tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl}) }},
 		{name: "C-c starts a fresh line", run: func(l *shellLine) {
 			l.invalidate()
 			l.key(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})

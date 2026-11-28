@@ -1,6 +1,9 @@
 # 0376. Keys reach the shell in C-o and on a typed shell line
 
-- Status: Accepted
+- Status: Accepted; decision 3 is extended by
+  [0398](0398-follow-the-shell-line.md) (keys that type nothing keep an
+  empty shell line empty, a line of spaces counts as empty, and kc
+  follows the line in `C-o` until `Enter` or `C-c`)
 - Date: 2026-11-28
 - Issue: #376
 

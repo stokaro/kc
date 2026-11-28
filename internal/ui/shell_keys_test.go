@@ -15,6 +15,7 @@ import (
 	"github.com/taigrr/bubbleterm"
 
 	"github.com/stokaro/kc/internal/models"
+	"github.com/stokaro/kc/pkg/appconfig"
 )
 
 // ptyInput records what kc writes to the shell's terminal. bubbleterm's
@@ -282,16 +283,41 @@ func TestTypedShellLineLeavesPanelKeys(t *testing.T) {
 		shell.take()
 		return app, shell
 	}
-	t.Run("Down moves the cursor", func(t *testing.T) {
+	down, up := tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyUp}
+	pgDown, pgUp := tea.KeyPressMsg{Code: tea.KeyPgDown}, tea.KeyPressMsg{Code: tea.KeyPgUp}
+	for _, tc := range []struct {
+		name  string
+		setup []tea.KeyPressMsg
+		key   tea.KeyPressMsg
+	}{
+		{"Down moves the cursor", nil, down},
+		{"Up moves the cursor", []tea.KeyPressMsg{down}, up},
+		{"PgDn moves the cursor", nil, pgDown},
+		{"PgUp moves the cursor", []tea.KeyPressMsg{pgDown}, pgUp},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app, shell := typed(t)
+			pressKeys(app, tc.setup...)
+			before := app.leftPanel.currentSelectionID(t.Context())
+			pressKeys(app, tc.key)
+			if after := app.leftPanel.currentSelectionID(t.Context()); after == before {
+				t.Errorf("the cursor stayed on %q", after)
+			}
+			if got := shell.take(); got != "" {
+				t.Errorf("the shell read %q from the cursor keys", got)
+			}
+		})
+	}
+	t.Run("M-F1 opens the view options", func(t *testing.T) {
 		t.Parallel()
 		app, shell := typed(t)
-		before := app.leftPanel.currentSelectionID(t.Context())
-		pressKeys(app, tea.KeyPressMsg{Code: tea.KeyDown})
-		if after := app.leftPanel.currentSelectionID(t.Context()); after == before {
-			t.Errorf("the cursor stayed on %q", after)
+		pressKeys(app, tea.KeyPressMsg{Code: tea.KeyF1, Mod: tea.ModAlt})
+		if app.modalManager.TopName() == "" {
+			t.Error("no dialog opened")
 		}
 		if got := shell.take(); got != "" {
-			t.Errorf("the shell read %q from Down", got)
+			t.Errorf("the shell read %q from M-F1", got)
 		}
 	})
 	t.Run("F9 opens the menu bar", func(t *testing.T) {
@@ -344,5 +370,132 @@ func TestTypedShellLineLeavesPanelKeys(t *testing.T) {
 				t.Errorf("the shell read %q from Tab", got)
 			}
 		})
+	}
+}
+
+// Keys that put no text on an empty shell line leave it empty, so the
+// panels keep Tab; a blank line counts as empty too. Delete makes the line
+// count as typed: zsh with no binding types a "~" for it.
+func TestShellLineStaysEmptyAfterKeysThatAddNoText(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		keys      []tea.KeyPressMsg
+		read      string
+		tabToPane bool
+	}{
+		{"C-l", []tea.KeyPressMsg{ctrlKey('l')}, "\f", true},
+		{"C-e C-k", []tea.KeyPressMsg{ctrlKey('e'), ctrlKey('k')}, "\x05\x0b", true},
+		{"Space", []tea.KeyPressMsg{{Code: tea.KeySpace, Text: " "}}, " ", true},
+		{"Delete", []tea.KeyPressMsg{{Code: tea.KeyDelete}}, "\x1b[3~", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app, shell := shellKeysApp(t)
+			pressKeys(app, tc.keys...)
+			if got := shell.take(); got != tc.read {
+				t.Fatalf("the shell read %q, want %q", got, tc.read)
+			}
+			active := app.activePanel
+			pressKeys(app, tabKey)
+			got := shell.take()
+			if tc.tabToPane && (app.activePanel == active || got != "") {
+				t.Errorf("Tab did not switch panels (shell read %q)", got)
+			}
+			if !tc.tabToPane && (app.activePanel != active || got != "\t") {
+				t.Errorf("Tab did not reach the shell (shell read %q)", got)
+			}
+		})
+	}
+}
+
+// Text typed under the panels is still on the shell line in the
+// full-screen terminal: C-u or C-c there empties it, and back at the
+// panels Tab switches panels again. After Enter in the full-screen
+// terminal the keys may go to another program, so they do not count as
+// typed text.
+func TestFullScreenTerminalEditsTheTypedShellLine(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		input     []tea.Msg
+		line      string
+		known     bool
+		tabToPane bool
+	}{
+		{"C-u", []tea.Msg{ctrlKey('u')}, "", true, true},
+		{"C-c", []tea.Msg{ctrlKey('c')}, "", true, true},
+		{"Enter, then q to a program", []tea.Msg{tea.KeyPressMsg{Code: tea.KeyEnter}, textKey('q')}, "", false, true},
+		{"Enter, text, C-c", []tea.Msg{tea.KeyPressMsg{Code: tea.KeyEnter}, textKey('q'), ctrlKey('c')}, "", true, true},
+		{"more text", []tea.Msg{textKey('x')}, "lsx", true, false},
+		{"a paste", []tea.Msg{tea.PasteMsg{Content: " -l"}}, "ls -l", true, false},
+		{"Tab completion", []tea.Msg{tabKey}, "", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app, shell := shellKeysApp(t)
+			pressKeys(app, textKey('l'), textKey('s'), ctrlKey('o'))
+			for _, m := range tc.input {
+				app.Update(m)
+			}
+			pressKeys(app, ctrlKey('o'))
+			if app.showTerminal {
+				t.Fatal("C-o did not return to the panels")
+			}
+			if line, known := app.terminal.ShellLine(); line != tc.line || known != tc.known {
+				t.Errorf("shell line = %q, %v; want %q, %v", line, known, tc.line, tc.known)
+			}
+			shell.take()
+			active := app.activePanel
+			pressKeys(app, tabKey)
+			got := shell.take()
+			if tc.tabToPane && (app.activePanel == active || got != "") {
+				t.Errorf("Tab did not switch panels (shell read %q)", got)
+			}
+			if !tc.tabToPane && (app.activePanel != active || got != "\t") {
+				t.Errorf("Tab did not reach the shell (shell read %q)", got)
+			}
+		})
+	}
+}
+
+// An Esc pressed on an empty shell line and followed by a paste ends when
+// the shell line takes the next key, so a key after the line is erased is
+// text, not an Esc action.
+func TestShellLineKeyEndsEscPrefix(t *testing.T) {
+	t.Parallel()
+	app, shell := shellKeysApp(t)
+	app.Update(escKey) // the Esc timer is not run
+	app.Update(tea.PasteMsg{Content: "ls"})
+	msgs := pressKeys(app, textKey('x'), ctrlKey('u'), textKey('4'))
+	checkNoPanelAction(t, msgs)
+	if got := shell.take(); got != "lsx\x154" {
+		t.Errorf("the shell read %q, want %q", got, "lsx\x154")
+	}
+	if app.escPressed || app.modalManager.TopName() != "" {
+		t.Errorf("kc took a key: Esc prefix %v, dialog %q", app.escPressed, app.modalManager.TopName())
+	}
+}
+
+// The typed shell line comes before the custom command hotkeys: M-1 bound
+// to a command goes to the shell while the line holds text.
+func TestTypedShellLineComesBeforeCommandHotkeys(t *testing.T) {
+	t.Parallel()
+	app := newHotkeyApp(t, appconfig.CommandConfig{
+		Name: "Drain", Command: "echo drain", Type: appconfig.CommandTypeGlobal,
+		Hotkey: "M-1", Confirm: appconfig.CommandConfirm{Enabled: true},
+	})
+	shell := attachShell(t, app)
+	pressKeys(app, textKey('l'), textKey('s'), altKey('1', false))
+	if got := shell.take(); got != "ls\x1b1" {
+		t.Errorf("the shell read %q, want %q", got, "ls\x1b1")
+	}
+	if name := app.modalManager.TopName(); name != "" {
+		t.Errorf("the hotkey opened %q", name)
+	}
+	// With an empty line the hotkey runs.
+	pressKeys(app, ctrlKey('c'), altKey('1', false))
+	if name := app.modalManager.TopName(); name != commandConfirmModal {
+		t.Errorf("the hotkey on an empty line opened %q, want the confirmation", name)
 	}
 }
