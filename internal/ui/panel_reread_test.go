@@ -131,21 +131,24 @@ func TestRereadKeepsMarksAndMovesOffGoneRow(t *testing.T) {
 	}
 }
 
-func TestRereadWhileShellLineHasText(t *testing.T) {
+// With typed text on the shell line C-r is the shell's history search
+// (ADR 0376); it rereads the panel once the line is empty.
+func TestRereadGoesToTypedShellLine(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, "a.txt")
 	a := newLocalPanelApp(t, dir, "a.txt")
+	shell := attachShell(t, a)
 	typeOnShellLine(a, "kubectl get")
 	writeFiles(t, dir, "b.txt")
 
-	if got := pressReread(t, a); got != "Reread" {
-		t.Fatalf("toast = %q: C-r went to the shell line instead of the panel", got)
+	if got := pressReread(t, a); got != "" {
+		t.Fatalf("toast = %q: the panel took C-r from the typed shell line", got)
 	}
-	if !strings.Contains(a.View().Content, "b.txt") {
-		t.Fatal("C-r did not reread the panel while the shell line had text")
+	if got := shell.take(); got != "\x12" {
+		t.Fatalf("the shell read %q, want C-r", got)
 	}
-	if line, _ := a.terminal.line.current(); line != "kubectl get" {
-		t.Fatalf("shell line = %q, want the typed text kept", line)
+	if strings.Contains(a.View().Content, "b.txt") {
+		t.Fatal("the panel was reread while the shell line had text")
 	}
 }
 

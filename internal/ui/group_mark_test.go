@@ -188,10 +188,15 @@ func TestGroupMarkKeysGoToTypedShellLine(t *testing.T) {
 			t.Fatalf("%q with an empty shell line went to the shell", key)
 		}
 	}
+	shell := attachShell(t, app)
 	typeOnShellLine(app, "kubectl get pods")
-	for _, key := range []string{"+", "-", "*"} {
-		if app.shouldRouteToPanel(key) {
-			t.Fatalf("%q went to the panel while the shell line has text", key)
+	for _, r := range "+-*" {
+		app.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		if got := shell.take(); got != string(r) {
+			t.Fatalf("the shell read %q, want %q", got, string(r))
+		}
+		if top := app.modalManager.TopName(); top != "" {
+			t.Fatalf("%q opened %s while the shell line has text", string(r), top)
 		}
 	}
 }

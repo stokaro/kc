@@ -40,8 +40,8 @@ panel is at is marked `current`.
   that still exists, with a message.
 - `M-y`, `M-u` and the list move within the history and record nothing,
   so the forward entries stay.
-- With the full-screen terminal shown (`C-o`), these keys go to the
-  shell.
+- With the full-screen terminal shown (`C-o`), or while the shell line
+  holds typed text, these keys go to the shell.
 
 ## See also
 

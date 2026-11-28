@@ -57,7 +57,8 @@ A saved view also stores:
   warning; a term on a column the list lacks is kept, hides every row,
   and is reported.
 - Views save object lists only; the panel must be in List mode.
-- With the full-screen terminal shown (`C-o`), `C-\` goes to the shell.
+- With the full-screen terminal shown (`C-o`), or while the shell line
+  holds typed text, `C-\` goes to the shell.
 
 ## See also
 

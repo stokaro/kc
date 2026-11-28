@@ -73,7 +73,10 @@ or `C-x C-<letter>`. kc refuses keys without a modifier, single
   `C-x C-d`.
 
 Bad and duplicate hotkeys are reported on the command line at startup
-and ignored.
+and ignored. Hotkeys work at the panels. While the shell line holds typed
+text, `M-`, `C-M-` and `C-x` keys go to the shell and only function key
+hotkeys run; in the full-screen terminal (`C-o`) every key goes to the
+shell.
 
 ## Keys
 

@@ -1,11 +1,9 @@
 package ui
 
 import (
-	"io"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/taigrr/bubbleterm"
 )
 
 // newPipedTerminalApp returns an App whose 2-line terminal runs on pipes
@@ -15,19 +13,7 @@ func newPipedTerminalApp(t *testing.T) *App {
 	app := NewApp()
 	t.Cleanup(app.cancel)
 	app.width, app.height = 80, 24
-	outR, outW := io.Pipe()
-	inR, inW := io.Pipe()
-	go func() { _, _ = io.Copy(io.Discard, inR) }()
-	term, err := bubbleterm.NewWithPipes(80, 2, outR, inW)
-	if err != nil {
-		t.Fatalf("bubbleterm: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = term.Close()
-		_ = outW.Close()
-		_ = inR.Close()
-	})
-	app.terminal.terminal = term
+	attachShell(t, app)
 	return app
 }
 

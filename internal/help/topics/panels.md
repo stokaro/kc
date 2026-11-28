@@ -84,8 +84,12 @@ the copy button at its right copies it.
 ## Limits
 
 - Letters, digits and `Space` go to the shell line below the panels,
-  as in mc. So do `+`, `-` and `*` while the shell line holds text.
-  Use `Esc` plus a letter where Option does not send Meta.
+  as in mc. While the shell line holds text it gets every key but the
+  function keys, `C-o`, `C-1`, `C-2`, `Up`, `Down`, `PgUp` and `PgDn`
+  (see [Shell and terminal](shell.md)), so `Tab`, `C-u`, `C-r` and the
+  Meta keys of this page wait until you run, cancel or erase the line.
+  Use `Esc` plus a letter where Option does not send Meta; with text on
+  the shell line, `Esc` goes to the shell.
 - Rows that a filter hides are unmarked.
 - The sort belongs to the panel and follows it through navigation. The
   row filter belongs to the folder: it stays while you look at its
