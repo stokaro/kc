@@ -26,6 +26,40 @@ The dialog is red, as every dialog that changes the cluster is. `No`
 has the focus, so `Enter` right away keeps the objects. A letter alone
 does not answer it: `y` typed by mistake does nothing.
 
+## Namespaces, CRDs, PersistentVolumes and nodes
+
+Deleting one of these deletes other objects with it, so the dialog says
+what goes with it and asks you to type its name:
+
+```
+Delete namespace shop?
+Context: kind-dev
+
+It holds 5 deployments, 9 pods, 1 PVC and 1 Helm release.
+Counted: deployments, statefulsets, daemonsets, cronjobs, jobs, pods,
+services, ingresses, PVCs, configmaps, secrets, Helm releases. Other
+kinds are not counted; everything in it is deleted.
+
+Type "shop" to enable Yes:
+[            ]
+[ Yes ] [< No >]
+```
+
+- The dialog opens at once with `Counting what is in it…` and fills in
+  when kc has counted. Only the kinds listed after `Counted:` are
+  counted; everything else in the namespace is deleted too. A kind kc
+  may not list is named: `Not counted: secrets (forbidden)`.
+- For a CustomResourceDefinition kc counts its objects in all
+  namespaces, for a PersistentVolume it names the claim bound to it and
+  the reclaim policy, and for a node it counts the pods bound to it.
+- `Yes` stays grayed until the input line holds the name exactly. Then
+  `M-y` deletes, or `Tab` and `Enter`. `Enter` alone runs `No`, which
+  keeps the focus while you type.
+- kc counts with small requests for object metadata, each with a
+  timeout; a pod count stops at 2000 and shows `2000+`.
+- Deleting a namespace takes time: its objects go first, and the row
+  shows `Terminating` meanwhile.
+
 When the dialog opens, kc records the UID of each object and the cluster
 its row was read from. Each delete request carries its object's UID as
 a precondition:
@@ -59,6 +93,9 @@ In both refused cases kc refreshes the panel and does not retry.
   or `logs` row), a row without a UID, or an object you may not delete.
   Unmark it (`Ins` on the row, or `-` with its name) and press `F8`
   again.
+- Namespaces, CRDs, PersistentVolumes and nodes are deleted one at a
+  time. With one of them marked, the dialog asks for its name as above;
+  with more rows marked, `F8` asks you to unmark all but one.
 - To delete the row under the cursor instead, unmark all rows first:
   `-` and `Enter` (the pattern `*` is already filled in).
 
@@ -74,8 +111,10 @@ asks you to unmark them first.
 
 - `F8` (or `Esc 8`) opens the dialog for the marked rows, or for the
   row under the cursor when none is marked.
-- `M-y` deletes; `M-n` cancels. `y` and `n` alone do nothing.
-- `Left`, `Right`, `Tab` or `Shift-Tab` move between Yes and No.
+- `M-y` deletes; `M-n` cancels. `y` and `n` alone do nothing; in the
+  dialog that asks for a name they go to the input line.
+- `Left`, `Right`, `Tab` or `Shift-Tab` move between Yes and No. A
+  grayed Yes cannot take the focus.
 - `Enter` runs the focused button.
 - `Esc` cancels.
 

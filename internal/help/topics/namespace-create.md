@@ -8,7 +8,12 @@ object kc creates from a key, as mc's `F7` makes a directory.
 
 - Open `/namespaces` from the panel root, then press `F7`. The function
   bar labels the key "Namespace".
-- Type the name and press `Enter` or choose Create.
+- The dialog is red, as every dialog that changes the cluster. It
+  starts with `Context:`, the context of the panel the key was pressed
+  in, and `Read-only: off`. Check the context: the namespace is created
+  there, also when the other panel shows another one.
+- Type the name and press `Enter` or choose Create. The button letters
+  need Meta, as in the other red dialogs: `M-c` creates, `M-a` cancels.
 - kc checks the name before it sends the request and shows what is
   wrong in the dialog. It must be a DNS label: lowercase
   letters, digits and `-`, at most 63 characters, starting and ending
@@ -22,6 +27,7 @@ object kc creates from a key, as mc's `F7` makes a directory.
 
 - `F7` (or `Esc 7`) opens the dialog in `/namespaces`.
 - `Enter` creates the namespace.
+- `Tab` and `Shift-Tab` move between the input line and the buttons.
 - `Esc` cancels.
 
 ## Limits
@@ -31,7 +37,7 @@ object kc creates from a key, as mc's `F7` makes a directory.
 - The key is grayed out when kc's access check says you may not create
   namespaces in the current context.
 - Read-only mode refuses it with "Read-only mode: Create namespace is
-  disabled".
+  disabled", before the dialog opens.
 - The dialog sets only the name. Labels, such as a pod security level,
   need `F4` on the new namespace or kubectl.
 - Creating a namespace does not change the panel's namespace scope.

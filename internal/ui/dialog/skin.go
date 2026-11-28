@@ -19,6 +19,7 @@ type Skin struct {
 	HotFocus lipgloss.Style // hotkey letter of the focused widget
 	Input    lipgloss.Style // input line
 	Error    lipgloss.Style // a validation message
+	Disabled lipgloss.Style // a button that cannot be pressed yet
 }
 
 // Normal is mc's dialog skin: black on light gray, focus black on cyan,
@@ -33,6 +34,7 @@ func Normal() Skin {
 		HotFocus: lipgloss.NewStyle().Background(cyan).Foreground(lipgloss.Blue),
 		Input:    lipgloss.NewStyle().Background(cyan).Foreground(lipgloss.Black),
 		Error:    lipgloss.NewStyle().Background(gray).Foreground(lipgloss.Red),
+		Disabled: lipgloss.NewStyle().Background(gray).Foreground(lipgloss.BrightBlack),
 	}
 }
 
@@ -49,5 +51,6 @@ func Danger() Skin {
 		HotFocus: lipgloss.NewStyle().Background(gray).Foreground(lipgloss.Blue),
 		Input:    lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.Black),
 		Error:    lipgloss.NewStyle().Background(red).Foreground(lipgloss.BrightYellow).Bold(true),
+		Disabled: lipgloss.NewStyle().Background(red).Foreground(lipgloss.BrightBlack),
 	}
 }

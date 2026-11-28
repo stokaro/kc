@@ -16,6 +16,9 @@ type NamespaceCreateResultMsg struct {
 }
 
 // NamespaceCreateModel configures a TextInputModal for namespace creation.
+// It is red, as every dialog that changes the cluster, and names the
+// context the namespace goes to and its read-only mode (#374). Enter
+// creates: a new namespace is easy to delete again.
 type NamespaceCreateModel struct {
 	modal *TextInputModal
 	hint  string
@@ -38,6 +41,7 @@ func NewNamespaceCreateModel() *NamespaceCreateModel {
 		Validate:     model.validateName,
 		ResultMsg:    model.resultMsg,
 		HideTitle:    true,
+		Danger:       true,
 	}
 	model.modal = NewTextInputModal(cfg)
 	return model
@@ -60,6 +64,17 @@ func (m *NamespaceCreateModel) RuleRows() []int { return m.modal.RuleRows() }
 
 func (m *NamespaceCreateModel) View() tea.View {
 	return m.modal.View()
+}
+
+// SetTarget names the context the namespace is created in and whether it
+// is read-only. kc refuses F7 in a read-only context before the dialog
+// opens, so the dialog says "off"; the line is there so the user sees it.
+func (m *NamespaceCreateModel) SetTarget(context string, readOnly bool) {
+	mode := "off"
+	if readOnly {
+		mode = "on"
+	}
+	m.modal.SetDetails([][2]string{{"Context", context}, {"Read-only", mode}})
 }
 
 // Reset clears the input state.
