@@ -43,7 +43,13 @@ screenshots/capture.sh capture panels/pods       # one scene
 screenshots/capture.sh down
 ```
 
-The cluster name, the API server port, an ssh host for Docker and the dashboard wait are set through `KC_SHOTS_*` variables; the header of `capture.sh` lists them. Run kind elsewhere with, for example, `KC_SHOTS_SSH=user@docker-host`.
+The cluster name, the API server port, an ssh host for Docker and the dashboard wait are set through `KC_SHOTS_*` variables; the header of `capture.sh` lists them. Run kind elsewhere with, for example, `KC_SHOTS_SSH=user@docker-host`. Defaults you always want go into `~/.config/kc/capture.env`, one `KC_SHOTS_NAME=value` per line; a variable set in the environment wins over the file, and `up` logs which Docker it uses:
+
+```bash
+# ~/.config/kc/capture.env
+KC_SHOTS_SSH=user@docker-host
+KC_SHOTS_REMOTE_KIND=/path/to/kind-linux-amd64
+```
 
 ## Live checks
 

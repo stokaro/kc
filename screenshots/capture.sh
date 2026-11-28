@@ -40,6 +40,9 @@
 #                         show it (default /tmp/kc-shots)
 #   KC_SHOTS_DASH_WAIT    seconds the dashboard collects samples before its
 #                         first screenshot (default 300)
+#   KC_SHOTS_ENV          file of per-user KC_SHOTS_NAME=value defaults, such as
+#                         the ssh host (default ~/.config/kc/capture.env, under
+#                         XDG_CONFIG_HOME when set); variables set already win
 #   KC_SHOTS_COLS         terminal width kc runs in (default 150)
 #   KC_SHOTS_ROWS         terminal height (default 42); the committed
 #                         screenshots use the defaults
@@ -47,6 +50,16 @@
 # Two sessions at the same time need their own KC_SHOTS_CLUSTER, KC_SHOTS_PORT,
 # KC_SHOTS_WORK and KC_SHOTS_LOCAL.
 set -euo pipefail
+
+# Per-user defaults that do not belong in the repository, such as the Docker
+# host: KC_SHOTS_NAME=value lines, without quotes. A variable already set wins.
+shots_env=${KC_SHOTS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/kc/capture.env}
+if [ -f "$shots_env" ]; then
+	while IFS='=' read -r name value || [ -n "$name" ]; do
+		case $name in KC_SHOTS_*) ;; *) continue ;; esac
+		[ -n "${!name:-}" ] || export "$name=$value"
+	done <"$shots_env"
+fi
 
 CLUSTER=${KC_SHOTS_CLUSTER:-kc-shots}
 PORT=${KC_SHOTS_PORT:-39159}
@@ -71,7 +84,15 @@ SHOTS=$REPO/screenshots
 MIRROR=$CLUSTER-mirror
 KC_KUBECONFIG=$KCFG:$WORK/mirror.yaml
 
-cmd_up() { cluster_up; }
+cmd_up() {
+	[ -f "$shots_env" ] && log "defaults from $shots_env"
+	if [ -n "$SSH_DEST" ]; then
+		log "kind runs on $SSH_DEST"
+	else
+		log "kind runs on the local Docker: $(HOME=$WORK/home docker info --format '{{.Name}}, {{.OperatingSystem}}' 2>/dev/null || echo 'not reachable')"
+	fi
+	cluster_up
+}
 
 cmd_seed() {
 	start_tunnel
