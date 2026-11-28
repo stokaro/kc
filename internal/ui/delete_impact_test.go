@@ -374,6 +374,67 @@ func TestNamespaceImpactLines(t *testing.T) {
 			counts: []impactCount{{kind: kind("pods"), err: forbidden}},
 			want:   []string{"kc could not count what is in it; everything in it is deleted.", "Not counted: pods (forbidden)."},
 		},
+		{
+			name: "Helm's revisions are counted once, as releases",
+			counts: []impactCount{
+				{kind: kind("pods"), n: 2, objects: 2},
+				{kind: kind("secrets"), n: 5, objects: 5},
+				{kind: kind("Helm releases"), n: 2, objects: 4},
+			},
+			want: []string{"It holds 2 pods, 1 secret and 2 Helm releases.", "Counted: pods, secrets, Helm releases. Other kinds are not counted; everything in it is deleted."},
+		},
+		{
+			name: "only Helm's secrets",
+			counts: []impactCount{
+				{kind: kind("secrets"), n: 4, objects: 4},
+				{kind: kind("Helm releases"), n: 2, objects: 4},
+			},
+			want: []string{"It holds 2 Helm releases.", "Counted: secrets, Helm releases. Other kinds are not counted; everything in it is deleted."},
+		},
+		{
+			name: "a revision written between the lists",
+			counts: []impactCount{
+				{kind: kind("secrets"), n: 2, objects: 2},
+				{kind: kind("Helm releases"), n: 1, objects: 3},
+			},
+			want: []string{"It holds 1 Helm release.", "Counted: secrets, Helm releases. Other kinds are not counted; everything in it is deleted."},
+		},
+		{
+			name: "the Helm count failed: secrets keep their total",
+			counts: []impactCount{
+				{kind: kind("secrets"), n: 7, objects: 7},
+				{kind: kind("Helm releases"), err: forbidden},
+			},
+			want: []string{
+				"It holds 7 secrets (including any of Helm's).",
+				"Not counted: Helm releases (forbidden).",
+				"Counted: secrets. Other kinds are not counted; everything in it is deleted.",
+			},
+		},
+		{
+			name: "the Helm count stopped at 2000",
+			counts: []impactCount{
+				{kind: kind("secrets"), n: 2600, objects: 2600},
+				{kind: kind("Helm releases"), n: 300, objects: 2000, atLeast: true},
+			},
+			want: []string{"It holds 2600 secrets (including any of Helm's) and 300+ Helm releases.", "Counted: secrets, Helm releases. Other kinds are not counted; everything in it is deleted."},
+		},
+		{
+			name: "the secret count stopped at 2000",
+			counts: []impactCount{
+				{kind: kind("secrets"), n: 2000, objects: 2000, atLeast: true},
+				{kind: kind("Helm releases"), n: 1, objects: 3},
+			},
+			want: []string{"It holds 2000+ secrets (including any of Helm's) and 1 Helm release.", "Counted: secrets, Helm releases. Other kinds are not counted; everything in it is deleted."},
+		},
+		{
+			name: "no Helm secrets: a stopped secret count says nothing of Helm",
+			counts: []impactCount{
+				{kind: kind("secrets"), n: 2000, objects: 2000, atLeast: true},
+				{kind: kind("Helm releases")},
+			},
+			want: []string{"It holds 2000+ secrets.", "Counted: secrets, Helm releases. Other kinds are not counted; everything in it is deleted."},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -390,10 +451,10 @@ func TestNodeImpactLines(t *testing.T) {
 		count impactCount
 		want  string
 	}{
-		{impactCount{kind: podsOnNode, n: 9}, "9 pods bound to it are deleted with it."},
-		{impactCount{kind: podsOnNode, n: 1}, "1 pod bound to it is deleted with it."},
+		{impactCount{kind: podsOnNode, n: 9}, "9 pods are bound to it. If the node stays gone, Kubernetes deletes them; its kubelet registers the node again when it restarts."},
+		{impactCount{kind: podsOnNode, n: 1}, "1 pod is bound to it. If the node stays gone, Kubernetes deletes it; its kubelet registers the node again when it restarts."},
 		{impactCount{kind: podsOnNode}, "No pods are bound to it."},
-		{impactCount{kind: podsOnNode, err: context.DeadlineExceeded}, "kc could not count the pods on it (timed out); they are deleted with it."},
+		{impactCount{kind: podsOnNode, err: context.DeadlineExceeded}, "kc could not count the pods on it (timed out)."},
 	} {
 		if got := nodeImpact(tc.count).lines; !slices.Equal(got, []string{tc.want}) {
 			t.Errorf("nodeImpact(%+v) = %q, want %q", tc.count, got, tc.want)

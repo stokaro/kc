@@ -89,6 +89,7 @@ func TestCountNamespaceImpactEnvtest(t *testing.T) {
 	create(t, c, helmSecret(ns, "web", 1))
 	create(t, c, helmSecret(ns, "web", 2))
 	create(t, c, helmSecret(ns, "db", 1))
+	create(t, c, helmSecret(ns, "db", 2))
 	create(t, c, &corev1.Service{Namespace: ns, Name: "web", Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 80}}}})
 	create(t, c, impactPod(ns, "web-0", ""))
 	create(t, c, impactPod(ns, "web-1", ""))
@@ -103,7 +104,7 @@ func TestCountNamespaceImpactEnvtest(t *testing.T) {
 
 	impact := countDeleteImpact(t.Context(), deleteTarget{gvr: gvrNamespaces, name: ns, cluster: cl, context: "envtest"})
 	want := []string{
-		"It holds 2 pods, 1 service, 1 PVC, 2 configmaps, 4 secrets and 2 Helm releases.",
+		"It holds 2 pods, 1 service, 1 PVC, 2 configmaps, 1 secret and 2 Helm releases.",
 		"Counted: deployments, statefulsets, daemonsets, cronjobs, jobs, pods, services, ingresses, PVCs, configmaps, secrets, Helm releases. Other kinds are not counted; everything in it is deleted.",
 	}
 	if !slices.Equal(impact.lines, want) {
@@ -124,7 +125,7 @@ func TestCountNodeImpactEnvtest(t *testing.T) {
 		create(t, c, impactPod(n, "elsewhere", node+"-other"))
 	}
 	impact := countDeleteImpact(t.Context(), deleteTarget{gvr: schema.GroupVersionResource{Version: "v1", Resource: "nodes"}, name: node, cluster: cl, context: "envtest"})
-	if want := []string{"2 pods bound to it are deleted with it."}; !slices.Equal(impact.lines, want) {
+	if want := []string{"2 pods are bound to it. If the node stays gone, Kubernetes deletes them; its kubelet registers the node again when it restarts."}; !slices.Equal(impact.lines, want) {
 		t.Fatalf("impact %q, want %q", impact.lines, want)
 	}
 }
@@ -144,12 +145,20 @@ func TestCountPersistentVolumeImpactEnvtest(t *testing.T) {
 		}}
 	}
 	pvGVR := schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumes"}
-	bound, free := kctesting.UniqueName("impact-pv"), kctesting.UniqueName("impact-pv")
-	create(t, c, pv(bound, corev1.PersistentVolumeReclaimDelete, &corev1.ObjectReference{Namespace: "shop", Name: "data"}))
+	bound, reserved, free := kctesting.UniqueName("impact-pv"), kctesting.UniqueName("impact-pv"), kctesting.UniqueName("impact-pv")
+	boundPV := pv(bound, corev1.PersistentVolumeReclaimDelete, &corev1.ObjectReference{Namespace: "shop", Name: "data"})
+	create(t, c, boundPV)
+	// envtest runs no volume controller: the test binds the volume itself.
+	boundPV.Status.Phase = corev1.VolumeBound
+	if err := c.Status().Update(t.Context(), boundPV); err != nil {
+		t.Fatalf("bind %s: %v", bound, err)
+	}
+	create(t, c, pv(reserved, "Recycle", &corev1.ObjectReference{Namespace: "shop", Name: "cache"}))
 	create(t, c, pv(free, corev1.PersistentVolumeReclaimRetain, nil))
 	for name, want := range map[string][]string{
-		bound: {"Claim shop/data is bound to it (phase Pending) and loses its volume.", "Reclaim policy Delete: the storage is deleted too."},
-		free:  {"No claim is bound to it (phase Pending).", "Reclaim policy Retain: the storage stays."},
+		bound:    {"Claim shop/data is bound to it (phase Bound); the volume stays until the claim is deleted.", "Reclaim policy Delete: the storage is deleted once the volume is gone (clusters before Kubernetes 1.31 may leave it behind)."},
+		reserved: {"It is reserved for claim shop/cache (phase Pending).", "Reclaim policy Recycle."},
+		free:     {"No claim is bound to it (phase Pending).", "Reclaim policy Retain: the storage and its data stay after the volume is gone."},
 	} {
 		impact := countDeleteImpact(t.Context(), deleteTarget{gvr: pvGVR, name: name, cluster: cl, context: "envtest"})
 		if !slices.Equal(impact.lines, want) {
@@ -260,7 +269,14 @@ func namespacesApp(t *testing.T, names ...string) *App {
 // and returns the result of the delete it sends.
 func typeNameAndConfirm(t *testing.T, app *App, name string) resourceDeletedMsg {
 	t.Helper()
-	for _, msg := range pressDialog(t, app, append(textKeys(name), keyAltY)...) {
+	return confirmNamedDelete(t, app, append(textKeys(name), keyAltY)...)
+}
+
+// confirmNamedDelete presses keys in the delete dialog and returns the result
+// of the delete they confirm.
+func confirmNamedDelete(t *testing.T, app *App, keys ...tea.KeyPressMsg) resourceDeletedMsg {
+	t.Helper()
+	for _, msg := range pressDialog(t, app, keys...) {
 		answer, ok := msg.(DeleteConfirmMsg)
 		if !ok || !answer.Confirm {
 			continue
@@ -271,7 +287,7 @@ func typeNameAndConfirm(t *testing.T, app *App, name string) resourceDeletedMsg 
 			}
 		}
 	}
-	t.Fatalf("M-y with %s typed sent no delete", name)
+	t.Fatalf("%d keys in the delete dialog sent no delete", len(keys))
 	return resourceDeletedMsg{}
 }
 
@@ -307,10 +323,17 @@ func TestDeleteNamespaceThroughTheDialogEnvtest(t *testing.T) {
 	if got := deleteAnswer(t, app, keyAltY); got != nil {
 		t.Fatalf("M-y before the name answered %+v", *got)
 	}
-	if res := typeNameAndConfirm(t, app, victim); res.err != nil {
-		t.Fatalf("delete %s: %v", victim, res.err)
+	// The name and Enter move the focus to Yes; the second Enter deletes.
+	if got := deleteAnswer(t, app, append(textKeys(victim), keyEnter)...); got != nil {
+		t.Fatalf("Enter after the name answered %+v, want the focus on Yes", *got)
 	}
 	var got corev1.Namespace
+	if err := c.Get(ctx, crclient.ObjectKey{Name: victim}, &got); err != nil || got.DeletionTimestamp != nil {
+		t.Fatalf("%s after the first Enter: %v, deleted at %v", victim, err, got.DeletionTimestamp)
+	}
+	if res := confirmNamedDelete(t, app, keyEnter); res.err != nil {
+		t.Fatalf("delete %s: %v", victim, res.err)
+	}
 	if err := c.Get(ctx, crclient.ObjectKey{Name: victim}, &got); err != nil || got.DeletionTimestamp == nil || got.UID != victimNS.UID {
 		t.Fatalf("%s after the delete: %v, deleted at %v, uid %s", victim, err, got.DeletionTimestamp, got.UID)
 	}

@@ -28,8 +28,8 @@ does not answer it: `y` typed by mistake does nothing.
 
 ## Namespaces, CRDs, PersistentVolumes and nodes
 
-Deleting one of these deletes other objects with it, so the dialog says
-what goes with it and asks you to type its name:
+Deleting one of these can take more with it, so the dialog says what
+goes with it and asks you to type its name:
 
 ```
 Delete namespace shop?
@@ -49,12 +49,21 @@ Type "shop" to enable Yes:
   when kc has counted. Only the kinds listed after `Counted:` are
   counted; everything else in the namespace is deleted too. A kind kc
   may not list is named: `Not counted: secrets (forbidden)`.
+- Helm keeps each revision of a release in a Secret. kc counts those
+  as Helm releases and leaves them out of `secrets`. When the Helm count
+  failed or stopped at 2000, the secrets keep their total and say so:
+  `2000+ secrets (including any of Helm's)`.
 - For a CustomResourceDefinition kc counts its objects in all
-  namespaces, for a PersistentVolume it names the claim bound to it and
-  the reclaim policy, and for a node it counts the pods bound to it.
-- `Yes` stays grayed until the input line holds the name exactly. Then
-  `M-y` deletes, or `Tab` and `Enter`. `Enter` alone runs `No`, which
-  keeps the focus while you type.
+  namespaces. For a PersistentVolume it names the claim bound to it (a
+  bound volume stays until the claim is deleted) and says when the
+  storage goes. For a node it counts the pods bound to it; Kubernetes
+  deletes them if the node stays gone.
+- `Yes` stays grayed until the input line holds the name exactly, and
+  `Enter` runs `No` meanwhile. Once the name is there, `M-y` deletes,
+  and `Enter` first moves the focus to `Yes`: a second `Enter` deletes.
+  If you move the focus yourself after typing the name (`Tab`, an arrow
+  key, a click), `Enter` runs the button that has it. A change that
+  breaks the name moves the focus back to `No`.
 - kc counts with small requests for object metadata, each with a
   timeout; a pod count stops at 2000 and shows `2000+`.
 - Deleting a namespace takes time: its objects go first, and the row
@@ -115,7 +124,9 @@ asks you to unmark them first.
   dialog that asks for a name they go to the input line.
 - `Left`, `Right`, `Tab` or `Shift-Tab` move between Yes and No. A
   grayed Yes cannot take the focus.
-- `Enter` runs the focused button.
+- `Enter` runs the focused button. In the dialog that asks for a
+  name, the first `Enter` after the name moves the focus from `No` to
+  `Yes`.
 - `Esc` cancels.
 
 ## Limits

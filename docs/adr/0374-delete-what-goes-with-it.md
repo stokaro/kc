@@ -1,6 +1,11 @@
 # 0374. Show what goes with a namespace and ask for its name
 
-- Status: Accepted
+- Status: Accepted; decision 2 (`Enter` after the typed name) and, in
+  decision 3, the secret count and the PersistentVolume and node lines
+  are amended by [0396](0396-typed-name-enter-and-impact-texts.md) (the
+  first `Enter` after the name moves the focus to `Yes`; Helm's Secrets
+  are counted once; the volume stays until its claim is deleted, and a
+  deleted node's pods go only if the node stays gone)
 - Date: 2026-11-28
 - Issue: #374
 - Extends: decisions 1, 3 and 4 of [0373](0373-delete-marked-rows.md) for
