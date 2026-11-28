@@ -393,7 +393,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 		a.openMenuBar(-1)
 		return nil
 	case functionKeyQuit:
-		return tea.Quit
+		return a.requestQuit()
 	case functionKeyFocus:
 		if a.terminal == nil || a.terminal.HasInput() {
 			return nil

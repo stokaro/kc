@@ -139,7 +139,7 @@ func (a *App) fileMenuItems() []menubar.Item {
 			return nil
 		}},
 		menubar.Separator(),
-		{Label: "E&xit", Shortcut: "F10", Run: func() tea.Cmd { return tea.Quit }},
+		{Label: "E&xit", Shortcut: "F10", Run: a.requestQuit},
 	}
 }
 

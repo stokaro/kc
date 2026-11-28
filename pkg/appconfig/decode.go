@@ -126,6 +126,10 @@ func validateSections(cfg *Config) []sectionProblem {
 		add("charts", err)
 		cfg.Charts = DefaultCharts()
 	}
+	if err := cfg.Confirm.Validate(); err != nil {
+		add("confirm", err)
+		cfg.Confirm = Default().Confirm
+	}
 	return problems
 }
 

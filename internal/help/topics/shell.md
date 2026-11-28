@@ -26,6 +26,12 @@ and `M-t` attaches to its main process.
   under the panels is still on the line there; erase it or press `C-c`,
   and the panels get their keys back when you return. What you type in
   `C-o` after `Enter` may go to another program, so it does not count.
+- When the shell exits (`exit`, or `C-d` on an empty line), kc starts a
+  new one and says so; from `C-o` it returns to the panels first. A shell
+  that exits within 2 seconds, or does not start (a `SHELL` that does not
+  exist), is started again at once the first time, then after 1, 2 and 4
+  seconds. After 5 such exits in a row kc stops and the shell line says
+  why; `C-o` then starts the shell again for one try.
 - The shell runs with `KUBECONFIG` set to a file kc generates, so
   `kubectl` talks to the context, namespace and identity of the active
   panel. A Describe, Manifest, Logs or Info panel gives the context of
@@ -58,8 +64,12 @@ shell syntax such as `&&` or `$`, the line goes to the shell.
   the image has no bash. `Enter` on a container's `shell` row does the
   same.
 - `M-t` (or `Esc t`) runs `kubectl attach`, with `-i` and `-t` when the
-  container has stdin and a TTY. Keys go to the main process, so ending
-  it ends the container.
+  container has stdin and a TTY. It asks first in a red dialog that
+  names the context, namespace, pod and container: keys go to the
+  container's main process, not to a new shell, and `C-c`, `C-d` or
+  `exit` there can end that process and the container with it. kubectl
+  attach has no key to detach. `No` has the focus; `M-y` attaches,
+  `M-n` or `Esc` cancels, and `y` alone does nothing.
 - On a pod row kc picks the container named by the
   `kubectl.kubernetes.io/default-container` annotation, else the first
   one. Open the pod's `/containers` folder to pick another.
@@ -73,7 +83,8 @@ With `nodeShell.enabled: true` (optionally only for the contexts in
 `Enter` opens a red confirmation that names the context, node, pod and
 image. kc then creates a privileged pod on that node and opens a root
 shell in the host namespaces, full screen. `exit` or `C-]` ends it, and
-kc deletes the pod.
+kc deletes the pod. Quitting kc while a node shell is open or starting
+asks first.
 
 ## Limits
 

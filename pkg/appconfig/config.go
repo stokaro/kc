@@ -246,7 +246,9 @@ type Config struct {
 	Terminal    TerminalConfig      `json:"terminal"`
 	NodeShell   NodeShellConfig     `json:"nodeShell"`
 	PortForward PortForwardConfig   `json:"portForward"`
-	Commands    []CommandConfig     `json:"commands"`
+	// Confirm decides when kc asks before quitting.
+	Confirm  ConfirmConfig   `json:"confirm"`
+	Commands []CommandConfig `json:"commands"`
 	// Contexts color panels per kubeconfig context; the first matching
 	// entry wins.
 	Contexts []ContextColorConfig `json:"contexts"`
@@ -685,6 +687,7 @@ func Default() *Config {
 			MaxDuration: metav1.Duration{Duration: DefaultNodeShellMaxDuration},
 		},
 		PortForward:    PortForwardConfig{Address: DefaultPortForwardAddress},
+		Confirm:        ConfirmConfig{Quit: QuitConfirmSessions},
 		Overview:       DefaultOverview(),
 		Timeline:       DefaultTimeline(),
 		MetricsHistory: DefaultMetricsHistory(),
@@ -793,6 +796,7 @@ func normalizeLoaded(cfg *Config) {
 	if cfg.PortForward.Address == "" {
 		cfg.PortForward.Address = DefaultPortForwardAddress
 	}
+	cfg.Confirm.normalize()
 
 	// Normalize commands
 	for i := range cfg.Commands {

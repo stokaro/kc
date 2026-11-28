@@ -98,6 +98,26 @@ func TestHeadlessSession(t *testing.T) {
 	})
 	s.send("key ctrl+o")
 	s.until(ctx, "panels after C-o", ready)
+	// An exit of the shell does not end kc: kc starts a new shell, returns
+	// from the full-screen terminal to the panels and says so (#375).
+	s.send("key ctrl+o")
+	s.until(ctx, "full-screen terminal before exit", func(screen string) bool { return !strings.Contains(screen, "headless-probe") })
+	s.send("text exit\nkey enter")
+	s.until(ctx, "panels with the restart notice", func(screen string) bool {
+		return strings.Contains(screen, "headless-probe") && strings.Contains(screen, "kc started a new one.")
+	})
+	s.send("key ctrl+o\ntext echo new-shell-$((6*7))\nkey enter")
+	s.until(ctx, "a command in the new shell", func(screen string) bool {
+		for line := range strings.SplitSeq(screen, "\n") {
+			if strings.TrimSpace(line) == "new-shell-42" {
+				return true
+			}
+		}
+		return false
+	})
+	s.send("key ctrl+o")
+	s.until(ctx, "panels after the new shell", ready)
+	// With nothing running, F10 quits at once.
 	s.quit(ctx)
 }
 

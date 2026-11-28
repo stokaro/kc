@@ -33,7 +33,8 @@ the local address, target, pod, namespace, context and age.
 - Forwards keep running when you switch context or namespace.
 - A forward ends with a red message when its pod goes away or the
   connection is lost. kc does not reconnect.
-- All forwards stop when kc exits.
+- All forwards stop when kc exits. While forwards run, `F10` asks
+  first and lists them; see [Confirmation dialog](confirm.md).
 
 ## Keys
 

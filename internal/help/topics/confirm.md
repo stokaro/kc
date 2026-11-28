@@ -36,10 +36,27 @@ The buttons are the action, named after it (`Scale`, `Restart`, `Stop`,
 - A click on a button runs it.
 - `Esc` cancels.
 
+## Quit and attach
+
+- `F10` (`Esc 0`, File > Exit, a click on Quit) asks before kc exits
+  while something would stop with it: port forwards, a node shell (open
+  or starting) or a copy. The title says what stops, for example
+  `2 port forwards will stop. Quit?`, and a line names each session.
+  With nothing running kc quits at once; `confirm.quit: always` in
+  `~/.kc/config.yaml` makes it ask every time.
+- `M-t` asks before it attaches to a container's main process; see
+  [Shell and terminal](shell.md).
+- Both are Yes/No dialogs with the keys of the Delete dialog: `No` has
+  the focus, `M-y` answers Yes, `M-n`, `Esc`, `C-c` or `F10` answers No,
+  and `y` alone does nothing.
+- Programs you started in the shell under the panels are not counted;
+  they stop with kc.
+
 ## Limits
 
-- In read-only mode kc refuses every red dialog before it opens, and
-  again on confirm if the context became read-only meanwhile.
+- In read-only mode kc refuses every red dialog that would change the
+  cluster before it opens, and again on confirm if the context became
+  read-only meanwhile. The quit question still opens.
 - The dialog shows what kc read when it opened. If the object changed
   since, the action still runs with the values shown.
 - The API server decides each request: a missing permission shows as an

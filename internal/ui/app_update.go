@@ -61,6 +61,10 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			return a, cmd
 		}
 	}
+	// The shell's lifecycle passes every dialog (shell_restart.go).
+	if cmd, handled := a.updateShell(msg); handled {
+		return a, cmd
+	}
 	// The result of a withBusy command goes to the main switch even when a
 	// dialog is open: the dialog did not ask for it, and it would be lost.
 	pastModal := false
@@ -561,11 +565,6 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			}
 			return a, tea.Batch(cmds...)
 		}
-	}
-
-	// Check if terminal process has exited (check on every message)
-	if a.terminal.IsProcessExited() {
-		return a, tea.Quit
 	}
 
 	switch msg := msg.(type) {

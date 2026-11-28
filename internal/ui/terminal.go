@@ -1,37 +1,35 @@
 package ui
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/go-logr/logr"
 	bubbleterm "github.com/taigrr/bubbleterm"
 )
-
-// ShellExitedMsg is sent when the shell process exits
-type ShellExitedMsg struct {
-	ExitCode string
-}
 
 // Terminal represents the bottom terminal component
 type Terminal struct {
 	// Bubbleterm terminal emulator
 	terminal *bubbleterm.Model
 	// Terminal state
-	width     int
-	height    int
-	isRunning bool
+	width  int
+	height int
 	// Display state
 	showPanels bool // Whether panels are visible
 	// Input tracking
 	hasTyped bool // Whether user has typed since last command
 	line     shellLine
-	// Exit handling
-	shellExited bool
+	// The shell's lifecycle (shell_restart.go): kc starts a new shell
+	// when one ends, and backs off when shells exit at once (#375).
+	shell shellLife
+	// blurred keeps Blur over a restart: a new emulator starts focused.
+	blurred bool
 	// Whether the PTY app has enabled mouse tracking (ESC[?1000h/1002h/1003h/1006h/1015h)
 	ptyWantsMouse bool
 	log           logr.Logger
@@ -46,27 +44,25 @@ type Terminal struct {
 // NewTerminal creates a new terminal instance
 func NewTerminal() *Terminal {
 	return &Terminal{
-		width:       80,
-		height:      24,
-		isRunning:   false,
-		showPanels:  true, // Start with panels visible
-		hasTyped:    false,
-		shellExited: false,
+		width:      80,
+		height:     24,
+		showPanels: true, // Start with panels visible
+		hasTyped:   false,
+		shell:      shellLife{now: time.Now, quickExit: shellQuickExit, backoff: shellBackoff},
 	}
 }
 
-// Init initializes the terminal
-func (t *Terminal) Init() tea.Cmd {
-	// Use the user's shell
+// Init starts the shell.
+func (t *Terminal) Init() tea.Cmd { return t.startShell() }
+
+// shellCommand is the user's shell with the environment kc gives it. It is
+// built for each start, so a new shell gets the KUBECONFIG of the active
+// panel at that time.
+func (t *Terminal) shellCommand() (*exec.Cmd, string) {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/bash" // fallback
 	}
-	if t.log.GetSink() != nil {
-		t.log.Info("starting terminal shell", "command", shell)
-	}
-
-	// Create shell command
 	// #nosec G204 G702 -- the embedded terminal runs the user's own $SHELL.
 	cmd := exec.Command(shell)
 	env := t.env
@@ -74,37 +70,7 @@ func (t *Terminal) Init() tea.Cmd {
 		env = os.Environ()
 	}
 	cmd.Env = env
-
-	// Create bubbleterm terminal
-	terminal, err := bubbleterm.New(t.width, t.height)
-	if err != nil {
-		// If we can't create the terminal (e.g., TTY not available), create a fallback
-		// that displays the error but doesn't crash the application
-		t.terminal = nil
-		t.isRunning = false
-		return func() tea.Msg {
-			return ShellExitedMsg{ExitCode: fmt.Sprintf("Terminal unavailable: %v", err)}
-		}
-	}
-
-	t.terminal = terminal
-
-	// Set up exit callback to quit when shell exits
-	emulator := t.terminal.GetEmulator()
-	if emulator != nil {
-		emulator.SetOnExit(func(exitCode string) {
-			// When shell exits, set the flag
-			t.shellExited = true
-		})
-
-		// Note: Cursor should be enabled by default in bubbleterm
-		// If cursor is not visible, it might be a focus or rendering issue
-	}
-
-	// bubbleterm polls by blocking until the emulator reports a change, so
-	// output (including the echo of typed keys) shows up without a timer.
-	t.terminal.SetAutoPoll(true)
-	return tea.Batch(t.terminal.Init(), t.terminal.StartCommand(cmd))
+	return cmd, shell
 }
 
 // SetEnv overrides the environment used when spawning the PTY shell.
@@ -175,9 +141,13 @@ func (t *Terminal) SetPTYWantsMouse(on bool) { t.ptyWantsMouse = on }
 // View renders the terminal
 func (t *Terminal) View() tea.View {
 	if t.terminal == nil {
-		cur := tea.NewCursor(0, 0)
-		cur.Blink = true
-		return viewWithCursor("Terminal not initialized", cur)
+		// No shell runs: the status says why, on the one shell line under
+		// the panels or wrapped across the full-screen terminal.
+		if t.showPanels {
+			view, cur := t.renderInlineViewWithCursor()
+			return viewWithCursor(view, cur)
+		}
+		return viewWithCursor(ansi.Wrap(t.shell.statusText(), max(1, t.width), ""), nil)
 	}
 
 	if t.showPanels {
@@ -197,11 +167,10 @@ const inlineTerminalLines = 1
 // renderInlineViewWithCursor renders the inline shell area and returns its cursor.
 func (t *Terminal) renderInlineViewWithCursor() (string, *tea.Cursor) {
 	if t.terminal == nil {
-		fallback := lipgloss.NewStyle().
-			Width(t.width).
-			Height(inlineTerminalLines).
-			Render("Terminal not initialized")
-		return fallback, nil
+		// No shell runs: say why, and when the next one starts, on one
+		// line cut to the terminal's width. It is not padded: before the
+		// first resize the width is a guess, and the app pads the line.
+		return ansi.Truncate(t.shell.statusText(), max(1, t.width), "…"), nil
 	}
 
 	terminalView, termCur := t.terminalView()
@@ -369,6 +338,7 @@ func (t *Terminal) SetShowPanels(show bool) {
 
 // Focus sets focus on the terminal
 func (t *Terminal) Focus() {
+	t.blurred = false
 	if t.terminal != nil {
 		t.terminal.Focus()
 		// Also ensure the terminal is focused by calling it again
@@ -379,6 +349,7 @@ func (t *Terminal) Focus() {
 
 // Blur removes focus from the terminal
 func (t *Terminal) Blur() {
+	t.blurred = true
 	if t.terminal != nil {
 		t.terminal.Blur()
 	}
@@ -397,11 +368,6 @@ func (t *Terminal) SendInput(input string) {
 	if t.terminal != nil {
 		t.terminal.SendInput(input)
 	}
-}
-
-// IsProcessExited returns whether the terminal process has exited
-func (t *Terminal) IsProcessExited() bool {
-	return t.shellExited
 }
 
 // HasInput returns whether the terminal has non-empty input. When kc knows

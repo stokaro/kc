@@ -251,6 +251,9 @@ type App struct {
 	// execProcess hands the terminal to an external program, such as the
 	// editor F4 opens on a local file. Tests replace tea.ExecProcess.
 	execProcess func(*exec.Cmd, tea.ExecCallback) tea.Cmd
+	// execCommand hands the terminal to a kubectl exec or attach session;
+	// nil is tea.Exec. Tests replace it.
+	execCommand func(tea.ExecCommand, tea.ExecCallback) tea.Cmd
 
 	// Pins and the investigation window: docs/adr/0187-pin-freeze-window.md.
 	pinSignal            chan struct{}
@@ -467,16 +470,15 @@ func (a *App) Init() tea.Cmd {
 // the custom hotkeys and the folder event loops. Init runs it, or the end
 // of the connecting screen when kc connects at startup.
 func (a *App) panelCmds() tea.Cmd {
+	// Focus the terminal initially since it's the main input area. It is
+	// focused here, on the update loop: the shell's emulator changes when
+	// the shell restarts, so no command goroutine may touch it.
+	a.terminal.Focus()
 	return tea.Batch(
 		a.loadCommandHotkeys(),
 		a.loadHealthConfig(),
 		a.initPanels(),
 		a.terminal.Init(),
-		func() tea.Msg {
-			// Focus the terminal initially since it's the main input area
-			a.terminal.Focus()
-			return nil
-		},
 		a.waitFolderDirtyEvents(),
 		a.waitReadErrors(),
 		a.loadHotlist(),
