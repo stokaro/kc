@@ -1,6 +1,6 @@
 # 0378. The UI loop never waits for API discovery
 
-- Status: Accepted
+- Status: Accepted; decisions 1, 2 and 6 amended by [0405](0405-discovery-review-followups.md) (object folders load off the loop, one discovery call per read, the mapper takes a context)
 - Date: 2026-11-28
 - Issue: #378
 - Supersedes: in [0236](0236-panel-reread.md), the synchronous discovery

@@ -90,13 +90,17 @@ func (a *App) Update(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		a.logMsg(msg)
 	}
 
-	var cmds []tea.Cmd
+	// Commands queued with enqueueCmd run with whatever this message
+	// returns, on every path below, so a case that returns only its own
+	// commands cannot drop them.
 	a.pendingCmdsMu.Lock()
-	if len(a.pendingCmds) > 0 {
-		cmds = append(cmds, a.pendingCmds...)
-		a.pendingCmds = nil
-	}
+	pending := a.pendingCmds
+	a.pendingCmds = nil
 	a.pendingCmdsMu.Unlock()
+	if len(pending) > 0 {
+		defer func() { cmd = tea.Batch(append(pending, cmd)...) }()
+	}
+	var cmds []tea.Cmd
 	if cmd, ok := a.routeMetricSources(msg); ok {
 		return a, tea.Batch(append(cmds, cmd)...)
 	}

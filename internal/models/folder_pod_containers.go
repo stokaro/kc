@@ -17,6 +17,7 @@ type PodContainersFolder struct {
 	*BaseFolder
 	Namespace string
 	Pod       string
+	rows      *liveObjectRowSource
 }
 
 // NewPodContainersFolder constructs the pod containers folder.
@@ -25,10 +26,14 @@ func NewPodContainersFolder(deps Deps, parentPath []string, namespace, pod strin
 	cols := []table.Column{{Title: " Name"}}
 	base := NewBaseFolder(deps, cols, path)
 	folder := &PodContainersFolder{BaseFolder: base, Namespace: namespace, Pod: pod}
-	rows := newPodSectionRowSource(deps, namespace, pod, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
-	base.SetRowSource(rows)
+	folder.rows = newPodSectionRowSource(deps, namespace, pod, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	base.SetRowSource(folder.rows)
 	return folder
 }
+
+// Close stops the folder's watch and pending loads; navigators call it
+// when they drop the folder.
+func (f *PodContainersFolder) Close() { f.rows.Close() }
 
 func (f *PodContainersFolder) buildRows(ctx context.Context) ([]table.Row, error) {
 	podObj, err := f.fetchPod(ctx)
@@ -107,15 +112,20 @@ type PodContainerListFolder struct {
 	Namespace string
 	Pod       string
 	Kind      containerKind
+	rows      *liveObjectRowSource
 }
 
 func NewPodContainerListFolder(deps Deps, path []string, namespace, pod string, kind containerKind) *PodContainerListFolder {
 	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path)
 	folder := &PodContainerListFolder{BaseFolder: base, Namespace: namespace, Pod: pod, Kind: kind}
-	rows := newPodContainerRowSource(deps, namespace, pod, kind, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
-	base.SetRowSource(rows)
+	folder.rows = newPodContainerRowSource(deps, namespace, pod, kind, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	base.SetRowSource(folder.rows)
 	return folder
 }
+
+// Close stops the folder's watch and pending loads; navigators call it
+// when they drop the folder.
+func (f *PodContainerListFolder) Close() { f.rows.Close() }
 
 func (f *PodContainerListFolder) buildRows(ctx context.Context) ([]table.Row, error) {
 	podObj, err := f.fetchPod(ctx)
@@ -189,22 +199,27 @@ type containerRecord struct {
 	TTY    bool
 }
 
-func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
+// newPodSectionRowSource and newPodContainerRowSource build their rows from
+// a live GET of the pod. Both load and start the pod's watch off the UI
+// goroutine, as object lists do (ADR 0378).
+func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(context.Context) ([]table.Row, error), onDirty func()) *liveObjectRowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
 		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)
 	})
 	lor.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: pod})
+	lor.useBackground(deps)
 	lor.watchTTL = watchDuration(deps)
 	return lor
 }
 
-func newPodContainerRowSource(deps Deps, namespace, pod string, kind containerKind, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
+func newPodContainerRowSource(deps Deps, namespace, pod string, kind containerKind, populate func(context.Context) ([]table.Row, error), onDirty func()) *liveObjectRowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
 		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)
 	})
 	lor.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: pod})
+	lor.useBackground(deps)
 	lor.watchTTL = watchDuration(deps)
 	return lor
 }

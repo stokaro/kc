@@ -1302,6 +1302,9 @@ func newLiveKeyRowSource(deps Deps, gvr schema.GroupVersionResource, namespace, 
 		return startInformerForResource(deps, gvr, namespace, name, onEvent, onStop)
 	})
 	rows.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: name})
+	// The rows come from a live GET of the object: load them and start the
+	// watch off the UI goroutine, as object lists do (ADR 0378).
+	rows.useBackground(deps)
 	rows.watchTTL = watchDuration(deps)
 	rows.reportErr = listErrorReporter(deps, gvr, namespace)
 	return rows

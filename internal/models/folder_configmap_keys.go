@@ -28,6 +28,7 @@ type ConfigMapKeysFolder struct {
 	*BaseFolder
 	Namespace string
 	Name      string
+	rows      *liveObjectRowSource
 }
 
 // NewConfigMapKeysFolder constructs the ConfigMap data keys folder.
@@ -36,10 +37,14 @@ func NewConfigMapKeysFolder(deps Deps, parentPath []string, namespace, name stri
 	cols := []table.Column{{Title: " Name"}, {Title: " Type"}, {Title: " Size"}}
 	base := NewBaseFolder(deps, cols, path)
 	folder := &ConfigMapKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
-	rows := newLiveKeyRowSource(deps, configMapGVR, namespace, name, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
-	base.SetRowSource(rows)
+	folder.rows = newLiveKeyRowSource(deps, configMapGVR, namespace, name, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	base.SetRowSource(folder.rows)
 	return folder
 }
+
+// Close stops the folder's watch and pending loads; navigators call it
+// when they drop the folder.
+func (f *ConfigMapKeysFolder) Close() { f.rows.Close() }
 
 func (f *ConfigMapKeysFolder) Parent() (gvr schema.GroupVersionResource, namespace, name string) {
 	return configMapGVR, f.Namespace, f.Name

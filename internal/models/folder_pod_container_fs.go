@@ -43,6 +43,7 @@ type PodContainerDetailFolder struct {
 	// execTarget carries the container's stdin and tty settings from the
 	// list that opened the folder; nil builds a target without them.
 	execTarget *ExecTarget
+	rows       *liveObjectRowSource
 }
 
 func NewPodContainerDetailFolder(deps Deps, folderPath []string, namespace, pod, container string, kind containerKind) *PodContainerDetailFolder {
@@ -58,9 +59,15 @@ func NewPodContainerDetailFolder(deps Deps, folderPath []string, namespace, pod,
 	}
 	// The pod's status decides whether a previous log exists, so the rows
 	// follow the pod like the container list does.
-	base.SetRowSource(newPodContainerRowSource(deps, namespace, pod, kind, folder.buildRows, base.markDirtyFromSource))
+	folder.rows = newPodContainerRowSource(deps, namespace, pod, kind, folder.buildRows, base.markDirtyFromSource)
+	base.SetRowSource(folder.rows)
 	return folder
 }
+
+// Close stops the watch and pending loads of the folder's rows; navigators
+// call it when they drop the folder. The container session is left as it
+// is; it ends when idle or with the connection's context.
+func (f *PodContainerDetailFolder) Close() { f.rows.Close() }
 
 func (f *PodContainerDetailFolder) buildRows(ctx context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, 3)
