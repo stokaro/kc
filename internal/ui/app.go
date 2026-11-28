@@ -319,8 +319,11 @@ type App struct {
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
 	startupIntentApplied   bool
-	helpViewer             *HelpViewer
-	folderDirtyCh          chan FolderDirtyMsg
+	// startup is set while kc connects to its start context and the
+	// connecting screen is up.
+	startup       *startup
+	helpViewer    *HelpViewer
+	folderDirtyCh chan FolderDirtyMsg
 	// describeRenderers keeps one renderer per connection the panels
 	// hold; see describeRendererFor.
 	describeRenderers map[string]*describe.Renderer
@@ -422,8 +425,10 @@ func NewApp() *App {
 }
 
 // Init initializes the application. Run has read the configuration file
-// before initData (initConfigAndData); Init keeps the panel
-// configurations, since the folders initData built read them.
+// and picked the start context before; Init keeps the panel
+// configurations, since the folders built later read them. While kc
+// connects to the start context (a.startup), Init starts connecting and
+// holds back the panels' commands until the panels open.
 func (a *App) Init() tea.Cmd {
 	cfg := a.cfg
 	a.modalManager.SyncEscTimeout()
@@ -445,11 +450,21 @@ func (a *App) Init() tea.Cmd {
 			visibilityErr = a.toastLogger.Errorf("%s", strings.ReplaceAll(err.Error(), "\n", "; "))
 		}
 	}
+	if st := a.startup; st != nil {
+		st.deferred = []tea.Cmd{lookErr, visibilityErr}
+		connect := a.connectStartup(st)
+		return tea.Batch(func() tea.Msg { return connect() }, startupTick())
+	}
+	return tea.Batch(lookErr, visibilityErr, a.panelCmds())
+}
+
+// panelCmds starts what the panels screen runs: the panels, the shell,
+// the custom hotkeys and the folder event loops. Init runs it, or the end
+// of the connecting screen when kc connects at startup.
+func (a *App) panelCmds() tea.Cmd {
 	return tea.Batch(
 		a.loadCommandHotkeys(),
 		a.loadHealthConfig(),
-		lookErr,
-		visibilityErr,
 		a.initPanels(),
 		a.terminal.Init(),
 		func() tea.Msg {
@@ -3289,9 +3304,11 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	app.impersonateGroups = append([]string(nil), cfg.ImpersonateGroups...)
 	app.readOnlyOverride = cfg.ReadOnly
 
-	// Initialize data model (best-effort; UI can still run without it)
+	// Read the configuration and pick the start context, local files only;
+	// connecting runs in the UI, which draws the connecting screen
+	// meanwhile (best-effort; the UI can still run without a connection).
 	log.Info("initializing data")
-	if err := app.initConfigAndData(ctx); err != nil {
+	if err := app.beginConfigAndStartup(ctx); err != nil {
 		if _, ok := errors.AsType[*startContextError](err); ok {
 			// No context to start in is a usage error: stop before the
 			// UI takes over the terminal, and write nothing to it.
@@ -3372,17 +3389,44 @@ func resetKeyboardProtocol() {
 }
 
 // initConfigAndData reads the configuration file, then builds the data
-// model. initData makes the clusters, the panels and their folders with
-// the settings of that moment, and a folder keeps the panel configuration
-// it was given, so the file comes first. What a file that does not load in
-// full leaves in place is described by loadConfig.
+// model, waiting for the start context's server. Tests use it; Run uses
+// beginConfigAndStartup and connects while the UI draws. initData makes
+// the clusters, the panels and their folders with the settings of that
+// moment, and a folder keeps the panel configuration it was given, so the
+// file comes first. What a file that does not load in full leaves in
+// place is described by loadConfig.
 func (a *App) initConfigAndData(ctx context.Context) error {
 	a.loadConfig()
 	return a.initData(ctx)
 }
 
-// initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
+// beginConfigAndStartup reads the configuration file and picks the start
+// context. Init then connects to it while View draws the connecting
+// screen.
+func (a *App) beginConfigAndStartup(ctx context.Context) error {
+	a.loadConfig()
+	st, err := a.beginStartup(ctx)
+	if err != nil {
+		return err
+	}
+	a.startup = st
+	return nil
+}
+
+// initData discovers kubeconfigs, selects the start context, connects to
+// it and wires navigation, all before it returns.
 func (a *App) initData(ctx context.Context) error {
+	st, err := a.beginStartup(ctx)
+	if err != nil {
+		return err
+	}
+	return a.finishStartup(st, a.connectStartup(st)())
+}
+
+// beginStartup discovers kubeconfigs, selects the start context and
+// prepares the cluster pool. It reads local files only. An error for a
+// context that cannot be picked is a *startContextError.
+func (a *App) beginStartup(ctx context.Context) (*startup, error) {
 	log := ctrllog.FromContext(ctx).WithName("init")
 	// Kubeconfig manager and discovery
 	a.kubeMgr = kubeconfig.NewManager()
@@ -3393,7 +3437,7 @@ func (a *App) initData(ctx context.Context) error {
 			a.enqueueCmd(a.toastLogger.Errorf("Kubeconfig discovery failed: %v", err))
 		}
 		log.Error(err, "failed to discover kubeconfigs")
-		return fmt.Errorf("discover kubeconfigs: %w", err)
+		return nil, fmt.Errorf("discover kubeconfigs: %w", err)
 	}
 	log.Info("kubeconfigs discovered", "count", len(a.kubeMgr.GetKubeconfigs()), "contexts", len(a.kubeMgr.GetContexts()))
 	if raw, err := clientcmd.NewDefaultClientConfigLoadingRules().Load(); err == nil {
@@ -3401,29 +3445,32 @@ func (a *App) initData(ctx context.Context) error {
 	}
 	// Select the --context, else the current context. Both panels start
 	// there.
-	var kctx *kubeconfig.Context
+	var (
+		kctx *kubeconfig.Context
+		only bool
+	)
 	if name := strings.TrimSpace(a.contextOverride); name != "" {
 		c, err := a.startupContext(name)
 		if err != nil {
 			log.Error(err, "requested context not found", "context", name)
-			return err
+			return nil, err
 		}
 		kctx = c
 	} else {
-		c, only, err := a.selectCurrentContext()
+		c, onlyOne, err := a.selectCurrentContext()
 		if err != nil {
 			log.Error(err, "no context to start in")
-			return err
+			return nil, err
 		}
-		if only {
+		if onlyOne {
+			// The notice shows with the panels (finishStartup).
 			log.Info("no current-context, starting in the only context", "context", c.Name)
-			a.enqueueCmd(a.ShowInfo(onlyContextNotice(c), onlyContextNoticeTTL))
 		}
-		kctx = c
+		kctx, only = c, onlyOne
 	}
 	if kctx == nil {
 		log.Error(nil, "no current context found")
-		return fmt.Errorf("no current context found")
+		return nil, fmt.Errorf("no current context found")
 	}
 	ctxNamespace := strings.TrimSpace(kctx.Namespace)
 	override := strings.TrimSpace(a.namespaceOverride)
@@ -3453,30 +3500,31 @@ func (a *App) initData(ctx context.Context) error {
 	if a.discoveryCh == nil {
 		a.discoveryCh = make(chan struct{}, 1)
 	}
-	// Each panel holds a lease of its own: switching one panel later
-	// releases only that one, and the shared pool entry stays while the
-	// other panel reads it.
-	for idx := range 2 {
-		log.Info("acquiring cluster", "key", k, "panel", panelName(idx))
-		lease, err := a.clPool.Acquire(a.ctx, k, nil)
-		if err != nil {
-			log.Error(err, "cluster acquisition failed")
-			a.releasePanelConns()
-			return fmt.Errorf("cluster pool acquire: %w", err)
-		}
-		a.setPanelConn(idx, a.newPanelConn(kctx, k, lease))
+	return &startup{kctx: kctx, key: k, host: contextServer(kctx), only: only, since: time.Now()}, nil
+}
+
+// finishStartup makes the leases of msg the panels' connections and shows
+// the panels. It runs on the UI goroutine. After an acquire error the
+// panels stay without a connection and the error is returned; a discovery
+// error is reported, and the panels open on the cluster anyway.
+func (a *App) finishStartup(st *startup, msg startupConnectedMsg) error {
+	log := ctrllog.FromContext(a.ctx).WithName("init")
+	if msg.acquireErr != nil {
+		return msg.acquireErr
 	}
-	log.Info("cluster ready, fetching resource info")
+	kctx := st.kctx
+	for idx, lease := range msg.leases {
+		a.setPanelConn(idx, a.newPanelConn(kctx, st.key, lease))
+	}
+	if st.only {
+		a.enqueueCmd(a.ShowInfo(onlyContextNotice(kctx), onlyContextNoticeTTL))
+	}
 	// Discovery-backed catalog (for panel displays)
-	if infos, err := a.ownConn(0).cluster().GetResourceInfos(); err == nil {
-		log.Info("resource infos fetched", "count", len(infos))
-		a.leftPanel.SetResourceCatalog(infos)
-		a.rightPanel.SetResourceCatalog(infos)
-	} else {
-		if a.toastLogger != nil {
-			a.enqueueCmd(a.toastLogger.Errorf("Discovery resources failed: %v", err))
-		}
-		log.Error(err, "failed to fetch resource infos")
+	if msg.discoveryErr == nil {
+		a.leftPanel.SetResourceCatalog(msg.infos)
+		a.rightPanel.SetResourceCatalog(msg.infos)
+	} else if a.toastLogger != nil {
+		a.enqueueCmd(a.toastLogger.Errorf("Discovery resources failed: %v", msg.discoveryErr))
 	}
 	a.ensureTermContext()
 	a.enqueueCmd(a.watchDiscovery())

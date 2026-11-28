@@ -14,6 +14,9 @@ import (
 
 // View renders the application
 func (a *App) View() tea.View {
+	if a.startup != nil {
+		return a.renderStartup()
+	}
 	if a.nodeShell != nil {
 		return a.renderNodeShell()
 	}

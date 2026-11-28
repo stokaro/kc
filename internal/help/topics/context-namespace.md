@@ -71,6 +71,11 @@ sets one and there are several contexts, kc does not open: it prints
 the contexts and asks for `--context`. With one context and no
 `current-context`, kc opens that context and says so.
 
+kc draws before it connects. Until the start context's server answers,
+the screen shows "Connecting to NAME (SERVER)… 12s · F10 quits", and
+`F10` or `C-c` quits. When connecting fails, the screen shows the error:
+`Enter` opens the panels anyway, `F10` quits.
+
 ## Keys
 
 - Typing filters the picker by name; `Backspace` removes a character.
