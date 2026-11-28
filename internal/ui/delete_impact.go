@@ -23,7 +23,8 @@ import (
 // Deleting a namespace, a CustomResourceDefinition, a PersistentVolume or
 // a node takes other objects with it. F8 shows what goes with the object
 // and asks for its name to be typed (#374); see
-// docs/adr/0374-delete-what-goes-with-it.md.
+// docs/adr/0374-delete-what-goes-with-it.md, amended by
+// docs/adr/0396-typed-name-enter-and-impact-texts.md.
 
 var (
 	namespaceResource = schema.GroupResource{Resource: "namespaces"}
