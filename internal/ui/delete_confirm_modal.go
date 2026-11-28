@@ -38,6 +38,10 @@ type DeleteConfirmModel struct {
 	// the dialog asks for no name.
 	typed string
 	input textinput.Model
+	// focusChosen reports that the user moved the focus (Tab, an arrow
+	// key, a click) since the name last matched. Until then the first
+	// Enter on No moves the focus to Yes instead of pressing No.
+	focusChosen bool
 	// impactSeq identifies the count of what goes with the object that
 	// the dialog waits for; zero when it waits for none. impact is the
 	// result, nil while kc counts; counting is what the dialog says
@@ -74,6 +78,7 @@ func (m *DeleteConfirmModel) ConfigureSet(title, context string, names []string,
 	m.names = append([]string(nil), names...)
 	m.more = more
 	m.focus = 1 // default to "No"
+	m.focusChosen = false
 	m.typed = ""
 	m.input.SetValue("")
 	m.input.Blur()
@@ -88,7 +93,7 @@ func (m *DeleteConfirmModel) RequireName(name string, seq uint64, counting strin
 	m.input.SetValue("")
 	m.input.Focus()
 	m.impactSeq, m.impact, m.counting = seq, nil, counting
-	m.focus = 1
+	m.focus, m.focusChosen = 1, false
 }
 
 // SetImpact shows impact, the result of count seq. It reports false and
@@ -125,7 +130,10 @@ func answerDelete(confirm bool) tea.Cmd {
 //
 // With a name to type, the input line takes every other key, the focus
 // moves between the buttons only, and Yes is disabled (M-y does nothing,
-// the focus skips it) until the input holds the name exactly.
+// the focus skips it) until the input holds the name exactly. Once it
+// does, the first Enter on No moves the focus to Yes and a second Enter
+// deletes, unless the user moved the focus since the name matched: then
+// Enter presses the focused button.
 func (m *DeleteConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -144,10 +152,14 @@ func (m *DeleteConfirmModel) key(msg tea.KeyPressMsg) tea.Cmd {
 	case "esc", "ctrl+c", "ctrl+g":
 		return answerDelete(false)
 	case "enter":
+		if m.typed != "" && m.nameTyped() && m.focus == 1 && !m.focusChosen {
+			m.focus = 0
+			return nil
+		}
 		return answerDelete(m.focus == 0 && m.nameTyped())
 	case "left", "right", "tab", "shift+tab":
 		if m.nameTyped() {
-			m.focus = 1 - m.focus
+			m.focus, m.focusChosen = 1-m.focus, true
 		}
 		return nil
 	}
@@ -177,7 +189,7 @@ func (m *DeleteConfirmModel) mouse(msg tea.MouseMsg) tea.Cmd {
 			continue
 		}
 		if _, ok := msg.(tea.MouseClickMsg); ok {
-			m.focus = idx
+			m.focus, m.focusChosen = idx, true
 			return nil
 		}
 		if _, ok := msg.(tea.MouseReleaseMsg); ok {
@@ -188,7 +200,8 @@ func (m *DeleteConfirmModel) mouse(msg tea.MouseMsg) tea.Cmd {
 }
 
 // edit hands msg to the input line when the dialog asks for a name. When
-// the input stops matching, the focus leaves the disabled Yes.
+// the input stops matching, the focus leaves the disabled Yes, and the
+// next match arms Enter again.
 func (m *DeleteConfirmModel) edit(msg tea.Msg) tea.Cmd {
 	if m.typed == "" {
 		return nil
@@ -196,7 +209,7 @@ func (m *DeleteConfirmModel) edit(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	if !m.nameTyped() {
-		m.focus = 1
+		m.focus, m.focusChosen = 1, false
 	}
 	return cmd
 }
@@ -292,7 +305,8 @@ func (m *DeleteConfirmModel) Height(innerW int) int {
 }
 
 // FooterHints leaves Enter out: it runs the focused button, which is No
-// when the dialog opens, so "Enter Confirm" would promise a delete.
+// when the dialog opens (or, once a typed name matches, moves the focus
+// to Yes), so "Enter Confirm" would promise a delete.
 func (m *DeleteConfirmModel) FooterHints() []FooterHint {
 	return []FooterHint{
 		{Key: "Esc", Label: "Cancel", Enabled: true},

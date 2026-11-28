@@ -189,9 +189,11 @@ func typedDeleteModel() *DeleteConfirmModel {
 }
 
 // A dialog that asks for the name confirms only once the input holds the
-// name exactly. Letters go to the input, never to a button; Enter runs
-// the focused button, No until the name is typed and the focus moved; a
-// change that breaks the name moves the focus back to No (#374).
+// name exactly. Letters go to the input, never to a button. Enter runs
+// the focused button, No until the name matches; then the first Enter
+// moves the focus to Yes and a second one deletes, unless the user moved
+// the focus since the name matched. A change that breaks the name moves
+// the focus back to No (#374).
 func TestDeleteConfirmTypedName(t *testing.T) {
 	t.Parallel()
 	answered := func(confirm bool) *DeleteConfirmMsg { return &DeleteConfirmMsg{Confirm: confirm, Close: true} }
@@ -224,6 +226,7 @@ func TestDeleteConfirmTypedName(t *testing.T) {
 		msgs  []tea.Msg
 		want  *DeleteConfirmMsg // nil: no answer
 		input string
+		yes   bool // the focus is on Yes at the end; checked without an answer
 	}{
 		{name: "Enter right away keeps it", msgs: keys(enter), want: answered(false)},
 		{name: "M-y right away does nothing", msgs: keys(altY)},
@@ -235,7 +238,15 @@ func TestDeleteConfirmTypedName(t *testing.T) {
 		{name: "another case: M-y does nothing", msgs: keys(typed("SHOP"), altY), input: "SHOP"},
 		{name: "a space after it: M-y does nothing", msgs: keys(typed("shop "), altY), input: "shop "},
 		{name: "the name, M-y deletes", msgs: keys(typed("shop"), altY), want: answered(true), input: "shop"},
-		{name: "the name, Enter keeps it: No has the focus", msgs: keys(typed("shop"), enter), want: answered(false), input: "shop"},
+		{name: "the name, Enter moves the focus to Yes", msgs: keys(typed("shop"), enter), input: "shop", yes: true},
+		{name: "the name, Enter, Enter deletes", msgs: keys(typed("shop"), enter, enter), want: answered(true), input: "shop"},
+		{name: "a pasted name, Enter, Enter deletes", msgs: keys(tea.PasteMsg{Content: "shop"}, enter, enter), want: answered(true), input: "shop"},
+		{name: "part of the name, Enter keeps it", msgs: keys(typed("sho"), enter), want: answered(false), input: "sho"},
+		{name: "the name and more, Enter keeps it", msgs: keys(typed("shopx"), enter), want: answered(false), input: "shopx"},
+		{name: "the name, Tab, Tab back to No, Enter keeps it", msgs: keys(typed("shop"), tab, tab, enter), want: answered(false), input: "shop"},
+		{name: "the name, Enter, Tab back to No, Enter keeps it", msgs: keys(typed("shop"), enter, tab, enter), want: answered(false), input: "shop"},
+		{name: "the name, Enter, a backspace, Enter keeps it", msgs: keys(typed("shop"), enter, backspace, enter), want: answered(false), input: "sho"},
+		{name: "No chosen, the name broken and typed again: Enter moves to Yes", msgs: keys(typed("shop"), tab, tab, backspace, typed("p"), enter), input: "shop", yes: true},
 		{name: "the name, Tab, Enter deletes", msgs: keys(typed("shop"), tab, enter), want: answered(true), input: "shop"},
 		{name: "the name, Left, Enter deletes", msgs: keys(typed("shop"), left, enter), want: answered(true), input: "shop"},
 		{name: "Tab to Yes, then a backspace: Enter keeps it", msgs: keys(typed("shop"), tab, backspace, enter), want: answered(false), input: "sho"},
@@ -273,6 +284,9 @@ func TestDeleteConfirmTypedName(t *testing.T) {
 			if v := model.input.Value(); v != tc.input {
 				t.Fatalf("input %q, want %q", v, tc.input)
 			}
+			if got == nil && (model.focus == 0) != tc.yes {
+				t.Fatalf("focus on Yes is %v, want %v", model.focus == 0, tc.yes)
+			}
 		})
 	}
 }
@@ -303,6 +317,18 @@ func TestDeleteConfirmTypedNameClick(t *testing.T) {
 	model.View()
 	if got := click(); got == nil || !got.Confirm {
 		t.Fatalf("a click on Yes with the name typed answered %+v", got)
+	}
+
+	// A press on No released elsewhere chooses No: Enter then presses it.
+	no := model.buttonRect[1]
+	model.Update(tea.MouseClickMsg{X: no.x, Y: no.y, Button: tea.MouseLeft})
+	model.Update(tea.MouseReleaseMsg{X: 0, Y: 0, Button: tea.MouseLeft})
+	_, cmd := model.Update(pressKey(tea.KeyEnter, "", 0))
+	if cmd == nil {
+		t.Fatal("Enter after choosing No with the mouse did not answer")
+	}
+	if res, ok := cmd().(DeleteConfirmMsg); !ok || res.Confirm {
+		t.Fatalf("Enter after choosing No with the mouse answered %+v", cmd())
 	}
 }
 

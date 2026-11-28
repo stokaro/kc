@@ -52,9 +52,12 @@ Type "shop" to enable Yes:
 - For a CustomResourceDefinition kc counts its objects in all
   namespaces, for a PersistentVolume it names the claim bound to it and
   the reclaim policy, and for a node it counts the pods bound to it.
-- `Yes` stays grayed until the input line holds the name exactly. Then
-  `M-y` deletes, or `Tab` and `Enter`. `Enter` alone runs `No`, which
-  keeps the focus while you type.
+- `Yes` stays grayed until the input line holds the name exactly, and
+  `Enter` runs `No` meanwhile. Once the name is there, `M-y` deletes,
+  and `Enter` first moves the focus to `Yes`: a second `Enter` deletes.
+  If you move the focus yourself after typing the name (`Tab`, an arrow
+  key, a click), `Enter` runs the button that has it. A change that
+  breaks the name moves the focus back to `No`.
 - kc counts with small requests for object metadata, each with a
   timeout; a pod count stops at 2000 and shows `2000+`.
 - Deleting a namespace takes time: its objects go first, and the row
@@ -115,7 +118,9 @@ asks you to unmark them first.
   dialog that asks for a name they go to the input line.
 - `Left`, `Right`, `Tab` or `Shift-Tab` move between Yes and No. A
   grayed Yes cannot take the focus.
-- `Enter` runs the focused button.
+- `Enter` runs the focused button. In the dialog that asks for a
+  name, the first `Enter` after the name moves the focus from `No` to
+  `Yes`.
 - `Esc` cancels.
 
 ## Limits

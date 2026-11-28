@@ -37,9 +37,17 @@ F8 does with a marked set that holds a namespace.
    - `Tab`, `Shift-Tab`, `Left` and `Right` move the focus between the
      buttons; while `Yes` is grayed the focus stays on `No`. An edit that
      breaks the name moves the focus back to `No`.
-   - `No` has the focus when the dialog opens; `Enter` runs the focused
-     button. Typing the name and pressing `Enter` therefore keeps the
-     object: `M-y`, or `Tab` and `Enter`, deletes it.
+   - `No` has the focus when the dialog opens, and `Enter` runs the
+     focused button: before the name matches, `Enter` keeps the object.
+   - Once the input holds the name, the first `Enter` on `No` moves the
+     focus to `Yes` and deletes nothing; a second `Enter` deletes. If the
+     user moved the focus since the name last matched (`Tab`, `Shift-Tab`,
+     an arrow key, a click on a button), `Enter` runs the focused button,
+     so `No` chosen on purpose keeps the object. An edit that breaks the
+     name moves the focus back to `No`, and the next match arms the first
+     `Enter` again. The rule is one flag, "the user chose the focus since
+     the name matched", and `Enter` still deletes only while `Yes` has the
+     focus, as 0373 says.
    - `M-y` does nothing until the name is typed. `M-n` and `Esc` cancel. A
      click on the grayed `Yes` does nothing.
 3. **What kc counts.** The dialog opens at once with `Counting what is in
@@ -104,9 +112,21 @@ F8 does with a marked set that holds a namespace.
   number is a short string a stray key can match; a list of names to type
   makes a long dialog for a rare operation. Deleting several namespaces
   takes one F8 each, or kubectl.
-- Let `Enter` delete once the name is typed, as some web consoles do. That
-  breaks the rule of 0373 that `Enter` runs the focused button, `No` when
-  the dialog opens, and makes the focus jump as a side effect of typing.
+- Keep `Enter` on `No` after the name is typed, so that only `M-y`, or
+  `Tab` and `Enter`, deletes. Users who type the name and press `Enter`
+  expect it to go on, as in web consoles; the dialog closed and kept the
+  object, and the name had to be typed again.
+- Let `Enter` delete as soon as the name matches. That breaks the rule of
+  0373 that `Enter` runs the focused button: it would delete with `No`
+  focused.
+- Move the focus to `Yes` as soon as the name matches. Typing would move
+  the focus as a side effect, and a stray `Enter` right after the last
+  letter would delete with one key. With the chosen rule the first `Enter`
+  only shows `Yes` focused.
+- Move the focus to `Yes` on every first `Enter` on `No` after a match,
+  however the focus got there. That needs no flag, but a user who moved
+  the focus to `No` on purpose would see `Enter` move it to `Yes` instead
+  of closing the dialog.
 - Ask for the name only when the count found objects. The count can fail
   or arrive late, and an empty count of a dozen kinds does not mean an
   empty namespace.
@@ -117,8 +137,8 @@ F8 does with a marked set that holds a namespace.
 ## Consequences
 
 - Deleting a namespace, a CRD, a PersistentVolume or a node takes typing
-  its name; a PersistentVolume's name is often 40 characters long. Pasting
-  it works.
+  its name and two `Enter`s (or `M-y`); a PersistentVolume's name is often
+  40 characters long. Pasting it works.
 - A namespace dialog sends about a dozen small list requests to the API
   server.
 - Objects of kinds outside the fixed set (Flux HelmReleases, Argo CD

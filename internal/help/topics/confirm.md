@@ -47,7 +47,8 @@ The buttons are the action, named after it (`Scale`, `Restart`, `Stop`,
 - `F8` delete has its own Yes/No dialog, with the same keys plus `M-y`
   and `M-n`; see Delete. For a namespace, a CRD, a PersistentVolume or
   a node it says what goes with the object and waits until you typed its
-  name.
+  name; then the first `Enter` moves the focus to `Yes` and a second one
+  deletes.
 - Create namespace (`F7`) is a red input dialog that names the context;
   `Enter` creates. See Create namespace.
 

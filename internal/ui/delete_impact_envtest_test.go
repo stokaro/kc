@@ -260,7 +260,14 @@ func namespacesApp(t *testing.T, names ...string) *App {
 // and returns the result of the delete it sends.
 func typeNameAndConfirm(t *testing.T, app *App, name string) resourceDeletedMsg {
 	t.Helper()
-	for _, msg := range pressDialog(t, app, append(textKeys(name), keyAltY)...) {
+	return confirmNamedDelete(t, app, append(textKeys(name), keyAltY)...)
+}
+
+// confirmNamedDelete presses keys in the delete dialog and returns the result
+// of the delete they confirm.
+func confirmNamedDelete(t *testing.T, app *App, keys ...tea.KeyPressMsg) resourceDeletedMsg {
+	t.Helper()
+	for _, msg := range pressDialog(t, app, keys...) {
 		answer, ok := msg.(DeleteConfirmMsg)
 		if !ok || !answer.Confirm {
 			continue
@@ -271,7 +278,7 @@ func typeNameAndConfirm(t *testing.T, app *App, name string) resourceDeletedMsg 
 			}
 		}
 	}
-	t.Fatalf("M-y with %s typed sent no delete", name)
+	t.Fatalf("%d keys in the delete dialog sent no delete", len(keys))
 	return resourceDeletedMsg{}
 }
 
@@ -307,10 +314,17 @@ func TestDeleteNamespaceThroughTheDialogEnvtest(t *testing.T) {
 	if got := deleteAnswer(t, app, keyAltY); got != nil {
 		t.Fatalf("M-y before the name answered %+v", *got)
 	}
-	if res := typeNameAndConfirm(t, app, victim); res.err != nil {
-		t.Fatalf("delete %s: %v", victim, res.err)
+	// The name and Enter move the focus to Yes; the second Enter deletes.
+	if got := deleteAnswer(t, app, append(textKeys(victim), keyEnter)...); got != nil {
+		t.Fatalf("Enter after the name answered %+v, want the focus on Yes", *got)
 	}
 	var got corev1.Namespace
+	if err := c.Get(ctx, crclient.ObjectKey{Name: victim}, &got); err != nil || got.DeletionTimestamp != nil {
+		t.Fatalf("%s after the first Enter: %v, deleted at %v", victim, err, got.DeletionTimestamp)
+	}
+	if res := confirmNamedDelete(t, app, keyEnter); res.err != nil {
+		t.Fatalf("delete %s: %v", victim, res.err)
+	}
 	if err := c.Get(ctx, crclient.ObjectKey{Name: victim}, &got); err != nil || got.DeletionTimestamp == nil || got.UID != victimNS.UID {
 		t.Fatalf("%s after the delete: %v, deleted at %v, uid %s", victim, err, got.DeletionTimestamp, got.UID)
 	}
