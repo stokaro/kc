@@ -11,19 +11,18 @@ import (
 	"k8s.io/client-go/discovery/cached/memory"
 )
 
-// Serves reports whether API discovery lists gvr. It reads the cached
-// discovery that RefreshDiscovery invalidates, so the answer is at most one
-// refresh old; after a refresh the first call reads discovery from the
-// server again.
+// Serves reports whether API discovery lists gvr. It reads the last
+// discovery read, so the answer is at most one refresh old.
 //
 // An error means discovery could not tell: the server did not answer, or
 // the group version of gvr failed its own discovery (an aggregated API that
 // is down). A caller must not take it for "not served".
 func (c *Cluster) Serves(ctx context.Context, gvr schema.GroupVersionResource) (bool, error) {
-	if err := c.ensureDiscovery(); err != nil {
-		return false, err
+	st := c.discoveryState()
+	if st == nil {
+		return false, errors.New("cluster has no discovery")
 	}
-	return servesIn(ctx, discovery.ToCachedDiscoveryInterfaceWithContext(c.disco), gvr)
+	return servesIn(ctx, discovery.ToCachedDiscoveryInterfaceWithContext(st.disco), gvr)
 }
 
 // groupVersionResources is the part of a discovery client that Serves reads.

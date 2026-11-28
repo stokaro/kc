@@ -35,7 +35,7 @@ func (f *NamespacedResourcesFolder) Namespace() string {
 }
 
 func (f *NamespacedResourcesFolder) populate(ctx context.Context) ([]table.Row, error) {
-	specs, err := f.resourceGroupSpecs()
+	specs, err := f.resourceGroupSpecs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -44,17 +44,20 @@ func (f *NamespacedResourcesFolder) populate(ctx context.Context) ([]table.Row, 
 	return rows, nil
 }
 
-func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, error) {
-	return namespacedResourceSpecs(f.ResourcesFolder, f.namespace, f.Path(), true)
+func (f *NamespacedResourcesFolder) resourceGroupSpecs(ctx context.Context) ([]resourceGroupSpec, error) {
+	return namespacedResourceSpecs(ctx, f.ResourcesFolder, f.namespace, f.Path(), true)
 }
 
 // namespacedResourceSpecs lists namespaced resource types under parent. An
 // empty namespace means all namespaces; then the types are not counted,
 // because counting would watch every object of every type in the cluster.
-func namespacedResourceSpecs(f *ResourcesFolder, namespace string, parent []string, count bool) ([]resourceGroupSpec, error) {
+//
+// The types come from the cluster's last discovery read; populate runs on
+// the UI goroutine and must not wait for the server.
+func namespacedResourceSpecs(ctx context.Context, f *ResourcesFolder, namespace string, parent []string, count bool) ([]resourceGroupSpec, error) {
 	_, order, favorites := f.viewSettings()
 	favSet := favoritesMap(favorites)
-	infos, err := f.Deps.Cl.GetResourceInfos()
+	infos, _, err := f.Deps.Cl.DiscoveredResources(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +90,7 @@ func namespacedResourceSpecs(f *ResourcesFolder, namespace string, parent []stri
 		cellsCopy := append([]string(nil), cells...)
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
+		kind := entry.info.GVK.Kind
 		ns := namespace
 		detail := resourceDetail(entry, entries)
 		style := nameStyle
@@ -107,7 +111,9 @@ func namespacedResourceSpecs(f *ResourcesFolder, namespace string, parent []stri
 			namespaced: true,
 			shortNames: slices.Clone(entry.info.ShortNames),
 			enter: func() (Folder, error) {
-				return NewNamespacedObjectsFolder(f.Deps, gvr, ns, pathCopy, verbsCopy), nil
+				folder := NewNamespacedObjectsFolder(f.Deps, gvr, ns, pathCopy, verbsCopy)
+				folder.setKind(kind)
+				return folder, nil
 			},
 		})
 	}

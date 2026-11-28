@@ -230,9 +230,18 @@ func (b *BaseFolder) SetRowSource(src rowSource) {
 	b.source = src
 	b.dirty = true
 	b.mu.Unlock()
+	if rn, ok := src.(retryNotifier); ok {
+		rn.setRetryNotify(b.markDirtyFromSource)
+	}
 	if src != nil {
 		src.MarkDirty()
 	}
+}
+
+// retryNotifier is a row source that holds a failed load off for a while
+// and then asks the folder to repaint, which loads again.
+type retryNotifier interface {
+	setRetryNotify(func())
 }
 
 // RegisterDirtyListener subscribes to dirty state changes and returns a cancel func.

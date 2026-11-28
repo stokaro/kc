@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,12 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes/scheme"
 	authorizationv1client "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/restmapper"
 	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,11 +43,9 @@ func init() { //nolint:gochecknoinits // the global scheme must be complete befo
 // a self-updating RESTMapper and convenience helpers.
 type Cluster struct {
 	crcluster.Cluster // embedded; promotes Client/Cache/Start/GetConfig, etc.
+	discoveryFields
 
-	disco      discovery.CachedDiscoveryInterface
-	baseMapper metamapper.ResettableRESTMapper
-	mapper     metamapper.RESTMapper
-	dyn        dynamic.Interface
+	dyn dynamic.Interface
 
 	// tableCache serves Row/RowList objects backed by server-side Table responses.
 	tableCache crcache.Cache
@@ -70,6 +65,8 @@ type Cluster struct {
 
 	cancel  context.CancelFunc
 	refresh time.Duration
+	// mapper is the RESTMapper callers get; it follows each discovery read.
+	mapper liveMapper
 
 	discoMu        sync.RWMutex
 	discoListeners map[int]func()
@@ -126,7 +123,6 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 		cfg.Burst = 100
 	}
 
-	// We initialize discovery/mapper lazily in ensureDiscovery() before first use.
 	selectorObjs, err := selectorObjects(cfg, o.selectors)
 	if err != nil {
 		return nil, err
@@ -158,8 +154,17 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 		namespace:     o.namespace,
 		access:        NewListWatchAccess(authz),
 	}
-	// Pre-initialize discovery/mapper/dynamic client lazily so methods can be used early.
-	_ = c.ensureDiscovery()
+	c.mapper = liveMapper{c: c}
+	if err := c.initDiscovery(ctx, cfg); err != nil {
+		cancel()
+		return nil, err
+	}
+	dyn, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	c.dyn = dyn
 
 	// Build a dedicated table-aware cache for Row/RowList alongside the default cache.
 	// Register Row/RowList types in the scheme so the cache can marshal them.
@@ -169,52 +174,15 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 	}
 	tcache, err := tablecache.NewFromOptions(cfg, tableCacheOpts)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	c.tableCache = tcache
 
-	// Kick off background refresh loop with a detached context; start/stop is managed by callers.
+	// The refresh loop reads discovery at once and then keeps it current.
+	// Its context is detached: Stop ends it, whoever started the cluster.
 	go c.refreshLoop(ctx)
 	return c, nil
-}
-
-// ensureDiscovery initializes discovery, RESTMapper, and dynamic client lazily.
-func (c *Cluster) ensureDiscovery() error {
-	if c.mapper != nil && c.baseMapper != nil && c.disco != nil && c.dyn != nil {
-		return nil
-	}
-	// New and the accessors that initialize discovery take no context, and
-	// their callers are in internal/ui, so this one line uses the global logger.
-	ctrllog.Log.WithName("cluster").Info("initializing discovery clients", "cluster", fmt.Sprintf("%p", c)) //nolint:forbidigo // no context here, see above
-	dc, err := discovery.NewDiscoveryClientForConfig(rest.CopyConfig(c.GetConfig()))
-	if err != nil {
-		return err
-	}
-	cached := memory.NewMemCacheClient(dc)
-	base := restmapper.NewDeferredDiscoveryRESTMapper(cached)
-	expander := restmapper.NewShortcutExpander(base, cached, func(string) {})
-	dyn, err := dynamic.NewForConfig(c.GetConfig())
-	if err != nil {
-		return err
-	}
-	c.disco = cached
-	c.baseMapper = base
-	c.mapper = expander
-	c.dyn = dyn
-	return nil
-}
-
-func (c *Cluster) refreshLoop(ctx context.Context) {
-	t := time.NewTicker(c.refresh)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			c.RefreshDiscovery()
-		}
-	}
 }
 
 // Start runs the controller-runtime cluster and the table cache; it blocks
@@ -240,46 +208,39 @@ func (c *Cluster) Start(ctx context.Context) error {
 // Stop cancels internal loops; users should cancel the Start() context as well.
 func (c *Cluster) Stop() { c.cancel() }
 
-// RESTMapper exposes the cluster's RESTMapper (with shortcuts).
+// RESTMapper exposes the cluster's RESTMapper (with shortcuts). It answers
+// from the last complete discovery read and never sends a request; a
+// refresh never makes it wait (see RefreshDiscovery). Until the cluster's
+// first read ended a call waits for that read, which the UI never sees:
+// panels show a cluster only after its first read ended. After a failed
+// first read it returns ErrDiscoveryPending at once. It is nil for a
+// Cluster that New did not build.
 func (c *Cluster) RESTMapper() metamapper.RESTMapper {
-	_ = c.ensureDiscovery()
+	if c.discoveryState() == nil {
+		return nil
+	}
 	return c.mapper
 }
 
 // Dynamic returns the shared dynamic client backing the cluster.
 func (c *Cluster) Dynamic() dynamic.Interface {
-	_ = c.ensureDiscovery()
 	return c.dyn
 }
 
 // DiscoveryClient exposes the cached discovery client backing the cluster.
+// Like RESTMapper it follows each discovery read.
 func (c *Cluster) DiscoveryClient() discovery.CachedDiscoveryInterface {
-	_ = c.ensureDiscovery()
-	return c.disco
+	if c.discoveryState() == nil {
+		return nil
+	}
+	return liveDiscovery{c: c}
 }
 
-// RefreshDiscovery invalidates cached discovery information and notifies listeners.
-//
-// RefreshDiscovery takes no context, and callers in internal/models use it,
-// so this logger is global as well.
-func (c *Cluster) RefreshDiscovery() {
-	log := ctrllog.Log.WithName("discovery") //nolint:forbidigo // no context here, see above
-	if err := c.ensureDiscovery(); err != nil {
-		return
-	}
-	if c.disco != nil {
-		log.V(1).Info("RefreshDiscovery invalidate", "cache", fmt.Sprintf("%p", c.disco))
-		c.disco.Invalidate()
-	}
-	if c.baseMapper != nil {
-		log.V(1).Info("RefreshDiscovery reset mapper", "mapper", fmt.Sprintf("%p", c.baseMapper))
-		c.baseMapper.Reset()
-	}
-	c.notifyDiscoveryListeners()
-}
-
-// AddDiscoveryListener registers a callback invoked whenever discovery is refreshed.
-// The returned function removes the listener when invoked.
+// AddDiscoveryListener registers a callback invoked after each successful
+// discovery read: the first one, the periodic refresh, RefreshDiscovery and
+// RequestDiscoveryRefresh. fn runs on the reading goroutine and must return
+// quickly without reading discovery again. The returned function removes
+// the listener when invoked.
 func (c *Cluster) AddDiscoveryListener(fn func()) func() {
 	if fn == nil {
 		return func() {}
@@ -423,7 +384,6 @@ func selectorObjects(cfg *rest.Config, selectors map[schema.GroupVersionResource
 // does not support Tables.
 func (c *Cluster) ListRowsByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*tablecache.RowList, error) {
 	// Resolve Kind for the Row target GVK
-	_ = c.ensureDiscovery()
 	gvk, err := c.RESTMapper().KindFor(gvr)
 	if err != nil {
 		return nil, err
@@ -445,7 +405,6 @@ func (c *Cluster) ListRowsByGVR(ctx context.Context, gvr schema.GroupVersionReso
 // GetRowByGVR fetches a single object rendered as a server-side table row.
 // It extracts the row via the cache using the Row target GVK.
 func (c *Cluster) GetRowByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*tablecache.Row, error) {
-	_ = c.ensureDiscovery()
 	gvk, err := c.RESTMapper().KindFor(gvr)
 	if err != nil {
 		return nil, err
@@ -462,7 +421,6 @@ func (c *Cluster) GetRowByGVR(ctx context.Context, gvr schema.GroupVersionResour
 
 // GVKToGVR maps a Kind to its resource using the RESTMapper.
 func (c *Cluster) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
-	_ = c.ensureDiscovery()
 	m, err := c.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
 		return schema.GroupVersionResource{}, err
@@ -551,7 +509,6 @@ func listFromCache(ctx context.Context, cache crcache.Cache, gvk schema.GroupVer
 
 // ListByGVR lists objects using the cache-backed client and returns an UnstructuredList.
 func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*unstructured.UnstructuredList, error) {
-	_ = c.ensureDiscovery()
 	k, err := c.gvkForGVR(gvr)
 	if err != nil {
 		return nil, err
@@ -562,8 +519,8 @@ func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource
 // HasAnyByGVR performs a lightweight peek (limit=1) to determine if at least one object exists for the GVR.
 // It avoids starting informers so callers can filter empty resource groups cheaply.
 func (c *Cluster) HasAnyByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (bool, error) {
-	if err := c.ensureDiscovery(); err != nil {
-		return false, err
+	if c.dyn == nil {
+		return false, errors.New("cluster has no dynamic client")
 	}
 	log := ctrllog.FromContext(ctx).WithName("cluster")
 	log.Info("client hasAny peek", "gvr", gvr.String(), "namespace", namespace, "limit", 1)
@@ -584,7 +541,6 @@ func (c *Cluster) HasAnyByGVR(ctx context.Context, gvr schema.GroupVersionResour
 
 // GetByGVR fetches one object as Unstructured using the cache-backed client.
 func (c *Cluster) GetByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
-	_ = c.ensureDiscovery()
 	log := ctrllog.FromContext(ctx).WithName("cluster")
 	log.Info("client get", "gvr", gvr.String(), "namespace", namespace, "name", name)
 	k, err := c.RESTMapper().KindFor(gvr)
@@ -730,7 +686,11 @@ type ResourceInfo struct {
 	ShortNames []string
 }
 
-// GetResourceInfos returns API resource infos via discovery.
+// GetResourceInfos returns the API resource types of the cluster's last
+// discovery read. Until the cluster's first read ended it waits for that
+// read, up to discoveryReadTimeout; afterwards it answers from memory, and
+// after a failed first read it returns that read's error. Code on the UI
+// goroutine uses DiscoveredResources with a short deadline instead.
 func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
 	infos, _, err := c.GetResourceInfosPartial()
 	return infos, err
@@ -740,51 +700,8 @@ func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
 // discovery failed, sorted: their types are missing from the list, which
 // does not mean they are not installed.
 func (c *Cluster) GetResourceInfosPartial() ([]ResourceInfo, []string, error) {
-	if err := c.ensureDiscovery(); err != nil {
-		return nil, nil, err
+	if c.loopCtx == nil {
+		return nil, nil, errors.New("cluster has no discovery")
 	}
-	lists, err := c.disco.ServerPreferredResources()
-	var failed []string
-	if err != nil {
-		// Allow partial discovery results when some aggregated APIs fail (e.g., metrics.k8s.io).
-		if len(lists) == 0 {
-			return nil, nil, err
-		}
-		partial, ok := err.(*discovery.ErrGroupDiscoveryFailed)
-		if !ok {
-			return nil, nil, err
-		}
-		// For partial failures, continue with the successful lists so callers
-		// can proceed (metrics server down should not block the UI).
-		for gv := range partial.Groups {
-			if !slices.Contains(failed, gv.Group) {
-				failed = append(failed, gv.Group)
-			}
-		}
-		slices.Sort(failed)
-	}
-	var out []ResourceInfo
-	for _, l := range lists {
-		gv, err := schema.ParseGroupVersion(l.GroupVersion)
-		if err != nil {
-			continue
-		}
-		for _, ar := range l.APIResources {
-			if ar.Name == "" || ar.Kind == "" {
-				continue
-			}
-			if strings.Contains(ar.Name, "/") {
-				continue
-			}
-			out = append(out, ResourceInfo{
-				GVK:        schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: ar.Kind},
-				Resource:   ar.Name,
-				Namespaced: ar.Namespaced,
-				Verbs:      append([]string(nil), ar.Verbs...),
-				Categories: append([]string(nil), ar.Categories...),
-				ShortNames: append([]string(nil), ar.ShortNames...),
-			})
-		}
-	}
-	return out, failed, nil
+	return c.DiscoveredResources(c.loopCtx)
 }

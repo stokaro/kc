@@ -272,13 +272,13 @@ func (f *OverviewTargetsFolder) KubectlCommand() string {
 	return line.Show
 }
 
-func (f *OverviewTargetsFolder) populate(context.Context) ([]table.Row, error) {
+func (f *OverviewTargetsFolder) populate(ctx context.Context) ([]table.Row, error) {
 	report, _ := f.engine.snapshot()
 	finding, ok := report.finding(f.findingID)
 	if !ok {
 		return nil, nil
 	}
-	verbs := resourceVerbsByGVR(f.Deps)
+	verbs := resourceVerbsByGVR(ctx, f.Deps)
 	rows := make([]table.Row, 0, len(finding.targets))
 	for _, t := range finding.targets {
 		rows = append(rows, f.targetRow(t, verbs[schema.GroupResource{Group: t.gvr.Group, Resource: t.gvr.Resource}]))
@@ -370,13 +370,14 @@ func involvedObjectRef(deps Deps, o corev1.ObjectReference, eventNamespace strin
 }
 
 // resourceVerbsByGVR returns the verbs discovery lists per resource, so the
-// object actions (F8 delete and others) work in the targets list.
-func resourceVerbsByGVR(deps Deps) map[schema.GroupResource][]string {
+// object actions (F8 delete and others) work in the targets list. It reads
+// the cluster's last discovery read and never waits for the server.
+func resourceVerbsByGVR(ctx context.Context, deps Deps) map[schema.GroupResource][]string {
 	out := make(map[schema.GroupResource][]string)
 	if deps.Cl == nil {
 		return out
 	}
-	infos, err := deps.Cl.GetResourceInfos()
+	infos, _, err := deps.Cl.DiscoveredResources(ctx)
 	if err != nil {
 		return out
 	}
@@ -396,6 +397,12 @@ type readingRowSource struct {
 
 func newReadingRowSource(src rowSource, read func()) *readingRowSource {
 	return &readingRowSource{rowSource: src, read: read}
+}
+
+func (s *readingRowSource) setRetryNotify(fn func()) {
+	if rn, ok := s.rowSource.(retryNotifier); ok {
+		rn.setRetryNotify(fn)
+	}
 }
 
 func (s *readingRowSource) Lines(ctx context.Context, top, num int) []table.Row {

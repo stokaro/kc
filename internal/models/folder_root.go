@@ -58,12 +58,12 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 		},
 	}
 
-	groupItems, err := namespacedResourceSpecs(f.ResourcesFolder, f.namespace, f.Path(), true)
+	groupItems, err := namespacedResourceSpecs(ctx, f.ResourcesFolder, f.namespace, f.Path(), true)
 	if err != nil {
 		return nil, err
 	}
 	groupItems = append(groupItems, namespacesSpec)
-	clusterItems, err := f.ClusterResourcesFolder.resourceGroupSpecs()
+	clusterItems, err := f.ClusterResourcesFolder.resourceGroupSpecs(ctx)
 	if err != nil {
 		return nil, err
 	}

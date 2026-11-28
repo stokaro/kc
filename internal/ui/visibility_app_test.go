@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -220,7 +221,7 @@ func (f *catalogFolder) TypeCatalog() models.TypeCatalog { return f.catalog }
 func (f *catalogFolder) TypeDecision(string) (visibility.Decision, appconfig.EffectiveVisibility, bool) {
 	return visibility.Decision{}, f.catalog.Profile, false
 }
-func (f *catalogFolder) ContextTypes() (models.ContextTypes, error) {
+func (f *catalogFolder) ContextTypes(context.Context) (models.ContextTypes, error) {
 	return models.ContextTypes{}, nil
 }
 

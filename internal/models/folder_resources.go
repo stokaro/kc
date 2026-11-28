@@ -115,13 +115,14 @@ func (f *ResourcesFolder) ApplyResourceViewOptions(showNonEmpty bool, order appc
 	}
 }
 
-// Reread drops the cached API discovery and lists the resource types again,
-// so a type installed since (a new CRD) shows at once instead of after the
-// next periodic discovery refresh. The discovery request runs on the next
-// read of the rows.
+// Reread asks the cluster to read API discovery again and lists the
+// resource types again, so a type installed since (a new CRD) shows when
+// that read ends instead of after the next periodic discovery refresh. The
+// read runs in the background: the UI goroutine calls Reread, and the
+// discovery listeners repaint the type lists when the read succeeded.
 func (f *ResourcesFolder) Reread(ctx context.Context) {
 	ctrllog.FromContext(ctx).WithName("resourcesFolder").Info("rereading API discovery", "context", f.Deps.CtxName, "namespace", f.Deps.ClusterKey.Namespace)
-	f.Deps.Cl.RefreshDiscovery()
+	f.Deps.Cl.RequestDiscoveryRefresh()
 	f.BaseFolder.Reread(ctx)
 }
 

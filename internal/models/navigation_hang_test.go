@@ -93,3 +93,58 @@ func TestReportReadErrorWrapsWhat(t *testing.T) {
 	}
 	Deps{}.reportReadError("x", errors.New("ignored")) // nil reporter is fine
 }
+
+// Starting a watch asks the RESTMapper and the shared cache for an
+// informer; the cache's own mapper may ask the API server. A read on the
+// UI goroutine must not wait for that: the watch starts in the background
+// and a stopped source stops a watch that started late.
+func TestLiveRowSourceStartsWatchOffTheReader(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	stopped := make(chan struct{}, 1)
+	src := newLiveObjectRowSourceWithHooks(
+		func(context.Context) ([]table.Row, error) { return []table.Row{&table.SimpleRow{ID: "a"}}, nil },
+		func() {},
+		func(func(), func()) (func(), error) {
+			started <- struct{}{}
+			<-release
+			return func() { stopped <- struct{}{} }, nil
+		},
+	)
+	src.useBackground(Deps{Ctx: t.Context()})
+
+	done := make(chan int, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+		defer cancel()
+		done <- src.Len(ctx)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Len waited for the watch to start")
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the watch never started")
+	}
+	// Reads while the start runs start no second watch.
+	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+	src.Len(ctx)
+	cancel()
+	select {
+	case <-started:
+		t.Fatal("a read started a second watch while the first was starting")
+	default:
+	}
+
+	src.Close()
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a watch that started after Close kept running")
+	}
+}

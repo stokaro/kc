@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.10
 	github.com/creack/pty v1.1.24
 	github.com/go-logr/logr v1.4.4
+	github.com/google/gnostic-models v0.7.1
 	github.com/taigrr/bubbleterm v0.3.5
 	go.uber.org/zap v1.28.0
 	golang.org/x/image v0.48.0
@@ -149,7 +150,6 @@ require (
 	github.com/golangci/swaggoswag v0.0.0-20250504205917-77f2aca3143e // indirect
 	github.com/golangci/unconvert v0.0.0-20250410112200-a129a6e6413e // indirect
 	github.com/google/btree v1.1.3 // indirect
-	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gordonklaus/ineffassign v0.2.0 // indirect

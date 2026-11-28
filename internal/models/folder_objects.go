@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -54,6 +55,38 @@ type ObjectsFolder struct {
 	// release gives up the scoped cluster the folder reads, if it holds one.
 	// Close calls it; until then the pool keeps that cluster running.
 	release func()
+
+	// scope (a typeScope) and kind are what the folder knows about its
+	// type. The constructor sets what it knows; a load, off the UI
+	// goroutine, asks the RESTMapper for the rest and keeps the answer.
+	// Code on the UI goroutine reads only these (ADR 0378).
+	scope atomic.Int32
+	kind  atomic.Pointer[string]
+}
+
+// typeScope is what an ObjectsFolder knows about its type's scope.
+type typeScope int32
+
+const (
+	typeScopeUnknown typeScope = iota
+	typeScopeNamespaced
+	typeScopeCluster
+)
+
+// setNamespaced records the scope of the folder's type.
+func (o *ObjectsFolder) setNamespaced(namespaced bool) {
+	if namespaced {
+		o.scope.Store(int32(typeScopeNamespaced))
+		return
+	}
+	o.scope.Store(int32(typeScopeCluster))
+}
+
+// setKind records the kind of the folder's type; an empty kind is ignored.
+func (o *ObjectsFolder) setKind(kind string) {
+	if kind != "" {
+		o.kind.Store(&kind)
+	}
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -366,8 +399,16 @@ func (o *ObjectsFolder) objectNamespaceAndID(namespaced bool, objectNamespace, n
 
 // resourceNamespaced reports whether the folder's resource is namespaced. When
 // the scope cannot be determined it assumes namespaced, so objects keep the
-// namespace they report.
+// namespace they report. A scope the folder does not know yet comes from the
+// RESTMapper and is kept, so only loads call this; the UI goroutine calls
+// knownNamespaced.
 func (o *ObjectsFolder) resourceNamespaced() bool {
+	switch typeScope(o.scope.Load()) {
+	case typeScopeNamespaced:
+		return true
+	case typeScopeCluster:
+		return false
+	}
 	if o.Deps.Cl == nil {
 		return true
 	}
@@ -379,19 +420,34 @@ func (o *ObjectsFolder) resourceNamespaced() bool {
 	if err != nil {
 		return true
 	}
+	o.setKind(gvk.Kind)
 	mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-	if err != nil {
+	if err != nil || mapping.Scope == nil {
 		return true
 	}
-	return mapping.Scope.Name() == meta.RESTScopeNameNamespace
+	namespaced := mapping.Scope.Name() == meta.RESTScopeNameNamespace
+	o.setNamespaced(namespaced)
+	return namespaced
 }
 
+// knownNamespaced is resourceNamespaced from what the folder knows, without
+// the RESTMapper: a scope no load has learned yet counts as namespaced.
+func (o *ObjectsFolder) knownNamespaced() bool {
+	return typeScope(o.scope.Load()) != typeScopeCluster
+}
+
+// kindString returns the kind of the folder's type, from the RESTMapper
+// the first time; like resourceNamespaced it is for loads.
 func (o *ObjectsFolder) kindString() string {
+	if k := o.kind.Load(); k != nil {
+		return *k
+	}
 	if o.Deps.Cl == nil {
 		return ""
 	}
 	if mapper := o.Deps.Cl.RESTMapper(); mapper != nil {
 		if k, err := mapper.KindFor(o.gvr); err == nil {
+			o.setKind(k.Kind)
 			return k.Kind
 		}
 	}
@@ -726,6 +782,7 @@ type liveObjectRowSource struct {
 	watchTTL        time.Duration
 	listBlocked     bool
 	watchBlocked    bool
+	watchStarting   bool // a background watch start runs
 	forbiddenLogged bool
 	target          liveSourceTarget
 
@@ -836,26 +893,61 @@ func (s *liveObjectRowSource) blockListLocked(ctx context.Context, err error) {
 	s.blockWatchLocked(ctx, "list", nil)
 }
 
+// ensureWatcherLocked starts the watch unless it runs or is starting. With
+// deps set it starts in the background: starting reads the RESTMapper and
+// asks the shared cache for an informer, whose own mapper may ask the
+// server, and reads run on the UI goroutine (ADR 0378).
 func (s *liveObjectRowSource) ensureWatcherLocked(ctx context.Context) {
-	if s.watchFactory == nil || s.watchCancel != nil || s.watchBlocked {
+	if s.watchFactory == nil || s.watchCancel != nil || s.watchBlocked || s.watchStarting || s.closed {
 		return
 	}
 	factory := s.watchFactory
+	if s.deps != nil {
+		s.watchStarting = true
+		root := s.deps.Ctx
+		go func() {
+			cancel, err := factory(s.MarkDirty, s.watchStopped)
+			s.mu.Lock()
+			s.watchStarting = false
+			stop := s.watchStartedLocked(root, cancel, err)
+			s.mu.Unlock()
+			if stop {
+				cancel()
+			}
+		}()
+		return
+	}
 	s.mu.Unlock()
 	cancel, err := factory(s.MarkDirty, s.watchStopped)
 	s.mu.Lock()
+	if s.watchStartedLocked(ctx, cancel, err) {
+		s.mu.Unlock()
+		cancel()
+		s.mu.Lock()
+	}
+}
+
+// watchStartedLocked takes the result of a watch start. It reports
+// whether the caller must stop the started watch, without s.mu held,
+// because the source was closed or its watch blocked meanwhile.
+func (s *liveObjectRowSource) watchStartedLocked(ctx context.Context, cancel func(), err error) (stop bool) {
 	if err != nil {
 		if apierrors.IsForbidden(err) {
 			s.blockWatchLocked(ctx, "watch", err)
-			return
+			return false
 		}
 		ctrllog.FromContext(ctx).WithName("liveObjectRowSource").Error(err, "failed to start resource watch")
-		return
+		return false
 	}
-	if cancel != nil {
-		s.watchCancel = cancel
-		s.scheduleWatchTimeoutLocked()
+	if cancel == nil {
+		return false
 	}
+	if s.closed || s.watchBlocked {
+		return true
+	}
+	s.watchCancel = cancel
+	s.scheduleWatchTimeoutLocked()
+	return false
 }
 
 func (s *liveObjectRowSource) touchWatchLocked() {

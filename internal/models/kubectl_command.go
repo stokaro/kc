@@ -111,7 +111,8 @@ func (f *NamespacedResourcesFolder) KubectlCommand() string {
 
 func (o *ObjectsFolder) KubectlCommand() string {
 	args := []string{"get", kubectlResource(o.gvr)}
-	namespaced := o.resourceNamespaced()
+	// The command line is drawn on the UI goroutine: no RESTMapper here.
+	namespaced := o.knownNamespaced()
 	filter := o.RowFilter()
 	filterNS, filterOther := filter.kubectlParts()
 	switch {
