@@ -1,6 +1,9 @@
 # 0376. Keys reach the shell in C-o and on a typed shell line
 
-- Status: Accepted
+- Status: Accepted; decision 3 is extended by
+  [0398](0398-follow-the-shell-line.md) (keys that type nothing keep an
+  empty shell line empty, a line of spaces counts as empty, and kc
+  follows the line in `C-o` until `Enter` or `C-c`)
 - Date: 2026-11-28
 - Issue: #376
 
@@ -64,20 +67,6 @@ on a typed shell line. ADR 0236 decided that `C-r` rereads the panel
 5. **`C-r` with typed text is the shell's history search.** This replaces
    the last point of ADR 0236 for the shell line; in panels with an empty
    shell line `C-r` still rereads.
-6. **kc follows the shell line closely.** `Terminal.HasInput` is true
-   while kc knows the line holds text, and also while it cannot follow
-   the line since the last `Enter` or `C-c`. Such a line now takes almost
-   every key, so a line that looks empty must not end up there:
-   - On an empty line `C-a`, `C-b`, `C-d`, `C-e`, `C-f`, `C-g`, `C-k` and
-     `C-l` keep it known and empty. `Delete`, `S-Tab` and the modified
-     arrows do not: bash and zsh with no configuration type `;5C` for
-     `C-Right`, zsh types `~` for `Delete`, and many zsh setups complete
-     on `S-Tab`.
-   - A line of spaces counts as empty.
-   - Text typed under the panels stays on the line in `C-o`, so kc follows
-     the keys there as under the panels. `Enter` and `C-c` end the line in
-     `C-o` too. Keys typed after `Enter` there may go to another program,
-     so they do not count as typed text when the panels return.
 
 The check sits in `shellLineKey` (`internal/ui/app_input.go`), before the
 custom command hotkeys and the global keys, so a new kc key does not take
@@ -106,9 +95,6 @@ a shell key by default.
   binding in bash or zsh, and zsh types a `~` for them.
 - **Keep `Home` and `End` with the panel.** They are line start and end in
   every shell, like `C-a` and `C-e`, which went to the shell already.
-- **Count a line kc cannot follow as empty unless it held text before.**
-  `C-p` or `C-y` on an empty line puts text there, and `Enter` must run
-  it.
 
 ## Consequences
 
@@ -118,7 +104,7 @@ a shell key by default.
   `Tab` and the custom `M-` hotkeys wait until the line is run (`Enter`),
   canceled (`C-c`) or erased with `Backspace` or `C-u`. After a key kc
   cannot follow (`Tab` completion, `M-b`, a cursor move) the line counts
-  as typed until `Enter` or `C-c`, as before (see 6).
+  as typed until `Enter` or `C-c`, as before.
 - `Esc <digit>` for a function key needs an empty shell line; the function
   keys themselves work.
 - ADR 0041 (hotlist and history keys) and ADR 0046 (custom command
