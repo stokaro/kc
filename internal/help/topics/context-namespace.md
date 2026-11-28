@@ -76,6 +76,15 @@ the screen shows "Connecting to NAME (SERVER)… 12s · F10 quits", and
 `F10` or `C-c` quits. When connecting fails, the screen shows the error:
 `Enter` opens the panels anyway, `F10` quits.
 
+A list that cannot be read says why where its rows would be, in red,
+with the key that helps below: "Cannot reach 10.0.0.1:6443: connection
+refused" (`C-r` retries, Context... picks another), "Not allowed to
+list secrets in shop (user dev)", "Namespace shpo does not exist"
+(Namespace... picks another). The same plain words replace the raw
+client errors in messages: a timeout, a rejected token (401) and a
+certificate kc does not trust are named as such. Without a kubeconfig,
+the panels name the file kc looked for.
+
 ## Keys
 
 - Typing filters the picker by name; `Backspace` removes a character.

@@ -41,6 +41,10 @@ type Widget struct {
 	folderHasBack bool
 	folderHandler func(back bool, selID string, next models.Folder)
 
+	// notice is what the list says while it shows no folder and has no
+	// items (SetNotice).
+	notice Notice
+
 	bt *table.BigTable
 	// marksGen counts the tables the widget built; see MarksGeneration.
 	marksGen      uint64
@@ -839,15 +843,24 @@ func (w *Widget) render(ctx context.Context, focused bool) string {
 		}
 		w.bt.SetSize(ctx, max(1, w.width), max(1, w.height))
 		w.bt.SetFocused(ctx, focused)
-		tableView := w.bt.View()
+		tableView := viewString(w.bt.View())
+		if n := w.folderNotice(); n.Problem != "" {
+			tableView = w.withNotice(tableView, n)
+		}
 		return lipgloss.NewStyle().
 			Background(uistyles.Current().Background).
 			Width(w.width).
 			Height(w.height).
-			Render(viewString(tableView))
+			Render(tableView)
 	}
 
 	if len(w.items) == 0 {
+		if lines := noticeLines(w.notice, w.width); len(lines) > 0 {
+			return uistyles.PanelContentStyle.
+				Width(w.width).
+				Height(w.height).
+				Render(strings.Join(lines[:min(len(lines), max(1, w.height))], "\n"))
+		}
 		return uistyles.PanelContentStyle.
 			Width(w.width).
 			Height(w.height).

@@ -152,7 +152,7 @@ func (m *Manager) DiscoverKubeconfigs() error {
 
 	if _, err := os.Stat(kubeDir); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("kube directory does not exist: %s", kubeDir)
+			return fmt.Errorf("kube directory %s: %w", kubeDir, os.ErrNotExist)
 		}
 		return fmt.Errorf("failed to stat kube directory: %w", err)
 	}

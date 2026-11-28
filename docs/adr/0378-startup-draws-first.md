@@ -1,6 +1,6 @@
 # 0378. kc draws before it connects
 
-- Status: Accepted
+- Status: Accepted; the text of the discovery failure message in point 5 superseded by [0380](0380-list-says-why-it-is-empty.md), decision 7
 - Date: 2026-11-28
 - Issue: #378 (the startup part; the UI loop and API discovery have their
   own 0378 record)
