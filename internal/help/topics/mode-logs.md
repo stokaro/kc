@@ -30,7 +30,10 @@ The header shows the stream state:
 - `reconnecting` while kc waits to reconnect;
 - `ended` or `failed` when the stream stopped;
 - for all containers, which sources stream, for example
-  `incomplete: 3 streaming, 1 failed`.
+  `incomplete: 3 streaming, 1 failed` or
+  `0 streaming, 1 waiting (CrashLoopBackOff)`. A container that crashed
+  and waits to restart shows the lines of its last run, and a `[kc]`
+  line says why nothing is shown when no container has a log yet.
 
 Lines that hold one JSON object are shown formatted, as in the logs
 viewer: time, level (colored by severity), message, then the other

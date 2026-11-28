@@ -27,7 +27,7 @@ import (
 const workloadLogsStartTimeout = 10 * time.Second
 
 // workloadLogsSyncPoll is how often the source checks whether the initial
-// pod list has been delivered, to report a selector that matches nothing.
+// pod list has been delivered, so the mux can say why nothing streams.
 const workloadLogsSyncPoll = 100 * time.Millisecond
 
 // workloadLogsSource is the merged stream behind a workload logs viewer. It
@@ -119,6 +119,7 @@ func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.W
 		LogOptions: logOpts,
 		MaxStreams: maxRequests,
 		Check:      func(t logmux.Target) (logresume.Instance, bool) { return follower.Instance(t) },
+		Scope:      what + " in " + spec.Namespace,
 	})
 	if !filter.IsZero() {
 		mux.SetFilter(filter)
@@ -136,8 +137,9 @@ func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.W
 	}
 	log.V(1).Info("following pods", "namespace", spec.Namespace, "match", what)
 
-	// Tell the user when the initial list has nothing to stream, rather than
-	// showing an empty viewer.
+	// Once the initial list is in, the mux says why the view has no line
+	// (no pods match, every source waits or failed) rather than showing an
+	// empty viewer.
 	go func() {
 		for !reg.HasSynced() {
 			select {
@@ -146,9 +148,7 @@ func startWorkloadLogs(ctx context.Context, cl *kccluster.Cluster, spec models.W
 			case <-time.After(workloadLogsSyncPoll):
 			}
 		}
-		if follower.Pods() == 0 {
-			mux.Notify("no pods match %s in %s yet; waiting for them", what, spec.Namespace)
-		}
+		mux.Synced()
 	}()
 
 	reader := logmux.NewReader(mux, func(l logmux.Line) string { return logmux.Format(l, color) })
@@ -168,7 +168,7 @@ func clientLogOpener(cfg *rest.Config) (logmux.Opener, error) {
 		}
 		ctrllog.FromContext(ctx).WithName("workloadLogs").Info("client stream logs",
 			"gvr", "v1/pods", "namespace", t.Namespace, "pod", t.Pod, "container", t.Container,
-			"tailLines", tail, "follow", opts.Follow)
+			"tailLines", tail, "follow", opts.Follow, "previous", opts.Previous)
 		return clientset.CoreV1().Pods(t.Namespace).GetLogs(t.Pod, opts).Stream(ctx)
 	}, nil
 }
