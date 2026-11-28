@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	kccluster "github.com/stokaro/kc/internal/cluster"
@@ -168,41 +169,59 @@ func (a *App) openPanels() tea.Cmd {
 	return tea.Batch(append(cmds, a.panelCmds())...)
 }
 
-// Width limits of the connecting screen's box.
+// Size limits of the connecting screen. Update keeps the terminal at least
+// startupMinWidth by startupMinHeight; the box fits in whatever it gets.
 const (
-	startupBoxMinWidth = 40
+	startupMinWidth    = 40
+	startupMinHeight   = 5
+	startupBoxMinWidth = 40 // text width the box keeps when the screen has room
 	startupBoxMaxWidth = 76
+	// startupBoxChrome is the width the box adds to its text: the border,
+	// a column of padding on each side and the dialog margin.
+	startupBoxChrome = 2 + 2 + 2*dialogPadX
 )
 
 // renderStartup draws the connecting screen: the context, its server and
-// the time spent, or the error once connecting failed.
+// the time spent, or the error once connecting failed. Text that does not
+// fit is wrapped and then cut, and the key hint is always the last line.
 func (a *App) renderStartup() tea.View {
 	st := a.startup
-	width, height := max(a.width, startupBoxMinWidth+4), max(a.height, 5)
+	width, height := max(a.width, startupMinWidth), max(a.height, startupMinHeight)
 	where := st.kctx.Name
 	if st.host != "" {
 		where += " (" + st.host + ")"
 	}
 	skin := dialog.Normal()
-	var lines []string
+	var body []string
+	var hint string
+	gap := false
 	if st.done == nil {
 		elapsed := time.Since(st.since).Truncate(time.Second)
-		lines = []string{fmt.Sprintf("Connecting to %s… %s · F10 quits", where, elapsed)}
+		body = []string{fmt.Sprintf("Connecting to %s… %s", where, elapsed)}
+		hint = "F10 quits"
 	} else {
 		skin = dialog.Danger()
-		lines = []string{
-			"Cannot connect to " + where + ":",
-			st.done.err().Error(),
-			"",
-			"Enter opens the panels · F10 quits",
-		}
+		body = []string{"Cannot connect to " + where + ":", st.done.err().Error()}
+		hint = "Enter opens the panels · F10 quits"
+		gap = true
 	}
-	inner := min(width-4-2*dialogPadX, startupBoxMaxWidth)
+	avail := min(width-startupBoxChrome, startupBoxMaxWidth)
+	// The margin goes before the hint does.
+	padY := dialogPadY
+	if height-2-2*padY < 2 {
+		padY = 0
+	}
+	var lines []string
+	if single := body[0] + " · " + hint; !gap && len(body) == 1 && lipgloss.Width(single) <= avail {
+		lines = []string{single}
+	} else {
+		lines = fitStartupLines(body, hint, gap, avail, height-2-2*padY)
+	}
 	textWidth := 0
 	for _, l := range lines {
 		textWidth = max(textWidth, lipgloss.Width(l))
 	}
-	inner = min(inner, max(textWidth, startupBoxMinWidth))
+	inner := min(avail, max(textWidth, startupBoxMinWidth))
 	bg := skin.Normal.GetBackground()
 	box := skin.Normal.
 		Border(lipgloss.DoubleBorder()).
@@ -211,11 +230,42 @@ func (a *App) renderStartup() tea.View {
 		Padding(0, 1).
 		Width(inner + 4).
 		Render(strings.Join(lines, "\n"))
-	box = padDialog(box, lipgloss.Width(box), dialogPadX, dialogPadY, bg)
+	box = padDialog(box, lipgloss.Width(box), dialogPadX, padY, bg)
 	screen := lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box,
 		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(uistyles.Current().Background)))
 	v := tea.NewView(screen)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	return v
+}
+
+// fitStartupLines wraps body and hint to width and fits them in rows,
+// keeping the hint whole on the last lines. A blank line goes between body
+// and hint when gap is set and there is room. Body lines that do not fit
+// are cut; the last one kept ends with "…".
+func fitStartupLines(body []string, hint string, gap bool, width, rows int) []string {
+	wrap := func(s string) []string {
+		// A URL breaks after a slash rather than in the middle of a word.
+		lines := strings.Split(ansi.Wrap(s, width, "/"), "\n")
+		for i := range lines {
+			lines[i] = strings.TrimRight(lines[i], " ")
+		}
+		return lines
+	}
+	var text []string
+	for _, l := range body {
+		text = append(text, wrap(l)...)
+	}
+	hintLines := wrap(hint)
+	room := rows - len(hintLines)
+	switch {
+	case room <= 0:
+		return hintLines[max(len(hintLines)-rows, 0):]
+	case len(text) > room:
+		text = text[:room]
+		text[room-1] = ansi.Truncate(text[room-1], width-1, "") + "…"
+	case gap && len(text) < room:
+		text = append(text, "")
+	}
+	return append(text, hintLines...)
 }

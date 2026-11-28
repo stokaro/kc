@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -55,43 +57,181 @@ func newDiscoveryState(dc discovery.DiscoveryInterface) *discoveryState {
 }
 
 // fill reads discovery into s, builds the mapper from it and returns the
-// resource list of the read. A read in which only some groups failed (an
-// aggregated API that is down) counts; their types are missing.
+// resource list of the read. The mapper and the resource list come from
+// one ServerGroupsAndResources call, so they list the same types. A second
+// call could ask again for a group version that failed (client-go's memory
+// cache does after a transient error with legacy discovery) and list a
+// type the mapper does not know. A read in which only some group versions
+// failed (an aggregated API that is down) counts; the snapshot names their
+// groups, and the refresh loop reads again sooner.
 func (s *discoveryState) fill(ctx context.Context) (*resourceSnapshot, error) {
 	d := discovery.ToCachedDiscoveryInterfaceWithContext(s.disco)
 	groups, lists, err := d.ServerGroupsAndResourcesWithContext(ctx)
-	if err != nil && (len(groups) == 0 || !discovery.IsGroupDiscoveryFailedError(err)) {
-		return nil, err
-	}
-	infos, failed, err := resourceInfosFrom(func() ([]*metav1.APIResourceList, error) {
-		return d.ServerPreferredResourcesWithContext(ctx)
-	})
+	var failed []string
 	if err != nil {
-		return nil, err
+		partial, ok := errors.AsType[*discovery.ErrGroupDiscoveryFailed](err)
+		if !ok || len(groups) == 0 {
+			return nil, err
+		}
+		failed = failedGroups(partial)
 	}
 	read := readResources{groups: groups, lists: lists}
 	groupResources, err := restmapper.GetAPIGroupResources(read)
 	if err != nil {
 		return nil, err
 	}
+	preferred, err := read.ServerPreferredResources()
+	if err != nil {
+		return nil, err
+	}
 	s.mapper = restmapper.NewShortcutExpander(restmapper.NewDiscoveryRESTMapper(groupResources), read, func(string) {})
 	s.filled.Store(true)
-	return &resourceSnapshot{infos: infos, failed: failed}, nil
+	return &resourceSnapshot{infos: resourceInfos(preferred), failed: failed}, nil
 }
 
-// readResources serves the groups and resources of one discovery read to
-// the RESTMapper and its shortcut expansion, which call only
-// ServerGroupsAndResources (client-go restmapper, discovery.go and
-// shortcut.go). The embedded interface is nil: any other call panics
-// rather than reach a server.
+// failedGroups names the groups of the group versions a read missed,
+// sorted.
+func failedGroups(partial *discovery.ErrGroupDiscoveryFailed) []string {
+	var failed []string
+	for gv := range partial.Groups {
+		if !slices.Contains(failed, gv.Group) {
+			failed = append(failed, gv.Group)
+		}
+	}
+	slices.Sort(failed)
+	return failed
+}
+
+// errReadOnlyDiscovery is what readResources returns for a call it cannot
+// answer from the read.
+var errReadOnlyDiscovery = errors.New("a discovery read answers from memory and sends no requests")
+
+// readResources is one discovery read: the groups and the resource lists
+// the server returned. The RESTMapper and its shortcut expansion read it
+// through ServerGroupsAndResources (client-go restmapper, discovery.go and
+// shortcut.go). It implements every method of the interface itself rather
+// than embed it: a call it can answer from the read is answered from
+// memory, any other returns errReadOnlyDiscovery. A client-go version that
+// calls another method gets an error instead of a panic, and a method
+// added to the interface fails the build.
 type readResources struct {
-	discovery.DiscoveryInterface
 	groups []*metav1.APIGroup
 	lists  []*metav1.APIResourceList
 }
 
+var _ discovery.DiscoveryInterface = readResources{}
+
 func (r readResources) ServerGroupsAndResources() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
 	return r.groups, r.lists, nil
+}
+
+func (r readResources) ServerGroups() (*metav1.APIGroupList, error) {
+	list := &metav1.APIGroupList{Groups: make([]metav1.APIGroup, 0, len(r.groups))}
+	for _, g := range r.groups {
+		list.Groups = append(list.Groups, *g)
+	}
+	return list, nil
+}
+
+func (r readResources) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	for _, l := range r.lists {
+		if l.GroupVersion == groupVersion {
+			return l, nil
+		}
+	}
+	return nil, fmt.Errorf("group version %q is not in the discovery read", groupVersion)
+}
+
+// ServerPreferredResources picks for each resource of a group the group's
+// preferred version, or else the first version that lists it, as
+// client-go's ServerPreferredResources does (discovery_client.go), from the
+// read instead of the server. Subresources are left out.
+func (r readResources) ServerPreferredResources() ([]*metav1.APIResourceList, error) {
+	byGV := make(map[string]*metav1.APIResourceList, len(r.lists))
+	for _, l := range r.lists {
+		byGV[l.GroupVersion] = l
+	}
+	chosen := make(map[schema.GroupResource]string)
+	for _, g := range r.groups {
+		for _, v := range g.Versions {
+			for _, res := range resourcesOf(byGV[v.GroupVersion]) {
+				gr := schema.GroupResource{Group: g.Name, Resource: res.Name}
+				if _, ok := chosen[gr]; ok && v.Version != g.PreferredVersion.Version {
+					continue
+				}
+				chosen[gr] = v.Version
+			}
+		}
+	}
+	var out []*metav1.APIResourceList
+	for _, g := range r.groups {
+		for _, v := range g.Versions {
+			if byGV[v.GroupVersion] == nil {
+				continue
+			}
+			picked := &metav1.APIResourceList{GroupVersion: v.GroupVersion}
+			for _, res := range resourcesOf(byGV[v.GroupVersion]) {
+				if chosen[schema.GroupResource{Group: g.Name, Resource: res.Name}] == v.Version {
+					picked.APIResources = append(picked.APIResources, res)
+				}
+			}
+			out = append(out, picked)
+		}
+	}
+	return out, nil
+}
+
+// resourcesOf is the resources of l without subresources; l may be nil.
+func resourcesOf(l *metav1.APIResourceList) []metav1.APIResource {
+	if l == nil {
+		return nil
+	}
+	out := make([]metav1.APIResource, 0, len(l.APIResources))
+	for _, res := range l.APIResources {
+		if !strings.Contains(res.Name, "/") {
+			out = append(out, res)
+		}
+	}
+	return out
+}
+
+func (r readResources) ServerPreferredNamespacedResources() ([]*metav1.APIResourceList, error) {
+	all, err := r.ServerPreferredResources()
+	if err != nil {
+		return nil, err
+	}
+	return discovery.FilteredBy(discovery.ResourcePredicateFunc(func(_ string, res *metav1.APIResource) bool {
+		return res.Namespaced
+	}), all), nil
+}
+
+func (readResources) ServerVersion() (*version.Info, error) { return nil, errReadOnlyDiscovery }
+
+func (readResources) OpenAPISchema() (*openapiv2.Document, error) { return nil, errReadOnlyDiscovery }
+
+func (readResources) OpenAPIV3() openapi.Client { return refusingOpenAPIV3{} }
+
+func (r readResources) WithLegacy() discovery.DiscoveryInterface { return r }
+
+// RESTClient returns a client whose requests fail with
+// errReadOnlyDiscovery before they leave the process.
+func (readResources) RESTClient() restclient.Interface {
+	// NewRESTClient never returns an error (client-go rest/client.go).
+	c, _ := restclient.NewRESTClient(&url.URL{}, "", restclient.ClientContentConfig{}, nil,
+		&http.Client{Transport: refusingTransport{}})
+	return c
+}
+
+type refusingOpenAPIV3 struct{}
+
+func (refusingOpenAPIV3) Paths() (map[string]openapi.GroupVersion, error) {
+	return nil, errReadOnlyDiscovery
+}
+
+type refusingTransport struct{}
+
+func (refusingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errReadOnlyDiscovery
 }
 
 // resourceSnapshot is the resource list of one discovery read. It is never
@@ -154,12 +294,14 @@ func (c *Cluster) setDiscoveryError(err error) {
 // readDiscovery reads the API server's discovery once and makes it the
 // state readers use. A failure leaves the current state as it is. Reads are
 // serialized; listeners run, inside that order, after a successful read.
-func (c *Cluster) readDiscovery(ctx context.Context) error {
+// It returns the snapshot of a successful read, which names the groups the
+// read missed.
+func (c *Cluster) readDiscovery(ctx context.Context) (*resourceSnapshot, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 	log := ctrllog.FromContext(ctx).WithName("discovery")
 	if c.discoveryState() == nil {
-		return errors.New("cluster has no discovery")
+		return nil, errors.New("cluster has no discovery")
 	}
 	target := newDiscoveryState(c.dc)
 	rctx, cancel := context.WithTimeout(ctx, discoveryReadTimeout)
@@ -170,14 +312,17 @@ func (c *Cluster) readDiscovery(ctx context.Context) error {
 		c.setDiscoveryError(err)
 		c.endFirstRead()
 		log.Info("API discovery read failed", "host", c.GetConfig().Host, "error", err.Error())
-		return err
+		return nil, err
+	}
+	if len(snap.failed) > 0 {
+		log.Info("API discovery read missed groups", "host", c.GetConfig().Host, "groups", snap.failed)
 	}
 	c.disco.Store(target)
 	c.resources.Store(snap)
 	c.setDiscoveryError(nil)
 	c.endFirstRead()
 	c.notifyDiscoveryListeners()
-	return nil
+	return snap, nil
 }
 
 func (c *Cluster) endFirstRead() {
@@ -185,8 +330,9 @@ func (c *Cluster) endFirstRead() {
 }
 
 // refreshLoop reads discovery at once, then every refresh interval, and
-// when RequestDiscoveryRefresh asks. After a failure it retries sooner,
-// with a delay that doubles up to the interval.
+// when RequestDiscoveryRefresh asks. After a failure, or a read that missed
+// some groups, it reads again sooner, with a delay that doubles up to the
+// interval.
 func (c *Cluster) refreshLoop(ctx context.Context) {
 	// A cluster stopped before its first read ends the wait for it.
 	defer c.endFirstRead()
@@ -200,10 +346,11 @@ func (c *Cluster) refreshLoop(ctx context.Context) {
 		case <-timer.C:
 		case <-c.refreshReq:
 		}
-		if err := c.readDiscovery(ctx); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
+		snap, err := c.readDiscovery(ctx)
+		if err != nil && ctx.Err() != nil {
+			return
+		}
+		if err != nil || len(snap.failed) > 0 {
 			failures++
 			timer.Reset(discoveryRetryDelay(failures, c.refresh))
 			continue
@@ -248,29 +395,12 @@ func (c *Cluster) RefreshDiscovery() {
 	if c.loopCtx == nil {
 		return
 	}
-	_ = c.readDiscovery(c.loopCtx)
+	_, _ = c.readDiscovery(c.loopCtx)
 }
 
-// resourceInfosFrom builds the resource list from a preferred-resources
-// read. A read in which only some groups failed (an aggregated API that is
-// down) still gives the other groups; failed names the groups missing.
-func resourceInfosFrom(read func() ([]*metav1.APIResourceList, error)) (infos []ResourceInfo, failed []string, err error) {
-	lists, err := read()
-	if err != nil {
-		if len(lists) == 0 {
-			return nil, nil, err
-		}
-		partial, ok := errors.AsType[*discovery.ErrGroupDiscoveryFailed](err)
-		if !ok {
-			return nil, nil, err
-		}
-		for gv := range partial.Groups {
-			if !slices.Contains(failed, gv.Group) {
-				failed = append(failed, gv.Group)
-			}
-		}
-		slices.Sort(failed)
-	}
+// resourceInfos lists the resource types of preferred-resources lists.
+func resourceInfos(lists []*metav1.APIResourceList) []ResourceInfo {
+	var infos []ResourceInfo
 	for _, l := range lists {
 		gv, err := schema.ParseGroupVersion(l.GroupVersion)
 		if err != nil {
@@ -290,7 +420,7 @@ func resourceInfosFrom(read func() ([]*metav1.APIResourceList, error)) (infos []
 			})
 		}
 	}
-	return infos, failed, nil
+	return infos
 }
 
 // liveMapper is the RESTMapper Cluster.RESTMapper hands out. It answers from
@@ -299,11 +429,23 @@ func resourceInfosFrom(read func() ([]*metav1.APIResourceList, error)) (infos []
 // read and never sends a request. Until the cluster's first read ended a
 // call waits for that read; after a failed first read it returns the
 // read's error at once, until a retry succeeds.
+//
+// The meta.RESTMapper methods take no context, so they wait for the first
+// read until it ends, which discoveryReadTimeout bounds. The WithContext
+// methods of meta.RESTMapperWithContext stop waiting when their context
+// ends; code that has a context, such as a background load, uses them
+// (meta.ToRESTMapperWithContext).
 type liveMapper struct{ c *Cluster }
 
-var _ metamapper.RESTMapper = liveMapper{}
+var (
+	_ metamapper.RESTMapper            = liveMapper{}
+	_ metamapper.RESTMapperWithContext = liveMapper{}
+)
 
-func (m liveMapper) delegate() (metamapper.RESTMapper, error) {
+// delegate returns the mapper of the current read. Before the first read
+// ended it waits for that read or until cancel is closed; a nil cancel
+// waits for the read alone.
+func (m liveMapper) delegate(cancel <-chan struct{}) (metamapper.RESTMapper, error) {
 	st := m.c.discoveryState()
 	if st == nil {
 		return nil, errors.New("cluster has no discovery")
@@ -311,7 +453,11 @@ func (m liveMapper) delegate() (metamapper.RESTMapper, error) {
 	if st.filled.Load() {
 		return st.mapper, nil
 	}
-	<-m.c.firstRead
+	select {
+	case <-m.c.firstRead:
+	case <-cancel:
+		return nil, ErrDiscoveryPending
+	}
 	if st = m.c.discoveryState(); st.filled.Load() {
 		return st.mapper, nil
 	}
@@ -322,7 +468,15 @@ func (m liveMapper) delegate() (metamapper.RESTMapper, error) {
 }
 
 func (m liveMapper) KindFor(resource schema.GroupVersionResource) (schema.GroupVersionKind, error) {
-	d, err := m.delegate()
+	return m.kindFor(nil, resource)
+}
+
+func (m liveMapper) KindForWithContext(ctx context.Context, resource schema.GroupVersionResource) (schema.GroupVersionKind, error) {
+	return m.kindFor(ctx.Done(), resource)
+}
+
+func (m liveMapper) kindFor(cancel <-chan struct{}, resource schema.GroupVersionResource) (schema.GroupVersionKind, error) {
+	d, err := m.delegate(cancel)
 	if err != nil {
 		return schema.GroupVersionKind{}, err
 	}
@@ -330,7 +484,15 @@ func (m liveMapper) KindFor(resource schema.GroupVersionResource) (schema.GroupV
 }
 
 func (m liveMapper) KindsFor(resource schema.GroupVersionResource) ([]schema.GroupVersionKind, error) {
-	d, err := m.delegate()
+	return m.kindsFor(nil, resource)
+}
+
+func (m liveMapper) KindsForWithContext(ctx context.Context, resource schema.GroupVersionResource) ([]schema.GroupVersionKind, error) {
+	return m.kindsFor(ctx.Done(), resource)
+}
+
+func (m liveMapper) kindsFor(cancel <-chan struct{}, resource schema.GroupVersionResource) ([]schema.GroupVersionKind, error) {
+	d, err := m.delegate(cancel)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +500,15 @@ func (m liveMapper) KindsFor(resource schema.GroupVersionResource) ([]schema.Gro
 }
 
 func (m liveMapper) ResourceFor(input schema.GroupVersionResource) (schema.GroupVersionResource, error) {
-	d, err := m.delegate()
+	return m.resourceFor(nil, input)
+}
+
+func (m liveMapper) ResourceForWithContext(ctx context.Context, input schema.GroupVersionResource) (schema.GroupVersionResource, error) {
+	return m.resourceFor(ctx.Done(), input)
+}
+
+func (m liveMapper) resourceFor(cancel <-chan struct{}, input schema.GroupVersionResource) (schema.GroupVersionResource, error) {
+	d, err := m.delegate(cancel)
 	if err != nil {
 		return schema.GroupVersionResource{}, err
 	}
@@ -346,7 +516,15 @@ func (m liveMapper) ResourceFor(input schema.GroupVersionResource) (schema.Group
 }
 
 func (m liveMapper) ResourcesFor(input schema.GroupVersionResource) ([]schema.GroupVersionResource, error) {
-	d, err := m.delegate()
+	return m.resourcesFor(nil, input)
+}
+
+func (m liveMapper) ResourcesForWithContext(ctx context.Context, input schema.GroupVersionResource) ([]schema.GroupVersionResource, error) {
+	return m.resourcesFor(ctx.Done(), input)
+}
+
+func (m liveMapper) resourcesFor(cancel <-chan struct{}, input schema.GroupVersionResource) ([]schema.GroupVersionResource, error) {
+	d, err := m.delegate(cancel)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +532,15 @@ func (m liveMapper) ResourcesFor(input schema.GroupVersionResource) ([]schema.Gr
 }
 
 func (m liveMapper) RESTMapping(gk schema.GroupKind, versions ...string) (*metamapper.RESTMapping, error) {
-	d, err := m.delegate()
+	return m.restMapping(nil, gk, versions...)
+}
+
+func (m liveMapper) RESTMappingWithContext(ctx context.Context, gk schema.GroupKind, versions ...string) (*metamapper.RESTMapping, error) {
+	return m.restMapping(ctx.Done(), gk, versions...)
+}
+
+func (m liveMapper) restMapping(cancel <-chan struct{}, gk schema.GroupKind, versions ...string) (*metamapper.RESTMapping, error) {
+	d, err := m.delegate(cancel)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +548,15 @@ func (m liveMapper) RESTMapping(gk schema.GroupKind, versions ...string) (*metam
 }
 
 func (m liveMapper) RESTMappings(gk schema.GroupKind, versions ...string) ([]*metamapper.RESTMapping, error) {
-	d, err := m.delegate()
+	return m.restMappings(nil, gk, versions...)
+}
+
+func (m liveMapper) RESTMappingsWithContext(ctx context.Context, gk schema.GroupKind, versions ...string) ([]*metamapper.RESTMapping, error) {
+	return m.restMappings(ctx.Done(), gk, versions...)
+}
+
+func (m liveMapper) restMappings(cancel <-chan struct{}, gk schema.GroupKind, versions ...string) ([]*metamapper.RESTMapping, error) {
+	d, err := m.delegate(cancel)
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +564,15 @@ func (m liveMapper) RESTMappings(gk schema.GroupKind, versions ...string) ([]*me
 }
 
 func (m liveMapper) ResourceSingularizer(resource string) (string, error) {
-	d, err := m.delegate()
+	return m.resourceSingularizer(nil, resource)
+}
+
+func (m liveMapper) ResourceSingularizerWithContext(ctx context.Context, resource string) (string, error) {
+	return m.resourceSingularizer(ctx.Done(), resource)
+}
+
+func (m liveMapper) resourceSingularizer(cancel <-chan struct{}, resource string) (string, error) {
+	d, err := m.delegate(cancel)
 	if err != nil {
 		return "", err
 	}

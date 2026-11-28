@@ -1,6 +1,6 @@
 # 0378. kc draws before it connects
 
-- Status: Accepted
+- Status: Accepted; in decision 5, the discovery failure message shows only while the cluster still has no successful read, and in decision 2 the screen fits small terminals (amended by [0405](0405-discovery-review-followups.md))
 - Date: 2026-11-28
 - Issue: #378 (the startup part; the UI loop and API discovery have their
   own 0378 record)

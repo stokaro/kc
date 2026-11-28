@@ -308,13 +308,15 @@ func TestFinishDeleteSetUnmarksGoneRows(t *testing.T) {
 			for _, target := range set.targets {
 				results = append(results, resourceDeletedMsg{target: target, err: errs[target.name]})
 			}
-			msgs := sendApp(app, deleteSetResultMsg{set: set, results: results})
+			_, cmd := app.Update(deleteSetResultMsg{set: set, results: results})
 			if got := markedRowIDs(app); !slices.Equal(got, tc.wantMarked) {
 				t.Fatalf("marked after the result %v, want %v", got, tc.wantMarked)
 			}
+			// Commands the panels queued before the result run with it;
+			// the result itself is one red line.
 			want := "Deleted 1 of 4 configmaps; not deleted: team/ux-b (already gone), team/ux-c (forbidden), team/web-config (replaced by a new object)"
-			if len(msgs) != 1 || msgs[0].(showToastMsg).text != want || msgs[0].(showToastMsg).info {
-				t.Fatalf("result %#v, want the red line %q", msgs, want)
+			if toasts := collectMsgs[showToastMsg](cmd); len(toasts) != 1 || toasts[0].text != want || toasts[0].info {
+				t.Fatalf("toasts %#v, want the red line %q", toasts, want)
 			}
 		})
 	}

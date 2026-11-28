@@ -3,15 +3,31 @@ package models
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 
 	table "github.com/stokaro/kc/internal/table"
+	kctesting "github.com/stokaro/kc/internal/testing"
 )
 
+// waitLines waits until src serves want rows, reading as a repaint does.
+func waitLines(t *testing.T, src rowSource, want int, what string) {
+	t.Helper()
+	kctesting.Eventually(t, 5*time.Second, 20*time.Millisecond, func() bool {
+		ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+		defer cancel()
+		return len(src.Lines(ctx, 0, 10)) == want
+	}, what)
+}
+
+// The rows of a ConfigMap's or Secret's keys load in the background and
+// load again after a change marks them dirty.
 func TestNewLiveKeyRowSourceRefresh(t *testing.T) {
+	t.Parallel()
 	rowsSet := [][]table.Row{
 		{
 			NewSimpleItem("cm/key1", []string{"key1"}, []string{"cm", "key1"}, WhiteStyle()),
@@ -22,47 +38,43 @@ func TestNewLiveKeyRowSourceRefresh(t *testing.T) {
 		},
 	}
 
-	idx := 0
-	populateCalls := 0
-	dirtyCalls := 0
-
+	var idx, populateCalls, dirtyCalls atomic.Int32
 	src := newLiveKeyRowSource(
-		Deps{},
+		Deps{Ctx: t.Context()},
 		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"},
 		"default",
 		"example",
 		func(context.Context) ([]table.Row, error) {
-			populateCalls++
-			return rowsSet[idx], nil
+			populateCalls.Add(1)
+			return rowsSet[idx.Load()], nil
 		},
-		func() { dirtyCalls++ },
+		func() { dirtyCalls.Add(1) },
 	)
+	t.Cleanup(src.Close)
 
-	ctx := t.Context()
-	first := src.Lines(ctx, 0, 10)
-	if len(first) != len(rowsSet[0]) {
+	if first := src.Lines(t.Context(), 0, 10); len(first) != len(rowsSet[0]) {
 		t.Fatalf("expected %d rows, got %d", len(rowsSet[0]), len(first))
 	}
-	if populateCalls != 1 {
-		t.Fatalf("expected one populate call, got %d", populateCalls)
+	if n := populateCalls.Load(); n != 1 {
+		t.Fatalf("expected one populate call, got %d", n)
 	}
 
-	idx = 1
+	idx.Store(1)
+	before := dirtyCalls.Load()
 	src.MarkDirty()
-	if dirtyCalls != 1 {
-		t.Fatalf("expected dirty callback once, got %d", dirtyCalls)
+	if dirtyCalls.Load() == before {
+		t.Fatal("MarkDirty did not tell the folder")
 	}
-
-	second := src.Lines(ctx, 0, 10)
-	if len(second) != len(rowsSet[1]) {
-		t.Fatalf("expected %d rows after refresh, got %d", len(rowsSet[1]), len(second))
-	}
-	if populateCalls != 2 {
-		t.Fatalf("expected populate to refresh, got %d calls", populateCalls)
+	waitLines(t, src, len(rowsSet[1]), "the key rows did not load again after MarkDirty")
+	if n := populateCalls.Load(); n != 2 {
+		t.Fatalf("expected populate to refresh once, got %d calls", n)
 	}
 }
 
+// The rows of a pod's sections and of a container list load in the
+// background and load again after a change marks them dirty.
 func TestPodRowSourcesRefresh(t *testing.T) {
+	t.Parallel()
 	rowsSet := [][]table.Row{
 		{
 			NewSimpleItem("section/containers", []string{"/containers"}, []string{"pod", "containers"}, WhiteStyle()),
@@ -72,39 +84,31 @@ func TestPodRowSourcesRefresh(t *testing.T) {
 			NewSimpleItem("section/containers", []string{"/containers"}, []string{"pod", "containers"}, WhiteStyle()),
 		},
 	}
-
-	idx := 0
-	populate := func(context.Context) ([]table.Row, error) {
-		return rowsSet[idx], nil
+	deps := Deps{Ctx: t.Context()}
+	tests := []struct {
+		name  string
+		build func(populate func(context.Context) ([]table.Row, error)) *liveObjectRowSource
+	}{
+		{"pod sections", func(populate func(context.Context) ([]table.Row, error)) *liveObjectRowSource {
+			return newPodSectionRowSource(deps, "default", "pod", populate, func() {})
+		}},
+		{"container list", func(populate func(context.Context) ([]table.Row, error)) *liveObjectRowSource {
+			return newPodContainerRowSource(deps, "default", "pod", containerKindPrimary, populate, func() {})
+		}},
 	}
-	ctx := t.Context()
-
-	// Section row source
-	sec := newPodSectionRowSource(Deps{}, "default", "pod", func(ctx context.Context) ([]table.Row, error) {
-		return populate(ctx)
-	}, func() {})
-	if len(sec.Lines(ctx, 0, 10)) != len(rowsSet[0]) {
-		t.Fatalf("unexpected section rows")
-	}
-
-	idx = 1
-	sec.MarkDirty()
-	if len(sec.Lines(ctx, 0, 10)) != len(rowsSet[1]) {
-		t.Fatalf("section rows did not refresh")
-	}
-
-	// Container list row source
-	idx = 0
-	lst := newPodContainerRowSource(Deps{}, "default", "pod", containerKindPrimary, func(ctx context.Context) ([]table.Row, error) {
-		return populate(ctx)
-	}, func() {})
-	if len(lst.Lines(ctx, 0, 10)) != len(rowsSet[0]) {
-		t.Fatalf("unexpected list rows")
-	}
-	idx = 1
-	lst.MarkDirty()
-	if len(lst.Lines(ctx, 0, 10)) != len(rowsSet[1]) {
-		t.Fatalf("list rows did not refresh")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var idx atomic.Int32
+			src := tt.build(func(context.Context) ([]table.Row, error) { return rowsSet[idx.Load()], nil })
+			t.Cleanup(src.Close)
+			if got := len(src.Lines(t.Context(), 0, 10)); got != len(rowsSet[0]) {
+				t.Fatalf("%d rows, want %d", got, len(rowsSet[0]))
+			}
+			idx.Store(1)
+			src.MarkDirty()
+			waitLines(t, src, len(rowsSet[1]), "the rows did not load again after MarkDirty")
+		})
 	}
 }
 

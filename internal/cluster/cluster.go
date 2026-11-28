@@ -384,7 +384,7 @@ func selectorObjects(cfg *rest.Config, selectors map[schema.GroupVersionResource
 // does not support Tables.
 func (c *Cluster) ListRowsByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*tablecache.RowList, error) {
 	// Resolve Kind for the Row target GVK
-	gvk, err := c.RESTMapper().KindFor(gvr)
+	gvk, err := c.kindFor(ctx, gvr)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +405,7 @@ func (c *Cluster) ListRowsByGVR(ctx context.Context, gvr schema.GroupVersionReso
 // GetRowByGVR fetches a single object rendered as a server-side table row.
 // It extracts the row via the cache using the Row target GVK.
 func (c *Cluster) GetRowByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*tablecache.Row, error) {
-	gvk, err := c.RESTMapper().KindFor(gvr)
+	gvk, err := c.kindFor(ctx, gvr)
 	if err != nil {
 		return nil, err
 	}
@@ -418,6 +418,15 @@ func (c *Cluster) GetRowByGVR(ctx context.Context, gvr schema.GroupVersionResour
 }
 
 // Helpers ---------------------------------------------------------------------
+
+// kindFor maps gvr to its kind. Before the cluster's first discovery read
+// ended it waits for that read only until ctx ends.
+func (c *Cluster) kindFor(ctx context.Context, gvr schema.GroupVersionResource) (schema.GroupVersionKind, error) {
+	if c.discoveryState() == nil {
+		return schema.GroupVersionKind{}, errors.New("cluster has no discovery")
+	}
+	return c.mapper.KindForWithContext(ctx, gvr)
+}
 
 // GVKToGVR maps a Kind to its resource using the RESTMapper.
 func (c *Cluster) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
@@ -543,7 +552,7 @@ func (c *Cluster) HasAnyByGVR(ctx context.Context, gvr schema.GroupVersionResour
 func (c *Cluster) GetByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
 	log := ctrllog.FromContext(ctx).WithName("cluster")
 	log.Info("client get", "gvr", gvr.String(), "namespace", namespace, "name", name)
-	k, err := c.RESTMapper().KindFor(gvr)
+	k, err := c.kindFor(ctx, gvr)
 	if err != nil {
 		return nil, err
 	}

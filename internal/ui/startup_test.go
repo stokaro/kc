@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"errors"
 	"net"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -206,5 +208,128 @@ func TestStartupShowsTheConnectError(t *testing.T) {
 	}
 	if frame := startupFrame(app); strings.Contains(frame, "Cannot connect") {
 		t.Errorf("the panels screen still shows the error:\n%s", frame)
+	}
+	// Discovery still fails, so the panels say so.
+	if toasts := pendingToasts(t, app); !slices.ContainsFunc(toasts, isDiscoveryErrorToast) {
+		t.Errorf("toasts after opening the panels without discovery: %q, want the discovery error", toasts)
+	}
+}
+
+// isDiscoveryErrorToast reports whether text is the message that API
+// discovery failed, whatever its wording.
+func isDiscoveryErrorToast(text string) bool {
+	return strings.Contains(strings.ToLower(text), "discovery")
+}
+
+// pendingToasts runs the commands queued for the next Update and returns
+// the texts of the toasts among them. Some queued commands wait for an
+// event; those that return nothing within a second are left.
+func pendingToasts(t *testing.T, a *App) []string {
+	t.Helper()
+	a.pendingCmdsMu.Lock()
+	cmds := slices.Clone(a.pendingCmds)
+	a.pendingCmdsMu.Unlock()
+	msgs := make(chan tea.Msg, len(cmds))
+	for _, cmd := range cmds {
+		go func() { msgs <- cmd() }()
+	}
+	var texts []string
+	deadline := time.After(time.Second)
+	for range cmds {
+		select {
+		case msg := <-msgs:
+			if toast, ok := msg.(showToastMsg); ok {
+				texts = append(texts, toast.text)
+			}
+		case <-deadline:
+			return texts
+		}
+	}
+	return texts
+}
+
+// The connecting screen fits the smallest terminal Update allows, 40
+// columns, and keeps its key hint on the screen. The box was at least 44
+// columns wide and the error box taller than a short terminal, so the hint
+// was cut off.
+func TestStartupScreenFitsSmallTerminals(t *testing.T) {
+	server := refusedServer(t)
+	useStartKubeconfig(t, server)
+	app := newStartApp(t)
+	if err := app.beginConfigAndStartup(t.Context()); err != nil {
+		t.Fatalf("startup: %v", err)
+	}
+	connectErr := errors.New(`Get "` + server + `/api?timeout=32s": dial tcp ` + strings.TrimPrefix(server, "https://") + `: connect: connection refused`)
+
+	tests := []struct {
+		name   string
+		done   *startupConnectedMsg
+		head   string
+		hint   string
+		width  int
+		height int
+	}{
+		{"connecting 40x10", nil, "Connecting to staging", "F10 quits", 40, 10},
+		{"connecting 40x5", nil, "Connecting to staging", "F10 quits", 40, 5},
+		{"error 40x10", &startupConnectedMsg{discoveryErr: connectErr}, "Cannot connect to staging", "Enter opens the panels · F10 quits", 40, 10},
+		{"error 40x7", &startupConnectedMsg{discoveryErr: connectErr}, "Cannot connect to staging", "Enter opens the panels · F10 quits", 40, 7},
+		{"error 40x5", &startupConnectedMsg{discoveryErr: connectErr}, "Cannot connect to staging", "Enter opens the panels · F10 quits", 40, 5},
+		{"error 60x12", &startupConnectedMsg{discoveryErr: connectErr}, "Cannot connect to staging", "Enter opens the panels · F10 quits", 60, 12},
+		{"error 120x30", &startupConnectedMsg{discoveryErr: connectErr}, "Cannot connect to staging (" + server + "):", "Enter opens the panels · F10 quits", 120, 30},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app.startup.done = tt.done
+			app.Update(tea.WindowSizeMsg{Width: tt.width, Height: tt.height})
+			frame := startupFrame(app)
+			lines := strings.Split(frame, "\n")
+			if len(lines) > tt.height {
+				t.Errorf("the frame has %d lines on a %d-line terminal:\n%s", len(lines), tt.height, frame)
+			}
+			for i, l := range lines {
+				if w := ansi.StringWidth(l); w > tt.width {
+					t.Errorf("line %d is %d cells wide on a %d-column terminal: %q", i+1, w, tt.width, l)
+				}
+			}
+			for _, want := range []string{tt.head, tt.hint} {
+				if !strings.Contains(frame, want) {
+					t.Errorf("the %dx%d frame lacks %q:\n%s", tt.width, tt.height, want, frame)
+				}
+			}
+		})
+	}
+	if t.Failed() {
+		return
+	}
+	// The widest text keeps the whole error when there is room.
+	app.startup.done = &startupConnectedMsg{discoveryErr: connectErr}
+	app.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	if frame := startupFrame(app); !strings.Contains(frame, "connection refused") || strings.Contains(frame, "…") {
+		t.Errorf("the 120x30 error frame cut the error:\n%s", frame)
+	}
+}
+
+func TestFitStartupLines(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		body  []string
+		gap   bool
+		width int
+		rows  int
+		want  []string
+	}{
+		{"fits with gap", []string{"head", "error"}, true, 20, 5, []string{"head", "error", "", "hint"}},
+		{"gap dropped first", []string{"head", "error"}, true, 20, 3, []string{"head", "error", "hint"}},
+		{"body cut", []string{"head", "a long error text here"}, true, 10, 3, []string{"head", "a long…", "hint"}},
+		{"only the hint", []string{"head"}, false, 10, 1, []string{"hint"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := fitStartupLines(tt.body, "hint", tt.gap, tt.width, tt.rows); !slices.Equal(got, tt.want) {
+				t.Errorf("fitStartupLines = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

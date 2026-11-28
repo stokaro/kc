@@ -29,9 +29,10 @@ func TestNetpolKeyNeedsTwoPods(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("C-x n not handled")
 	}
-	msg, ok := cmd().(showToastMsg)
-	if !ok || msg.text != models.ErrNotPodPair.Error() {
-		t.Errorf("msg = %#v, want the not-a-pod-pair toast", msg)
+	// Commands queued by the panels before the key run with it too.
+	toasts := collectMsgs[showToastMsg](cmd)
+	if len(toasts) != 1 || toasts[0].text != models.ErrNotPodPair.Error() {
+		t.Errorf("toasts = %#v, want the not-a-pod-pair toast", toasts)
 	}
 }
 

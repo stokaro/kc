@@ -15,6 +15,7 @@ type SecretKeysFolder struct {
 	*BaseFolder
 	Namespace string
 	Name      string
+	rows      *liveObjectRowSource
 }
 
 // NewSecretKeysFolder constructs the Secret data keys folder.
@@ -24,10 +25,14 @@ func NewSecretKeysFolder(deps Deps, parentPath []string, namespace, name string)
 	base := NewBaseFolder(deps, cols, path)
 	folder := &SecretKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
-	rows := newLiveKeyRowSource(deps, gvr, namespace, name, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
-	base.SetRowSource(rows)
+	folder.rows = newLiveKeyRowSource(deps, gvr, namespace, name, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	base.SetRowSource(folder.rows)
 	return folder
 }
+
+// Close stops the folder's watch and pending loads; navigators call it
+// when they drop the folder.
+func (f *SecretKeysFolder) Close() { f.rows.Close() }
 
 func (f *SecretKeysFolder) Parent() (gvr schema.GroupVersionResource, namespace, name string) {
 	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}, f.Namespace, f.Name

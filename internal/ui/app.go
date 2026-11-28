@@ -3522,6 +3522,21 @@ func (a *App) finishStartup(st *startup, msg startupConnectedMsg) error {
 	if st.only {
 		a.enqueueCmd(a.ShowInfo(onlyContextNotice(kctx), onlyContextNoticeTTL))
 	}
+	// The cluster retries discovery by itself while the error is on the
+	// screen. The error is reported only while the cluster still has no
+	// successful read, and then as its last read saw it. The first read has
+	// ended, so this does not wait.
+	if msg.discoveryErr != nil {
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		infos, _, err := msg.leases[0].Cluster().DiscoveredResources(ctx)
+		cancel()
+		switch {
+		case err == nil:
+			msg.infos, msg.discoveryErr = infos, nil
+		case !errors.Is(err, kccluster.ErrDiscoveryPending):
+			msg.discoveryErr = err
+		}
+	}
 	// Discovery-backed catalog (for panel displays)
 	if msg.discoveryErr == nil {
 		a.leftPanel.SetResourceCatalog(msg.infos)
