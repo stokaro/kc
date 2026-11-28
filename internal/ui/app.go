@@ -1086,6 +1086,7 @@ func (a *App) setupModals() {
 	nsModel := NewNamespaceCreateModel()
 	nsModal := NewModal("Create Namespace", nsModel)
 	nsModal.SetCloseOnSingleEsc(true)
+	nsModal.SetDanger(true)
 	a.modalManager.Register("namespace_create", nsModal)
 	a.namespaceInput = nsModel
 
@@ -1931,6 +1932,7 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 		a.namespaceInput = model
 	}
 	a.namespaceInput.Reset()
+	a.namespaceInput.SetTarget(conn.name(), a.readOnlyFor(conn.name()))
 	modal.SetContent(a.namespaceInput)
 	a.configureModalWindow(modal, a.namespaceInput, a.namespaceCreatePanel, "", 30, 6)
 	modal.SetOnClose(func() tea.Cmd {

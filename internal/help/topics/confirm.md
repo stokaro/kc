@@ -48,10 +48,13 @@ The buttons are the action, named after it (`Scale`, `Restart`, `Stop`,
   and `M-n`; see Delete. For a namespace, a CRD, a PersistentVolume or
   a node it says what goes with the object and waits until you typed its
   name.
+- Create namespace (`F7`) is a red input dialog that names the context;
+  `Enter` creates. See Create namespace.
 
 ## See also
 
 - [Delete](delete.md)
+- [Create namespace](namespace-create.md)
 - [Workload actions](workload-actions.md)
 - [Node actions](node-actions.md)
 - [Custom commands](custom-commands.md)

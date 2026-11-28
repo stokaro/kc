@@ -51,6 +51,9 @@ type TextInputModalConfig struct {
 	// WrapDescription wraps each description line at the dialog width
 	// instead of cutting it; the dialog grows by the lines it needs.
 	WrapDescription bool
+	// Danger draws the dialog in the red skin of dialogs that change the
+	// cluster; a hotkey then needs Meta even on a button.
+	Danger bool
 	// Deprecated: ignored; see TextInputModalButtonStyles.
 	ButtonStyles TextInputModalButtonStyles
 }
@@ -74,15 +77,21 @@ type TextInputModal struct {
 	// wrapWidth is the content width the description wraps at; zero
 	// until the dialog is sized.
 	wrapWidth int
+	// details are label and value lines above the prompt, such as the
+	// context the dialog changes.
+	details [][2]string
 }
 
 // NewTextInputModal constructs a TextInputModal with the given configuration.
 func NewTextInputModal(cfg TextInputModalConfig) *TextInputModal {
 	skin := dialog.Normal()
+	if cfg.Danger {
+		skin = dialog.Danger()
+	}
 	m := &TextInputModal{
 		cfg:   cfg,
 		input: dialog.NewInput(skin, cfg.InitialValue),
-		form:  dialog.Form{Skin: skin},
+		form:  dialog.Form{Skin: skin, AltOnly: cfg.Danger},
 	}
 	m.input.Placeholder = cfg.Placeholder
 	m.syncItems()
@@ -95,6 +104,16 @@ func (m *TextInputModal) syncItems() {
 	var items []dialog.Item
 	if !m.cfg.HideTitle && strings.TrimSpace(m.cfg.Title) != "" {
 		items = append(items, dialog.Text{Text: m.cfg.Title, Center: true, Bold: true})
+	}
+	if len(m.details) > 0 {
+		labelW := 0
+		for _, d := range m.details {
+			labelW = max(labelW, lipgloss.Width(d[0]))
+		}
+		for _, d := range m.details {
+			items = append(items, dialog.Text{Text: d[0] + ":" + strings.Repeat(" ", labelW-lipgloss.Width(d[0])+2) + d[1]})
+		}
+		items = append(items, dialog.Text{})
 	}
 	if strings.TrimSpace(m.cfg.Label) != "" {
 		items = append(items, dialog.Text{Text: m.cfg.Label})
@@ -249,6 +268,13 @@ func (m *TextInputModal) SetTitle(title string) { m.cfg.Title = title }
 
 // SetLabel updates the field label.
 func (m *TextInputModal) SetLabel(label string) { m.cfg.Label = label }
+
+// SetDetails shows label and value lines above the prompt, as the red
+// confirmation dialogs do: {"Context", "kind-dev"}.
+func (m *TextInputModal) SetDetails(details [][2]string) {
+	m.details = append([][2]string(nil), details...)
+	m.syncItems()
+}
 
 // SetDescription updates the supporting description/hint text.
 func (m *TextInputModal) SetDescription(desc string) { m.cfg.Description = desc }
