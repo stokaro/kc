@@ -10,11 +10,14 @@ without opening a viewer for each one.
 - The frame title is the path of the described object. The text is the
   same as `kubectl describe <type> <name> -n <namespace>` prints.
 - While the first result for a new object loads, the old text stays and
-  the header says `loading...`.
+  the header says `loading...`. After the other panel switched context,
+  the panel shows `Loading...` instead: the frame already names the new
+  context, and the old text came from the old one.
 - The footer shows the line position and how far you are, for example
   `12/80 • 15%`. `^` and `v` in the frame mean more text above or below.
 - A row that is not an object (a folder, a container, `/..`) shows
-  "Select a resource to describe."
+  "Select a resource to describe.", also when a `cd`, a namespace or
+  context switch or a jump from the history put the other cursor there.
 - When the describe fails, for example because the object was deleted,
   the text is replaced by the error.
 

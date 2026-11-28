@@ -2,6 +2,7 @@ package panelcontent
 
 import (
 	"context"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -39,7 +40,6 @@ type WidgetDeps struct {
 	InvokeAction     func(context.Context, Action) tea.Cmd
 	Path             func() string
 	SelectionChanged func(context.Context, Selection) tea.Cmd
-	SelectedItem     func(context.Context) (models.Item, bool)
 	Describe         DescribeFunc
 	// Paused reports whether background refreshes should wait, e.g. while
 	// a dialog is open. Nil never pauses.
@@ -128,10 +128,22 @@ type Selection struct {
 	Item models.Item
 	// Source names the cluster connection the item was read from. Two
 	// panels may browse different contexts that hold objects of the same
-	// name; widgets key their content by Source too. Empty when unknown.
+	// name; widgets key their content by Source too (SourceKey). Empty
+	// when unknown.
 	Source string
-	// Force notifies listeners and other panels even when the ID remains unchanged.
+	// Force redraws the panel and restarts a stream even when the
+	// selection names the same row.
 	Force bool
+}
+
+// SourceKey is the content key of id read from connection source: the
+// same object read from two connections has two keys.
+func SourceKey(source, id string) string { return source + "|" + id }
+
+// KeySource is the connection of a SourceKey, "" for the empty key.
+func KeySource(key string) string {
+	source, _, _ := strings.Cut(key, "|")
+	return source
 }
 
 // SelectionProvider widgets expose the currently highlighted item.

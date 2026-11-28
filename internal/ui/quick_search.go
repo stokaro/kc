@@ -169,12 +169,15 @@ func (m *hiddenTypeMatch) note() string {
 }
 
 // quickSearchSelectionChanged records the row the search moved the cursor
-// to as the panel's selection and returns the command that tells the other
-// panel, as a cursor key does.
+// to as the panel's selection. The App tells the other panel after the
+// key, as for any other cursor move (App.reportMovedSelections), so the
+// returned command is nil; it stays a command for the key handler that
+// returns it.
 func (p *Panel) quickSearchSelectionChanged() tea.Cmd {
 	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
 	defer cancel()
-	return p.widgetSelectionChanged(ctx, panelcontent.Selection{})
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{})
+	return nil
 }
 
 // applyPendingQuickSearch runs the search for text typed before the list
