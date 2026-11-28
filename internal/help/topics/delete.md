@@ -28,8 +28,8 @@ does not answer it: `y` typed by mistake does nothing.
 
 ## Namespaces, CRDs, PersistentVolumes and nodes
 
-Deleting one of these deletes other objects with it, so the dialog says
-what goes with it and asks you to type its name:
+Deleting one of these can take more with it, so the dialog says what
+goes with it and asks you to type its name:
 
 ```
 Delete namespace shop?
@@ -49,9 +49,15 @@ Type "shop" to enable Yes:
   when kc has counted. Only the kinds listed after `Counted:` are
   counted; everything else in the namespace is deleted too. A kind kc
   may not list is named: `Not counted: secrets (forbidden)`.
+- Helm keeps each revision of a release in a Secret. kc counts those
+  as Helm releases and leaves them out of `secrets`. When the Helm count
+  failed or stopped at 2000, the secrets keep their total and say so:
+  `2000+ secrets (including any of Helm's)`.
 - For a CustomResourceDefinition kc counts its objects in all
-  namespaces, for a PersistentVolume it names the claim bound to it and
-  the reclaim policy, and for a node it counts the pods bound to it.
+  namespaces. For a PersistentVolume it names the claim bound to it (a
+  bound volume stays until the claim is deleted) and says when the
+  storage goes. For a node it counts the pods bound to it; Kubernetes
+  deletes them if the node stays gone.
 - `Yes` stays grayed until the input line holds the name exactly, and
   `Enter` runs `No` meanwhile. Once the name is there, `M-y` deletes,
   and `Enter` first moves the focus to `Yes`: a second `Enter` deletes.

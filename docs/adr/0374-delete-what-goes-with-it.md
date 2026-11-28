@@ -12,8 +12,9 @@ Deleting a namespace deletes everything in it, but F8 asked with the same
 Yes/No dialog as for a ConfigMap: `Delete namespace shop? / Context:
 kind-dev`. `M-y` (since 0373) deleted five Deployments, nine pods, a PVC
 and a Helm release. Deleting a CustomResourceDefinition deletes every object
-of its kind, a PersistentVolume takes the volume from the claim bound to it,
-and Kubernetes deletes the pods of a deleted node.
+of its kind. A PersistentVolume's reclaim policy decides whether its storage
+and data go too, and the pod garbage collector deletes the pods of a node
+that stays gone.
 
 Create Namespace (F7 in `/namespaces`) ran at once from a gray input dialog
 that did not name the context, although every other change to the cluster
@@ -61,11 +62,29 @@ F8 does with a marked set that holds a namespace.
      every kind it counted and that other kinds are deleted too, uncounted.
      A kind kc could not count is named with the reason: `Not counted:
      secrets, Helm releases (forbidden).`
+   - Helm keeps each revision of a release in a Secret labeled
+     `owner=helm`. The dialog counts these once, as Helm releases: the
+     secret count is the total minus the `owner=helm` Secrets (objects, not
+     releases), never below zero. When the Helm count failed or stopped at
+     2000, or the secret count stopped at 2000 while Helm Secrets exist, a
+     difference would be a guess; the secrets then keep their total and say
+     so: `2600 secrets (including any of Helm's) and 300+ Helm releases`.
    - A CustomResourceDefinition: its objects in all namespaces, listed in
      the storage version (or another served one).
-   - A PersistentVolume: the claim bound to it, its phase and the reclaim
-     policy, which decides whether the storage goes too.
-   - A node: the pods bound to it in all namespaces (`spec.nodeName`).
+   - A PersistentVolume: the claim in its `claimRef` and its phase, and
+     the reclaim policy. The `kubernetes.io/pv-protection` finalizer keeps a
+     bound volume (`Terminating`) until its claim is deleted: `Claim
+     reports/data is bound to it (phase Bound); the volume stays until the
+     claim is deleted.` A `Released` volume names the claim that is gone,
+     another phase the claim it is reserved for. The policy says when the
+     storage goes: with `Delete` once the volume is gone (before Kubernetes
+     1.31, where `HonorPVReclaimPolicy` became default, a volume deleted
+     before its claim could leave the storage behind), with `Retain` never.
+   - A node: the pods bound to it in all namespaces (`spec.nodeName`). The
+     pod garbage collector deletes them when the node stays gone for 40
+     seconds. A kubelet registers its node when it starts, so the node
+     comes back when its kubelet restarts; the dialog says both and does
+     not promise that the pods go with the node.
 4. **How kc counts.** Each count is a direct request for object metadata
    only (`PartialObjectMetadataList`), so the API server does not send the
    data of Secrets (an annotation such as kubectl's
@@ -139,6 +158,9 @@ F8 does with a marked set that holds a namespace.
 - Deleting a namespace, a CRD, a PersistentVolume or a node takes typing
   its name and two `Enter`s (or `M-y`); a PersistentVolume's name is often
   40 characters long. Pasting it works.
+- The secret count of a namespace does not match `kubectl get secrets`
+  when it holds Helm releases; the dialog counts each revision once, under
+  Helm releases.
 - A namespace dialog sends about a dozen small list requests to the API
   server.
 - Objects of kinds outside the fixed set (Flux HelmReleases, Argo CD

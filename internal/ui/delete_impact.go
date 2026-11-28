@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -166,7 +167,13 @@ type impactKind struct {
 	distinctLabel string
 }
 
-var podsOnNode = impactKind{gvr: schema.GroupVersionResource{Version: "v1", Resource: "pods"}, one: "pod", many: "pods"}
+var (
+	podsOnNode = impactKind{gvr: schema.GroupVersionResource{Version: "v1", Resource: "pods"}, one: "pod", many: "pods"}
+	// secretsKind counts every Secret; namespaceImpact takes Helm's
+	// revisions out of it, so that they count once, as helmReleasesKind.
+	secretsKind      = impactKind{gvr: schema.GroupVersionResource{Version: "v1", Resource: "secrets"}, one: "secret", many: "secrets"}
+	helmReleasesKind = impactKind{gvr: schema.GroupVersionResource{Version: "v1", Resource: "secrets"}, one: "Helm release", many: "Helm releases", labelSelector: "owner=helm", distinctLabel: "name"}
+)
 
 // namespaceImpactKinds are the kinds counted in a namespace, in the order
 // the dialog lists them. Everything else in the namespace is deleted too,
@@ -183,17 +190,23 @@ var namespaceImpactKinds = []impactKind{
 	{gvr: schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}, one: "ingress", many: "ingresses"},
 	{gvr: schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"}, one: "PVC", many: "PVCs"},
 	{gvr: schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}, one: "configmap", many: "configmaps"},
-	{gvr: schema.GroupVersionResource{Version: "v1", Resource: "secrets"}, one: "secret", many: "secrets"},
-	{gvr: schema.GroupVersionResource{Version: "v1", Resource: "secrets"}, one: "Helm release", many: "Helm releases", labelSelector: "owner=helm", distinctLabel: "name"},
+	secretsKind,
+	helmReleasesKind,
 }
 
 // impactCount is how many objects of one kind go with the deleted object.
 type impactCount struct {
 	kind impactKind
 	n    int
+	// objects is how many objects kc read; it differs from n for a kind
+	// that counts the values of a label (Helm releases).
+	objects int
 	// atLeast means there are more: the count stopped at impactMaxObjects.
 	atLeast bool
 	err     error // the kind could not be counted
+	// withHelm marks a secret count that still holds Helm's revisions,
+	// because the Helm count failed or stopped early.
+	withHelm bool
 }
 
 // text is "5 deployments", "2000+ pods" or "1 PVC".
@@ -202,10 +215,14 @@ func (c impactCount) text() string {
 	if c.n == 1 && !c.atLeast {
 		noun = c.kind.one
 	}
+	text := fmt.Sprintf("%d %s", c.n, noun)
 	if c.atLeast {
-		return fmt.Sprintf("%d+ %s", c.n, noun)
+		text = fmt.Sprintf("%d+ %s", c.n, noun)
 	}
-	return fmt.Sprintf("%d %s", c.n, noun)
+	if c.withHelm {
+		text += " (including any of Helm's)"
+	}
+	return text
 }
 
 // countNamespace counts each kind of namespaceImpactKinds in target, all
@@ -268,6 +285,7 @@ func countObjects(ctx context.Context, md metadata.Interface, kubeContext string
 		}
 		opts.Continue, opts.Limit = list.Continue, impactPageSize
 	}
+	out.objects = out.n
 	if k.distinctLabel != "" {
 		out.n = len(distinct)
 	}
@@ -277,6 +295,7 @@ func countObjects(ctx context.Context, md metadata.Interface, kubeContext string
 // namespaceImpact says what a namespace holds of the counted kinds, which
 // kinds were counted, and which could not be.
 func namespaceImpact(counts []impactCount) deleteImpact {
+	counts = helmApart(counts)
 	var held, counted []string
 	failed := make(map[string][]string) // reason -> kinds
 	var reasons []string
@@ -310,6 +329,34 @@ func namespaceImpact(counts []impactCount) deleteImpact {
 		lines = append(lines, "Counted: "+strings.Join(counted, ", ")+". Other kinds are not counted; everything in it is deleted.")
 	}
 	return deleteImpact{lines: lines}
+}
+
+// helmApart takes the Secrets that hold Helm revisions out of the secret
+// count, so that the dialog counts them once, as Helm releases. When the
+// Helm count failed or stopped early, or the secret count stopped early,
+// the secrets keep their total and say that it includes Helm's.
+func helmApart(counts []impactCount) []impactCount {
+	out := slices.Clone(counts)
+	secrets, helm := -1, -1
+	for i, c := range out {
+		switch c.kind {
+		case secretsKind:
+			secrets = i
+		case helmReleasesKind:
+			helm = i
+		}
+	}
+	if secrets < 0 || helm < 0 || out[secrets].err != nil {
+		return out
+	}
+	h := out[helm]
+	if h.err != nil || h.atLeast || (h.objects > 0 && out[secrets].atLeast) {
+		out[secrets].withHelm = true
+		return out
+	}
+	// A revision written between the two lists can make it negative.
+	out[secrets].n = max(0, out[secrets].n-h.objects)
+	return out
 }
 
 // crdImpact counts the objects of the CustomResourceDefinition target in
@@ -379,17 +426,29 @@ func pvImpact(ctx context.Context, dyn dynamic.Interface, target deleteTarget) d
 	phase, _, _ := unstructured.NestedString(pv.Object, "status", "phase")
 	policy, _, _ := unstructured.NestedString(pv.Object, "spec", "persistentVolumeReclaimPolicy")
 	var lines []string
-	if claim != "" {
-		lines = append(lines, fmt.Sprintf("Claim %s is bound to it (%s) and loses its volume.", objectRef(claimNS, claim), phaseText(phase)))
-	} else {
+	ref := objectRef(claimNS, claim)
+	switch {
+	case claim == "":
 		lines = append(lines, fmt.Sprintf("No claim is bound to it (%s).", phaseText(phase)))
+	case phase == "Bound":
+		// The kubernetes.io/pv-protection finalizer keeps a bound volume
+		// until it is released, that is until its claim is deleted.
+		lines = append(lines, fmt.Sprintf("Claim %s is bound to it (phase Bound); the volume stays until the claim is deleted.", ref))
+	case phase == "Released":
+		lines = append(lines, fmt.Sprintf("It was bound to claim %s, which is gone (phase Released).", ref))
+	default:
+		lines = append(lines, fmt.Sprintf("It is reserved for claim %s (%s).", ref, phaseText(phase)))
 	}
 	switch policy {
-	case "Delete":
-		lines = append(lines, "Reclaim policy Delete: the storage is deleted too.")
 	case "":
+	case "Delete":
+		// Honored for a volume deleted before its claim since Kubernetes
+		// 1.31 (HonorPVReclaimPolicy, on by default).
+		lines = append(lines, "Reclaim policy Delete: the storage is deleted once the volume is gone (clusters before Kubernetes 1.31 may leave it behind).")
+	case "Retain":
+		lines = append(lines, "Reclaim policy Retain: the storage and its data stay after the volume is gone.")
 	default:
-		lines = append(lines, fmt.Sprintf("Reclaim policy %s: the storage stays.", policy))
+		lines = append(lines, fmt.Sprintf("Reclaim policy %s.", policy))
 	}
 	return deleteImpact{lines: lines}
 }
@@ -401,16 +460,19 @@ func phaseText(phase string) string {
 	return "phase " + phase
 }
 
-// nodeImpact says how many pods are bound to the node; Kubernetes deletes
-// them once the node is gone.
+// nodeImpact says how many pods are bound to the node. The pod garbage
+// collector deletes the pods of a node that stays gone for 40 seconds. A
+// kubelet registers its node once, when it starts: one that keeps running
+// does not bring the node back until it restarts.
 func nodeImpact(pods impactCount) deleteImpact {
 	switch {
 	case pods.err != nil:
-		return deleteImpact{lines: []string{fmt.Sprintf("kc could not count the pods on it (%s); they are deleted with it.", impactFailure(pods.err))}}
+		return deleteImpact{lines: []string{fmt.Sprintf("kc could not count the pods on it (%s).", impactFailure(pods.err))}}
 	case pods.n == 0:
 		return deleteImpact{lines: []string{"No pods are bound to it."}}
 	}
-	return deleteImpact{lines: []string{fmt.Sprintf("%s bound to it %s deleted with it.", pods.text(), plural(pods.n, "is", "are"))}}
+	return deleteImpact{lines: []string{fmt.Sprintf("%s %s bound to it. If the node stays gone, Kubernetes deletes %s; its kubelet registers the node again when it restarts.",
+		pods.text(), plural(pods.n, "is", "are"), plural(pods.n, "it", "them"))}}
 }
 
 // getImpactObject reads target from its cluster, directly.
